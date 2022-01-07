@@ -150,12 +150,23 @@ M.render = function()
     end
 end
 
-local diagnostics_mark_type_map = {
-    [vim.diagnostic.severity.ERROR] = "Error",
-    [vim.diagnostic.severity.WARN] = "Warn",
-    [vim.diagnostic.severity.INFO] = "Info",
-    [vim.diagnostic.severity.HINT] = "Hint",
-}
+local diagnostics_mark_type_map = {}
+
+if vim.diagnostic then
+    diagnostics_mark_type_map = {
+        [vim.diagnostic.severity.ERROR] = "Error",
+        [vim.diagnostic.severity.WARN] = "Warn",
+        [vim.diagnostic.severity.INFO] = "Info",
+        [vim.diagnostic.severity.HINT] = "Hint",
+    }
+else
+    diagnostics_mark_type_map = {
+        [1] = "Error",
+        [2] = "Warn",
+        [3] = "Info",
+        [4] = "Hint",
+    }
+end
 
 M.diagnostics_handler = function(bufnr, get_diagnostics, diagnostic_mapper)
     local filetype = vim.api.nvim_buf_get_option(bufnr, "filetype")
