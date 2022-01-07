@@ -11,10 +11,18 @@ return {
         Hint = { text = { "-", "=" }, priority = 4, color = "green" },
         Misc = { text = { "-", "=" }, priority = 5, color = "purple" },
     },
+    render_filter = function(_, _)
+        return true
+    end,
     excluded_filetypes = {
         "",
-        "prompt",
         "TelescopePrompt",
+        "startify",
+        "NvimTree",
+    },
+    excluded_buftypes = {
+        "prompt",
+        "terminal",
     },
     autocmd = {
         render = {

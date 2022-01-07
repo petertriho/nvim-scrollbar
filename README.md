@@ -77,10 +77,24 @@ require("scrollbar").setup({
         Hint = { text = { "-", "=" }, priority = 4, color = "green" },
         Misc = { text = { "-", "=" }, priority = 5, color = "purple" },
     },
+    render_filter = function(_, _)
+        -- Passed `winid` and `bufnr` for the buffer in question, return `true`
+        -- to draw the scrollbar, false otherwise
+        --
+        -- `exclude_filetypes` and `exclude_buftypes` are checked before this,
+        -- set them to empty tables to skip those checks and rely solely on
+        -- this function
+        return true
+    end,
     excluded_filetypes = {
         "",
-        "prompt",
         "TelescopePrompt",
+        "startify",
+        "NvimTree",
+    },
+    excluded_buftypes = {
+        "prompt",
+        "terminal",
     },
     autocmd = {
         render = {

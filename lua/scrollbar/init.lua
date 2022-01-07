@@ -21,6 +21,20 @@ local function get_highlight_name(mark_type, handle)
     return string.format("%s%s%s", NAME_PREFIX, mark_type, handle and NAME_SUFFIX or "")
 end
 
+local function should_render(winid, bufnr)
+    local filetype = vim.api.nvim_buf_get_option(bufnr, "filetype")
+    if vim.tbl_contains(config.excluded_filetypes, filetype) then
+        return false
+    end
+
+    local buftype = vim.api.nvim_buf_get_option(bufnr, "buftype")
+    if vim.tbl_contains(config.excluded_buftypes, buftype) then
+        return false
+    end
+
+    return config.render_filter(winid, bufnr)
+end
+
 M.get_scrollbar_marks = function(bufnr)
     local ok, scrollbar_marks = pcall(function()
         return vim.api.nvim_buf_get_var(bufnr, BUF_VAR_KEY)
@@ -40,7 +54,7 @@ end
 M.render = function()
     vim.api.nvim_buf_clear_namespace(0, NAMESPACE, 0, -1)
 
-    if not vim.tbl_contains(config.excluded_filetypes, vim.bo.filetype) then
+    if should_render(vim.api.nvim_get_current_win(), vim.api.nvim_get_current_buf()) then
         local total_lines = vim.api.nvim_buf_line_count(0)
         local visible_lines = vim.api.nvim_win_get_height(0)
         local first_visible_line = vim.fn.line("w0")
@@ -169,9 +183,7 @@ else
 end
 
 M.diagnostics_handler = function(bufnr, get_diagnostics, diagnostic_mapper)
-    local filetype = vim.api.nvim_buf_get_option(bufnr, "filetype")
-
-    if not vim.tbl_contains(config.excluded_filetypes, filetype) then
+    if should_render(vim.api.nvim_get_current_win(), bufnr) then
         local diagnostics_scrollbar_marks = {}
 
         local diagnostics = get_diagnostics()
