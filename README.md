@@ -147,6 +147,10 @@ require("scrollbar").setup({
 })
 ```
 
+## Acknowledgements
+
+- [kevinhwang91/nvim-hlslens](https://github.com/kevinhwang91/nvim-hlslens) for implementation on how to hide search results
+
 ## License
 
 [MIT](https://choosealicense.com/licenses/mit/)
