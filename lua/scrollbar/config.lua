@@ -1,4 +1,5 @@
-return {
+local config = {
+    enable = true,
     handle = {
         text = " ",
         color = "white",
@@ -34,3 +35,16 @@ return {
         search = true,
     },
 }
+
+local M = {}
+
+M.set = function(overrides)
+    config = vim.tbl_deep_extend("force", config, overrides or {})
+    return config
+end
+
+M.get = function()
+    return config
+end
+
+return M

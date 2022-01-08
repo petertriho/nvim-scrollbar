@@ -1,41 +1,10 @@
---[[
--- TODO:
--- - Improve performance by deferring + debouncing
--- - Investigate how to use existing highlights from diagnostics
--- - Store mark level instead of text
--- - Git(signs) integration
-]]
-
-local config = require("scrollbar.config")
+local const = require("scrollbar.const")
+local config = require("scrollbar.config").get()
+local utils = require("scrollbar.utils")
 
 local M = {}
 
-local NAME_PREFIX = "Scrollbar"
-local NAME_SUFFIX = "Handle"
-
-local NAMESPACE = vim.api.nvim_create_namespace(NAME_PREFIX)
-
-local BUF_VAR_KEY = "scrollbar_marks"
-
-local function get_highlight_name(mark_type, handle)
-    return string.format("%s%s%s", NAME_PREFIX, mark_type, handle and NAME_SUFFIX or "")
-end
-
-M.get_scrollbar_marks = function(bufnr)
-    local ok, scrollbar_marks = pcall(function()
-        return vim.api.nvim_buf_get_var(bufnr, BUF_VAR_KEY)
-    end)
-
-    if not ok then
-        scrollbar_marks = {}
-    end
-
-    return scrollbar_marks
-end
-
-M.set_scrollbar_marks = function(bufnr, scrollbar_marks)
-    vim.api.nvim_buf_set_var(bufnr, BUF_VAR_KEY, scrollbar_marks)
-end
+local NAMESPACE = vim.api.nvim_create_namespace(const.NAME_PREFIX)
 
 M.render = function()
     vim.api.nvim_buf_clear_namespace(0, NAMESPACE, 0, -1)
@@ -64,7 +33,7 @@ M.render = function()
     local relative_first_line = math.floor(first_visible_line * ratio) - math.floor(1 * ratio)
     local relative_last_line = math.floor(last_visible_line * ratio)
 
-    local scrollbar_marks = M.get_scrollbar_marks(0)
+    local scrollbar_marks = utils.get_scrollbar_marks(0)
 
     local sorted_scrollbar_marks = {}
 
@@ -131,11 +100,11 @@ M.render = function()
 
             if handle_mark then
                 handle_opts.virt_text = {
-                    { handle_mark.text, get_highlight_name(handle_mark.type, show_handle) },
+                    { handle_mark.text, utils.get_highlight_name(handle_mark.type, show_handle) },
                 }
             else
                 handle_opts.virt_text = {
-                    { config.handle.text, get_highlight_name("", show_handle) },
+                    { config.handle.text, utils.get_highlight_name("", show_handle) },
                 }
             end
 
@@ -150,7 +119,7 @@ M.render = function()
             if mark_line >= 0 then
                 local mark_opts = {
                     virt_text_pos = "right_align",
-                    virt_text = { { mark.text, get_highlight_name(mark.type, false) } },
+                    virt_text = { { mark.text, utils.get_highlight_name(mark.type, false) } },
                 }
                 vim.api.nvim_buf_set_extmark(0, NAMESPACE, mark_line, -1, mark_opts)
             end
@@ -158,160 +127,16 @@ M.render = function()
     end
 end
 
-local diagnostics_mark_type_map = {}
-
-if vim.diagnostic then
-    diagnostics_mark_type_map = {
-        [vim.diagnostic.severity.ERROR] = "Error",
-        [vim.diagnostic.severity.WARN] = "Warn",
-        [vim.diagnostic.severity.INFO] = "Info",
-        [vim.diagnostic.severity.HINT] = "Hint",
-    }
-else
-    diagnostics_mark_type_map = {
-        [1] = "Error",
-        [2] = "Warn",
-        [3] = "Info",
-        [4] = "Hint",
-    }
-end
-
-M.diagnostics_handler = function(bufnr, get_diagnostics, diagnostic_mapper)
-    local filetype = vim.api.nvim_buf_get_option(bufnr, "filetype")
-
-    if not vim.tbl_contains(config.excluded_filetypes, filetype) then
-        local diagnostics_scrollbar_marks = {}
-
-        local diagnostics = get_diagnostics()
-
-        for _, diagnostic in pairs(diagnostics) do
-            table.insert(diagnostics_scrollbar_marks, diagnostic_mapper(diagnostic))
-        end
-
-        local scrollbar_marks = M.get_scrollbar_marks(bufnr)
-        scrollbar_marks.diagnostics = diagnostics_scrollbar_marks
-        M.set_scrollbar_marks(bufnr, scrollbar_marks)
-
-        if bufnr == vim.api.nvim_get_current_buf() then
-            M.render()
-        end
-    end
-end
-
-M.lsp_diagnostics_handler = function(_, result, _, _)
-    local bufnr = vim.uri_to_bufnr(result.uri)
-
-    local function get_diagnostics()
-        return result.diagnostics
-    end
-
-    local function diagnostic_mapper(diagnostic)
-        local mark_type = diagnostics_mark_type_map[diagnostic.severity]
-        return {
-            line = diagnostic.range.start.line,
-            text = config.marks[mark_type].text[1],
-            type = mark_type,
-        }
-    end
-
-    M.diagnostics_handler(bufnr, get_diagnostics, diagnostic_mapper)
-end
-
-M.diagnostic_handler = {
-    show = function(_, bufnr, _, _)
-        local function get_diagnostics()
-            return vim.diagnostic.get(bufnr)
-        end
-
-        local function diagnostic_mapper(diagnostic)
-            local mark_type = diagnostics_mark_type_map[diagnostic.severity]
-            return {
-                line = diagnostic.lnum,
-                text = config.marks[mark_type].text[1],
-                type = mark_type,
-            }
-        end
-
-        M.diagnostics_handler(bufnr, get_diagnostics, diagnostic_mapper)
-    end,
-    hide = function(_, bufnr, _, _)
-        local scrollbar_marks = M.get_scrollbar_marks(bufnr)
-        scrollbar_marks.diagnostics = nil
-        M.set_scrollbar_marks(bufnr, scrollbar_marks)
-        M.render()
-    end,
-}
-
-M.search_handler = {
-    show = function(plist)
-        if config.handlers.search then
-            local search_scrollbar_marks = {}
-
-            for _, result in pairs(plist) do
-                table.insert(search_scrollbar_marks, {
-                    line = result[1] - 1,
-                    text = "-",
-                    type = "Search",
-                })
-            end
-
-            local bufnr = vim.api.nvim_get_current_buf()
-            local scrollbar_marks = M.get_scrollbar_marks(bufnr)
-            scrollbar_marks.search = search_scrollbar_marks
-            M.set_scrollbar_marks(bufnr, scrollbar_marks)
-            M.render()
-        end
-    end,
-    hide = function()
-        if not vim.v.event.abort then
-            local cmdl = vim.trim(vim.fn.getcmdline())
-            if #cmdl > 2 then
-                for _, cl in ipairs(vim.split(cmdl, "|")) do
-                    if ("nohlsearch"):match(vim.trim(cl)) then
-                        local bufnr = vim.api.nvim_get_current_buf()
-                        local scrollbar_marks = M.get_scrollbar_marks(bufnr)
-                        scrollbar_marks.search = nil
-                        M.set_scrollbar_marks(bufnr, scrollbar_marks)
-                        M.render()
-                        break
-                    end
-                end
-            end
-        end
-    end,
-}
-
-M.setup_highlights = function()
-    vim.cmd(string.format("highlight %s guifg=%s guibg=%s", get_highlight_name("", true), "none", config.handle.color))
-    for mark_type, properties in pairs(config.marks) do
-        vim.cmd(
-            string.format(
-                "highlight %s guifg=%s guibg=%s",
-                get_highlight_name(mark_type, false),
-                properties.color,
-                "NONE"
-            )
-        )
-        vim.cmd(
-            string.format(
-                "highlight %s guifg=%s guibg=%s",
-                get_highlight_name(mark_type, true),
-                properties.color,
-                config.handle.color
-            )
-        )
-    end
-end
 
 M.setup = function(overrides)
-    config = vim.tbl_deep_extend("force", config, overrides or {})
+    config = require("scrollbar.config").set(overrides)
 
-    M.setup_highlights()
+    utils.set_highlights()
 
     vim.cmd([[
         augroup scrollbar_setup_highlights
             autocmd!
-            autocmd ColorScheme * lua require('scrollbar').setup_highlights()
+            autocmd ColorScheme * lua require('scrollbar.utils').set_highlights()
         augroup END
     ]])
 
@@ -328,12 +153,14 @@ M.setup = function(overrides)
     end
 
     if config.handlers.diagnostic then
+        local diagnostic = require("scrollbar.handlers.diagnostic")
+
         if vim.diagnostic then
-            vim.diagnostic.handlers["petertriho/scrollbar"] = M.diagnostic_handler
+            vim.diagnostic.handlers["petertriho/scrollbar"] = diagnostic.handler
         else
             vim.lsp.handlers["textDocument/publishDiagnostics"] = function(err, result, ctx, conf)
                 vim.lsp.diagnostic.on_publish_diagnostics(err, result, ctx, conf)
-                M.lsp_diagnostic_handler(err, result, ctx, conf)
+                diagnostic.lsp_handler(err, result, ctx, conf)
             end
         end
     end
