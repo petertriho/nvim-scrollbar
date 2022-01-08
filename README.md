@@ -68,6 +68,7 @@ require("scrollbar").setup({
     handle = {
         text = " ",
         color = "white",
+        hide_if_all_visible = true, -- Hides handle if all lines are visible
     },
     marks = {
         Search = { text = { "-", "=" }, priority = 0, color = "orange" },
