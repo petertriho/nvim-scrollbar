@@ -108,8 +108,14 @@ M.render = function()
                     { handle_mark.text, utils.get_highlight_name(handle_mark.type, show_handle) },
                 }
             else
+                local handle_mark_text = config.handle.text
+
+                if not show_handle then
+                    handle_mark_text = ""
+                end
+
                 handle_opts.virt_text = {
-                    { config.handle.text, utils.get_highlight_name("", show_handle) },
+                    { handle_mark_text, utils.get_highlight_name("", show_handle) },
                 }
             end
 
