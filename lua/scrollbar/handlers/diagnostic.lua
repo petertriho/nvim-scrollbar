@@ -1,4 +1,3 @@
-local config = require("scrollbar.config").get()
 local utils = require("scrollbar.utils")
 local render = require("scrollbar").render
 
@@ -23,6 +22,7 @@ else
 end
 
 M.generic_handler = function(bufnr, get_diagnostics, diagnostic_mapper)
+    local config = require("scrollbar.config").get()
     local filetype = vim.api.nvim_buf_get_option(bufnr, "filetype")
 
     if not vim.tbl_contains(config.excluded_filetypes, filetype) then
@@ -45,6 +45,7 @@ M.generic_handler = function(bufnr, get_diagnostics, diagnostic_mapper)
 end
 
 M.lsp_handler = function(_, result, _, _)
+    local config = require("scrollbar.config").get()
     local bufnr = vim.uri_to_bufnr(result.uri)
 
     local function get_diagnostics()
@@ -65,6 +66,8 @@ end
 
 M.handler = {
     show = function(_, bufnr, _, _)
+        local config = require("scrollbar.config").get()
+
         local function get_diagnostics()
             return vim.diagnostic.get(bufnr)
         end

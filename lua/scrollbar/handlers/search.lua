@@ -1,4 +1,3 @@
-local config = require("scrollbar.config").get()
 local utils = require("scrollbar.utils")
 local render = require("scrollbar").render
 
@@ -6,6 +5,8 @@ local M = {}
 
 M.handler = {
     show = function(plist)
+        local config = require("scrollbar.config").get()
+
         if config.handlers.search then
             local search_scrollbar_marks = {}
 

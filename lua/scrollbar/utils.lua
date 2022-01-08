@@ -1,5 +1,4 @@
 local const = require("scrollbar.const")
-local config = require("scrollbar.config").get()
 
 local M = {}
 
@@ -24,6 +23,8 @@ M.set_scrollbar_marks = function(bufnr, scrollbar_marks)
 end
 
 M.set_highlights = function()
+    local config = require("scrollbar.config").get()
+
     vim.cmd(
         string.format("highlight %s guifg=%s guibg=%s", M.get_highlight_name("", true), "none", config.handle.color)
     )

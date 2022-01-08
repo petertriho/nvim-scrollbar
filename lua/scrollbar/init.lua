@@ -1,5 +1,4 @@
 local const = require("scrollbar.const")
-local config = require("scrollbar.config").get()
 local utils = require("scrollbar.utils")
 
 local M = {}
@@ -8,6 +7,8 @@ local NAMESPACE = vim.api.nvim_create_namespace(const.NAME_PREFIX)
 
 M.render = function()
     vim.api.nvim_buf_clear_namespace(0, NAMESPACE, 0, -1)
+
+    local config = require("scrollbar.config").get()
 
     if vim.tbl_contains(config.excluded_filetypes, vim.bo.filetype) then
         return
@@ -127,9 +128,8 @@ M.render = function()
     end
 end
 
-
 M.setup = function(overrides)
-    config = require("scrollbar.config").set(overrides)
+    local config = require("scrollbar.config").set(overrides)
 
     utils.set_highlights()
 
