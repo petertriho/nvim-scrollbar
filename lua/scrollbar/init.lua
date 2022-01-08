@@ -66,12 +66,12 @@ M.render = function()
                 handle_marks[#handle_marks]
                 and math.floor(handle_marks[#handle_marks].line * ratio) == relative_mark_line
             then
-                handle_marks[#handle_marks].text = config.marks[mark.type].text[2]
+                utils.set_next_level_text(handle_marks[#handle_marks])
             elseif
                 other_marks[#other_marks]
                 and math.floor(other_marks[#other_marks].line * ratio) == relative_mark_line
             then
-                other_marks[#other_marks].text = config.marks[mark.type].text[2]
+                utils.set_next_level_text(other_marks[#other_marks])
             else
                 if relative_mark_line >= relative_first_line and relative_mark_line <= relative_last_line then
                     table.insert(handle_marks, mark)

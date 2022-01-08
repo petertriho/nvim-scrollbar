@@ -48,6 +48,15 @@ M.set_highlights = function()
     end
 end
 
+M.set_next_level_text = function(mark)
+    local config = require("scrollbar.config").get()
+
+    local next_level = (mark.level or 0) + 1
+    if config.marks[mark.type].text[next_level] then
+        mark.text = config.marks[mark.type].text[next_level]
+    end
+end
+
 M.toggle = function()
     local config = require("scrollbar.config").get()
     config.show = not config.show

@@ -15,6 +15,7 @@ M.handler = {
                     line = result[1] - 1,
                     text = "-",
                     type = "Search",
+                    level = 1,
                 })
             end
 

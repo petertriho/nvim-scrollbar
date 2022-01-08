@@ -60,6 +60,7 @@ M.lsp_handler = function(_, result, _, _)
             line = diagnostic.range.start.line,
             text = config.marks[mark_type].text[1],
             type = mark_type,
+            level = 1,
         }
     end
 
@@ -80,6 +81,7 @@ M.handler = {
                 line = diagnostic.lnum,
                 text = config.marks[mark_type].text[1],
                 type = mark_type,
+                level = 1,
             }
         end
 
