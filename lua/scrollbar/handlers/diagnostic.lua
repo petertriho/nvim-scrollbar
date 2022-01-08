@@ -3,22 +3,24 @@ local render = require("scrollbar").render
 
 local M = {}
 
-local diagnostics_mark_type_map = {}
+local DIAGNOSTIC_MARK_TYPE_MAP = nil
 
-if vim.diagnostic then
-    diagnostics_mark_type_map = {
-        [vim.diagnostic.severity.ERROR] = "Error",
-        [vim.diagnostic.severity.WARN] = "Warn",
-        [vim.diagnostic.severity.INFO] = "Info",
-        [vim.diagnostic.severity.HINT] = "Hint",
-    }
-else
-    diagnostics_mark_type_map = {
-        [1] = "Error",
-        [2] = "Warn",
-        [3] = "Info",
-        [4] = "Hint",
-    }
+if not DIAGNOSTIC_MARK_TYPE_MAP then
+    if vim.diagnostic then
+        DIAGNOSTIC_MARK_TYPE_MAP = {
+            [vim.diagnostic.severity.ERROR] = "Error",
+            [vim.diagnostic.severity.WARN] = "Warn",
+            [vim.diagnostic.severity.INFO] = "Info",
+            [vim.diagnostic.severity.HINT] = "Hint",
+        }
+    else
+        DIAGNOSTIC_MARK_TYPE_MAP = {
+            [1] = "Error",
+            [2] = "Warn",
+            [3] = "Info",
+            [4] = "Hint",
+        }
+    end
 end
 
 M.generic_handler = function(bufnr, get_diagnostics, diagnostic_mapper)
@@ -53,7 +55,7 @@ M.lsp_handler = function(_, result, _, _)
     end
 
     local function diagnostic_mapper(diagnostic)
-        local mark_type = diagnostics_mark_type_map[diagnostic.severity]
+        local mark_type = DIAGNOSTIC_MARK_TYPE_MAP[diagnostic.severity]
         return {
             line = diagnostic.range.start.line,
             text = config.marks[mark_type].text[1],
@@ -73,7 +75,7 @@ M.handler = {
         end
 
         local function diagnostic_mapper(diagnostic)
-            local mark_type = diagnostics_mark_type_map[diagnostic.severity]
+            local mark_type = DIAGNOSTIC_MARK_TYPE_MAP[diagnostic.severity]
             return {
                 line = diagnostic.lnum,
                 text = config.marks[mark_type].text[1],
