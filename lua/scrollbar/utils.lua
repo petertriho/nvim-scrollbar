@@ -48,4 +48,30 @@ M.set_highlights = function()
     end
 end
 
+M.toggle = function()
+    local config = require("scrollbar.config").get()
+    config.show = not config.show
+    require("scrollbar").render()
+end
+
+M.show = function()
+    local config = require("scrollbar.config").get()
+    config.show = true
+    require("scrollbar").render()
+end
+
+M.hide = function()
+    local config = require("scrollbar.config").get()
+    config.show = false
+    require("scrollbar").render()
+end
+
+M.set_commands = function()
+    vim.cmd([[
+        command! ScrollbarToggle lua require("scrollbar.utils").toggle()
+        command! ScrollbarShow lua require("scrollbar.utils").show()
+        command! ScrollbarHide lua require("scrollbar.utils").hide()
+    ]])
+end
+
 return M

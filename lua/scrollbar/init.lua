@@ -10,6 +10,10 @@ M.render = function()
 
     local config = require("scrollbar.config").get()
 
+    if not config.show then
+        return
+    end
+
     if vim.tbl_contains(config.excluded_filetypes, vim.bo.filetype) then
         return
     end
@@ -132,6 +136,7 @@ M.setup = function(overrides)
     local config = require("scrollbar.config").set(overrides)
 
     utils.set_highlights()
+    utils.set_commands()
 
     vim.cmd([[
         augroup scrollbar_setup_highlights

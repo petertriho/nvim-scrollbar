@@ -65,6 +65,7 @@ vim.cmd([[
 
 ```lua
 require("scrollbar").setup({
+    show = true,
     handle = {
         text = " ",
         color = "white",

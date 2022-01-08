@@ -1,5 +1,5 @@
 local config = {
-    enable = true,
+    show = true,
     handle = {
         text = " ",
         color = "white",
