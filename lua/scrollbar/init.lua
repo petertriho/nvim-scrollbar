@@ -281,9 +281,7 @@ M.search_handler = {
     end,
 }
 
-M.setup = function(overrides)
-    config = vim.tbl_deep_extend("force", config, overrides or {})
-
+M.setup_highlights = function()
     vim.cmd(string.format("highlight %s guifg=%s guibg=%s", get_highlight_name("", true), "none", config.handle.color))
     for mark_type, properties in pairs(config.marks) do
         vim.cmd(
@@ -303,6 +301,19 @@ M.setup = function(overrides)
             )
         )
     end
+end
+
+M.setup = function(overrides)
+    config = vim.tbl_deep_extend("force", config, overrides or {})
+
+    M.setup_highlights()
+
+    vim.cmd([[
+        augroup scrollbar_setup_highlights
+            autocmd!
+            autocmd ColorScheme * lua require('scrollbar').setup_highlights()
+        augroup END
+    ]])
 
     if config.autocmd and config.autocmd.render and #config.autocmd.render > 0 then
         vim.cmd(string.format(
