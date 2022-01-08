@@ -49,8 +49,14 @@ M.render = function()
     local first_visible_line = vim.fn.line("w0")
     local last_visible_line = vim.fn.line("w$")
 
+    local show_handle = true
+
     if visible_lines >= total_lines then
         visible_lines = total_lines
+
+        if config.handle.hide_if_all_visible then
+            show_handle = false
+        end
     end
 
     local ratio = visible_lines / total_lines
@@ -125,11 +131,11 @@ M.render = function()
 
             if handle_mark then
                 handle_opts.virt_text = {
-                    { handle_mark.text, get_highlight_name(handle_mark.type, true) },
+                    { handle_mark.text, get_highlight_name(handle_mark.type, show_handle) },
                 }
             else
                 handle_opts.virt_text = {
-                    { config.handle.text, get_highlight_name("", true) },
+                    { config.handle.text, get_highlight_name("", show_handle) },
                 }
             end
 
