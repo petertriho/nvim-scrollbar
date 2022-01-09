@@ -46,6 +46,9 @@ M.handler = {
 }
 
 M.setup = function(overrides)
+    local config = require("scrollbar.config").get()
+    config.handlers.search = true
+
     local hlslens_config = vim.tbl_deep_extend("force", {
         build_position_cb = function(plist, _, _, _)
             M.handler.show(plist.start_pos)

@@ -96,6 +96,9 @@ M.handler = {
 }
 
 M.setup = function()
+    local config = require("scrollbar.config").get()
+    config.handlers.diagnostic = true
+
     if vim.diagnostic then
         vim.diagnostic.handlers["petertriho/scrollbar"] = M.handler
     else
