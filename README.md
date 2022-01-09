@@ -44,17 +44,7 @@ require("scrollbar").setup()
 
 ![search](./assets/search.gif)
 
-Run either setup methods after loading hlslens
-
-```lua
-require("scrollbar").setup({
-  handlers = {
-    search = true
-  }
-})
-```
-
-or
+Run after loading hlslens
 
 ```lua
 require("scrollbar.handlers.search").setup()
@@ -99,7 +89,7 @@ require("scrollbar").setup({
     },
     handlers = {
         diagnostic = true,
-        search = false,
+        search = false, -- Requires hlslens to be loaded
     },
 })
 ```

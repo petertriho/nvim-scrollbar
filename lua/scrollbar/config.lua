@@ -32,7 +32,7 @@ local config = {
     },
     handlers = {
         diagnostic = true,
-        search = false,
+        search = false, -- Requires hlslens to be loaded
     },
 }
 
