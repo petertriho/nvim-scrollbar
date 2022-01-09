@@ -26,12 +26,12 @@ M.set_highlights = function()
     local config = require("scrollbar.config").get()
 
     vim.cmd(
-        string.format("highlight %s guifg=%s guibg=%s", M.get_highlight_name("", true), "none", config.handle.color)
+        string.format("highlight default %s guifg=%s guibg=%s", M.get_highlight_name("", true), "none", config.handle.color)
     )
     for mark_type, properties in pairs(config.marks) do
         vim.cmd(
             string.format(
-                "highlight %s guifg=%s guibg=%s",
+                "highlight default %s guifg=%s guibg=%s",
                 M.get_highlight_name(mark_type, false),
                 properties.color,
                 "NONE"
@@ -39,7 +39,7 @@ M.set_highlights = function()
         )
         vim.cmd(
             string.format(
-                "highlight %s guifg=%s guibg=%s",
+                "highlight default %s guifg=%s guibg=%s",
                 M.get_highlight_name(mark_type, true),
                 properties.color,
                 config.handle.color
