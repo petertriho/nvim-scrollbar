@@ -32,7 +32,7 @@ local config = {
     },
     handlers = {
         diagnostic = true,
-        search = true,
+        search = false,
     },
 }
 

@@ -95,4 +95,15 @@ M.handler = {
     end,
 }
 
+M.setup = function()
+    if vim.diagnostic then
+        vim.diagnostic.handlers["petertriho/scrollbar"] = M.handler
+    else
+        vim.lsp.handlers["textDocument/publishDiagnostics"] = function(err, result, ctx, conf)
+            vim.lsp.diagnostic.on_publish_diagnostics(err, result, ctx, conf)
+            M.lsp_handler(err, result, ctx, conf)
+        end
+    end
+end
+
 return M

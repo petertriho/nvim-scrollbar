@@ -44,19 +44,20 @@ require("scrollbar").setup()
 
 ![search](./assets/search.gif)
 
-```lua
-require("hlslens").setup({
-    build_position_cb = function(plist, bufnr, changedtick, pattern)
-        require('scrollbar.handlers.search').handler.show(plist.start_pos)
-    end
-})
+Run either setup methods after loading hlslens
 
-vim.cmd([[
-    augroup scrollbar_search_hide
-      autocmd!
-      autocmd CmdlineLeave : lua require('scrollbar.handlers.search').handler.hide()
-    augroup END
-]])
+```lua
+require("scrollbar").setup({
+  handlers = {
+    search = true
+  }
+})
+```
+
+or
+
+```lua
+require("scrollbar.handlers.search").setup()
 ```
 
 ## Config
@@ -98,7 +99,7 @@ require("scrollbar").setup({
     },
     handlers = {
         diagnostic = true,
-        search = true,
+        search = false,
     },
 })
 ```

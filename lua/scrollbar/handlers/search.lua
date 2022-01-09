@@ -45,4 +45,21 @@ M.handler = {
     end,
 }
 
+M.setup = function(overrides)
+    local hlslens_config = vim.tbl_deep_extend("force", {
+        build_position_cb = function(plist, _, _, _)
+            M.handler.show(plist.start_pos)
+        end,
+    }, overrides or {})
+
+    require("hlslens").setup(hlslens_config)
+
+    vim.cmd([[
+        augroup scrollbar_search_hide
+            autocmd!
+            autocmd CmdlineLeave : lua require('scrollbar.handlers.search').handler.hide()
+        augroup END
+    ]])
+end
+
 return M

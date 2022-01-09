@@ -164,16 +164,11 @@ M.setup = function(overrides)
     end
 
     if config.handlers.diagnostic then
-        local diagnostic = require("scrollbar.handlers.diagnostic")
+        require("scrollbar.handlers.diagnostic").setup()
+    end
 
-        if vim.diagnostic then
-            vim.diagnostic.handlers["petertriho/scrollbar"] = diagnostic.handler
-        else
-            vim.lsp.handlers["textDocument/publishDiagnostics"] = function(err, result, ctx, conf)
-                vim.lsp.diagnostic.on_publish_diagnostics(err, result, ctx, conf)
-                diagnostic.lsp_handler(err, result, ctx, conf)
-            end
-        end
+    if config.handlers.search then
+        require("scrollbar.handlers.search").setup()
     end
 end
 
