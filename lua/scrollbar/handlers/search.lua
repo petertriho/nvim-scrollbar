@@ -19,6 +19,12 @@ function M.search(cb)
     local command = config.search.command
 
     if vim.fn.executable(command) ~= 1 then
+        vim.notify(command .. " was not found on your path, trying to fall back to grep", vim.log.levels.ERROR)
+        command = "grep"
+    end
+
+
+    if vim.fn.executable(command) ~= 1 then
         vim.notify(command .. " was not found on your path", vim.log.levels.ERROR)
         return
     end
