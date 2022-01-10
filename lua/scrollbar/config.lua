@@ -32,7 +32,16 @@ local config = {
     },
     handlers = {
         diagnostic = true,
-        search = false, -- Requires hlslens to be loaded
+        search = true, -- Requires hlslens to be loaded
+    },
+    search = {
+        use_builtin = true,
+        command = "rg",
+        args = {
+            "--color=never",
+            "--no-heading",
+            "--line-number",
+        },
     },
 }
 
