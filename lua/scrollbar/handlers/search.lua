@@ -13,7 +13,7 @@ M.handler = {
             for _, result in pairs(plist) do
                 table.insert(search_scrollbar_marks, {
                     line = result[1] - 1,
-                    text = "-",
+                    text = config.marks["Search"].text[1],
                     type = "Search",
                     level = 1,
                 })
