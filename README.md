@@ -12,12 +12,14 @@
 ## Features
 
 - Diagnostics
-- Search (requires [nvim-hlslens](https://github.com/kevinhwang91/nvim-hlslens))
+- Search (requires [nvim-hlslens](https://github.com/kevinhwang91/nvim-hlslens), or [plenary.nvim](https://github.com/nvim-lua/plenary.nvim) and [ripgrep](https://github.com/BurntSushi/ripgrep))
 
 ## Requirements
 
 - Neovim >= 0.5.1
 - [nvim-hlslens](https://github.com/kevinhwang91/nvim-hlslens) (optional)
+- [plenary.nvim](https://github.com/nvim-lua/plenary.nvim) (optional)
+- [ripgrep](https://github.com/BurntSushi/ripgrep) (optional)
 
 ## Installation
 
@@ -44,7 +46,7 @@ require("scrollbar").setup()
 
 ![search](./assets/search.gif)
 
-Run after loading hlslens
+Run after loading hlslens if you do not want to use builtin search.
 
 ```lua
 require("scrollbar.handlers.search").setup()
@@ -117,6 +119,7 @@ require("scrollbar").setup({
 ## Acknowledgements
 
 - [kevinhwang91/nvim-hlslens](https://github.com/kevinhwang91/nvim-hlslens) for implementation on how to hide search results
+- [folke/todo-comments.nvim](https://github.com/folke/todo-comments.nvim) for implementation of builtin search
 
 ## License
 
