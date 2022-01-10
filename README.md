@@ -191,6 +191,20 @@ require("scrollbar").setup({
 })
 ```
 
+## Advanced
+One can define custom handlers mainly consisting of a name and a lua function that returns a list
+of mark lines as follows:
+
+```lua
+require("scrollbar.handlers").register(name, lines_function, [text, type, level])
+```
+
+So in order to mark every buffer's first three lines with an `x` of type `Misc` one can call:
+
+```lua
+require("scrollbar.handlers").register("my_marks", function(bufnr) return {1, 2, 3} end, "x", "Misc", 1)
+```
+
 ## Acknowledgements
 
 - [kevinhwang91/nvim-hlslens](https://github.com/kevinhwang91/nvim-hlslens) for implementation on how to hide search results
