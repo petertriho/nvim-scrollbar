@@ -37,7 +37,7 @@ function M.search(cb)
 
     local search_regex = vim.fn.getreginfo("/").regcontents[1]
     local search_path = vim.fn.expand("%:p")
-    if not Path:new(search_path):exists() then
+    if not Path:new(search_path):exists() or search_path == "" then
       return
     end
 
