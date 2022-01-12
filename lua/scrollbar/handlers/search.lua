@@ -46,6 +46,13 @@ M.handler = {
 }
 
 M.setup = function(overrides)
+    local ok, hlslens = pcall(require, "hlslens")
+
+    if not ok then
+        vim.notify("[scrollbar.nvim] hlslens module not avaliable. Search handler was not loaded.", vim.log.levels.WARN)
+        return
+    end
+
     local config = require("scrollbar.config").get()
     config.handlers.search = true
 
@@ -55,7 +62,7 @@ M.setup = function(overrides)
         end,
     }, overrides or {})
 
-    require("hlslens").setup(hlslens_config)
+    hlslens.setup(hlslens_config)
 
     vim.cmd([[
         augroup scrollbar_search_hide
