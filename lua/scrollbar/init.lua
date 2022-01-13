@@ -14,6 +14,10 @@ M.render = function()
         return
     end
 
+    if vim.tbl_contains(config.excluded_buftypes, vim.bo.buftype) then
+        return
+    end
+
     if vim.tbl_contains(config.excluded_filetypes, vim.bo.filetype) then
         return
     end

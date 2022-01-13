@@ -13,8 +13,10 @@ local config = {
         Hint = { text = { "-", "=" }, priority = 4, color = "green" },
         Misc = { text = { "-", "=" }, priority = 5, color = "purple" },
     },
+    excluded_buftypes = {
+        "terminal"
+    },
     excluded_filetypes = {
-        "",
         "prompt",
         "TelescopePrompt",
     },

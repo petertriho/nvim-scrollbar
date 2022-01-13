@@ -71,9 +71,11 @@ require("scrollbar").setup({
         Misc = { text = { "-", "=" }, priority = 5, color = "purple" },
     },
     excluded_filetypes = {
-        "",
         "prompt",
         "TelescopePrompt",
+    },
+    excluded_buftypes = {
+        "terminal"
     },
     autocmd = {
         render = {
