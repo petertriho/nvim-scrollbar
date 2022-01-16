@@ -157,13 +157,15 @@ M.render = function()
         end
     end
 
-    local scroll_offset = visible_lines - (last_visible_line - first_visible_line)
 
     relative_first_line = fix_invisible_lines(folds, relative_first_line, first_visible_line)
     relative_last_line = fix_invisible_lines(folds, relative_last_line, first_visible_line)
 
+    local diff_last = fix_invisible_lines(folds, last_visible_line, 0) - last_visible_line
+    local scroll_offset = visible_lines - (last_visible_line - first_visible_line + 1) + diff_last
+
     for i = relative_first_line, relative_last_line, 1 do
-        local mark_line = math.min(first_visible_line + i, total_lines)
+        local mark_line = math.min(first_visible_line + i - scroll_offset, total_lines)
 
         if mark_line >= 0 then
             local handle_opts = {
@@ -200,6 +202,8 @@ M.render = function()
             vim.api.nvim_buf_set_extmark(0, NAMESPACE, mark_line, -1, handle_opts)
         end
     end
+
+    scroll_offset = visible_lines - (last_visible_line - first_visible_line)
 
     for _, mark in pairs(other_marks) do
         if mark ~= nil then
