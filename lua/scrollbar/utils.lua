@@ -88,4 +88,87 @@ M.set_commands = function()
     ]])
 end
 
+M.get_folds = function()
+    local total_lines = vim.api.nvim_buf_line_count(0)
+
+    local folds = {}
+    local cur_line = 0
+    while cur_line < total_lines do
+        cur_line = cur_line + 1
+
+        local fold_closed_end = vim.fn.foldclosedend(cur_line)
+
+        if fold_closed_end ~= -1 then
+            table.insert(folds, {cur_line, fold_closed_end})
+
+            cur_line = fold_closed_end
+        end
+    end
+
+    return folds
+end
+
+M.get_surrounding_fold = function(folds, line_nr)
+    local sur_fold = nil
+
+    if folds == nil then
+        return nil
+    end
+
+    for _, fold in pairs(folds) do
+        if fold[1] < line_nr and fold[2] >= line_nr then
+            return fold
+        end
+    end
+
+    return sur_fold
+end
+
+M.find_affected_folds = function(folds, end_nr)
+    local aff_folds = {}
+
+    local cur_line = vim.fn.line("w0")
+    while cur_line < end_nr do
+        cur_line = cur_line + 1
+
+        local sur_fold = M.get_surrounding_fold(folds, cur_line)
+
+        if sur_fold ~= nil then
+            table.insert(aff_folds, sur_fold)
+
+            cur_line = sur_fold[2]
+        end
+    end
+
+    return aff_folds
+end
+
+M.fix_invisible_lines = function(folds, rel_line_nr, offset)
+    local abs_line_nr = rel_line_nr + offset
+
+    for _, sur_fold in pairs(folds) do
+        -- abs_line_nr in fold
+        if sur_fold[1] < abs_line_nr and sur_fold[1] >= vim.fn.line("w0") then
+            rel_line_nr = rel_line_nr + (sur_fold[2] - sur_fold[1])
+            abs_line_nr = abs_line_nr + (sur_fold[2] - sur_fold[1])
+        end
+    end
+
+    return rel_line_nr
+end
+
+M.get_scroll_offset_diff = function(folds, abs_line_nr)
+    local aff_folds = M.find_affected_folds(folds, abs_line_nr)
+
+    local diff = 0
+    for _, sur_fold in pairs(aff_folds) do
+        -- abs_line_nr in fold
+        if sur_fold[1] < abs_line_nr then
+            diff = diff + (sur_fold[2] - sur_fold[1])
+        end
+    end
+
+    return diff
+end
+
 return M

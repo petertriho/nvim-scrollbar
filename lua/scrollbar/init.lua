@@ -5,89 +5,6 @@ local M = {}
 
 local NAMESPACE = vim.api.nvim_create_namespace(const.NAME_PREFIX)
 
-local get_folds = function()
-    local total_lines = vim.api.nvim_buf_line_count(0)
-
-    local folds = {}
-    local cur_line = 0
-    while cur_line < total_lines do
-        cur_line = cur_line + 1
-
-        local fold_closed_end = vim.fn.foldclosedend(cur_line)
-
-        if fold_closed_end ~= -1 then
-            table.insert(folds, {cur_line, fold_closed_end})
-
-            cur_line = fold_closed_end
-        end
-    end
-
-    return folds
-end
-
-local get_surrounding_fold = function(folds, line_nr)
-    local sur_fold = nil
-
-    if folds == nil then
-        return nil
-    end
-
-    for _, fold in pairs(folds) do
-        if fold[1] < line_nr and fold[2] >= line_nr then
-            return fold
-        end
-    end
-
-    return sur_fold
-end
-
-local find_affected_folds = function(folds, end_nr)
-    local aff_folds = {}
-
-    local cur_line = vim.fn.line("w0")
-    while cur_line < end_nr do
-        cur_line = cur_line + 1
-
-        local sur_fold = get_surrounding_fold(folds, cur_line)
-
-        if sur_fold ~= nil then
-            table.insert(aff_folds, sur_fold)
-
-            cur_line = sur_fold[2]
-        end
-    end
-
-    return aff_folds
-end
-
-local fix_invisible_lines = function(folds, rel_line_nr, offset)
-    local abs_line_nr = rel_line_nr + offset
-
-    for _, sur_fold in pairs(folds) do
-        -- abs_line_nr in fold
-        if sur_fold[1] < abs_line_nr and sur_fold[1] >= vim.fn.line("w0") then
-            rel_line_nr = rel_line_nr + (sur_fold[2] - sur_fold[1])
-            abs_line_nr = abs_line_nr + (sur_fold[2] - sur_fold[1])
-        end
-    end
-
-    return rel_line_nr
-end
-
-local get_scroll_offset_diff = function(folds, abs_line_nr)
-    local aff_folds = find_affected_folds(folds, abs_line_nr)
-
-    local diff = 0
-    for _, sur_fold in pairs(aff_folds) do
-        -- abs_line_nr in fold
-        if sur_fold[1] < abs_line_nr then
-            diff = diff + (sur_fold[2] - sur_fold[1])
-        end
-    end
-
-    return diff
-end
-
 M.render = function()
     vim.api.nvim_buf_clear_namespace(0, NAMESPACE, 0, -1)
 
@@ -109,7 +26,7 @@ M.render = function()
     local visible_lines = vim.api.nvim_win_get_height(0)
     local first_visible_line = vim.fn.line("w0")
     local last_visible_line = vim.fn.line("w$")
-    local folds = get_folds()
+    local folds = utils.get_folds()
 
     local show_handle = true
 
@@ -127,8 +44,8 @@ M.render = function()
     local relative_last_line = math.floor(last_visible_line * ratio)
 
     -- correct the folding diff
-    relative_first_line = fix_invisible_lines(folds, relative_first_line, first_visible_line)
-    relative_last_line = fix_invisible_lines(folds, relative_last_line, first_visible_line)
+    relative_first_line = utils.fix_invisible_lines(folds, relative_first_line, first_visible_line)
+    relative_last_line = utils.fix_invisible_lines(folds, relative_last_line, first_visible_line)
 
     local scrollbar_marks = utils.get_scrollbar_marks(0)
 
@@ -152,17 +69,17 @@ M.render = function()
 
     for _, mark in pairs(sorted_scrollbar_marks) do
         local relative_mark_line = math.floor(mark.line * ratio)
-        relative_mark_line = fix_invisible_lines(folds, relative_mark_line, first_visible_line)
+        relative_mark_line = utils.fix_invisible_lines(folds, relative_mark_line, first_visible_line)
 
         if mark.line <= total_lines then
             if
                 handle_marks[#handle_marks]
-                and fix_invisible_lines(folds, math.floor(handle_marks[#handle_marks].line * ratio), first_visible_line) == relative_mark_line
+                and utils.fix_invisible_lines(folds, math.floor(handle_marks[#handle_marks].line * ratio), first_visible_line) == relative_mark_line
             then
                 utils.set_next_level_text(handle_marks[#handle_marks])
             elseif
                 other_marks[#other_marks]
-                and fix_invisible_lines(folds, math.floor(other_marks[#other_marks].line * ratio), first_visible_line) == relative_mark_line
+                and utils.fix_invisible_lines(folds, math.floor(other_marks[#other_marks].line * ratio), first_visible_line) == relative_mark_line
             then
                 utils.set_next_level_text(other_marks[#other_marks])
             else
@@ -175,7 +92,7 @@ M.render = function()
         end
     end
 
-    local diff_last = get_scroll_offset_diff(folds, last_visible_line, 0)
+    local diff_last = utils.get_scroll_offset_diff(folds, last_visible_line)
     local scroll_offset = visible_lines - (last_visible_line - first_visible_line + 1) + diff_last
 
     for i = relative_first_line, relative_last_line, 1 do
@@ -190,7 +107,7 @@ M.render = function()
 
             for index, mark in ipairs(handle_marks) do
                 local relative_mark_line = math.floor(mark.line * ratio)
-                relative_mark_line = fix_invisible_lines(folds, relative_mark_line, first_visible_line)
+                relative_mark_line = utils.fix_invisible_lines(folds, relative_mark_line, first_visible_line)
 
                 if relative_mark_line >= i - 1 and relative_mark_line <= i then
                     handle_mark = mark
@@ -222,7 +139,7 @@ M.render = function()
     for _, mark in pairs(other_marks) do
         if mark ~= nil then
             local relative_mark_line = math.floor(mark.line * ratio)
-            relative_mark_line = fix_invisible_lines(folds, relative_mark_line, first_visible_line)
+            relative_mark_line = utils.fix_invisible_lines(folds, relative_mark_line, first_visible_line)
 
             local mark_line = first_visible_line + relative_mark_line - scroll_offset
 
