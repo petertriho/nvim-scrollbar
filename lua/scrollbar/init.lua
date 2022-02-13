@@ -167,18 +167,18 @@ end
 M.setup = function(overrides)
     local config = require("scrollbar.config").set(overrides)
 
-    if config.set_highlight then
+    if config.set_highlights then
         utils.set_highlights()
-    end
 
-    utils.set_commands()
-
-    vim.cmd([[
+        vim.cmd([[
         augroup scrollbar_setup_highlights
             autocmd!
             autocmd ColorScheme * lua require('scrollbar.utils').set_highlights()
         augroup END
-    ]])
+        ]])
+    end
+
+    utils.set_commands()
 
     if config.autocmd and config.autocmd.render and #config.autocmd.render > 0 then
         vim.cmd(string.format(
