@@ -103,7 +103,7 @@ M.render = function()
     end
 
     local diff_last = utils.get_scroll_offset_diff(folds, last_visible_line)
-    local scroll_offset = visible_lines - (last_visible_line - first_visible_line + 1) + diff_last
+    local scroll_offset = visible_lines - (last_visible_line - first_visible_line) + diff_last
 
     for i = relative_first_line, relative_last_line, 1 do
         local mark_line = math.min(first_visible_line + i - scroll_offset, total_lines)
