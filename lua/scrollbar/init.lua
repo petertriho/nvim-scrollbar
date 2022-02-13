@@ -74,12 +74,22 @@ M.render = function()
         if mark.line <= total_lines then
             if
                 handle_marks[#handle_marks]
-                and utils.fix_invisible_lines(folds, math.floor(handle_marks[#handle_marks].line * ratio), first_visible_line) == relative_mark_line
+                and utils.fix_invisible_lines(
+                        folds,
+                        math.floor(handle_marks[#handle_marks].line * ratio),
+                        first_visible_line
+                    )
+                    == relative_mark_line
             then
                 utils.set_next_level_text(handle_marks[#handle_marks])
             elseif
                 other_marks[#other_marks]
-                and utils.fix_invisible_lines(folds, math.floor(other_marks[#other_marks].line * ratio), first_visible_line) == relative_mark_line
+                and utils.fix_invisible_lines(
+                        folds,
+                        math.floor(other_marks[#other_marks].line * ratio),
+                        first_visible_line
+                    )
+                    == relative_mark_line
             then
                 utils.set_next_level_text(other_marks[#other_marks])
             else

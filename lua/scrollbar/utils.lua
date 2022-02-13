@@ -99,7 +99,7 @@ M.get_folds = function()
         local fold_closed_end = vim.fn.foldclosedend(cur_line)
 
         if fold_closed_end ~= -1 then
-            table.insert(folds, {cur_line, fold_closed_end})
+            table.insert(folds, { cur_line, fold_closed_end })
 
             cur_line = fold_closed_end
         end
