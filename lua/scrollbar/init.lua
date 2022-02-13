@@ -26,6 +26,7 @@ M.render = function()
     local visible_lines = vim.api.nvim_win_get_height(0)
     local first_visible_line = vim.fn.line("w0")
     local last_visible_line = vim.fn.line("w$")
+    local folds = utils.get_folds()
 
     local show_handle = true
 
@@ -41,6 +42,10 @@ M.render = function()
 
     local relative_first_line = math.floor(first_visible_line * ratio) - math.floor(1 * ratio)
     local relative_last_line = math.floor(last_visible_line * ratio)
+
+    -- correct the folding diff
+    relative_first_line = utils.fix_invisible_lines(folds, relative_first_line, first_visible_line)
+    relative_last_line = utils.fix_invisible_lines(folds, relative_last_line, first_visible_line)
 
     local scrollbar_marks = utils.get_scrollbar_marks(0)
 
@@ -64,16 +69,17 @@ M.render = function()
 
     for _, mark in pairs(sorted_scrollbar_marks) do
         local relative_mark_line = math.floor(mark.line * ratio)
+        relative_mark_line = utils.fix_invisible_lines(folds, relative_mark_line, first_visible_line)
 
         if mark.line <= total_lines then
             if
                 handle_marks[#handle_marks]
-                and math.floor(handle_marks[#handle_marks].line * ratio) == relative_mark_line
+                and utils.fix_invisible_lines(folds, math.floor(handle_marks[#handle_marks].line * ratio), first_visible_line) == relative_mark_line
             then
                 utils.set_next_level_text(handle_marks[#handle_marks])
             elseif
                 other_marks[#other_marks]
-                and math.floor(other_marks[#other_marks].line * ratio) == relative_mark_line
+                and utils.fix_invisible_lines(folds, math.floor(other_marks[#other_marks].line * ratio), first_visible_line) == relative_mark_line
             then
                 utils.set_next_level_text(other_marks[#other_marks])
             else
@@ -86,10 +92,11 @@ M.render = function()
         end
     end
 
-    local scroll_offset = visible_lines - (last_visible_line - first_visible_line)
+    local diff_last = utils.get_scroll_offset_diff(folds, last_visible_line)
+    local scroll_offset = visible_lines - (last_visible_line - first_visible_line + 1) + diff_last
 
     for i = relative_first_line, relative_last_line, 1 do
-        local mark_line = first_visible_line + i - scroll_offset
+        local mark_line = math.min(first_visible_line + i - scroll_offset, total_lines)
 
         if mark_line >= 0 then
             local handle_opts = {
@@ -100,6 +107,8 @@ M.render = function()
 
             for index, mark in ipairs(handle_marks) do
                 local relative_mark_line = math.floor(mark.line * ratio)
+                relative_mark_line = utils.fix_invisible_lines(folds, relative_mark_line, first_visible_line)
+
                 if relative_mark_line >= i - 1 and relative_mark_line <= i then
                     handle_mark = mark
                     table.remove(handle_marks, index)
@@ -129,7 +138,10 @@ M.render = function()
 
     for _, mark in pairs(other_marks) do
         if mark ~= nil then
-            local mark_line = first_visible_line + math.floor(tonumber(mark.line) * ratio) - scroll_offset
+            local relative_mark_line = math.floor(mark.line * ratio)
+            relative_mark_line = utils.fix_invisible_lines(folds, relative_mark_line, first_visible_line)
+
+            local mark_line = first_visible_line + relative_mark_line - scroll_offset
 
             if mark_line >= 0 then
                 local mark_opts = {
