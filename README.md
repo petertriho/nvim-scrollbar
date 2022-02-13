@@ -102,7 +102,7 @@ require("scrollbar").setup({
             priority = 5,
             color = nil,
             cterm = nil,
-            highlight = "Special",
+            highlight = "Normal",
         },
     },
     excluded_buftypes = {

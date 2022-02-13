@@ -49,7 +49,7 @@ local config = {
             priority = 5,
             color = nil,
             cterm = nil,
-            highlight = "Special",
+            highlight = "Normal",
         },
     },
     excluded_buftypes = {

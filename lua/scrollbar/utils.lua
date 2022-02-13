@@ -55,7 +55,7 @@ M.set_highlights = function()
         local type_cterm = properties.cterm
 
         if not type_color then
-            type_color = M.to_hex_color(vim.api.nvim_get_hl_by_name(properties.highlight or "Special", true).foreground)
+            type_color = M.to_hex_color(vim.api.nvim_get_hl_by_name(properties.highlight or "Normal", true).foreground)
         end
 
         -- Scrollbar<MarkType>
