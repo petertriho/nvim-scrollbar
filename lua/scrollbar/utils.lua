@@ -22,32 +22,63 @@ M.get_highlight_name = function(mark_type, handle)
     return string.format("%s%s%s", const.NAME_PREFIX, mark_type, handle and const.NAME_SUFFIX or "")
 end
 
+M.to_hex_color = function(rgb_color)
+    return string.format("#%06x", rgb_color)
+end
+
 M.set_highlights = function()
     local config = require("scrollbar.config").get()
 
+    local handle_color = config.handle.color
+    local handle_cterm = config.handle.cterm
+
+    -- ScrollbarHandle
+    if not handle_color then
+        handle_color = M.to_hex_color(
+            vim.api.nvim_get_hl_by_name(config.handle.highlight or "CursorColumn", true).background
+        )
+    end
+
     vim.cmd(
         string.format(
-            "highlight default %s guifg=%s guibg=%s",
+            "highlight default %s ctermfg=%s ctermbg=%s guifg=%s guibg=%s",
             M.get_highlight_name("", true),
             "NONE",
-            config.handle.color
+            handle_cterm or 15,
+            "NONE",
+            handle_color or "white"
         )
     )
+
     for mark_type, properties in pairs(config.marks) do
+        local type_color = properties.color
+        local type_cterm = properties.cterm
+
+        if not type_color then
+            type_color = M.to_hex_color(vim.api.nvim_get_hl_by_name(properties.highlight or "Special", true).foreground)
+        end
+
+        -- Scrollbar<MarkType>
         vim.cmd(
             string.format(
-                "highlight default %s guifg=%s guibg=%s",
+                "highlight default %s ctermfg=%s ctermbg=%s guifg=%s guibg=%s",
                 M.get_highlight_name(mark_type, false),
-                properties.color,
+                type_cterm or 0,
+                "NONE",
+                type_color or "black",
                 "NONE"
             )
         )
+
+        -- Scrollbar<MarkType>Handle
         vim.cmd(
             string.format(
-                "highlight default %s guifg=%s guibg=%s",
+                "highlight default %s ctermfg=%s ctermbg=%s guifg=%s guibg=%s",
                 M.get_highlight_name(mark_type, true),
-                properties.color,
-                config.handle.color
+                type_cterm or 0,
+                handle_cterm or "white",
+                type_color,
+                handle_color
             )
         )
     end

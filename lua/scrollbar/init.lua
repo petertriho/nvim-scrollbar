@@ -167,7 +167,10 @@ end
 M.setup = function(overrides)
     local config = require("scrollbar.config").set(overrides)
 
-    utils.set_highlights()
+    if config.set_highlight then
+        utils.set_highlights()
+    end
+
     utils.set_commands()
 
     vim.cmd([[
