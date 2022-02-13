@@ -41,7 +41,7 @@ M.set_highlights = function()
 
     vim.cmd(
         string.format(
-            "highlight default %s ctermfg=%s ctermbg=%s guifg=%s guibg=%s",
+            "highlight %s ctermfg=%s ctermbg=%s guifg=%s guibg=%s",
             M.get_highlight_name("", true),
             "NONE",
             handle_cterm or 15,
@@ -61,7 +61,7 @@ M.set_highlights = function()
         -- Scrollbar<MarkType>
         vim.cmd(
             string.format(
-                "highlight default %s ctermfg=%s ctermbg=%s guifg=%s guibg=%s",
+                "highlight %s ctermfg=%s ctermbg=%s guifg=%s guibg=%s",
                 M.get_highlight_name(mark_type, false),
                 type_cterm or 0,
                 "NONE",
@@ -73,7 +73,7 @@ M.set_highlights = function()
         -- Scrollbar<MarkType>Handle
         vim.cmd(
             string.format(
-                "highlight default %s ctermfg=%s ctermbg=%s guifg=%s guibg=%s",
+                "highlight %s ctermfg=%s ctermbg=%s guifg=%s guibg=%s",
                 M.get_highlight_name(mark_type, true),
                 type_cterm or 0,
                 handle_cterm or "white",
