@@ -26,19 +26,39 @@ M.to_hex_color = function(rgb_color)
     return string.format("#%06x", rgb_color)
 end
 
+M.highlight_to_hex_color = function(hl, property, fallback_hl, fallback_hex)
+    local highlight_ok, highlight = pcall(vim.api.nvim_get_hl_by_name, hl, true)
+
+    if not highlight_ok then
+        highlight_ok, highlight = pcall(vim.api.nvim_get_hl_by_name, fallback_hl, true)
+    end
+
+    local hex_color = fallback_hex
+
+    if highlight_ok then
+        local color = highlight[property]
+
+        if color then
+            local hex_ok
+            hex_ok, hex_color = pcall(M.to_hex_color, color)
+
+            if not hex_ok then
+                hex_color = fallback_hex
+            end
+        end
+    end
+
+    return hex_color
+end
+
 M.set_highlights = function()
     local config = require("scrollbar.config").get()
 
     local handle_color = config.handle.color
+        or M.highlight_to_hex_color(config.handle.highlight, "background", "CursorColumn", "#ffffff")
     local handle_cterm = config.handle.cterm
 
     -- ScrollbarHandle
-    if not handle_color then
-        handle_color = M.to_hex_color(
-            vim.api.nvim_get_hl_by_name(config.handle.highlight or "CursorColumn", true).background
-        )
-    end
-
     vim.cmd(
         string.format(
             "highlight %s ctermfg=%s ctermbg=%s guifg=%s guibg=%s",
@@ -52,11 +72,8 @@ M.set_highlights = function()
 
     for mark_type, properties in pairs(config.marks) do
         local type_color = properties.color
+            or M.highlight_to_hex_color(properties.highlight, "foreground", "Normal", "#000000")
         local type_cterm = properties.cterm
-
-        if not type_color then
-            type_color = M.to_hex_color(vim.api.nvim_get_hl_by_name(properties.highlight or "Normal", true).foreground)
-        end
 
         -- Scrollbar<MarkType>
         vim.cmd(
@@ -76,7 +93,7 @@ M.set_highlights = function()
                 "highlight %s ctermfg=%s ctermbg=%s guifg=%s guibg=%s",
                 M.get_highlight_name(mark_type, true),
                 type_cterm or 0,
-                handle_cterm or "white",
+                handle_cterm or 15,
                 type_color,
                 handle_color
             )
