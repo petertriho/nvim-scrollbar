@@ -40,14 +40,27 @@ require("scrollbar").setup()
 
 ![search](./assets/search.gif)
 
-If you also want to configure [hlslens](https://github.com/kevinhwang91/nvim-hlslens) you can add the following callback:
+If you also want to configure [hlslens](https://github.com/kevinhwang91/nvim-hlslens), add the following to your setup:
 
 ```lua
-require('hlslens').setup { 
+require("scrollbar.handlers.search").setup()
+```
+
+OR
+
+```lua
+require("hlslens").setup({ 
    build_position_cb = function(plist, _, _, _)
         require("scrollbar.handlers.search").handler.show(plist.start_pos)
    end,
-}
+})
+
+vim.cmd([[
+    augroup scrollbar_search_hide
+        autocmd!
+        autocmd CmdlineLeave : lua require('scrollbar.handlers.search').handler.hide()
+    augroup END
+]])
 ```
 
 ## Config
