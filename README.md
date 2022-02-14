@@ -40,10 +40,14 @@ require("scrollbar").setup()
 
 ![search](./assets/search.gif)
 
-Run after loading hlslens
+If you also want to configure [hlslens](https://github.com/kevinhwang91/nvim-hlslens) you can add the following callback:
 
 ```lua
-require("scrollbar.handlers.search").setup()
+require('hlslens').setup { 
+   build_position_cb = function(plist, _, _, _)
+        require("scrollbar.handlers.search").handler.show(plist.start_pos)
+   end,
+}
 ```
 
 ## Config
