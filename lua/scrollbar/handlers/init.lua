@@ -4,22 +4,15 @@ local M = {}
 M.handlers = {}
 
 -- Register a function that returns marks for a given buffer
---
 -- @param name Name of the handler
--- @param lines_fun function that maps bufnr -> list of marks
--- @param text marker text
--- @param type marker type as defined in config
--- @param level mark level
-function M.register(name, lines_fun, text, type, level)
+-- @param handler Function that maps bufnr -> list of tables { line, text, type, level }
+function M.register(name, handler)
     M.handlers = vim.tbl_deep_extend(
         "force",
         M.handlers,
         { {
             name = name,
-            lines_fun = lines_fun,
-            text = text or "-",
-            type = type or "Misc",
-            level = level or 1
+            handler = handler,
         } }
     )
 end
@@ -27,18 +20,20 @@ end
 function M.show()
     local bufnr = vim.api.nvim_get_current_buf()
     local scrollbar_marks = utils.get_scrollbar_marks(bufnr)
+    local config = require("scrollbar.config").get()
 
-    for _, handler in ipairs(M.handlers) do
+    for _, handler_reg in ipairs(M.handlers) do
         local handler_scrollbar_marks = {}
-        for _, result in pairs(handler.lines_fun(bufnr)) do
+        for _, result in pairs(handler_reg.handler(bufnr)) do
+            local mark_type = result.type or "Misc"
             table.insert(handler_scrollbar_marks, {
-                line = result,
-                text = handler.text,
-                type = handler.type,
-                level = handler.level,
+                line = result.line,
+                text = result.text or config.marks[mark_type].text[1],
+                type = mark_type,
+                level = result.level or 1,
             })
         end
-        scrollbar_marks[handler.name] = handler_scrollbar_marks
+        scrollbar_marks[handler_reg.name] = handler_scrollbar_marks
     end
 
     utils.set_scrollbar_marks(bufnr, scrollbar_marks)

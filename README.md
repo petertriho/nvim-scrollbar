@@ -191,18 +191,34 @@ require("scrollbar").setup({
 })
 ```
 
-## Advanced
-One can define custom handlers mainly consisting of a name and a lua function that returns a list
-of mark lines as follows:
+## Custom Handlers
+
+One can define custom handlers consisting of a name and a lua function that returns a list of marks as follows:
 
 ```lua
-require("scrollbar.handlers").register(name, lines_function, [text, type, level])
+require("scrollbar.handlers").register(name, handler_function)
 ```
 
-So in order to mark every buffer's first three lines with an `x` of type `Misc` one can call:
+`handler_function` receives the buffer number as argument and must return a list of tables with `line`, `text`, `type`, and `level` keys. Only the `line` key is required.
+
+
+| Key     | Description                                                   |
+|---------|---------------------------------------------------------------|
+| `line`  | The line number. *Required*.                                  |
+| `text`  | Marker text. Defaults to global settings depending on `type`. |
+| `type`  | The marker type. Default is `Misc`.                           |
+| `level` | Marker level. Default is `1`.                                 |
+
+E.g. the following marks the first three lines in every buffer.
 
 ```lua
-require("scrollbar.handlers").register("my_marks", function(bufnr) return {1, 2, 3} end, "x", "Misc", 1)
+require("scrollbar.handlers").register("my_marks", function(bufnr)
+    return {
+        { line = 0 },
+        { line = 1, text = "x", type = "Warn" },
+        { line = 2, type = "Error" }
+    }
+end)
 ```
 
 ## Acknowledgements
