@@ -95,6 +95,45 @@ M.handler = {
     end,
 }
 
+-------------------
+-- coc diagnostics
+-------------------
+local severity_map = { Error = 1, Warning = 2, Information = 3, Hint = 4 }
+local uri_diagnostics = {}
+local function coc_diagnostic_handler(error, diagnosticList)
+    if error ~= vim.NIL then
+        return
+    end
+    if type(diagnosticList) ~= "table" then
+        diagnosticList = {}
+    end
+
+    for uri in pairs(uri_diagnostics) do
+        uri_diagnostics[uri] = {}
+    end
+
+    for _, diagnostic in ipairs(diagnosticList) do
+        local uri = diagnostic.location.uri
+        local diagnostics = uri_diagnostics[uri] or {}
+        table.insert(diagnostics, {
+            range = diagnostic.location.range,
+            severity = severity_map[diagnostic.severity],
+        })
+        uri_diagnostics[uri] = diagnostics
+    end
+
+    for uri, diagnostics in pairs(uri_diagnostics) do
+        M.lsp_handler(nil, { uri = uri, diagnostics = diagnostics })
+        if vim.tbl_count(diagnostics) == 0 then
+            uri_diagnostics[uri] = nil
+        end
+    end
+end
+
+function M.update_coc_diagnostics()
+    vim.fn.CocActionAsync("diagnosticList", coc_diagnostic_handler)
+end
+
 M.setup = function()
     local config = require("scrollbar.config").get()
     config.handlers.diagnostic = true
@@ -107,6 +146,8 @@ M.setup = function()
             M.lsp_handler(err, result, ctx, conf)
         end
     end
+
+    vim.cmd([[autocmd User CocDiagnosticChange lua require("scrollbar.handlers.diagnostic").update_coc_diagnostics()]])
 end
 
 return M
