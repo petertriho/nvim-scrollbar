@@ -1,6 +1,8 @@
 local config = {
     show = true,
     set_highlights = true,
+    folds = true, -- handle folds, set to number to disable folds if no. of lines in buffer exceeds this
+    max_lines = false, -- disables if no. of lines in buffer exceeds this
     handle = {
         text = " ",
         color = nil,

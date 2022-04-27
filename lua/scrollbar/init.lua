@@ -23,10 +23,22 @@ M.render = function()
     end
 
     local total_lines = vim.api.nvim_buf_line_count(0)
+
+    if config.max_lines and config.max_lines >= total_lines then
+        return
+    end
+
     local visible_lines = vim.api.nvim_win_get_height(0)
     local first_visible_line = vim.fn.line("w0")
     local last_visible_line = vim.fn.line("w$")
-    local folds = utils.get_folds()
+    local folds = {}
+
+    if
+        (tonumber(config.folds) == nil and config.folds)
+        or (tonumber(config.folds) ~= nil and config.folds >= total_lines)
+    then
+        folds = utils.get_folds()
+    end
 
     local show_handle = true
 

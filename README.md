@@ -49,7 +49,7 @@ require("scrollbar.handlers.search").setup()
 OR
 
 ```lua
-require("hlslens").setup({ 
+require("hlslens").setup({
    build_position_cb = function(plist, _, _, _)
         require("scrollbar.handlers.search").handler.show(plist.start_pos)
    end,
@@ -71,6 +71,8 @@ vim.cmd([[
 require("scrollbar").setup({
     show = true,
     set_highlights = true,
+    folds = true, -- handle folds, set to number to disable folds if no. of lines in buffer exceeds this
+    max_lines = false, -- disables if no. of lines in buffer exceeds this
     handle = {
         text = " ",
         color = nil,
