@@ -137,19 +137,22 @@ M.set_commands = function()
 end
 
 M.get_folds = function()
-    local total_lines = vim.api.nvim_buf_line_count(0)
-
     local folds = {}
-    local cur_line = 0
-    while cur_line < total_lines do
-        cur_line = cur_line + 1
 
-        local fold_closed_end = vim.fn.foldclosedend(cur_line)
+    if M.has_folds() then
+        local total_lines = vim.api.nvim_buf_line_count(0)
 
-        if fold_closed_end ~= -1 then
-            table.insert(folds, { cur_line, fold_closed_end })
+        local cur_line = 0
+        while cur_line < total_lines do
+            cur_line = cur_line + 1
 
-            cur_line = fold_closed_end
+            local fold_closed_end = vim.fn.foldclosedend(cur_line)
+
+            if fold_closed_end ~= -1 then
+                table.insert(folds, { cur_line, fold_closed_end })
+
+                cur_line = fold_closed_end
+            end
         end
     end
 
@@ -217,6 +220,24 @@ M.get_scroll_offset_diff = function(folds, abs_line_nr)
     end
 
     return diff
+end
+
+M.has_folds = function()
+    local v = vim.fn.winsaveview()
+    local fold = false
+
+    for _, move in pairs({ "zj", "zk" }) do
+        vim.cmd(string.format("keepjumps normal! %s", move))
+
+        if vim.fn.foldlevel(".") > 0 then
+            fold = true
+            break
+        end
+    end
+
+    vim.fn.winrestview(v)
+
+    return fold
 end
 
 return M
