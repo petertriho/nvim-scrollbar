@@ -223,24 +223,7 @@ M.get_scroll_offset_diff = function(folds, abs_line_nr)
 end
 
 M.has_folds = function()
-    local fold = false
-
-    if vim.wo.foldenable then
-        local v = vim.fn.winsaveview()
-
-        for _, move in pairs({ "zj", "zk" }) do
-            vim.cmd(string.format("keepjumps normal! %s", move))
-
-            if vim.fn.foldlevel(".") > 0 then
-                fold = true
-                break
-            end
-        end
-
-        vim.fn.winrestview(v)
-    end
-
-    return fold
+    return vim.wo.foldenable
 end
 
 return M
