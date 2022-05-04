@@ -26,8 +26,8 @@ M.handler = {
             render()
         end
     end,
-    hide = function()
-        local bufnr = vim.api.nvim_get_current_buf()
+    hide = function(bufnr)
+        bufnr = bufnr or vim.api.nvim_get_current_buf()
         local scrollbar_marks = utils.get_scrollbar_marks(bufnr)
         scrollbar_marks.search = nil
         utils.set_scrollbar_marks(bufnr, scrollbar_marks)
@@ -41,7 +41,11 @@ M.nohlsearch = function()
         if #cmdl > 2 then
             for _, cl in ipairs(vim.split(cmdl, "|")) do
                 if ("nohlsearch"):match(vim.trim(cl)) then
-                    M.handler.hide()
+                    for _, bufnr in ipairs(vim.api.nvim_list_bufs()) do
+                        if vim.api.nvim_buf_is_loaded(bufnr) then
+                            M.handler.hide(bufnr)
+                        end
+                    end
                     break
                 end
             end
