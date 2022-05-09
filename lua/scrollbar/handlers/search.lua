@@ -50,6 +50,17 @@ M.nohlsearch = function()
                 end
             end
         end
+
+        vim.schedule(function()
+            local pattern = vim.fn.getreg("/")
+            if pattern == "" then
+                for _, bufnr in ipairs(vim.api.nvim_list_bufs()) do
+                    if vim.api.nvim_buf_is_loaded(bufnr) then
+                        M.handler.hide(bufnr)
+                    end
+                end
+            end
+        end)
     end
 end
 
@@ -57,7 +68,7 @@ M.setup = function(overrides)
     local ok, hlslens = pcall(require, "hlslens")
 
     if not ok then
-        vim.notify("[scrollbar.nvim] hlslens module not avaliable. Search handler was not loaded.", vim.log.levels.WARN)
+        vim.notify("[scrollbar.nvim] hlslens module not available. Search handler was not loaded.", vim.log.levels.WARN)
         return
     end
 
