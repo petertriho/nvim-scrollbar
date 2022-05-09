@@ -29,38 +29,46 @@ M.handler = {
     hide = function(bufnr)
         bufnr = bufnr or vim.api.nvim_get_current_buf()
         local scrollbar_marks = utils.get_scrollbar_marks(bufnr)
-        scrollbar_marks.search = nil
-        utils.set_scrollbar_marks(bufnr, scrollbar_marks)
-        render()
+        if scrollbar_marks.search then
+            scrollbar_marks.search = nil
+            utils.set_scrollbar_marks(bufnr, scrollbar_marks)
+            render()
+        end
     end,
 }
 
+M.hide_all = function()
+    for _, bufnr in ipairs(vim.api.nvim_list_bufs()) do
+        if vim.api.nvim_buf_is_loaded(bufnr) then
+            M.handler.hide(bufnr)
+        end
+    end
+end
+
 M.nohlsearch = function()
+    if vim.v.hlsearch == 0 then
+        M.hide_all()
+        return
+    end
+
+    vim.schedule(function()
+        local pattern = vim.fn.getreg("/")
+        if pattern == "" then
+            M.hide_all()
+            return
+        end
+    end)
+
     if not vim.v.event.abort then
         local cmdl = vim.trim(vim.fn.getcmdline())
         if #cmdl > 2 then
             for _, cl in ipairs(vim.split(cmdl, "|")) do
                 if ("nohlsearch"):match(vim.trim(cl)) then
-                    for _, bufnr in ipairs(vim.api.nvim_list_bufs()) do
-                        if vim.api.nvim_buf_is_loaded(bufnr) then
-                            M.handler.hide(bufnr)
-                        end
-                    end
-                    break
+                    M.hide_all()
+                    return
                 end
             end
         end
-
-        vim.schedule(function()
-            local pattern = vim.fn.getreg("/")
-            if pattern == "" then
-                for _, bufnr in ipairs(vim.api.nvim_list_bufs()) do
-                    if vim.api.nvim_buf_is_loaded(bufnr) then
-                        M.handler.hide(bufnr)
-                    end
-                end
-            end
-        end)
     end
 end
 
@@ -87,6 +95,7 @@ M.setup = function(overrides)
         augroup scrollbar_search_hide
             autocmd!
             autocmd CmdlineLeave : lua require('scrollbar.handlers.search').nohlsearch()
+            autocmd CursorMoved * lua require('scrollbar.handlers.search').nohlsearch()
         augroup END
     ]])
 end
