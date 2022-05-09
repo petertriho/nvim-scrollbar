@@ -89,9 +89,11 @@ M.handler = {
     end,
     hide = function(_, bufnr, _, _)
         local scrollbar_marks = utils.get_scrollbar_marks(bufnr)
-        scrollbar_marks.diagnostics = nil
-        utils.set_scrollbar_marks(bufnr, scrollbar_marks)
-        render()
+        if scrollbar_marks.diagnostic then
+            scrollbar_marks.diagnostics = nil
+            utils.set_scrollbar_marks(bufnr, scrollbar_marks)
+            render()
+        end
     end,
 }
 
