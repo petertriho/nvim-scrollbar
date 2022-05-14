@@ -5,8 +5,12 @@ local M = {}
 
 local NAMESPACE = vim.api.nvim_create_namespace(const.NAME_PREFIX)
 
-M.render = function()
+M.clear = function()
     vim.api.nvim_buf_clear_namespace(0, NAMESPACE, 0, -1)
+end
+
+M.render = function()
+    M.clear()
 
     local config = require("scrollbar.config").get()
 
@@ -195,7 +199,7 @@ M.setup = function(overrides)
     if config.autocmd and config.autocmd.render and #config.autocmd.render > 0 then
         vim.cmd(string.format(
             [[
-        augroup scrollbar
+        augroup scrollbar_render
             autocmd!
             autocmd %s * lua require('scrollbar.handlers').show();require('scrollbar').render()
         augroup END
@@ -210,6 +214,18 @@ M.setup = function(overrides)
 
     if config.handlers.search then
         require("scrollbar.handlers.search").setup()
+    end
+
+    if config.show_in_active_only then
+        vim.cmd(string.format(
+            [[
+        augroup scrollbar_clear
+            autocmd!
+            autocmd %s * lua require('scrollbar').clear()
+        augroup END
+        ]],
+            table.concat(config.autocmd.clear, ",")
+        ))
     end
 end
 
