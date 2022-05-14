@@ -65,7 +65,8 @@ vim.cmd([[
 
 ## Config
 
-### Defaults
+<details>
+  <summary>Defaults</summary>
 
 ```lua
 require("scrollbar").setup({
@@ -143,6 +144,12 @@ require("scrollbar").setup({
             "VimResized",
             "WinScrolled",
         },
+        clear = {
+            "BufWinLeave",
+            "TabLeave",
+            "TermLeave",
+            "WinLeave",
+        },
     },
     handlers = {
         diagnostic = true,
@@ -150,6 +157,8 @@ require("scrollbar").setup({
     },
 })
 ```
+
+</details>
 
 ## Colors/Highlights
 
