@@ -40,7 +40,7 @@ M.generic_handler = function(bufnr, get_diagnostics, diagnostic_mapper)
         scrollbar_marks.diagnostics = diagnostics_scrollbar_marks
         utils.set_scrollbar_marks(bufnr, scrollbar_marks)
 
-        if bufnr == vim.api.nvim_get_current_buf() then
+        if bufnr == 0 or bufnr == vim.api.nvim_get_current_buf() then
             render()
         end
     end
@@ -142,6 +142,7 @@ M.setup = function()
 
     if vim.diagnostic then
         vim.diagnostic.handlers["petertriho/scrollbar"] = M.handler
+        vim.cmd([[autocmd DiagnosticChanged * lua require("scrollbar.handlers.diagnostic").handler.show(_, 0)]])
     else
         vim.lsp.handlers["textDocument/publishDiagnostics"] = function(err, result, ctx, conf)
             vim.lsp.diagnostic.on_publish_diagnostics(err, result, ctx, conf)
