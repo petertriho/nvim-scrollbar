@@ -28,7 +28,7 @@ M.render = function()
 
     local total_lines = vim.api.nvim_buf_line_count(0)
 
-    if config.max_lines and config.max_lines >= total_lines then
+    if config.max_lines and config.max_lines <= total_lines then
         return
     end
 
