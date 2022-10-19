@@ -158,7 +158,7 @@ M.render = function()
                 }
             end
 
-            vim.api.nvim_buf_set_extmark(0, NAMESPACE, mark_line, -1, handle_opts)
+            vim.api.nvim_buf_set_extmark(0, NAMESPACE, mark_line, 0, handle_opts)
         end
     end
 
@@ -174,7 +174,7 @@ M.render = function()
                     virt_text_pos = "right_align",
                     virt_text = { { mark.text, utils.get_highlight_name(mark.type, false) } },
                 }
-                vim.api.nvim_buf_set_extmark(0, NAMESPACE, mark_line, -1, mark_opts)
+                vim.api.nvim_buf_set_extmark(0, NAMESPACE, mark_line, 0, mark_opts)
             end
         end
     end
