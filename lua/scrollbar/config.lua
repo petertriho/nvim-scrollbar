@@ -61,6 +61,7 @@ local config = {
     excluded_filetypes = {
         "prompt",
         "TelescopePrompt",
+        "noice",
     },
     autocmd = {
         render = {
