@@ -132,6 +132,7 @@ require("scrollbar").setup({
     excluded_filetypes = {
         "prompt",
         "TelescopePrompt",
+        "noice",
     },
     autocmd = {
         render = {
@@ -213,10 +214,9 @@ require("scrollbar.handlers").register(name, handler_function)
 
 `handler_function` receives the buffer number as argument and must return a list of tables with `line`, `text`, `type`, and `level` keys. Only the `line` key is required.
 
-
 | Key     | Description                                                   |
-|---------|---------------------------------------------------------------|
-| `line`  | The line number. *Required*.                                  |
+| ------- | ------------------------------------------------------------- |
+| `line`  | The line number. _Required_.                                  |
 | `text`  | Marker text. Defaults to global settings depending on `type`. |
 | `type`  | The marker type. Default is `Misc`.                           |
 | `level` | Marker level. Default is `1`.                                 |
