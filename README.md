@@ -43,7 +43,9 @@ require("scrollbar").setup()
 If you also want to configure [hlslens](https://github.com/kevinhwang91/nvim-hlslens), add the following to your setup:
 
 ```lua
-require("scrollbar.handlers.search").setup()
+require("scrollbar.handlers.search").setup({
+    -- hlslens config overrides
+})
 ```
 
 OR
@@ -61,6 +63,14 @@ vim.cmd([[
         autocmd CmdlineLeave : lua require('scrollbar.handlers.search').handler.hide()
     augroup END
 ]])
+```
+
+If you want to leave only search marks and disable virtual text:
+
+```lua
+require("scrollbar.handlers.search").setup({
+    override_lens = function() end,
+})
 ```
 
 ## Config
