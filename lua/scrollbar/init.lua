@@ -216,6 +216,10 @@ M.setup = function(overrides)
         require("scrollbar.handlers.search").setup()
     end
 
+    if config.handlers.gitsigns then
+        require("scrollbar.handlers.gitsigns").setup()
+    end
+
     if config.show_in_active_only then
         vim.cmd(string.format(
             [[

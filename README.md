@@ -14,6 +14,7 @@
 
 - Neovim >= 0.5.1
 - [nvim-hlslens](https://github.com/kevinhwang91/nvim-hlslens) (optional)
+- [gitsigns.nvim](https://github.com/lewis6991/gitsigns.nvim) (optional)
 
 ## Installation
 
@@ -71,6 +72,18 @@ If you want to leave only search marks and disable virtual text:
 require("scrollbar.handlers.search").setup({
     override_lens = function() end,
 })
+```
+
+## Git signs
+
+https://user-images.githubusercontent.com/889383/201331485-477677a7-40a9-4731-998a-34779f7123ff.mp4
+
+Display git changes in the sidebar. Requires [gitsigns.nvim](https://github.com/lewis6991/gitsigns.nvim) to be installed.
+
+To enable, add the following to your setup:
+
+```lua
+require("scrollbar.handlers.gitsigns").setup()
 ```
 
 ## Config
@@ -135,6 +148,27 @@ require("scrollbar").setup({
             cterm = nil,
             highlight = "Normal",
         },
+        GitAdd = {
+            text = "┆",
+            priority = 5,
+            color = nil,
+            cterm = nil,
+            highlight = "GitSignsAdd",
+        },
+        GitChange = {
+            text = "┆",
+            priority = 5,
+            color = nil,
+            cterm = nil,
+            highlight = "GitSignsChange",
+        },
+        GitDelete = {
+            text = "▁",
+            priority = 5,
+            color = nil,
+            cterm = nil,
+            highlight = "GitSignsDelete",
+        },
     },
     excluded_buftypes = {
         "terminal",
@@ -165,6 +199,7 @@ require("scrollbar").setup({
     handlers = {
         diagnostic = true,
         search = false, -- Requires hlslens to be loaded, will run require("scrollbar.handlers.search").setup() for you
+        gitsigns = false, -- Requires gitsigns.nvim
     },
 })
 ```
@@ -193,6 +228,12 @@ Mark type highlights are in the format of `Scrollbar<MarkType>` and
 - `ScrollbarHint`
 - `ScrollbarMiscHandle`
 - `ScrollbarMisc`
+- `ScrollbarGitAdd`
+- `ScrollbarGitAddHandle`
+- `ScrollbarGitChange`
+- `ScrollbarGitChangeHandle`
+- `ScrollbarGitDelete`
+- `ScrollbarGitDeleteHandle`
 
 ### Example config with [tokyonight.nvim](https://github.com/folke/tokyonight.nvim) colors
 
