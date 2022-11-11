@@ -54,6 +54,27 @@ local config = {
             cterm = nil,
             highlight = "Normal",
         },
+        GitAdd = {
+            text = "┆",
+            priority = 5,
+            color = nil,
+            cterm = nil,
+            highlight = "GitSignsAdd",
+        },
+        GitChange = {
+            text = "┆",
+            priority = 5,
+            color = nil,
+            cterm = nil,
+            highlight = "GitSignsChange",
+        },
+        GitDelete = {
+            text = "▁",
+            priority = 5,
+            color = nil,
+            cterm = nil,
+            highlight = "GitSignsDelete",
+        },
     },
     excluded_buftypes = {
         "terminal",
@@ -84,6 +105,7 @@ local config = {
     handlers = {
         diagnostic = true,
         search = false, -- Requires hlslens to be loaded, will run require("scrollbar.handlers.search").setup() for you
+        gitsigns = false, -- Requires gitsigns.nvim
     },
 }
 
