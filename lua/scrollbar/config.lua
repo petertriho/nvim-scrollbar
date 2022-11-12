@@ -104,7 +104,7 @@ local config = {
     },
     handlers = {
         diagnostic = true,
-        search = false, -- Requires hlslens to be loaded, will run require("scrollbar.handlers.search").setup() for you
+        search = false, -- Requires hlslens
         gitsigns = false, -- Requires gitsigns.nvim
     },
 }

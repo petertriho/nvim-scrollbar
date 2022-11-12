@@ -37,33 +37,44 @@ require("scrollbar").setup()
 
 ```
 
-### Search
+<details>
+  <summary>Search</summary>
 
 ![search](./assets/search.gif)
 
-If you also want to configure [hlslens](https://github.com/kevinhwang91/nvim-hlslens), add the following to your setup:
+#### Setup (Packer)
 
 ```lua
-require("scrollbar.handlers.search").setup({
-    -- hlslens config overrides
-})
+{
+  "kevinhwang91/nvim-hlslens",
+  config = function()
+    require("scrollbar.handlers.search").setup({
+        -- hlslens config overrides
+    })
+  end,
+}
 ```
 
 OR
 
 ```lua
-require("hlslens").setup({
-   build_position_cb = function(plist, _, _, _)
-        require("scrollbar.handlers.search").handler.show(plist.start_pos)
-   end,
-})
+{
+  "kevinhwang91/nvim-hlslens",
+  config = function()
+    require("hlslens").setup({
+       build_position_cb = function(plist, _, _, _)
+            require("scrollbar.handlers.search").handler.show(plist.start_pos)
+       end,
+    })
 
-vim.cmd([[
-    augroup scrollbar_search_hide
-        autocmd!
-        autocmd CmdlineLeave : lua require('scrollbar.handlers.search').handler.hide()
-    augroup END
-]])
+    vim.cmd([[
+        augroup scrollbar_search_hide
+            autocmd!
+            autocmd CmdlineLeave : lua require('scrollbar.handlers.search').handler.hide()
+        augroup END
+    ]])
+  end,
+}
 ```
 
 If you want to leave only search marks and disable virtual text:
@@ -74,17 +85,26 @@ require("scrollbar.handlers.search").setup({
 })
 ```
 
-## Git signs
+</details>
 
-https://user-images.githubusercontent.com/889383/201331485-477677a7-40a9-4731-998a-34779f7123ff.mp4
+<details>
+  <summary>Git Signs</summary>
+
+![gitsigns](https://user-images.githubusercontent.com/889383/201331485-477677a7-40a9-4731-998a-34779f7123ff.mp4)
 
 Display git changes in the sidebar. Requires [gitsigns.nvim](https://github.com/lewis6991/gitsigns.nvim) to be installed.
 
-To enable, add the following to your setup:
+#### Setup (Packer)
 
 ```lua
-require("scrollbar.handlers.gitsigns").setup()
+{
+  "lewis6991/gitsigns.nvim",
+  config = function()
+    require("scrollbar.handlers.gitsigns").setup()
+  end
+}
 ```
+</details>
 
 ## Config
 
@@ -198,7 +218,7 @@ require("scrollbar").setup({
     },
     handlers = {
         diagnostic = true,
-        search = false, -- Requires hlslens to be loaded, will run require("scrollbar.handlers.search").setup() for you
+        search = false, -- Requires hlslens to be loaded
         gitsigns = false, -- Requires gitsigns.nvim
     },
 })
