@@ -45,7 +45,7 @@ require("scrollbar").setup()
 #### Setup (Packer)
 
 ```lua
-{
+use {
   "kevinhwang91/nvim-hlslens",
   config = function()
     require("scrollbar.handlers.search").setup({
@@ -58,7 +58,7 @@ require("scrollbar").setup()
 OR
 
 ```lua
-{
+use {
   "kevinhwang91/nvim-hlslens",
   config = function()
     require("hlslens").setup({
@@ -97,7 +97,7 @@ Display git changes in the sidebar. Requires [gitsigns.nvim](https://github.com/
 #### Setup (Packer)
 
 ```lua
-{
+use {
   "lewis6991/gitsigns.nvim",
   config = function()
     require("scrollbar.handlers.gitsigns").setup()
