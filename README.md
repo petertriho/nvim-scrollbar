@@ -90,7 +90,7 @@ require("scrollbar.handlers.search").setup({
 <details>
   <summary>Git Signs</summary>
 
-![gitsigns](https://user-images.githubusercontent.com/889383/201331485-477677a7-40a9-4731-998a-34779f7123ff.mp4)
+https://user-images.githubusercontent.com/889383/201331485-477677a7-40a9-4731-998a-34779f7123ff.mp4
 
 Display git changes in the sidebar. Requires [gitsigns.nvim](https://github.com/lewis6991/gitsigns.nvim) to be installed.
 
