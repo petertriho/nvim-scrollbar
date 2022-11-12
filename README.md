@@ -48,6 +48,7 @@ require("scrollbar").setup()
 use {
   "kevinhwang91/nvim-hlslens",
   config = function()
+    -- require('hlslens').setup() is not required
     require("scrollbar.handlers.search").setup({
         -- hlslens config overrides
     })
@@ -100,6 +101,7 @@ Display git changes in the sidebar. Requires [gitsigns.nvim](https://github.com/
 use {
   "lewis6991/gitsigns.nvim",
   config = function()
+    require('gitsigns').setup()
     require("scrollbar.handlers.gitsigns").setup()
   end
 }
