@@ -210,16 +210,20 @@ M.setup = function(overrides)
         ))
     end
 
+    if config.handlers.cursor then
+        require("scrollbar.handlers.cursor").setup()
+    end
+
     if config.handlers.diagnostic then
         require("scrollbar.handlers.diagnostic").setup()
     end
 
-    if config.handlers.search then
-        require("scrollbar.handlers.search").setup()
-    end
-
     if config.handlers.gitsigns then
         require("scrollbar.handlers.gitsigns").setup()
+    end
+
+    if config.handlers.search then
+        require("scrollbar.handlers.search").setup()
     end
 
     if config.show_in_active_only then

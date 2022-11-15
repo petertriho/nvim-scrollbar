@@ -12,65 +12,72 @@ local config = {
         hide_if_all_visible = true, -- Hides handle if all lines are visible
     },
     marks = {
+        Cursor = {
+            text = "",
+            priority = 0,
+            color = nil,
+            cterm = nil,
+            highlight = "Normal",
+        },
         Search = {
             text = { "-", "=" },
-            priority = 0,
+            priority = 1,
             color = nil,
             cterm = nil,
             highlight = "Search",
         },
         Error = {
             text = { "-", "=" },
-            priority = 1,
+            priority = 2,
             color = nil,
             cterm = nil,
             highlight = "DiagnosticVirtualTextError",
         },
         Warn = {
             text = { "-", "=" },
-            priority = 2,
+            priority = 3,
             color = nil,
             cterm = nil,
             highlight = "DiagnosticVirtualTextWarn",
         },
         Info = {
             text = { "-", "=" },
-            priority = 3,
+            priority = 4,
             color = nil,
             cterm = nil,
             highlight = "DiagnosticVirtualTextInfo",
         },
         Hint = {
             text = { "-", "=" },
-            priority = 4,
+            priority = 5,
             color = nil,
             cterm = nil,
             highlight = "DiagnosticVirtualTextHint",
         },
         Misc = {
             text = { "-", "=" },
-            priority = 5,
+            priority = 6,
             color = nil,
             cterm = nil,
             highlight = "Normal",
         },
         GitAdd = {
             text = "┆",
-            priority = 5,
+            priority = 7,
             color = nil,
             cterm = nil,
             highlight = "GitSignsAdd",
         },
         GitChange = {
             text = "┆",
-            priority = 5,
+            priority = 7,
             color = nil,
             cterm = nil,
             highlight = "GitSignsChange",
         },
         GitDelete = {
             text = "▁",
-            priority = 5,
+            priority = 7,
             color = nil,
             cterm = nil,
             highlight = "GitSignsDelete",
@@ -103,9 +110,10 @@ local config = {
         },
     },
     handlers = {
+        cursor = true,
         diagnostic = true,
+        gitsigns = false, -- Requires gitsigns
         search = false, -- Requires hlslens
-        gitsigns = false, -- Requires gitsigns.nvim
     },
 }
 
