@@ -74,10 +74,12 @@ M.render = function()
     end
 
     table.sort(sorted_scrollbar_marks, function(a, b)
-        if a.line == b.line then
+        local relative_line_a = math.floor(a.line * ratio)
+        local relative_line_b = math.floor(b.line * ratio)
+        if relative_line_a == relative_line_b then
             return config.marks[a.type].priority < config.marks[b.type].priority
         end
-        return a.line < b.line
+        return relative_line_a < relative_line_b
     end)
 
     local handle_marks = {}
