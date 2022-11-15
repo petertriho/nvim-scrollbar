@@ -7,14 +7,10 @@ M.handlers = {}
 -- @param name Name of the handler
 -- @param handler Function that maps bufnr -> list of tables { line, text, type, level }
 function M.register(name, handler)
-    M.handlers = vim.tbl_deep_extend(
-        "force",
-        M.handlers,
-        { {
-            name = name,
-            handler = handler,
-        } }
-    )
+    table.insert(M.handlers, {
+        name = name,
+        handler = handler,
+    })
 end
 
 function M.show()
