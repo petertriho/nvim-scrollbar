@@ -13,7 +13,7 @@ local config = {
     },
     marks = {
         Cursor = {
-            text = "",
+            text = "•",
             priority = 0,
             color = nil,
             cterm = nil,
