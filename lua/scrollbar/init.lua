@@ -44,7 +44,7 @@ M.render = function()
         folds = utils.get_folds()
     end
 
-    local show_handle = true
+    local show_handle = config.handlers.handle
 
     if visible_lines >= total_lines then
         visible_lines = total_lines
