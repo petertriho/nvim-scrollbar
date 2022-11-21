@@ -52,6 +52,10 @@ M.render = function()
         if config.handle.hide_if_all_visible then
             show_handle = false
         end
+
+        if config.hide_if_all_visible then
+            return
+        end
     end
 
     local ratio = visible_lines / total_lines
