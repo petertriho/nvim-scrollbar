@@ -191,7 +191,9 @@ M.throttled_render = M.render
 M.setup = function(overrides)
     local config = require("scrollbar.config").set(overrides)
 
-    M.throttled_render = utils.throttle(M.render, config.throttle_ms)
+    if config.throttle_ms > 0 then
+        M.throttled_render = utils.throttle(M.render, config.throttle_ms)
+    end
 
     if config.set_highlights then
         utils.set_highlights()
