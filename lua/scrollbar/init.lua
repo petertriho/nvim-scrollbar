@@ -213,7 +213,7 @@ M.setup = function(overrides)
             [[
         augroup scrollbar_render
             autocmd!
-            autocmd %s * lua require('scrollbar.handlers').show();require('scrollbar').throttled_render()
+            autocmd %s * lua require('scrollbar.handlers').show();require('scrollbar').render()
         augroup END
         ]],
             table.concat(config.autocmd.render, ",")
