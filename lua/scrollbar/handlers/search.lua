@@ -1,5 +1,5 @@
 local utils = require("scrollbar.utils")
-local render = require("scrollbar").render
+local render = require("scrollbar").throttled_render
 
 local M = {}
 

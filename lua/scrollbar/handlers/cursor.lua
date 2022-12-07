@@ -1,5 +1,5 @@
 local utils = require("scrollbar.utils")
-local render = require("scrollbar").render
+local render = require("scrollbar").throttled_render
 
 local M = {}
 
@@ -20,7 +20,7 @@ M.handler = {
             },
         }
         utils.set_scrollbar_marks(bufnr, scrollbar_marks)
-        require("scrollbar").render()
+        render()
     end,
     hide = function(bufnr)
         bufnr = bufnr or vim.api.nvim_get_current_buf()

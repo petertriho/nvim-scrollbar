@@ -2,6 +2,21 @@ local const = require("scrollbar.const")
 
 local M = {}
 
+M.throttle = function(fn, time_ms)
+    local timer = vim.loop.new_timer()
+    local running = false
+
+    return function(...)
+        if not running then
+            timer:start(time_ms, 0, function()
+                running = false
+            end)
+            running = true
+            pcall(vim.schedule_wrap(fn), select(1, ...))
+        end
+    end
+end
+
 M.get_scrollbar_marks = function(bufnr)
     local ok, scrollbar_marks = pcall(function()
         return vim.api.nvim_buf_get_var(bufnr, const.BUF_VAR_KEY)

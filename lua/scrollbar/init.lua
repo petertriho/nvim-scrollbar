@@ -202,12 +202,14 @@ M.setup = function(overrides)
 
     utils.set_commands()
 
+    M.throttled_render = utils.throttle(M.render, config.throttle_ms)
+
     if config.autocmd and config.autocmd.render and #config.autocmd.render > 0 then
         vim.cmd(string.format(
             [[
         augroup scrollbar_render
             autocmd!
-            autocmd %s * lua require('scrollbar.handlers').show();require('scrollbar').render()
+            autocmd %s * lua require('scrollbar.handlers').show();require('scrollbar').throttled_render()
         augroup END
         ]],
             table.concat(config.autocmd.render, ",")

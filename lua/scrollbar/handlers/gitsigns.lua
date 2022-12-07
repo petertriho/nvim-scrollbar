@@ -1,4 +1,5 @@
 local utils = require("scrollbar.utils")
+local render = require("scrollbar").throttled_render
 
 local M = {}
 
@@ -63,7 +64,7 @@ M.handler = {
             end
         end
 
-        require("scrollbar").render()
+        render()
     end,
 }
 
