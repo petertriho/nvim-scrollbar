@@ -117,6 +117,7 @@ local config = {
         gitsigns = false, -- Requires gitsigns
         handle = true,
         search = false, -- Requires hlslens
+        ale = false, -- Requires ALE
     },
 }
 
