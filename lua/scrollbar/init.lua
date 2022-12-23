@@ -236,6 +236,10 @@ M.setup = function(overrides)
         require("scrollbar.handlers.search").setup()
     end
 
+    if config.handlers.ale then
+        require("scrollbar.handlers.ale").setup()
+    end
+
     if config.show_in_active_only then
         vim.cmd(string.format(
             [[
