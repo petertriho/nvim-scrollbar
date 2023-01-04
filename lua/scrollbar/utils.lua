@@ -71,7 +71,9 @@ M.set_highlights = function()
 
     local handle_color = config.handle.color
         or M.highlight_to_hex_color(config.handle.highlight, "background", "CursorColumn", "#ffffff")
-    local handle_cterm = config.handle.cterm
+    local handle_color_nr = config.handle.color_nr
+    local handle_gui = config.handle.gui or "NONE"
+    local handle_cterm = config.handle.cterm or "NONE"
 
     -- ScrollbarHandle
     vim.cmd(
@@ -79,7 +81,7 @@ M.set_highlights = function()
             "highlight %s ctermfg=%s ctermbg=%s guifg=%s guibg=%s",
             M.get_highlight_name("", true),
             "NONE",
-            handle_cterm or 15,
+            handle_color_nr or 15,
             "NONE",
             handle_color or "white"
         )
@@ -88,15 +90,19 @@ M.set_highlights = function()
     for mark_type, properties in pairs(config.marks) do
         local type_color = properties.color
             or M.highlight_to_hex_color(properties.highlight, "foreground", "Normal", "#000000")
-        local type_cterm = properties.cterm
+        local type_color_nr = properties.color_nr
+        local type_gui = properties.gui or "NONE"
+        local type_cterm = properties.cterm or "NONE"
 
         -- Scrollbar<MarkType>
         vim.cmd(
             string.format(
-                "highlight %s ctermfg=%s ctermbg=%s guifg=%s guibg=%s",
+                "highlight %s cterm=%s ctermfg=%s ctermbg=%s gui=%s guifg=%s guibg=%s",
                 M.get_highlight_name(mark_type, false),
-                type_cterm or 0,
+                type_cterm,
+                type_color_nr or 0,
                 "NONE",
+                type_gui,
                 type_color or "black",
                 "NONE"
             )
@@ -105,10 +111,12 @@ M.set_highlights = function()
         -- Scrollbar<MarkType>Handle
         vim.cmd(
             string.format(
-                "highlight %s ctermfg=%s ctermbg=%s guifg=%s guibg=%s",
+                "highlight %s cterm=%s ctermfg=%s ctermbg=%s gui=%s guifg=%s guibg=%s",
                 M.get_highlight_name(mark_type, true),
-                type_cterm or 0,
-                handle_cterm or 15,
+                type_cterm,
+                type_color_nr or 0,
+                handle_color_nr or 15,
+                type_gui,
                 type_color,
                 handle_color
             )
