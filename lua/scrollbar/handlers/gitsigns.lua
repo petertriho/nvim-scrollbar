@@ -85,6 +85,7 @@ function M.setup()
         desc = "Update scrollbar marks after gitsigns updates",
         callback = M.handler.show,
     })
+    M.handler.show()
 end
 
 return M
