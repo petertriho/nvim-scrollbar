@@ -1,5 +1,6 @@
 local const = require("scrollbar.const")
 local utils = require("scrollbar.utils")
+local handlers = require("scrollbar.handlers")
 
 local M = {}
 
@@ -188,6 +189,24 @@ end
 
 M.throttled_render = M.render
 
+M.on_scroll = function()
+    local wins = {0}
+    if vim.v.event.all ~= nil then
+        wins = {}
+        for win, _ in pairs(vim.v.event) do
+            if win ~= 'all' then
+                table.insert(wins, tonumber(win))
+            end
+        end
+    end
+    for _, win in ipairs(wins) do
+        vim.api.nvim_win_call(win, function()
+            handlers.show()
+            M.render()
+        end)
+    end
+end
+
 M.setup = function(overrides)
     local config = require("scrollbar.config").set(overrides)
 
@@ -213,7 +232,7 @@ M.setup = function(overrides)
             [[
         augroup scrollbar_render
             autocmd!
-            autocmd %s * lua require('scrollbar.handlers').show();require('scrollbar').render()
+            autocmd %s * lua require('scrollbar').on_scroll()
         augroup END
         ]],
             table.concat(config.autocmd.render, ",")
