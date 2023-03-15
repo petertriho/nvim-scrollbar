@@ -60,9 +60,10 @@ M.render = function()
     end
 
     local ratio = visible_lines / total_lines
+    local height = math.floor(visible_lines * visible_lines / total_lines)
 
     local relative_first_line = math.floor(first_visible_line * ratio) - math.floor(1 * ratio)
-    local relative_last_line = math.floor(last_visible_line * ratio)
+    local relative_last_line = relative_first_line + height
 
     -- correct the folding diff
     relative_first_line = utils.fix_invisible_lines(folds, relative_first_line, first_visible_line)
