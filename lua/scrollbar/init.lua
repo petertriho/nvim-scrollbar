@@ -134,6 +134,7 @@ M.render = function()
         if mark_line >= 0 then
             local handle_opts = {
                 virt_text_pos = "right_align",
+                hl_mode = 'blend',
             }
 
             local handle_mark = nil
