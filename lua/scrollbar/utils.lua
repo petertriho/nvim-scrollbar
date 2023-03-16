@@ -69,6 +69,7 @@ end
 M.set_highlights = function()
     local config = require("scrollbar.config").get()
 
+    local handle_blend = config.handle.blend or 30
     local handle_color = config.handle.color
         or M.highlight_to_hex_color(config.handle.highlight, "background", "CursorColumn", "#ffffff")
     local handle_color_nr = config.handle.color_nr
@@ -78,12 +79,13 @@ M.set_highlights = function()
     -- ScrollbarHandle
     vim.cmd(
         string.format(
-            "highlight %s ctermfg=%s ctermbg=%s guifg=%s guibg=%s",
+            "highlight %s ctermfg=%s ctermbg=%s guifg=%s guibg=%s blend=%s",
             M.get_highlight_name("", true),
             "NONE",
             handle_color_nr or 15,
             "NONE",
-            handle_color or "white"
+            handle_color or "white",
+            handle_blend
         )
     )
 
@@ -111,14 +113,15 @@ M.set_highlights = function()
         -- Scrollbar<MarkType>Handle
         vim.cmd(
             string.format(
-                "highlight %s cterm=%s ctermfg=%s ctermbg=%s gui=%s guifg=%s guibg=%s",
+                "highlight %s cterm=%s ctermfg=%s ctermbg=%s gui=%s guifg=%s guibg=%s blend=%s",
                 M.get_highlight_name(mark_type, true),
                 type_cterm,
                 type_color_nr or 0,
                 handle_color_nr or 15,
                 type_gui,
                 type_color,
-                handle_color
+                handle_color,
+                handle_blend
             )
         )
     end
