@@ -202,10 +202,12 @@ M.on_scroll = function()
         end
     end
     for _, win in ipairs(wins) do
-        vim.api.nvim_win_call(win, function()
-            handlers.show()
-            M.render()
-        end)
+        if vim.api.nvim_win_is_valid(win) then
+            vim.api.nvim_win_call(win, function()
+                handlers.show()
+                M.render()
+            end)
+        end
     end
 end
 
