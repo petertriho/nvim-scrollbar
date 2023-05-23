@@ -18,90 +18,90 @@ local config = {
         Cursor = {
             text = "•",
             priority = 0,
-            gui=nil,
+            gui = nil,
             color = nil,
-            cterm=nil,
+            cterm = nil,
             color_nr = nil, -- cterm
             highlight = "Normal",
         },
         Search = {
             text = { "-", "=" },
             priority = 1,
-            gui=nil,
+            gui = nil,
             color = nil,
-            cterm=nil,
+            cterm = nil,
             color_nr = nil, -- cterm
             highlight = "Search",
         },
         Error = {
             text = { "-", "=" },
             priority = 2,
-            gui=nil,
+            gui = nil,
             color = nil,
-            cterm=nil,
+            cterm = nil,
             color_nr = nil, -- cterm
             highlight = "DiagnosticVirtualTextError",
         },
         Warn = {
             text = { "-", "=" },
             priority = 3,
-            gui=nil,
+            gui = nil,
             color = nil,
-            cterm=nil,
+            cterm = nil,
             color_nr = nil, -- cterm
             highlight = "DiagnosticVirtualTextWarn",
         },
         Info = {
             text = { "-", "=" },
             priority = 4,
-            gui=nil,
+            gui = nil,
             color = nil,
-            cterm=nil,
+            cterm = nil,
             color_nr = nil, -- cterm
             highlight = "DiagnosticVirtualTextInfo",
         },
         Hint = {
             text = { "-", "=" },
             priority = 5,
-            gui=nil,
+            gui = nil,
             color = nil,
-            cterm=nil,
+            cterm = nil,
             color_nr = nil, -- cterm
             highlight = "DiagnosticVirtualTextHint",
         },
         Misc = {
             text = { "-", "=" },
             priority = 6,
-            gui=nil,
+            gui = nil,
             color = nil,
-            cterm=nil,
+            cterm = nil,
             color_nr = nil, -- cterm
             highlight = "Normal",
         },
         GitAdd = {
             text = "┆",
             priority = 7,
-            gui=nil,
+            gui = nil,
             color = nil,
-            cterm=nil,
+            cterm = nil,
             color_nr = nil, -- cterm
             highlight = "GitSignsAdd",
         },
         GitChange = {
             text = "┆",
             priority = 7,
-            gui=nil,
+            gui = nil,
             color = nil,
-            cterm=nil,
+            cterm = nil,
             color_nr = nil, -- cterm
             highlight = "GitSignsChange",
         },
         GitDelete = {
             text = "▁",
             priority = 7,
-            gui=nil,
+            gui = nil,
             color = nil,
-            cterm=nil,
+            cterm = nil,
             color_nr = nil, -- cterm
             highlight = "GitSignsDelete",
         },
@@ -110,9 +110,11 @@ local config = {
         "terminal",
     },
     excluded_filetypes = {
+        "cmp_docs",
+        "cmp_menu",
+        "noice",
         "prompt",
         "TelescopePrompt",
-        "noice",
     },
     autocmd = {
         render = {
