@@ -22,7 +22,19 @@ local function get_gitsigns_marks(bufnr)
                 })
             end
         elseif hunk.type == "change" then
-            for line = hunk.added.start, hunk.added.start + hunk.added.count - 1 do
+            -- A change can consist of both added and removed lines. In order to
+            -- use the same rendering as gitsigns, we need to separate the
+            -- changes within a single hunk.
+            for line = hunk.added.start + hunk.removed.count, hunk.added.start + hunk.added.count - hunk.removed.count + 1 do
+                table.insert(gitsigns_marks, {
+                    line = line - 1,
+                    text = config.marks.GitAdd.text,
+                    type = "GitAdd",
+                    level = 3,
+                })
+            end
+
+            for line = hunk.added.start, hunk.added.start + hunk.removed.count - 1 do
                 table.insert(gitsigns_marks, {
                     line = line - 1,
                     text = config.marks.GitChange.text,
