@@ -229,6 +229,7 @@ require("scrollbar").setup({
         "terminal",
     },
     excluded_filetypes = {
+        "blink-cmp-menu",
         "dropbar_menu",
         "dropbar_menu_fzf",
         "DressingInput",
