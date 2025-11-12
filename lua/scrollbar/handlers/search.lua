@@ -83,13 +83,18 @@ M.setup = function(overrides)
     local config = require("scrollbar.config").get()
     config.handlers.search = true
 
-    local hlslens_config = vim.tbl_deep_extend("force", {
-        build_position_cb = function(plist, _, _, _)
-            M.handler.show(plist.start_pos)
-        end,
-    }, overrides or {})
+    -- Directly modify hlslens.config to bypass Lua module caching issue
+    local hlslens_config = require("hlslens.config")
+    hlslens_config.build_position_cb = function(plist, _, _, _)
+        M.handler.show(plist.start_pos)
+    end
 
-    hlslens.setup(hlslens_config)
+    -- Apply user overrides if provided
+    if overrides then
+        for k, v in pairs(overrides) do
+            hlslens_config[k] = v
+        end
+    end
 
     vim.cmd([[
         augroup scrollbar_search_hide
