@@ -135,7 +135,7 @@ M.render = function()
         if mark_line >= 0 then
             local handle_opts = {
                 virt_text_pos = "right_align",
-                hl_mode = 'blend',
+                hl_mode = "blend",
             }
 
             local handle_mark = nil
@@ -192,11 +192,11 @@ end
 M.throttled_render = M.render
 
 M.on_scroll = function()
-    local wins = {0}
+    local wins = { 0 }
     if vim.v.event.all ~= nil then
         wins = {}
         for win, _ in pairs(vim.v.event) do
-            if win ~= 'all' then
+            if win ~= "all" then
                 table.insert(wins, tonumber(win))
             end
         end
@@ -212,6 +212,10 @@ M.on_scroll = function()
 end
 
 M.setup = function(overrides)
+    if overrides and overrides.handlers and overrides.handlers.search ~= nil then
+        require("scrollbar.handlers.search").validate_options(overrides.handlers.search, true)
+    end
+
     local config = require("scrollbar.config").set(overrides)
 
     if config.throttle_ms > 0 then
@@ -255,8 +259,11 @@ M.setup = function(overrides)
         require("scrollbar.handlers.gitsigns").setup()
     end
 
+    local search = require("scrollbar.handlers.search")
     if config.handlers.search then
-        require("scrollbar.handlers.search").setup()
+        search.setup(config.handlers.search)
+    else
+        search.disable()
     end
 
     if config.handlers.ale then
