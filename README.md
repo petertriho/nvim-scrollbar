@@ -334,6 +334,29 @@ require("scrollbar.handlers").register("my_marks", function(bufnr)
 end)
 ```
 
+## Testing
+
+Tests require Neovim >= 0.11, Git, and Make. The quality targets also require
+[StyLua](https://github.com/JohnnyMorganz/StyLua) and
+[Selene](https://github.com/Kampfkarren/selene).
+
+```sh
+make test
+make test-file FILE=tests/test_core.lua
+make format
+make format-check
+make lint
+make ci
+```
+
+`make test` automatically installs the test-only `mini.nvim v0.18.0` dependency
+under the ignored `deps/` directory. `make ci` runs formatting checks, linting,
+and the complete test suite using the same targets as GitHub Actions.
+
+CI blocks on quality checks and tests with Neovim `v0.11.4` and the current
+stable release. The same tests also run against Neovim nightly, but nightly
+failures are informational and do not block the workflow.
+
 ## License
 
 [MIT](https://choosealicense.com/licenses/mit/)

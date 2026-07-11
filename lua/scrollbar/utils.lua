@@ -73,9 +73,6 @@ M.set_highlights = function()
     local handle_color = config.handle.color
         or M.highlight_to_hex_color(config.handle.highlight, "background", "CursorColumn", "#ffffff")
     local handle_color_nr = config.handle.color_nr
-    local handle_gui = config.handle.gui or "NONE"
-    local handle_cterm = config.handle.cterm or "NONE"
-
     -- ScrollbarHandle
     vim.cmd(
         string.format(

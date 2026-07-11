@@ -5,14 +5,16 @@ local M = {}
 
 local function ale_marks_for(bufnr)
     local ale_buffer_info = vim.g.ale_buffer_info[tostring(bufnr)]
-    if ale_buffer_info == nil then return {} end
+    if ale_buffer_info == nil then
+        return {}
+    end
 
     local ale_loclist = ale_buffer_info.loclist
 
     local rv = {}
-    for _,loclist_entry in pairs(ale_loclist) do
+    for _, loclist_entry in pairs(ale_loclist) do
         local mark_type = "Warn"
-        if loclist_entry.type == 'E' then
+        if loclist_entry.type == "E" then
             mark_type = "Error"
         end
 
@@ -20,7 +22,7 @@ local function ale_marks_for(bufnr)
             line = loclist_entry.lnum,
             type = mark_type,
             text = config.marks[mark_type].text[1],
-            level = config.marks[mark_type].priority
+            level = config.marks[mark_type].priority,
         })
     end
 
