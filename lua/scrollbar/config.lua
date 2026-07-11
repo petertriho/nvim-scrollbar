@@ -143,7 +143,7 @@ local config = {
         diagnostic = true,
         gitsigns = false, -- Requires gitsigns
         handle = true,
-        search = false, -- Requires hlslens
+        search = false,
         ale = false, -- Requires ALE
     },
 }

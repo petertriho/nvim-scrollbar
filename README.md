@@ -11,12 +11,11 @@
 - Cursor
 - Diagnostics (COC and Native)
 - Git (requires [gitsigns.nvim](https://github.com/lewis6991/gitsigns.nvim))
-- Search (requires [nvim-hlslens](https://github.com/kevinhwang91/nvim-hlslens))
+- Native search (no external dependencies)
 
 ## Requirements
 
-- Neovim >= 0.5.1
-- [nvim-hlslens](https://github.com/kevinhwang91/nvim-hlslens) (optional)
+- Neovim >= 0.11
 - [gitsigns.nvim](https://github.com/lewis6991/gitsigns.nvim) (optional)
 
 ## Installation
@@ -43,50 +42,35 @@ require("scrollbar").setup()
 <details>
   <summary>Search</summary>
 
-![search](./assets/search.gif)
+Search marks follow Neovim's native search highlighting. They update after accepted `/` and `?` searches and are hidden by `:nohlsearch`, `set nohlsearch`, or an empty search pattern.
 
-#### Setup (Packer)
-
-```lua
-use {
-  "kevinhwang91/nvim-hlslens",
-  config = function()
-    -- require('hlslens').setup() is not required
-    require("scrollbar.handlers.search").setup({
-        -- hlslens config overrides
-    })
-  end,
-}
-```
-
-OR
+Enable accepted-search marks through the main setup:
 
 ```lua
-use {
-  "kevinhwang91/nvim-hlslens",
-  config = function()
-    require("hlslens").setup({
-       build_position_cb = function(plist, _, _, _)
-            require("scrollbar.handlers.search").handler.show(plist.start_pos)
-       end,
-    })
-
-    vim.cmd([[
-        augroup scrollbar_search_hide
-            autocmd!
-            autocmd CmdlineLeave : lua require('scrollbar.handlers.search').handler.hide()
-        augroup END
-    ]])
-  end,
-}
-```
-
-If you want to leave only search marks and disable virtual text:
-
-```lua
-require("scrollbar.handlers.search").setup({
-    override_lens = function() end,
+require("scrollbar").setup({
+    handlers = {
+        search = true,
+    },
 })
+```
+
+`search = true` is equivalent to `search = { live = false }`. To preview valid patterns while typing, enable live mode:
+
+```lua
+require("scrollbar").setup({
+    handlers = {
+        search = { live = true },
+    },
+})
+```
+
+Live mode performs a full scan of the current buffer whenever the command-line pattern changes, so accepted-search mode is recommended for large buffers.
+
+The handler can also be enabled directly. Both forms below use accepted-search mode:
+
+```lua
+require("scrollbar.handlers.search").setup()
+require("scrollbar.handlers.search").setup({ live = false })
 ```
 
 </details>
@@ -262,7 +246,7 @@ require("scrollbar").setup({
         diagnostic = true,
         gitsigns = false, -- Requires gitsigns
         handle = true,
-        search = false, -- Requires hlslens
+        search = false, -- Set to true or { live = boolean }
         ale = false, -- Requires ALE
     },
 })
@@ -349,10 +333,6 @@ require("scrollbar.handlers").register("my_marks", function(bufnr)
     }
 end)
 ```
-
-## Acknowledgements
-
-- [kevinhwang91/nvim-hlslens](https://github.com/kevinhwang91/nvim-hlslens) for implementation on how to hide search results
 
 ## License
 
