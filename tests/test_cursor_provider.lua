@@ -50,18 +50,7 @@ local function show_buffer(bufnr)
     return winid
 end
 
-local function source_windows(bufnr)
-    local windows = {}
-    for _, winid in ipairs(vim.api.nvim_list_wins()) do
-        if vim.api.nvim_win_get_config(winid).relative == "" and vim.api.nvim_win_get_buf(winid) == bufnr then
-            table.insert(windows, winid)
-        end
-    end
-    table.sort(windows)
-    return windows
-end
-
-T["cursor movement replaces only the event buffer mark and invalidates every source window"] = function()
+T["cursor movement updates and invalidates only the event window"] = function()
     local providers = require("scrollbar.providers")
     local store = require("scrollbar.store")
     local target = new_buffer({ "one", "two", "three" })
@@ -78,27 +67,30 @@ T["cursor movement replaces only the event buffer mark and invalidates every sou
 
     providers.register(require("scrollbar.providers.cursor"))
     providers.setup({
-        invalidate_buffer = function(bufnr)
-            vim.list_extend(invalidated_windows, source_windows(bufnr))
+        invalidate_window = function(winid)
+            table.insert(invalidated_windows, winid)
         end,
     })
 
-    local other_before = store.get(other)
+    expect.equality(store.get(target), {})
+    expect.equality(store.get_window(target_win).cursor, { { line = 0, type = "Cursor" } })
+    expect.equality(store.get_window(second_target_win).cursor, { { line = 2, type = "Cursor" } })
+    local other_before = store.get_window(other_win)
     invalidated_windows = {}
     vim.api.nvim_win_set_cursor(target_win, { 2, 0 })
     vim.api.nvim_exec_autocmds("CursorMoved", { buffer = target })
 
-    expect.equality(store.get(target), {
-        cursor = { { line = 1, type = "Cursor" } },
-    })
-    expect.equality(store.get(other), other_before)
-    expect.equality(invalidated_windows, source_windows(target))
+    expect.equality(store.get_window(target_win).cursor, { { line = 1, type = "Cursor" } })
+    expect.equality(store.get_window(second_target_win).cursor, { { line = 2, type = "Cursor" } })
+    expect.equality(store.get_window(other_win), other_before)
+    expect.equality(invalidated_windows, { target_win })
 
     invalidated_windows = {}
     vim.api.nvim_win_set_cursor(target_win, { 1, 0 })
     vim.api.nvim_exec_autocmds("CursorMoved", { buffer = target })
-    expect.equality(store.get(target).cursor, { { line = 0, type = "Cursor" } })
-    expect.equality(invalidated_windows, source_windows(target))
+    expect.equality(store.get_window(target_win).cursor, { { line = 0, type = "Cursor" } })
+    expect.equality(store.get_window(second_target_win).cursor, { { line = 2, type = "Cursor" } })
+    expect.equality(invalidated_windows, { target_win })
 end
 
 T["cursor provider ignores excluded buffers"] = function()
@@ -111,15 +103,15 @@ T["cursor provider ignores excluded buffers"] = function()
     vim.api.nvim_set_current_win(excluded_win)
     providers.register(require("scrollbar.providers.cursor"))
     providers.setup({
-        invalidate_buffer = function(bufnr)
-            table.insert(invalidated, bufnr)
+        invalidate_window = function(winid)
+            table.insert(invalidated, winid)
         end,
     })
     invalidated = {}
     vim.api.nvim_win_set_cursor(excluded_win, { 2, 0 })
     vim.api.nvim_exec_autocmds("CursorMoved", { buffer = excluded })
 
-    expect.equality(store.get(excluded), {})
+    expect.equality(store.get_window(excluded_win), {})
     expect.equality(invalidated, {})
 end
 
@@ -138,12 +130,34 @@ T["cursor setup is idempotent and disposal removes events and marks"] = function
     local second_autocmds = vim.api.nvim_get_autocmds({ group = "ScrollbarProvider_cursor_events" })
     expect.equality(#second_autocmds, #first_autocmds)
     expect.equality(#second_autocmds > 0, true)
-    expect.equality(store.get(target).cursor, { { line = 0, type = "Cursor" } })
+    expect.equality(store.get_window(target_win).cursor, { { line = 0, type = "Cursor" } })
 
     providers.dispose()
 
-    expect.equality(store.get(target), {})
+    expect.equality(store.get_window(target_win), {})
     expect.equality(pcall(vim.api.nvim_get_autocmds, { group = "ScrollbarProvider_cursor_events" }), false)
+end
+
+T["entering a same-buffer split initializes its window cursor mark"] = function()
+    local providers = require("scrollbar.providers")
+    local store = require("scrollbar.store")
+    local target = new_buffer({ "one", "two", "three" })
+    local first = show_buffer(target)
+
+    vim.api.nvim_set_current_win(first)
+    vim.api.nvim_win_set_cursor(first, { 2, 0 })
+    providers.register(require("scrollbar.providers.cursor"))
+    providers.setup()
+
+    vim.cmd("split")
+    local second = vim.api.nvim_get_current_win()
+    MiniTest.finally(function()
+        if vim.api.nvim_win_is_valid(second) then
+            vim.api.nvim_win_close(second, true)
+        end
+    end)
+
+    expect.equality(store.get_window(second).cursor, { { line = 1, type = "Cursor" } })
 end
 
 return T

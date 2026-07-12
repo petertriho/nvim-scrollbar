@@ -134,13 +134,17 @@ end
 
 M.refresh = function()
     local buffers = {}
-    for _, winid in ipairs(renderer.source_windows()) do
+    local windows = renderer.source_windows()
+    for _, winid in ipairs(windows) do
         if vim.api.nvim_win_is_valid(winid) then
             buffers[vim.api.nvim_win_get_buf(winid)] = true
         end
     end
     for bufnr in pairs(buffers) do
         providers.refresh(bufnr)
+    end
+    for _, winid in ipairs(windows) do
+        providers.refresh_window(winid)
     end
     scheduler.invalidate_all()
 end

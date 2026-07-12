@@ -26,6 +26,22 @@ local function new_buffer(lines)
     return bufnr
 end
 
+local function show_buffer(bufnr)
+    local previous = vim.api.nvim_get_current_win()
+    vim.cmd("botright new")
+    local winid = vim.api.nvim_get_current_win()
+    vim.api.nvim_win_set_buf(winid, bufnr)
+    MiniTest.finally(function()
+        if vim.api.nvim_win_is_valid(winid) then
+            vim.api.nvim_win_close(winid, true)
+        end
+        if vim.api.nvim_win_is_valid(previous) then
+            vim.api.nvim_set_current_win(previous)
+        end
+    end)
+    return winid
+end
+
 local function capture_notifications()
     local notifications = {}
     local original = vim.notify
@@ -184,6 +200,66 @@ T["removes marks when a buffer is deleted"] = function()
 
     expect.equality(store.get(bufnr), {})
     expect.equality(store.clear_buffer(bufnr), {})
+end
+
+T["isolates window marks and removes them when a window closes"] = function()
+    local store = require("scrollbar.store")
+    local bufnr = new_buffer({ "one", "two", "three" })
+    local first = show_buffer(bufnr)
+    local second = show_buffer(bufnr)
+    local marks = { { line = 0, type = "Custom", text = "x" } }
+
+    expect.equality(select(2, store.set_window("alpha", first, marks)), { [first] = true })
+    expect.equality(select(2, store.set_window("alpha", second, { { line = 2, type = "Custom" } })), {
+        [second] = true,
+    })
+    expect.equality(select(2, store.set_window("alpha", first, marks)), {})
+
+    marks[1].line = 1
+    local snapshot = store.get_window(first)
+    snapshot.alpha[1].line = 2
+    expect.equality(store.get_window(first), {
+        alpha = { { line = 0, type = "Custom", text = "x" } },
+    })
+    expect.equality(store.get_window(second), {
+        alpha = { { line = 2, type = "Custom" } },
+    })
+
+    vim.api.nvim_win_close(first, true)
+    expect.equality(store.get_window(first), {})
+    expect.equality(store.get_window(second), {
+        alpha = { { line = 2, type = "Custom" } },
+    })
+end
+
+T["validates and clears window marks with targeted change reporting"] = function()
+    local notifications = capture_notifications()
+    local store = require("scrollbar.store")
+    local bufnr = new_buffer({ "one", "two" })
+    local first = show_buffer(bufnr)
+    local second = show_buffer(bufnr)
+
+    store.set_window("alpha", first, { { line = 0, type = "Custom" } })
+    store.set_window("alpha", second, { { line = 1, type = "Custom" } })
+    store.set_window("beta", first, { { line = 1, type = "Search" } })
+
+    expect.equality(store.clear_window("beta", first), { [first] = true })
+    expect.equality(store.clear_window("beta", first), {})
+    expect.equality(store.clear_window_provider("alpha"), { [first] = true, [second] = true })
+    expect.equality(store.get_window(first), {})
+    expect.equality(store.get_window(second), {})
+
+    local ok, changed = store.set_window("invalid", first, { { line = 2, type = "Custom" } })
+    expect.equality(ok, false)
+    expect.equality(changed, {})
+    store.set_window("invalid", first, { { line = 2, type = "Custom" } })
+    expect.equality(#notifications, 1)
+    expect.no_equality(notifications[1].message:match("provider 'invalid'.*window " .. first), nil)
+
+    ok = store.set_window("invalid", first, { { line = 1, type = "Custom" } })
+    expect.equality(ok, true)
+    store.set_window("invalid", first, { { line = 2, type = "Custom" } })
+    expect.equality(#notifications, 2)
 end
 
 return T

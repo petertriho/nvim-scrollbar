@@ -355,8 +355,15 @@ The optional provider methods are:
 ---@field name string
 ---@field setup? fun(context: ScrollbarProviderContext)
 ---@field refresh? fun(bufnr: integer, context: ScrollbarProviderContext): ScrollbarMark[]?
+---@field refresh_window? fun(winid: integer, context: ScrollbarProviderContext): ScrollbarMark[]?
 ---@field dispose? fun(context: ScrollbarProviderContext)
 ```
+
+`refresh()` publishes marks shared by every window displaying a buffer.
+`refresh_window()` publishes marks local to one source window, such as a cursor
+position. If a provider uses both scopes, both mark lists are rendered. Refresh-only
+window providers are refreshed initially and when source windows are entered;
+`:ScrollbarRefresh` invokes both refresh methods.
 
 `context` exposes a read-only-by-convention configuration snapshot and these
 managed operations:
@@ -366,6 +373,8 @@ managed operations:
 | `config` | Provider-local copy of the normalized configuration |
 | `set_marks(bufnr, marks)` | Atomically validate and replace this provider's marks |
 | `clear_marks(bufnr?)` | Clear one buffer or all marks owned by this provider |
+| `set_window_marks(winid, marks)` | Atomically validate and replace marks for one source window |
+| `clear_window_marks(winid?)` | Clear one window or all window marks owned by this provider |
 | `create_augroup(name)` | Create a provider-owned augroup removed on dispose |
 | `add_cleanup(fn)` | Register another provider-owned cleanup callback |
 | `source_windows(bufnr?)` | Enumerate eligible source windows |
@@ -373,10 +382,12 @@ managed operations:
 | `invalidate_window(winid)` | Queue one source window |
 
 Providers with custom subscriptions should create them in `setup()` through
-`context.create_augroup()`, publish through `set_marks()`, and release non-autocmd
-resources through `add_cleanup()` or `dispose()`. Provider failures are isolated:
-the failing provider's marks are cleared and repeated identical warnings are
-rate-limited until recovery.
+`context.create_augroup()`, publish through `set_marks()` or
+`set_window_marks()`, and release non-autocmd resources through `add_cleanup()`
+or `dispose()`. Buffer changes invalidate every source window displaying that
+buffer; window changes invalidate only that source window. Provider failures are
+isolated: the failing provider's marks are cleared and repeated identical warnings
+are rate-limited until recovery.
 
 ## Wide Scrollbars
 
@@ -463,7 +474,7 @@ tables follow this switch and are not applied when it is disabled.
 | `:ScrollbarShow` | `require("scrollbar").show()` | Show and invalidate all eligible scrollbars |
 | `:ScrollbarHide` | `require("scrollbar").hide()` | Hide and dispose all current scrollbar floats |
 | `:ScrollbarToggle` | `require("scrollbar").toggle()` | Toggle global visibility |
-| `:ScrollbarRefresh` | `require("scrollbar").refresh()` | Refresh providers for visible source buffers and rerender |
+| `:ScrollbarRefresh` | `require("scrollbar").refresh()` | Refresh providers for visible source buffers and windows, then rerender |
 
 ## Migrating From Earlier Releases
 

@@ -279,25 +279,36 @@ local function create_state(source_win, source_buf, area)
     return state
 end
 
+---@param source_win integer
 ---@param source_buf integer
 ---@return ScrollbarLayoutMark[]
-local function flattened_marks(source_buf)
-    local snapshot = store.get(source_buf)
+local function flattened_marks(source_win, source_buf)
+    local buffer_snapshot = store.get(source_buf)
+    local window_snapshot = store.get_window(source_win)
     local providers = {}
-    for provider in pairs(snapshot) do
-        table.insert(providers, provider)
+    local seen = {}
+    for provider in pairs(buffer_snapshot) do
+        seen[provider] = true
+    end
+    for provider in pairs(window_snapshot) do
+        seen[provider] = true
+    end
+    for provider in pairs(seen) do
+        providers[#providers + 1] = provider
     end
     table.sort(providers)
 
     local marks = {}
     for _, provider in ipairs(providers) do
-        for _, mark in ipairs(snapshot[provider]) do
-            table.insert(marks, {
-                provider = provider,
-                line = mark.line,
-                type = mark.type,
-                text = mark.text,
-            })
+        for _, snapshot in ipairs({ buffer_snapshot, window_snapshot }) do
+            for _, mark in ipairs(snapshot[provider] or {}) do
+                table.insert(marks, {
+                    provider = provider,
+                    line = mark.line,
+                    type = mark.type,
+                    text = mark.text,
+                })
+            end
         end
     end
     return marks
@@ -396,7 +407,7 @@ local function render_source(source_win)
         return nil
     end
 
-    local marks = flattened_marks(source_buf)
+    local marks = flattened_marks(source_win, source_buf)
     local geometry = geometry_for(source_win, source_buf, area.height, marks)
     local all_visible = geometry.total_extent <= area.height
     if all_visible and config.get().hide_if_all_visible then

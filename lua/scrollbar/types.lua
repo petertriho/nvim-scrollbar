@@ -137,6 +137,8 @@
 ---@field config ScrollbarConfig Provider-local snapshot; mutations cannot change root configuration
 ---@field set_marks fun(bufnr: integer, marks: ScrollbarMark[]): boolean
 ---@field clear_marks fun(bufnr?: integer): boolean
+---@field set_window_marks fun(winid: integer, marks: ScrollbarMark[]): boolean
+---@field clear_window_marks fun(winid?: integer): boolean
 ---@field create_augroup fun(name: string): integer
 ---@field add_cleanup fun(cleanup: fun())
 ---@field source_windows fun(bufnr?: integer): integer[]
@@ -147,10 +149,13 @@
 ---@field name string
 ---@field setup? fun(context: ScrollbarProviderContext)
 ---@field refresh? fun(bufnr: integer, context: ScrollbarProviderContext): ScrollbarMark[]?
+---@field refresh_window? fun(winid: integer, context: ScrollbarProviderContext): ScrollbarMark[]?
 ---@field dispose? fun(context: ScrollbarProviderContext)
 
 ---@alias ScrollbarStoreSnapshot table<string, ScrollbarMark[]>
+---@alias ScrollbarWindowStoreSnapshot table<string, ScrollbarMark[]>
 ---@alias ScrollbarChangedBuffers table<integer, true>
+---@alias ScrollbarChangedWindows table<integer, true>
 
 ---@class ScrollbarHighlightSpan
 ---@field start_col integer Zero-based byte column
