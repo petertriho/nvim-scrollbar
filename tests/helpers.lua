@@ -22,35 +22,61 @@ M.set_lines = function(child, lines)
     child.api.nvim_win_set_cursor(0, { 1, 0 })
 end
 
-M.setup_search = function(child, live)
+local function setup_search_provider(child, search_config)
     child.lua_func(function(value)
         vim.o.hlsearch = true
         vim.o.wrapscan = false
-        if value == nil then
-            require("scrollbar.handlers.search").setup()
-        else
-            require("scrollbar.handlers.search").setup({ live = value })
-        end
-    end, live)
-end
 
-M.setup_root_search = function(child, search_config)
-    child.lua_func(function(value)
-        vim.o.hlsearch = true
-        vim.o.wrapscan = false
-        require("scrollbar").setup({
+        local active_config = require("scrollbar.config").set({
             set_highlights = false,
-            throttle_ms = 0,
-            autocmd = { render = {} },
-            handlers = {
+            render = { interval_ms = 0 },
+            providers = {
                 cursor = false,
                 diagnostic = false,
                 gitsigns = false,
                 search = value,
                 ale = false,
+                coc = false,
             },
         })
+        local providers = require("scrollbar.providers")
+        local state = package.loaded["scrollbar.test.search"]
+        if type(state) ~= "table" then
+            state = {}
+            package.loaded["scrollbar.test.search"] = state
+        end
+        if not state.registered then
+            providers.register(require("scrollbar.providers.search"))
+            state.registered = true
+        end
+
+        state.invalidated_buffers = {}
+        state.invalidated_windows = {}
+        providers.setup({
+            config = active_config,
+            invalidate_buffer = function(bufnr)
+                table.insert(state.invalidated_buffers, bufnr)
+                for _, winid in ipairs(vim.api.nvim_list_wins()) do
+                    if
+                        vim.api.nvim_win_get_config(winid).relative == ""
+                        and vim.api.nvim_win_get_buf(winid) == bufnr
+                    then
+                        table.insert(state.invalidated_windows, winid)
+                    end
+                end
+            end,
+        })
+        state.invalidated_buffers = {}
+        state.invalidated_windows = {}
     end, search_config)
+end
+
+M.setup_search = function(child, live)
+    setup_search_provider(child, { live = live or false })
+end
+
+M.setup_search_config = function(child, search_config)
+    setup_search_provider(child, search_config)
 end
 
 M.activate_search = function(child, pattern)
@@ -62,7 +88,10 @@ end
 
 M.search_marks = function(child, bufnr)
     local marks = child.lua_func(function(buffer)
-        return require("scrollbar.utils").get_scrollbar_marks(buffer or 0).search
+        if buffer == nil or buffer == 0 then
+            buffer = vim.api.nvim_get_current_buf()
+        end
+        return require("scrollbar.store").get(buffer).search
     end, bufnr)
     if marks == vim.NIL then
         return nil
@@ -72,7 +101,10 @@ end
 
 M.mark_lines = function(child, bufnr)
     local lines = child.lua_func(function(buffer)
-        local marks = require("scrollbar.utils").get_scrollbar_marks(buffer or 0).search
+        if buffer == nil or buffer == 0 then
+            buffer = vim.api.nvim_get_current_buf()
+        end
+        local marks = require("scrollbar.store").get(buffer).search
         if marks == nil then
             return nil
         end
@@ -90,7 +122,7 @@ end
 M.wait_for_mark_lines = function(child, expected)
     return child.lua_func(function(value)
         return vim.wait(1000, function()
-            local marks = require("scrollbar.utils").get_scrollbar_marks(0).search
+            local marks = require("scrollbar.store").get(vim.api.nvim_get_current_buf()).search
             if marks == nil then
                 return value == nil
             end
@@ -113,7 +145,7 @@ M.inspect_during_cmdline = function(child, direction, pattern)
         vim.api.nvim_create_autocmd("CmdlineChanged", {
             pattern = { "/", "?" },
             callback = function()
-                local marks = require("scrollbar.utils").get_scrollbar_marks(0).search
+                local marks = require("scrollbar.store").get(vim.api.nvim_get_current_buf()).search
                 _G.scrollbar_test_cmdline.lines = marks and vim.tbl_map(function(mark)
                     return mark.line
                 end, marks) or nil
@@ -140,6 +172,26 @@ M.inspect_during_cmdline = function(child, direction, pattern)
         capture.lines = nil
     end
     return capture
+end
+
+M.reset_search_invalidations = function(child)
+    child.lua([[
+        local state = package.loaded["scrollbar.test.search"]
+        state.invalidated_buffers = {}
+        state.invalidated_windows = {}
+    ]])
+end
+
+M.search_invalidations = function(child)
+    return child.lua_get([[
+        (function()
+            local state = package.loaded["scrollbar.test.search"]
+            return {
+                buffers = state.invalidated_buffers,
+                windows = state.invalidated_windows,
+            }
+        end)()
+    ]])
 end
 
 return M

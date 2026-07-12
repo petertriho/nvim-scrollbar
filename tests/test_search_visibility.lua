@@ -34,7 +34,7 @@ T[":nohlsearch clears marks from every loaded buffer"] = function()
     child.api.nvim_win_set_buf(0, buffers.current)
     expect.equality(clear_with_nohlsearch(child), true)
     expect.equality(helpers.search_marks(child, buffers.other), nil)
-    expect.equality(helpers.search_marks(child, buffers.other), nil)
+    expect.equality(helpers.search_marks(child, buffers.current), nil)
 end
 
 T["a new accepted search restores marks after :nohlsearch"] = function()
@@ -59,10 +59,13 @@ T["accepted searches work after hlsearch is re-enabled"] = function()
     expect.equality(helpers.wait_for_mark_lines(child, { 2, 3 }), true)
 end
 
-T["CursorMoved restores visible native highlighting after an explicit clear"] = function()
+T["provider manager restart restores visible native highlighting"] = function()
     local child = search_child()
-    child.lua([[require("scrollbar.handlers.search").clear()]])
-    child.api.nvim_exec_autocmds("CursorMoved", { buffer = 0 })
+    child.lua([[
+        local providers = require("scrollbar.providers")
+        providers.dispose()
+        providers.setup({ config = require("scrollbar.config").get() })
+    ]])
     expect.equality(helpers.mark_lines(child), { 2, 3 })
 end
 
@@ -79,13 +82,23 @@ end
 T["CursorMoved does not rescan an unchanged visible search"] = function()
     local child = search_child()
     child.lua([[
-        local utils = require("scrollbar.utils")
-        local marks = utils.get_scrollbar_marks(0)
-        marks.search = { { line = 99, text = "-", type = "Search", level = 1 } }
-        utils.set_scrollbar_marks(0, marks)
+        require("scrollbar.store").set("search", vim.api.nvim_get_current_buf(), {
+            { line = 0, type = "Search" },
+        })
     ]])
     child.api.nvim_exec_autocmds("CursorMoved", { buffer = 0 })
-    expect.equality(helpers.mark_lines(child), { 99 })
+    expect.equality(helpers.mark_lines(child), { 0 })
+end
+
+T["WinScrolled does not rescan an unchanged visible search"] = function()
+    local child = search_child()
+    child.lua([[
+        require("scrollbar.store").set("search", vim.api.nvim_get_current_buf(), {
+            { line = 0, type = "Search" },
+        })
+    ]])
+    child.api.nvim_exec_autocmds("WinScrolled", {})
+    expect.equality(helpers.mark_lines(child), { 0 })
 end
 
 T["an empty accepted pattern clears marks"] = function()
@@ -93,6 +106,32 @@ T["an empty accepted pattern clears marks"] = function()
     child.fn.setreg("/", "")
     child.api.nvim_exec_autocmds("CursorMoved", { buffer = 0 })
     expect.equality(helpers.search_marks(child), nil)
+end
+
+T["clearing search invalidates every source window displaying the buffer"] = function()
+    local child = search_child()
+    child.cmd("vsplit")
+    local expected_windows = child.api.nvim_list_wins()
+    table.sort(expected_windows)
+    helpers.reset_search_invalidations(child)
+
+    expect.equality(clear_with_nohlsearch(child), true)
+    local invalidations = helpers.search_invalidations(child)
+    local invalidated_buffers = {}
+    local invalidated_windows = {}
+    for _, bufnr in ipairs(invalidations.buffers) do
+        invalidated_buffers[bufnr] = true
+    end
+    for _, winid in ipairs(invalidations.windows) do
+        invalidated_windows[winid] = true
+    end
+    invalidations.buffers = vim.tbl_keys(invalidated_buffers)
+    invalidations.windows = vim.tbl_keys(invalidated_windows)
+    table.sort(invalidations.buffers)
+    table.sort(invalidations.windows)
+
+    expect.equality(invalidations.buffers, { child.api.nvim_get_current_buf() })
+    expect.equality(invalidations.windows, expected_windows)
 end
 
 return T

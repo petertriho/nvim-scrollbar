@@ -27,10 +27,9 @@ T["TextChangedI refreshes stale accepted search marks"] = function()
     local child = search_child("preview", { "start", "accepted", "preview", "preview" })
     expect.equality(helpers.wait_for_mark_lines(child, { 2, 3 }), true)
     child.lua([[
-        local utils = require("scrollbar.utils")
-        local marks = utils.get_scrollbar_marks(0)
-        marks.search = { { line = 99, text = "-", type = "Search", level = 1 } }
-        utils.set_scrollbar_marks(0, marks)
+        require("scrollbar.store").set("search", vim.api.nvim_get_current_buf(), {
+            { line = 0, type = "Search" },
+        })
     ]])
     child.api.nvim_exec_autocmds("TextChangedI", { buffer = 0 })
     expect.equality(helpers.mark_lines(child), { 2, 3 })
@@ -61,6 +60,29 @@ T["TextChanged replaces stale marks in the visible entered buffer"] = function()
     child.api.nvim_buf_set_lines(0, 1, 2, false, { "preview" })
     child.api.nvim_exec_autocmds("TextChanged", { buffer = 0 })
     expect.equality(helpers.mark_lines(child), { 1 })
+end
+
+T["pattern signatures are isolated per buffer"] = function()
+    local child = search_child("preview", { "preview", "preview" })
+    expect.equality(helpers.wait_for_mark_lines(child, { 0, 1 }), true)
+
+    local buffers = child.lua_get([[(function()
+        vim.cmd("vsplit")
+        local first = vim.api.nvim_get_current_buf()
+        local second = vim.api.nvim_create_buf(true, false)
+        vim.api.nvim_buf_set_lines(second, 0, -1, false, { "preview", "preview" })
+        vim.api.nvim_win_set_buf(0, second)
+        vim.bo[second].iskeyword = "@,48-57,_"
+        return { first = first, second = second }
+    end)()]])
+    expect.equality(helpers.mark_lines(child, buffers.second), { 0, 1 })
+
+    child.lua_func(function(first)
+        require("scrollbar.store").set("search", first, { { line = 0, type = "Search" } })
+        vim.api.nvim_exec_autocmds("CursorMoved", { buffer = first })
+    end, buffers.first)
+
+    expect.equality(helpers.mark_lines(child, buffers.first), { 0 })
 end
 
 return T

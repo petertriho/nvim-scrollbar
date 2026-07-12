@@ -1,213 +1,154 @@
 <div align="center">
   <h1>nvim-scrollbar</h1>
-  <h5>Extensible Neovim Scrollbar</h5>
+  <h5>Extensible floating scrollbars for Neovim</h5>
 </div>
 
 ![diagnostics](./assets/diagnostics.gif)
 
-## Features
-
-- ALE
-- Cursor
-- Diagnostics (COC and Native)
-- Git (requires [gitsigns.nvim](https://github.com/lewis6991/gitsigns.nvim))
-- Native search (no external dependencies)
+`nvim-scrollbar` renders one floating scrollbar per source window, with independent
+handles for split windows, typed mark providers, optional screen-row-accurate
+geometry, and mouse navigation.
 
 ## Requirements
 
-- Neovim >= 0.11
-- [gitsigns.nvim](https://github.com/lewis6991/gitsigns.nvim) (optional)
+- Neovim 0.11 or newer
+- The user's Neovim `mouse` option must enable the desired modes for mouse
+  interaction, for example `set mouse=a`. The plugin never changes `mouse`.
+- Optional integrations:
+  [gitsigns.nvim](https://github.com/lewis6991/gitsigns.nvim),
+  [ALE](https://github.com/dense-analysis/ale), and
+  [coc.nvim](https://github.com/neoclide/coc.nvim)
+
+Versions of Neovim older than 0.11 are not supported.
 
 ## Installation
 
-[vim-plug](https://github.com/junegunn/vim-plug)
+[lazy.nvim](https://github.com/folke/lazy.nvim):
+
+```lua
+{
+    "petertriho/nvim-scrollbar",
+    opts = {},
+}
+```
+
+[vim-plug](https://github.com/junegunn/vim-plug):
 
 ```vim
 Plug 'petertriho/nvim-scrollbar'
 ```
 
-[packer.nvim](https://github.com/wbthomason/packer.nvim)
-
-```lua
-use("petertriho/nvim-scrollbar")
-```
-
-## Setup
+Then configure the plugin from Lua:
 
 ```lua
 require("scrollbar").setup()
-
 ```
 
-<details>
-  <summary>Search</summary>
+## Configuration
 
-Search marks follow Neovim's native search highlighting. They update after accepted `/` and `?` searches and are hidden by `:nohlsearch`, `set nohlsearch`, or an empty search pattern.
-
-Enable accepted-search marks through the main setup:
-
-```lua
-require("scrollbar").setup({
-    handlers = {
-        search = true,
-    },
-})
-```
-
-`search = true` is equivalent to `search = { live = false }`. To preview valid patterns while typing, enable live mode:
-
-```lua
-require("scrollbar").setup({
-    handlers = {
-        search = { live = true },
-    },
-})
-```
-
-Live mode performs a full scan of the current buffer whenever the command-line pattern changes, so accepted-search mode is recommended for large buffers.
-
-The handler can also be enabled directly. Both forms below use accepted-search mode:
-
-```lua
-require("scrollbar.handlers.search").setup()
-require("scrollbar.handlers.search").setup({ live = false })
-```
-
-</details>
-
-<details>
-  <summary>Git Signs</summary>
-
-https://user-images.githubusercontent.com/889383/201331485-477677a7-40a9-4731-998a-34779f7123ff.mp4
-
-Display git changes in the sidebar. Requires [gitsigns.nvim](https://github.com/lewis6991/gitsigns.nvim) to be installed.
-
-#### Setup (Packer)
-
-```lua
-use {
-  "lewis6991/gitsigns.nvim",
-  config = function()
-    require('gitsigns').setup()
-    require("scrollbar.handlers.gitsigns").setup()
-  end
-}
-```
-</details>
-
-## Config
-
-<details>
-  <summary>Defaults</summary>
+Unknown keys and invalid values are rejected. The complete defaults are:
 
 ```lua
 require("scrollbar").setup({
     show = true,
-    show_in_active_only = false,
+    visibility = "all", -- "all" or "active"
     set_highlights = true,
-    folds = 1000, -- handle folds, set to number to disable folds if no. of lines in buffer exceeds this
-    max_lines = false, -- disables if no. of lines in buffer exceeds this
-    hide_if_all_visible = false, -- Hides everything if all lines are visible
-    throttle_ms = 100,
+    max_lines = false, -- false or a positive line limit
+    hide_if_all_visible = false,
+    render = {
+        interval_ms = 16,
+        geometry = "line", -- "line" or "screen"
+    },
+    float = {
+        width = 1,
+        zindex = 50,
+        placement = {
+            relative = "window", -- "window" or "editor"
+            anchor = "NE", -- "NW", "NE", "SW", or "SE"
+            row = 0,
+            col = 0,
+        },
+    },
+    mouse = {
+        enabled = true,
+    },
     handle = {
         text = " ",
-        blend = 30, -- Integer between 0 and 100. 0 for fully opaque and 100 to full transparent. Defaults to 30.
-        color = nil,
-        color_nr = nil, -- cterm
+        column = 1,
+        width = 1,
+        blend = 30,
         highlight = "CursorColumn",
-        hide_if_all_visible = true, -- Hides handle if all lines are visible
+        hide_if_all_visible = true,
     },
     marks = {
         Cursor = {
-            text = "•",
+            text = { "•" },
+            column = 1,
             priority = 0,
-            gui = nil,
-            color = nil,
-            cterm = nil,
-            color_nr = nil, -- cterm
             highlight = "Normal",
         },
         Search = {
             text = { "-", "=" },
+            column = 1,
             priority = 1,
-            gui = nil,
-            color = nil,
-            cterm = nil,
-            color_nr = nil, -- cterm
             highlight = "Search",
         },
         Error = {
             text = { "-", "=" },
+            column = 1,
             priority = 2,
-            gui = nil,
-            color = nil,
-            cterm = nil,
-            color_nr = nil, -- cterm
             highlight = "DiagnosticVirtualTextError",
         },
         Warn = {
             text = { "-", "=" },
+            column = 1,
             priority = 3,
-            gui = nil,
-            color = nil,
-            cterm = nil,
-            color_nr = nil, -- cterm
             highlight = "DiagnosticVirtualTextWarn",
         },
         Info = {
             text = { "-", "=" },
+            column = 1,
             priority = 4,
-            gui = nil,
-            color = nil,
-            cterm = nil,
-            color_nr = nil, -- cterm
             highlight = "DiagnosticVirtualTextInfo",
         },
         Hint = {
             text = { "-", "=" },
+            column = 1,
             priority = 5,
-            gui = nil,
-            color = nil,
-            cterm = nil,
-            color_nr = nil, -- cterm
             highlight = "DiagnosticVirtualTextHint",
         },
         Misc = {
             text = { "-", "=" },
+            column = 1,
             priority = 6,
-            gui = nil,
-            color = nil,
-            cterm = nil,
-            color_nr = nil, -- cterm
             highlight = "Normal",
         },
         GitAdd = {
-            text = "┆",
+            text = { "┆" },
+            column = 1,
             priority = 7,
-            gui = nil,
-            color = nil,
-            cterm = nil,
-            color_nr = nil, -- cterm
             highlight = "GitSignsAdd",
         },
         GitChange = {
-            text = "┆",
+            text = { "┆" },
+            column = 1,
             priority = 7,
-            gui = nil,
-            color = nil,
-            cterm = nil,
-            color_nr = nil, -- cterm
             highlight = "GitSignsChange",
         },
         GitDelete = {
-            text = "▁",
+            text = { "▁" },
+            column = 1,
             priority = 7,
-            gui = nil,
-            color = nil,
-            cterm = nil,
-            color_nr = nil, -- cterm
             highlight = "GitSignsDelete",
         },
+    },
+    providers = {
+        cursor = true,
+        diagnostic = true,
+        search = false, -- true or { live = boolean }
+        gitsigns = false,
+        ale = false,
+        coc = true,
     },
     excluded_buftypes = {
         "terminal",
@@ -223,122 +164,306 @@ require("scrollbar").setup({
         "prompt",
         "TelescopePrompt",
     },
-    autocmd = {
-        render = {
-            "BufWinEnter",
-            "TabEnter",
-            "TermEnter",
-            "WinEnter",
-            "CmdwinLeave",
-            "TextChanged",
-            "VimResized",
-            "WinScrolled",
+})
+```
+
+`handle.column`, `handle.width`, and mark columns are one-based display-cell
+coordinates. The handle must fit within `float.width`. Mark text is clipped at
+the right edge without splitting a multi-cell character.
+
+### Visibility
+
+- `visibility = "all"` creates an independent scrollbar for every eligible
+  normal window. Two windows showing the same buffer retain different handles.
+- `visibility = "active"` keeps only the active source window's scrollbar.
+- `show = false` starts hidden. `show()`, `hide()`, and `toggle()` operate on all
+  plugin-owned scrollbars.
+- `max_lines` excludes buffers above the configured logical line count.
+- `hide_if_all_visible` hides the whole scrollbar when the document fits.
+  `handle.hide_if_all_visible` hides only the handle.
+
+### Placement
+
+`float.placement.relative` selects the placement container:
+
+- `"window"` attaches one float to each source window.
+- `"editor"` uses editor coordinates and always renders only the active source
+  window, regardless of `visibility`, so multiple floats do not overlap.
+
+`anchor` selects the float corner attached to the matching container corner.
+`row` and `col` are signed offsets from that corner: positive rows move down and
+positive columns move right. For example:
+
+```lua
+require("scrollbar").setup({
+    float = {
+        placement = {
+            relative = "window",
+            anchor = "NW",
+            row = 1,
+            col = 2,
         },
-        clear = {
-            "BufWinLeave",
-            "TabLeave",
-            "TermLeave",
-            "WinLeave",
-        },
-    },
-    handlers = {
-        cursor = true,
-        diagnostic = true,
-        gitsigns = false, -- Requires gitsigns
-        handle = true,
-        search = false, -- Set to true or { live = boolean }
-        ale = false, -- Requires ALE
     },
 })
 ```
 
-</details>
+The renderer owns the float height, scratch buffer, focusability, mouse flag,
+style, and source-window association. `float.width`, `float.zindex`, and the
+typed placement fields are the supported float controls.
 
-## Colors/Highlights
+### Geometry
 
-Color takes precedence over highlight i.e. if color is defined, that will be
-used to define the highlight instead of highlight.
+`render.geometry = "line"` is the default. It maps logical source lines to the
+track, performs no fold scan, and keeps render work independent of total buffer
+line count apart from the current marks.
 
-Mark type highlights are in the format of `Scrollbar<MarkType>` and
-`Scrollbar<MarkType>Handle`. If you wish to define these yourself, add
-`set_highlights = false` to the setup.
+`render.geometry = "screen"` uses `nvim_win_text_height()` so marks and the
+handle share coordinates that account for wrapping, closed folds, diff filler,
+virtual lines, `topfill`, and wrapped-line offsets. Screen geometry is recomputed
+for each dirty render. It is more accurate and intentionally more expensive;
+it is not expected to outperform line geometry.
 
-- `ScrollbarHandle`
-- `ScrollbarCursorHandle`
-- `ScrollbarCursor`
-- `ScrollbarSearchHandle`
-- `ScrollbarSearch`
-- `ScrollbarErrorHandle`
-- `ScrollbarError`
-- `ScrollbarWarnHandle`
-- `ScrollbarWarn`
-- `ScrollbarInfoHandle`
-- `ScrollbarInfo`
-- `ScrollbarHintHandle`
-- `ScrollbarHint`
-- `ScrollbarMiscHandle`
-- `ScrollbarMisc`
-- `ScrollbarGitAdd`
-- `ScrollbarGitAddHandle`
-- `ScrollbarGitChange`
-- `ScrollbarGitChangeHandle`
-- `ScrollbarGitDelete`
-- `ScrollbarGitDeleteHandle`
+`render.interval_ms` is the frame-coalescing interval. Repeated invalidations
+within one frame render the latest state once. Scrolling invalidates geometry
+without recollecting provider marks.
 
-### Example config with [tokyonight.nvim](https://github.com/folke/tokyonight.nvim) colors
+### Mouse
+
+Mouse support installs `<LeftMouse>`, `<LeftDrag>`, and `<LeftRelease>` mappings
+only in scrollbar float buffers. It does not install global mappings or modify
+`vim.o.mouse`.
+
+- Clicking a visible mark jumps to that mark's exact source line.
+- Clicking empty track space jumps proportionally through the document.
+- Pressing on the handle and moving drags it while preserving the grab offset.
+- A mark over the handle is an exact mark click if released without movement;
+  moving starts a handle drag.
+- Navigation moves the source cursor, opens only the containing fold with `zv`,
+  centers with `zz`, and restores source-window focus on completion or cancel.
+
+Set `mouse.enabled = false` to make scrollbar floats non-focusable and omit the
+mappings. Even when enabled, interaction works only in modes allowed by the
+user's `mouse` option, such as `vim.o.mouse = "a"`.
+
+## Providers
+
+Built-in providers are configured under `providers`:
+
+| Provider | Default | Source | Optional dependency |
+| --- | --- | --- | --- |
+| `cursor` | on | Current source cursor | None |
+| `diagnostic` | on | Neovim 0.11 `vim.diagnostic` | None |
+| `search` | off | Native `/` and `?` search | None |
+| `gitsigns` | off | Git hunks | gitsigns.nvim |
+| `ale` | off | ALE location list | ALE |
+| `coc` | on | Coc diagnostic list | coc.nvim |
+
+Optional providers safely produce no marks when their dependency is absent.
+
+### Search
+
+Accepted-search mode updates after `/` or `?` is accepted and follows native
+search visibility. Marks clear after `:nohlsearch`, `set nohlsearch`, or an empty
+search pattern.
 
 ```lua
-local colors = require("tokyonight.colors").setup()
+require("scrollbar").setup({
+    providers = {
+        search = true, -- equivalent to { live = false }
+    },
+})
+```
+
+Live mode previews valid patterns while the search command line changes:
+
+```lua
+require("scrollbar").setup({
+    providers = {
+        search = { live = true },
+    },
+})
+```
+
+Live mode scans the current buffer for each command-line pattern change, so
+accepted-search mode is preferable for large buffers.
+
+### Custom Providers
+
+Managed providers can be registered before or after `require("scrollbar").setup()`.
+Names must be unique; registration never replaces another provider implicitly.
+Unregistering disposes the provider, removes its augroups and cleanups, clears
+its marks, and invalidates affected windows.
+
+Marks use zero-based source lines:
+
+```lua
+---@class ScrollbarMark
+---@field line integer -- zero-based source line
+---@field type string -- a configured entry in `marks`
+---@field text? string -- optional text override
+```
+
+A simple refresh-only provider is refreshed initially and on eligible buffer
+entry and content changes:
+
+```lua
+local providers = require("scrollbar.providers")
+
+providers.register({
+    name = "bookmarks",
+    refresh = function(bufnr, context)
+        local last = vim.api.nvim_buf_line_count(bufnr) - 1
+        return {
+            { line = 0, type = "Bookmark" },
+            { line = last, type = "Bookmark", text = "B" },
+        }
+    end,
+})
 
 require("scrollbar").setup({
+    marks = {
+        Bookmark = {
+            text = { "·", "•", "#" },
+            column = 1,
+            priority = 1,
+            highlight = "Special",
+        },
+    },
+})
+
+-- This also works after setup and triggers immediate setup/refresh.
+-- providers.register(another_provider)
+
+providers.unregister("bookmarks")
+```
+
+The optional provider methods are:
+
+```lua
+---@class ScrollbarProvider
+---@field name string
+---@field setup? fun(context: ScrollbarProviderContext)
+---@field refresh? fun(bufnr: integer, context: ScrollbarProviderContext): ScrollbarMark[]?
+---@field dispose? fun(context: ScrollbarProviderContext)
+```
+
+`context` exposes a read-only-by-convention configuration snapshot and these
+managed operations:
+
+| Context member | Purpose |
+| --- | --- |
+| `config` | Provider-local copy of the normalized configuration |
+| `set_marks(bufnr, marks)` | Atomically validate and replace this provider's marks |
+| `clear_marks(bufnr?)` | Clear one buffer or all marks owned by this provider |
+| `create_augroup(name)` | Create a provider-owned augroup removed on dispose |
+| `add_cleanup(fn)` | Register another provider-owned cleanup callback |
+| `source_windows(bufnr?)` | Enumerate eligible source windows |
+| `invalidate_buffer(bufnr)` | Queue windows displaying a buffer |
+| `invalidate_window(winid)` | Queue one source window |
+
+Providers with custom subscriptions should create them in `setup()` through
+`context.create_augroup()`, publish through `set_marks()`, and release non-autocmd
+resources through `add_cleanup()` or `dispose()`. Provider failures are isolated:
+the failing provider's marks are cleared and repeated identical warnings are
+rate-limited until recovery.
+
+## Wide Scrollbars
+
+Handle and mark ranges may occupy separate columns. Non-overlapping ranges on
+the same row coexist:
+
+```lua
+require("scrollbar").setup({
+    float = { width = 4 },
     handle = {
-        color = colors.bg_highlight,
+        text = "██",
+        column = 3,
+        width = 2,
     },
     marks = {
-        Search = { color = colors.orange },
-        Error = { color = colors.error },
-        Warn = { color = colors.warning },
-        Info = { color = colors.info },
-        Hint = { color = colors.hint },
-        Misc = { color = colors.purple },
-    }
+        Error = {
+            text = { "E", "!" },
+            column = 1,
+            priority = 0,
+            highlight = "DiagnosticError",
+        },
+        Search = {
+            text = { "s", "S" },
+            column = 2,
+            priority = 1,
+            highlight = "Search",
+        },
+    },
 })
 ```
 
-## Custom Handlers
+Text arrays are density variants. Marks compressed into the same rendered row,
+type, and column use variant `min(mark_count, variant_count)`. For example,
+`{ "·", "•", "#" }` displays `·` for one mark, `•` for two, and `#` for three
+or more. A string is accepted as a one-variant shorthand.
 
-One can define custom handlers consisting of a name and a lua function that returns a list of marks as follows:
+Overlapping mark display-cell ranges are resolved by priority; lower numeric
+values win. Ties are deterministic. Multi-cell glyphs are atomic and are omitted
+rather than split when an overlap would cut through them.
 
-```lua
-require("scrollbar.handlers").register(name, handler_function)
-```
+## Highlights
 
-`handler_function` receives the buffer number as argument and must return a list of tables with `line`, `text`, `type`, and `level` keys. Only the `line` key is required.
+With `set_highlights = true`, setup derives scrollbar groups from the configured
+source highlight groups. `handle.highlight` supplies the handle background and
+`handle.blend`; each mark's `highlight` supplies its foreground. Groups are
+regenerated after `ColorScheme`.
 
-| Key     | Description                                                   |
-| ------- | ------------------------------------------------------------- |
-| `line`  | The line number. _Required_.                                  |
-| `text`  | Marker text. Defaults to global settings depending on `type`. |
-| `type`  | The marker type. Default is `Misc`.                           |
-| `level` | Marker level. Default is `1`.                                 |
+- `ScrollbarFloat` is the transparent float background.
+- `ScrollbarHandle` styles uncovered handle cells.
+- `Scrollbar<MarkType>` styles a mark outside the handle.
+- `Scrollbar<MarkType>Handle` styles a mark overlapping the handle while
+  preserving the handle background.
 
-E.g. the following marks the first three lines in every buffer.
+For example: `ScrollbarSearch`, `ScrollbarSearchHandle`, `ScrollbarError`, and
+`ScrollbarErrorHandle`.
 
-```lua
-require("scrollbar.handlers").register("my_marks", function(bufnr)
-    return {
-        { line = 0 },
-        { line = 1, text = "x", type = "Warn" },
-        { line = 2, type = "Error" }
-    }
-end)
-```
+Set `set_highlights = false` to define these groups yourself. The old direct
+color, GUI, and cterm configuration keys are not supported.
 
-## Testing
+## Commands
 
-Tests require Neovim >= 0.11, Git, and Make. The quality targets also require
-[StyLua](https://github.com/JohnnyMorganz/StyLua) and
-[Selene](https://github.com/Kampfkarren/selene).
+| Command | Lua API | Effect |
+| --- | --- | --- |
+| `:ScrollbarShow` | `require("scrollbar").show()` | Show and invalidate all eligible scrollbars |
+| `:ScrollbarHide` | `require("scrollbar").hide()` | Hide and dispose all current scrollbar floats |
+| `:ScrollbarToggle` | `require("scrollbar").toggle()` | Toggle global visibility |
+| `:ScrollbarRefresh` | `require("scrollbar").refresh()` | Refresh providers for visible source buffers and rerender |
+
+## Migrating From Earlier Releases
+
+This release intentionally has no compatibility aliases or fallback renderer.
+Update configuration and integrations as follows:
+
+- Neovim 0.11+ is required; pre-0.11 support and compatibility branches were removed.
+- `show_in_active_only` was removed. Use `visibility = "active"` or `"all"`.
+- `folds` was removed. Use fast `render.geometry = "line"` or opt into
+  `render.geometry = "screen"` for folds, wraps, filler, and virtual lines.
+- `throttle_ms` was removed. Use `render.interval_ms` for latest-state frame coalescing.
+- The user-configurable `autocmd` table was removed. Runtime events are owned internally.
+- The old `handlers` table was removed. Use `providers`.
+- Direct setup APIs such as `require("scrollbar.handlers.search").setup()` and
+  `require("scrollbar.handlers.gitsigns").setup()` were removed.
+- `require("scrollbar.handlers").register(name, fn)` was removed. Register a
+  managed provider with `require("scrollbar.providers").register(provider)`.
+- `b:scrollbar_marks` was removed. Providers publish marks through their context;
+  direct buffer-variable writes are ignored.
+- Mark `level` was removed. Density is derived from marks compressed into the
+  same rendered row/type/column bucket.
+- Old `color`, `color_nr`, `gui`, and `cterm` keys were removed from handle and
+  mark configuration. Use highlight group names and optionally define generated
+  `Scrollbar*` groups with `set_highlights = false`.
+
+## Development
+
+Tests require Neovim 0.11+, Git, and Make. Quality checks additionally require
+[StyLua](https://github.com/JohnnyMorganz/StyLua),
+[Selene](https://github.com/Kampfkarren/selene), and
+[Lua language server](https://github.com/LuaLS/lua-language-server).
 
 ```sh
 make test
@@ -346,16 +471,18 @@ make test-file FILE=tests/test_core.lua
 make format
 make format-check
 make lint
+make typecheck
+make benchmark
 make ci
 ```
 
-`make test` automatically installs the test-only `mini.nvim v0.18.0` dependency
-under the ignored `deps/` directory. `make ci` runs formatting checks, linting,
-and the complete test suite using the same targets as GitHub Actions.
+`make test` installs test-only `mini.nvim v0.18.0` under the ignored `deps/`
+directory. `make ci` runs formatting, linting, LuaLS type checking, and the full
+test suite.
 
 CI blocks on quality checks and tests with Neovim `v0.11.4` and the current
-stable release. The same tests also run against Neovim nightly, but nightly
-failures are informational and do not block the workflow.
+stable release. The same tests run against Neovim nightly as informational,
+nonblocking coverage.
 
 ## License
 

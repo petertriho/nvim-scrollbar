@@ -19,8 +19,8 @@ local function scan(lines, pattern, options)
         vim.fn.setreg("/", input.pattern)
         vim.fn.search(input.pattern, "cw")
         local view = vim.fn.winsaveview()
-        require("scrollbar.handlers.search").refresh()
-        local marks = require("scrollbar.utils").get_scrollbar_marks(0).search
+        require("scrollbar.providers").refresh(vim.api.nvim_get_current_buf())
+        local marks = require("scrollbar.store").get(vim.api.nvim_get_current_buf()).search
         return {
             lines = vim.tbl_map(function(mark)
                 return mark.line

@@ -12,14 +12,19 @@ local function new_child()
     return child
 end
 
-T["direct setup rejects a non-boolean live option without mutation"] = function()
+T["configuration rejects a non-boolean live option without mutation"] = function()
     local child = new_child()
     helpers.setup_search(child, false)
     local result = child.lua_get([[(function()
         local config = require("scrollbar.config").get()
-        local before = vim.deepcopy(config.handlers.search)
-        local ok, err = pcall(require("scrollbar.handlers.search").setup, { live = "yes" })
-        return { ok = ok, error = err, before = before, after = config.handlers.search }
+        local before = vim.deepcopy(config.providers.search)
+        local ok, err = pcall(require("scrollbar.config").set, { providers = { search = { live = "yes" } } })
+        return {
+            ok = ok,
+            error = err,
+            before = before,
+            after = require("scrollbar.config").get().providers.search,
+        }
     end)()]])
 
     expect.equality(result.ok, false)
@@ -27,47 +32,76 @@ T["direct setup rejects a non-boolean live option without mutation"] = function(
     expect.equality(result.after, result.before)
 end
 
-T["root setup rejects a non-boolean live option without mutation"] = function()
+T["a rejected reconfiguration leaves the managed provider active"] = function()
     local child = new_child()
     helpers.setup_search(child, false)
     local result = child.lua_get([[(function()
         local config = require("scrollbar.config").get()
-        local before = vim.deepcopy(config.handlers.search)
-        local ok, err = pcall(require("scrollbar").setup, { handlers = { search = { live = "yes" } } })
-        return { ok = ok, error = err, before = before, after = config.handlers.search }
+        local before = vim.deepcopy(config.providers.search)
+        local ok, err = pcall(require("scrollbar.config").set, { providers = { search = { live = "yes" } } })
+        return {
+            ok = ok,
+            error = err,
+            before = before,
+            after = require("scrollbar.config").get().providers.search,
+        }
     end)()]])
 
     expect.equality(result.ok, false)
     expect.no_equality(result.error:match("live must be a boolean"), nil)
     expect.equality(result.after, result.before)
+    helpers.set_lines(child, { "start", "active", "active" })
+    helpers.accept_search(child, "/", "active")
+    expect.equality(helpers.wait_for_mark_lines(child, { 1, 2 }), true)
 end
 
-T["handlers.search=true normalizes configuration and scans an existing search"] = function()
+T["providers.search=true normalizes configuration and scans an existing search"] = function()
     local child = new_child()
     helpers.set_lines(child, { "foo", "Foo" })
     helpers.activate_search(child, "Foo")
-    helpers.setup_root_search(child, true)
+    helpers.setup_search_config(child, true)
 
-    expect.equality(child.lua_get([[require("scrollbar.config").get().handlers.search]]), { live = false })
+    expect.equality(child.lua_get([[require("scrollbar.config").get().providers.search]]), { live = false })
     expect.equality(helpers.mark_lines(child), { 1 })
-    expect.equality(#child.api.nvim_get_autocmds({ group = "scrollbar_search", event = "CmdlineLeave" }), 1)
+    expect.equality(
+        #child.api.nvim_get_autocmds({ group = "ScrollbarProvider_search_events", event = "CmdlineLeave" }),
+        1
+    )
 end
 
-T["repeated setup is idempotent across root and direct entry points"] = function()
+T["repeated provider manager setup is idempotent"] = function()
     local child = new_child()
-    helpers.setup_root_search(child, true)
+    helpers.setup_search_config(child, true)
     helpers.setup_search(child, false)
 
-    expect.equality(child.lua_get([[require("scrollbar.config").get().handlers.search]]), { live = false })
-    expect.equality(#child.api.nvim_get_autocmds({ group = "scrollbar_search", event = "CmdlineLeave" }), 1)
+    expect.equality(child.lua_get([[require("scrollbar.config").get().providers.search]]), { live = false })
+    expect.equality(
+        #child.api.nvim_get_autocmds({ group = "ScrollbarProvider_search_events", event = "CmdlineLeave" }),
+        1
+    )
 end
 
-T["root table search setup processes accepted searches"] = function()
+T["table search configuration processes accepted searches"] = function()
     local child = new_child()
-    helpers.setup_root_search(child, { live = false })
+    helpers.setup_search_config(child, { live = false })
     helpers.set_lines(child, { "start", "root", "root" })
     helpers.accept_search(child, "/", "root")
     expect.equality(helpers.wait_for_mark_lines(child, { 1, 2 }), true)
+end
+
+T["unregister disposes events and clears provider marks"] = function()
+    local child = new_child()
+    helpers.setup_search_config(child, true)
+    helpers.set_lines(child, { "search", "search" })
+    helpers.accept_search(child, "/", "search")
+    expect.equality(helpers.wait_for_mark_lines(child, { 0, 1 }), true)
+
+    expect.equality(child.lua_get([[require("scrollbar.providers").unregister("search")]]), true)
+    expect.equality(helpers.search_marks(child), nil)
+    expect.equality(
+        pcall(child.api.nvim_get_autocmds, { group = "ScrollbarProvider_search_events", event = "CmdlineLeave" }),
+        false
+    )
 end
 
 return T
