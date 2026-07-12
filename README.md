@@ -145,10 +145,10 @@ require("scrollbar").setup({
     providers = {
         cursor = true,
         diagnostic = true,
-        search = false, -- true or { live = boolean }
+        search = true, -- true or { live = boolean }
         gitsigns = false,
         ale = false,
-        coc = true,
+        coc = false,
     },
     excluded_buftypes = {
         "terminal",
@@ -260,26 +260,19 @@ Built-in providers are configured under `providers`:
 | --- | --- | --- | --- |
 | `cursor` | on | Current source cursor | None |
 | `diagnostic` | on | Neovim 0.11 `vim.diagnostic` | None |
-| `search` | off | Native `/` and `?` search | None |
+| `search` | on | Native `/` and `?` search | None |
 | `gitsigns` | off | Git hunks | gitsigns.nvim |
 | `ale` | off | ALE location list | ALE |
-| `coc` | on | Coc diagnostic list | coc.nvim |
+| `coc` | off | Coc diagnostic list | coc.nvim |
 
 Optional providers safely produce no marks when their dependency is absent.
 
 ### Search
 
-Accepted-search mode updates after `/` or `?` is accepted and follows native
-search visibility. Marks clear after `:nohlsearch`, `set nohlsearch`, or an empty
-search pattern.
-
-```lua
-require("scrollbar").setup({
-    providers = {
-        search = true, -- equivalent to { live = false }
-    },
-})
-```
+Accepted-search mode is enabled by default. `search = true` is equivalent to
+`search = { live = false }`. It updates after `/` or `?` is accepted and follows
+native search visibility. Marks clear after `:nohlsearch`, `set nohlsearch`, or
+an empty search pattern. Set `providers.search = false` to disable it.
 
 Live mode previews valid patterns while the search command line changes:
 

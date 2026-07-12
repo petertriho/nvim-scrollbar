@@ -38,7 +38,8 @@ T["defaults are normalized from a fresh immutable baseline"] = function()
     expect.equality(second.float.width, 1)
     expect.equality(second.marks.Search.text, { "-", "=" })
     expect.equality(second.marks.Search.column, 1)
-    expect.equality(second.providers.search, false)
+    expect.equality(second.providers.search, { live = false })
+    expect.equality(second.providers.coc, false)
 end
 
 T["accepts the complete typed schema"] = function()
