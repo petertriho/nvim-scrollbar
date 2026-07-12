@@ -134,4 +134,79 @@ T["cursor marks stay local to each view of one buffer"] = function()
     })
 end
 
+T["window-local mark revisions rebuild only the affected static layer"] = function()
+    local child = helpers.new_child()
+    MiniTest.finally(function()
+        helpers.stop_child(child)
+    end)
+
+    local result = child.lua_func(function()
+        local lines = {}
+        for index = 1, 200 do
+            lines[index] = "line " .. index
+        end
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        local first = vim.api.nvim_get_current_win()
+        vim.cmd("split")
+        local second = vim.api.nvim_get_current_win()
+
+        local active_config = require("scrollbar.config").set({
+            set_highlights = false,
+            render = { interval_ms = 0, geometry = "line" },
+            float = { width = 2 },
+            mouse = { enabled = false },
+            handle = { text = "H", column = 2, width = 1, hide_if_all_visible = false },
+            providers = {
+                cursor = false,
+                diagnostic = false,
+                search = false,
+                gitsigns = false,
+                ale = false,
+                coc = false,
+            },
+            excluded_buftypes = {},
+            excluded_filetypes = {},
+        })
+        local store = require("scrollbar.store")
+        assert(store.set_window("test", first, { { line = 10, type = "Misc" } }))
+        assert(store.set_window("test", second, { { line = 180, type = "Misc" } }))
+
+        local layout = require("scrollbar.layout")
+        local original_mark_layer = layout.mark_layer
+        local builds = 0
+        rawset(layout, "mark_layer", function(input)
+            builds = builds + 1
+            return original_mark_layer(input)
+        end)
+
+        local renderer = require("scrollbar.renderer")
+        renderer.setup()
+        renderer.render(first)
+        renderer.render(second)
+        local initial_builds = builds
+
+        assert(store.set_window("test", first, { { line = 20, type = "Misc" } }))
+        renderer.render(first)
+        renderer.render(second)
+        local after_first_change = builds
+
+        renderer.render(first)
+        renderer.render(second)
+        rawset(layout, "mark_layer", original_mark_layer)
+        return {
+            config = active_config.render.geometry,
+            initial_builds = initial_builds,
+            after_first_change = after_first_change,
+            final_builds = builds,
+        }
+    end)
+
+    expect.equality(result, {
+        config = "line",
+        initial_builds = 2,
+        after_first_change = 3,
+        final_builds = 3,
+    })
+end
+
 return T

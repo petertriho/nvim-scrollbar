@@ -22,8 +22,9 @@ M.set_lines = function(child, lines)
     child.api.nvim_win_set_cursor(0, { 1, 0 })
 end
 
-local function setup_search_provider(child, search_config)
+local function setup_search_provider(child, search_config, worker_test)
     child.lua_func(function(value)
+        package.loaded["scrollbar.test.search_worker"] = value.worker_test
         vim.o.hlsearch = true
         vim.o.wrapscan = false
 
@@ -34,7 +35,7 @@ local function setup_search_provider(child, search_config)
                 cursor = false,
                 diagnostic = false,
                 gitsigns = false,
-                search = value,
+                search = value.search_config,
                 ale = false,
                 coc = false,
             },
@@ -68,15 +69,29 @@ local function setup_search_provider(child, search_config)
         })
         state.invalidated_buffers = {}
         state.invalidated_windows = {}
-    end, search_config)
+    end, { search_config = search_config, worker_test = worker_test })
 end
 
 M.setup_search = function(child, live)
+    setup_search_provider(child, { live = live or false }, { backend = "sync" })
+end
+
+M.setup_search_worker = function(child, live, worker_test)
+    worker_test = worker_test or {}
+    worker_test.backend = "worker"
+    setup_search_provider(child, { live = live or false }, worker_test)
+end
+
+M.setup_search_default = function(child, live)
     setup_search_provider(child, { live = live or false })
 end
 
-M.setup_search_config = function(child, search_config)
+M.setup_search_default_config = function(child, search_config)
     setup_search_provider(child, search_config)
+end
+
+M.setup_search_config = function(child, search_config)
+    setup_search_provider(child, search_config, { backend = "sync" })
 end
 
 M.activate_search = function(child, pattern)
@@ -135,39 +150,37 @@ M.wait_for_mark_lines = function(child, expected)
     end, expected)
 end
 
+M.wait_for_worker_status = function(child, expected)
+    return child.lua_func(function(value)
+        return vim.wait(3000, function()
+            return require("scrollbar.providers.search_worker").status().state == value
+        end)
+    end, expected)
+end
+
 M.accept_search = function(child, direction, pattern)
     child.type_keys(10, direction, pattern, "<CR>")
 end
 
 M.inspect_during_cmdline = function(child, direction, pattern)
-    child.lua([[
-        _G.scrollbar_test_cmdline = { called = false }
-        vim.api.nvim_create_autocmd("CmdlineChanged", {
-            pattern = { "/", "?" },
-            callback = function()
-                local marks = require("scrollbar.store").get(vim.api.nvim_get_current_buf()).search
-                _G.scrollbar_test_cmdline.lines = marks and vim.tbl_map(function(mark)
-                    return mark.line
-                end, marks) or nil
-            end,
-        })
-        vim.keymap.set("c", "<F5>", function()
-            _G.scrollbar_test_cmdline.called = true
-            _G.scrollbar_test_cmdline.mode = vim.api.nvim_get_mode().mode
-            return vim.keycode("<C-c>")
-        end, { expr = true })
-    ]])
     local keys = { direction }
     for character in pattern:gmatch(".") do
         table.insert(keys, character)
     end
-    table.insert(keys, "<F5>")
     child.type_keys(10, keys)
-    local capture = child.lua_get("_G.scrollbar_test_cmdline")
-    child.lua([[vim.keymap.del("c", "<F5>")]])
-    if not capture.called then
-        error("command-line inspection mapping did not run")
-    end
+    vim.uv.sleep(100)
+    child.type_keys(10, "<Left>")
+    vim.uv.sleep(100)
+    local capture = child.lua_get([[(function()
+        local marks = require("scrollbar.store").get(vim.api.nvim_get_current_buf()).search
+        return {
+            mode = vim.api.nvim_get_mode().mode,
+            lines = marks and vim.tbl_map(function(mark)
+                return mark.line
+            end, marks) or nil,
+        }
+    end)()]])
+    child.type_keys(10, "<C-c>")
     if capture.lines == vim.NIL then
         capture.lines = nil
     end

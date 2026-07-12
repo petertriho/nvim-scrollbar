@@ -82,6 +82,31 @@ T["normalized geometry keeps a minimum one-row handle for large documents"] = fu
     expect.equality(geometry.handle.first_row, geometry.handle.last_row)
 end
 
+T["normalized geometry accepts cached mark rows while recomputing the viewport handle"] = function()
+    local marks = { mark(0), mark(50), mark(99) }
+    local mark_rows = layout.normalized_mark_rows({ height = 10, line_count = 100, marks = marks })
+    local first = layout.normalized({
+        height = 10,
+        line_count = 100,
+        top_line = 0,
+        bottom_line = 9,
+        marks = marks,
+        mark_rows = mark_rows,
+    })
+    local second = layout.normalized({
+        height = 10,
+        line_count = 100,
+        top_line = 80,
+        bottom_line = 89,
+        marks = marks,
+        mark_rows = mark_rows,
+    })
+
+    expect.equality(first.mark_rows, mark_rows)
+    expect.equality(second.mark_rows, mark_rows)
+    expect.equality(second.handle.first_row > first.handle.first_row, true)
+end
+
 T["screen geometry keeps same-buffer window views independent"] = function()
     local child = new_child()
     local result = child.lua_func(function()

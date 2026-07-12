@@ -48,6 +48,14 @@ T["live mode previews backward searches and restores accepted results"] = functi
     expect.equality(helpers.wait_for_mark_lines(child, { 1 }), true)
 end
 
+T["an empty live pattern retains accepted results"] = function()
+    local child = live_child(true)
+    accepted_baseline(child)
+
+    expect.equality(helpers.inspect_during_cmdline(child, "/", "").lines, { 1 })
+    expect.equality(helpers.wait_for_mark_lines(child, { 1 }), true)
+end
+
 T["invalid live patterns hide preview and cancellation restores accepted results"] = function()
     local child = live_child(true)
     accepted_baseline(child)

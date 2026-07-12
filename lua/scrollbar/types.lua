@@ -4,6 +4,7 @@
 ---@alias ScrollbarGeometryMode "line"|"screen"
 ---@alias ScrollbarPlacementRelative "window"|"editor"
 ---@alias ScrollbarFloatAnchor "NW"|"NE"|"SW"|"SE"
+---@alias ScrollbarSearchBackend "sync"|"worker"
 ---@alias ScrollbarText string|string[]
 ---@alias ScrollbarHighlightDefinition table<string, any> A table accepted by nvim_set_hl()
 ---@alias ScrollbarHighlight string|ScrollbarHighlightDefinition
@@ -43,9 +44,11 @@
 
 ---@class ScrollbarSearchProviderConfig
 ---@field live boolean
+---@field backend ScrollbarSearchBackend
 
 ---@class ScrollbarUserSearchProviderConfig
 ---@field live? boolean
+---@field backend? ScrollbarSearchBackend
 
 ---@class ScrollbarUserProvidersConfig
 ---@field cursor? boolean
@@ -130,6 +133,10 @@
 ---@field type string Configured mark type
 ---@field text? string Per-mark text override
 
+---@class ScrollbarCompactSearch
+---@field data string Big-endian zero-based line numbers, four bytes per exact match
+---@field count integer Exact match count
+
 ---@class ScrollbarLayoutMark: ScrollbarMark
 ---@field provider string Owning provider name used for deterministic ties and hit metadata
 
@@ -154,6 +161,16 @@
 
 ---@alias ScrollbarStoreSnapshot table<string, ScrollbarMark[]>
 ---@alias ScrollbarWindowStoreSnapshot table<string, ScrollbarMark[]>
+
+---@class ScrollbarStoreTrustedSnapshot
+---@field marks ScrollbarStoreSnapshot Immutable by convention; internal callers must not mutate it
+---@field revision integer Monotonic revision for this buffer's mark collection
+---@field compact_search? ScrollbarCompactSearch Private built-in search representation
+
+---@class ScrollbarWindowStoreTrustedSnapshot
+---@field marks ScrollbarWindowStoreSnapshot Immutable by convention; internal callers must not mutate it
+---@field revision integer Monotonic revision for this window's mark collection
+
 ---@alias ScrollbarChangedBuffers table<integer, true>
 ---@alias ScrollbarChangedWindows table<integer, true>
 
@@ -185,6 +202,12 @@
 ---@field top_line integer Zero-based first visible logical line
 ---@field bottom_line integer Zero-based last visible logical line
 ---@field marks ScrollbarMark[]
+---@field mark_rows? integer[] Precomputed mark rows aligned with marks
+
+---@class ScrollbarNormalizedMarkGeometryInput
+---@field height integer Track height in rows
+---@field line_count integer Logical source-buffer line count
+---@field marks ScrollbarMark[]
 
 ---@class ScrollbarScreenGeometryInput
 ---@field source_win integer
@@ -201,8 +224,29 @@
 ---@class ScrollbarLayoutInput
 ---@field config ScrollbarConfig
 ---@field height integer
+---@field line_count? integer Logical line count required by compact line-mode search
 ---@field geometry ScrollbarGeometry
 ---@field marks ScrollbarLayoutMark[] Marks aligned with geometry.mark_rows
+---@field mark_layer? ScrollbarPlacedMark[][] Precomputed static placed mark cells by zero-based row
+---@field compact_search? ScrollbarCompactSearch Private built-in search matches
+
+---@class ScrollbarMarkLayerInput
+---@field config ScrollbarConfig
+---@field height integer
+---@field line_count? integer Logical line count required by compact line-mode search
+---@field geometry { mark_rows: integer[] }
+---@field marks ScrollbarLayoutMark[]
+---@field compact_search? ScrollbarCompactSearch Private built-in search matches
+
+---@class ScrollbarPlacedMark
+---@field text string
+---@field width integer
+---@field column integer
+---@field last_column integer
+---@field type string
+---@field provider string
+---@field line integer
+---@field lines integer[]
 
 ---@class ScrollbarLayoutOutput
 ---@field rows string[]
@@ -221,6 +265,7 @@
 ---@field source_buf integer
 ---@field float_win integer
 ---@field float_buf integer
+---@field float_config table<string, any> Last applied floating-window configuration
 ---@field width integer Float width used for the row cache
 ---@field height integer Float height used for the row cache
 ---@field rows string[]
@@ -228,6 +273,25 @@
 ---@field hitmap ScrollbarHitCell[][]
 ---@field handle ScrollbarHandleGeometry
 ---@field geometry ScrollbarRendererGeometry
+
+---@class ScrollbarFlattenedMarksCache
+---@field source_buf integer
+---@field buffer_revision integer
+---@field window_revision integer
+---@field marks ScrollbarLayoutMark[]
+---@field compact_search? ScrollbarCompactSearch
+---@field expanded_marks? ScrollbarLayoutMark[] Exact screen-mode expansion, intentionally expensive
+
+---@class ScrollbarLineMarkLayerCache
+---@field source_buf integer
+---@field buffer_revision integer
+---@field window_revision integer
+---@field line_count integer
+---@field width integer
+---@field height integer
+---@field config_generation integer
+---@field mark_rows integer[]
+---@field layer ScrollbarPlacedMark[][]
 
 ---@class ScrollbarSchedulerRenderer
 ---@field render fun(source_win: integer): ScrollbarWindowState?
