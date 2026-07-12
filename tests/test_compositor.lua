@@ -20,6 +20,8 @@ local function compose(options)
     return layout.compose({
         config = options.config,
         height = options.height or 2,
+        line_count = options.line_count,
+        compact_search = options.compact_search,
         geometry = {
             total_extent = 100,
             viewport_start = 0,
@@ -159,6 +161,41 @@ T["selects capped density variants for rendered row buckets"] = function()
     expect.equality(result.hitmap[1][1].lines, { 10, 11, 12 })
 end
 
+T["compact search is exactly equivalent for duplicates density collisions and click targets"] = function()
+    local active_config = config({
+        float = { width = 2 },
+        handle = { column = 2, width = 1 },
+        marks = { Search = { text = { "-", "=", "#" }, column = 1 } },
+    })
+    local ordinary = compose({
+        config = active_config,
+        height = 2,
+        marks = {
+            { provider = "search", line = 10, type = "Search" },
+            { provider = "search", line = 10, type = "Search" },
+            { provider = "search", line = 11, type = "Search" },
+            { provider = "alpha", line = 20, type = "Search", text = "A" },
+            { provider = "search", line = 99, type = "Search" },
+        },
+        mark_rows = { 0, 0, 0, 0, 1 },
+    })
+    local compact = compose({
+        config = active_config,
+        height = 2,
+        line_count = 100,
+        compact_search = require("scrollbar.providers.search_compact").encode({ 10, 10, 11, 99 }),
+        marks = {
+            { provider = "alpha", line = 20, type = "Search", text = "A" },
+        },
+        mark_rows = { 0 },
+    })
+
+    expect.equality(compact, ordinary)
+    expect.equality(compact.rows, { "A ", "- " })
+    expect.equality(compact.hitmap[1][1].line, 20)
+    expect.equality(compact.hitmap[1][1].lines, { 10, 10, 11, 20 })
+end
+
 T["marks over the handle use combined highlights without erasing uncovered handle cells"] = function()
     local result = compose({
         config = config({
@@ -287,6 +324,83 @@ T["assigns exact ownership independently for every visible display column"] = fu
     expect.equality(result.hitmap[1][2].line, 77)
     expect.equality(result.hitmap[1][3].line, 77)
     expect.equality(result.hitmap[1][4], { handle = false })
+end
+
+T["composes cached mark layers exactly like the direct pipeline"] = function()
+    local active_config = config({
+        float = { width = 4 },
+        handle = { text = "界", column = 3, width = 2 },
+        marks = {
+            Search = { text = { "-", "=" }, column = 1, priority = 2 },
+            Error = { text = "EE", column = 2, priority = 1 },
+        },
+    })
+    local input = {
+        config = active_config,
+        height = 3,
+        geometry = {
+            total_extent = 100,
+            viewport_start = 40,
+            viewport_end = 60,
+            mark_rows = { 0, 0, 2 },
+            handle = { first_row = 1, last_row = 2 },
+        },
+        marks = {
+            { provider = "search", line = 10, type = "Search" },
+            { provider = "search", line = 11, type = "Search" },
+            { provider = "diagnostic", line = 90, type = "Error" },
+        },
+    }
+
+    local direct = layout.compose(input)
+    local cached_input = vim.tbl_extend("force", input, { mark_layer = layout.mark_layer(input) })
+    local cached = layout.compose(cached_input)
+
+    expect.equality(cached, direct)
+end
+
+T["caches parsed glyphs and display widths by text"] = function()
+    local active_config = config({
+        float = { width = 4 },
+        handle = { text = "界", column = 3, width = 2 },
+        marks = { Search = { text = "á", column = 1 } },
+    })
+    layout.clear_cache()
+
+    local calls = { strchars = 0, strcharpart = 0, strdisplaywidth = 0, char2nr = 0 }
+    local originals = {}
+    for name in pairs(calls) do
+        originals[name] = vim.fn[name]
+        vim.fn[name] = function(...)
+            calls[name] = calls[name] + 1
+            return originals[name](...)
+        end
+    end
+
+    local input = {
+        config = active_config,
+        height = 1,
+        geometry = {
+            total_extent = 100,
+            viewport_start = 0,
+            viewport_end = 10,
+            mark_rows = { 0 },
+            handle = { first_row = 0, last_row = 0 },
+        },
+        marks = { { provider = "search", line = 10, type = "Search" } },
+    }
+    layout.compose(input)
+    local first = vim.deepcopy(calls)
+    layout.compose(input)
+    local second = vim.deepcopy(calls)
+
+    for name, original in pairs(originals) do
+        vim.fn[name] = original
+    end
+
+    expect.equality(second, first)
+    expect.equality(first.strchars > 0, true)
+    expect.equality(first.strdisplaywidth > 0, true)
 end
 
 return T

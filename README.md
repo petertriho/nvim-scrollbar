@@ -145,7 +145,7 @@ require("scrollbar").setup({
     providers = {
         cursor = true,
         diagnostic = true,
-        search = true, -- true or { live = boolean }
+        search = true, -- true or { live = boolean, backend = "worker" | "sync" }
         gitsigns = false,
         ale = false,
         coc = false,
@@ -225,8 +225,11 @@ applied literally and can intentionally move a track outside those bounds.
 ### Geometry
 
 `render.geometry = "line"` is the default. It maps logical source lines to the
-track, performs no fold scan, and keeps render work independent of total buffer
-line count apart from the current marks.
+track and performs no fold scan. The renderer caches the static mark layer by
+buffer/window mark revisions, dimensions, line count, and render configuration;
+scroll-only frames reuse that layer and recompute only the current viewport
+handle. Provider, buffer, window, size, or configuration changes invalidate the
+relevant cache.
 
 `render.geometry = "screen"` uses `nvim_win_text_height()` so marks and the
 handle share coordinates that account for wrapping, closed folds, diff filler,
@@ -241,7 +244,8 @@ the track.
 
 `render.interval_ms` is the frame-coalescing interval. Repeated invalidations
 within one frame render the latest state once. Scrolling invalidates geometry
-without recollecting provider marks.
+without recollecting provider marks, and a logical show operation is queued into
+the same latest-frame path rather than rendering twice.
 
 ### Mouse
 
@@ -281,9 +285,53 @@ Optional providers safely produce no marks when their dependency is absent.
 ### Search
 
 Accepted-search mode is enabled by default. `search = true` is equivalent to
-`search = { live = false }`. It updates after `/` or `?` is accepted and follows
-native search visibility. Marks clear after `:nohlsearch`, `set nohlsearch`, or
-an empty search pattern. Set `providers.search = false` to disable it.
+`search = { live = false, backend = "worker" }`. It updates after `/` or `?` is
+accepted and follows native search visibility. Marks clear after `:nohlsearch`,
+`set nohlsearch`, or an empty search pattern. Set `providers.search = false` to
+disable it.
+
+Native search remains exact and uses Neovim's Vim-regex search semantics. Search
+requests are generation-based and coalesced per buffer: accepted searches begin
+on the next safe main-loop turn, while live changes and edit-driven rescans use
+short internal debounces. Only the newest still-valid request publishes. The
+previous accepted result remains visible while its replacement is pending, so
+rapid input and continuous edits do not flicker or publish stale generations.
+
+Built-in search results use a private compact line representation that preserves
+duplicate matches, density variants, collision ordering, and click targets
+without allocating one renderer mark table per match. This does not change the
+custom-provider mark contract or the defensive results returned by the public
+store path.
+
+The production search backend uses one persistent embedded headless Neovim
+process per parent Neovim instance. The worker is shared by all searched buffers,
+mirrors them incrementally, and executes the exact Vim-regex scan outside the
+parent event loop. Completed results are published only when their generation,
+buffer version, pattern, and matching options are still current.
+
+The worker starts directly from `vim.v.progpath` without a shell and is disposed
+during plugin reconfiguration or parent shutdown. If startup fails or the child
+exits unexpectedly, the plugin warns once and switches to the exact debounced
+synchronous scanner. That fallback preserves results but can pause Neovim for an
+expensive pattern or a large dense result set.
+
+Worker state can be inspected for troubleshooting:
+
+```vim
+:lua print(vim.inspect(require("scrollbar.providers.search_worker").status()))
+```
+
+A healthy worker reports `state = "ready"` and one `job_id`. The worker is the
+default backend. To disable the child process and always scan on the parent main
+loop, configure:
+
+```lua
+require("scrollbar").setup({
+    providers = {
+        search = { backend = "sync" },
+    },
+})
+```
 
 Live mode previews valid patterns while the search command line changes:
 
@@ -295,8 +343,9 @@ require("scrollbar").setup({
 })
 ```
 
-Live mode scans the current buffer for each command-line pattern change, so
-accepted-search mode is preferable for large buffers.
+Live mode coalesces rapid command-line changes and scans only the newest pattern
+after its debounce. Because each eventual scan is still exact and synchronous,
+accepted-search mode remains preferable for large buffers.
 
 ### Custom Providers
 

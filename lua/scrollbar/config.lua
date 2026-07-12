@@ -146,7 +146,7 @@ local NESTED_KEYS = {
     },
     mark = { text = true, column = true, priority = true, highlight = true },
     providers = { cursor = true, diagnostic = true, search = true, gitsigns = true, ale = true, coc = true },
-    search = { live = true },
+    search = { live = true, backend = true },
 }
 
 local ENUMS = {
@@ -154,9 +154,25 @@ local ENUMS = {
     geometry = { line = true, screen = true },
     relative = { window = true, editor = true },
     anchor = { NW = true, NE = true, SW = true, SE = true },
+    search_backend = { sync = true, worker = true },
 }
 
 local active = vim.deepcopy(DEFAULTS)
+local layout_generation = 0
+
+---@param value ScrollbarConfig
+---@return table
+local function layout_config(value)
+    local marks = {}
+    for mark_type, mark in pairs(value.marks) do
+        marks[mark_type] = {
+            text = mark.text,
+            column = mark.column,
+            priority = mark.priority,
+        }
+    end
+    return { width = value.float.width, marks = marks }
+end
 
 local function invalid(message)
     error("[scrollbar.nvim] " .. message, 3)
@@ -322,14 +338,18 @@ local function normalize_providers(providers)
 
     local search = providers.search
     if search == true then
-        providers.search = { live = false }
+        providers.search = { live = false, backend = "worker" }
     elseif search == false then
         return
     elseif type(search) == "table" then
         if search.live == nil then
             search.live = false
         end
+        if search.backend == nil then
+            search.backend = "worker"
+        end
         validate_boolean(search.live, "providers.search.live")
+        validate_enum(search.backend, "providers.search.backend", ENUMS.search_backend)
     else
         invalid("providers.search must be a boolean or table")
     end
@@ -430,6 +450,9 @@ local M = {}
 ---@return ScrollbarConfig
 M.set = function(overrides)
     local normalized = normalize(overrides)
+    if not vim.deep_equal(layout_config(active), layout_config(normalized)) then
+        layout_generation = layout_generation + 1
+    end
     active = normalized
     return active
 end
@@ -437,6 +460,11 @@ end
 ---@return ScrollbarConfig
 M.get = function()
     return active
+end
+
+---@return integer
+M.get_layout_generation = function()
+    return layout_generation
 end
 
 return M

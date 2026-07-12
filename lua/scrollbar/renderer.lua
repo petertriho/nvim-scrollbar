@@ -1,5 +1,6 @@
 local config = require("scrollbar.config")
 local layout = require("scrollbar.layout")
+local search_compact = require("scrollbar.providers.search_compact")
 local store = require("scrollbar.store")
 
 local M = {}
@@ -13,12 +14,43 @@ local states = {}
 ---@type table<integer, ScrollbarWindowState>
 local states_by_float = {}
 
+---@type table<integer, ScrollbarFlattenedMarksCache>
+local flattened_cache = {}
+
+---@type table<integer, ScrollbarLineMarkLayerCache>
+local line_layer_cache = {}
+
 ---@type integer?
 local lifecycle_group
 local visible = false
 
 ---@type fun(state: ScrollbarWindowState)?
 local state_callback
+
+---@param source_win integer
+local function clear_source_cache(source_win)
+    flattened_cache[source_win] = nil
+    line_layer_cache[source_win] = nil
+end
+
+local function clear_all_caches()
+    flattened_cache = {}
+    line_layer_cache = {}
+    layout.clear_cache()
+end
+
+---@param source_buf integer
+local function clear_buffer_caches(source_buf)
+    local pending = {}
+    for source_win, cached in pairs(flattened_cache) do
+        if cached.source_buf == source_buf then
+            table.insert(pending, source_win)
+        end
+    end
+    for _, source_win in ipairs(pending) do
+        clear_source_cache(source_win)
+    end
+end
 
 ---@param value any
 ---@param values string[]
@@ -109,6 +141,7 @@ end
 local function forget_state(state)
     states[state.source_win] = nil
     states_by_float[state.float_win] = nil
+    clear_source_cache(state.source_win)
 end
 
 ---@param state ScrollbarWindowState
@@ -127,6 +160,8 @@ local function close_source(source_win)
     local state = states[source_win]
     if state ~= nil then
         close_state(state)
+    else
+        clear_source_cache(source_win)
     end
 end
 
@@ -251,21 +286,24 @@ end
 
 ---@param source_win integer
 ---@param source_buf integer
----@param area table<string, integer>
+---@param active_float_config table<string, any>
+---@param configure_owned_buffer fun(float_buf: integer)
+---@param configure_owned_window fun(float_win: integer)
 ---@return ScrollbarWindowState
-local function create_state(source_win, source_buf, area)
+local function create_state(source_win, source_buf, active_float_config, configure_owned_buffer, configure_owned_window)
     local float_buf = vim.api.nvim_create_buf(false, true)
-    configure_buffer(float_buf)
+    configure_owned_buffer(float_buf)
     pcall(vim.api.nvim_buf_set_name, float_buf, string.format("scrollbar://source/%d/%d", source_win, float_buf))
 
-    local float_win = vim.api.nvim_open_win(float_buf, false, float_config(source_win, area))
-    configure_window(float_win)
+    local float_win = vim.api.nvim_open_win(float_buf, false, active_float_config)
+    configure_owned_window(float_win)
 
     local state = {
         source_win = source_win,
         source_buf = source_buf,
         float_win = float_win,
         float_buf = float_buf,
+        float_config = active_float_config,
         width = 0,
         height = 0,
         rows = {},
@@ -279,18 +317,59 @@ local function create_state(source_win, source_buf, area)
     return state
 end
 
+---@param float_win integer
+---@param expected table<string, any>
+---@return boolean
+local function has_float_config(float_win, expected)
+    local ok, current = pcall(vim.api.nvim_win_get_config, float_win)
+    if not ok then
+        return false
+    end
+    for key, value in pairs(expected) do
+        -- Neovim 0.11 applies float style but omits it from nvim_win_get_config().
+        if not (key == "style" and current[key] == nil) and not vim.deep_equal(current[key], value) then
+            return false
+        end
+    end
+    return true
+end
+
 ---@param source_win integer
 ---@param source_buf integer
----@return ScrollbarLayoutMark[]
-local function flattened_marks(source_win, source_buf)
-    local buffer_snapshot = store.get(source_buf)
-    local window_snapshot = store.get_window(source_win)
+---@param expand_compact boolean
+---@return ScrollbarLayoutMark[] marks
+---@return integer buffer_revision
+---@return integer window_revision
+---@return ScrollbarCompactSearch? compact_search
+local function flattened_marks(source_win, source_buf, expand_compact)
+    local buffer_snapshot = store._get_snapshot(source_buf)
+    local window_snapshot = store._get_window_snapshot(source_win)
+    local cached = flattened_cache[source_win]
+    if
+        cached ~= nil
+        and cached.source_buf == source_buf
+        and cached.buffer_revision == buffer_snapshot.revision
+        and cached.window_revision == window_snapshot.revision
+    then
+        if expand_compact and cached.compact_search ~= nil and cached.expanded_marks == nil then
+            cached.expanded_marks =
+                vim.list_extend(vim.deepcopy(cached.marks), search_compact.to_marks(cached.compact_search))
+            for index = #cached.marks + 1, #cached.expanded_marks do
+                cached.expanded_marks[index].provider = "search"
+            end
+        end
+        return expand_compact and (cached.expanded_marks or cached.marks) or cached.marks,
+            buffer_snapshot.revision,
+            window_snapshot.revision,
+            cached.compact_search
+    end
+
     local providers = {}
     local seen = {}
-    for provider in pairs(buffer_snapshot) do
+    for provider in pairs(buffer_snapshot.marks) do
         seen[provider] = true
     end
-    for provider in pairs(window_snapshot) do
+    for provider in pairs(window_snapshot.marks) do
         seen[provider] = true
     end
     for provider in pairs(seen) do
@@ -300,7 +379,7 @@ local function flattened_marks(source_win, source_buf)
 
     local marks = {}
     for _, provider in ipairs(providers) do
-        for _, snapshot in ipairs({ buffer_snapshot, window_snapshot }) do
+        for _, snapshot in ipairs({ buffer_snapshot.marks, window_snapshot.marks }) do
             for _, mark in ipairs(snapshot[provider] or {}) do
                 table.insert(marks, {
                     provider = provider,
@@ -311,15 +390,24 @@ local function flattened_marks(source_win, source_buf)
             end
         end
     end
-    return marks
+    flattened_cache[source_win] = {
+        source_buf = source_buf,
+        buffer_revision = buffer_snapshot.revision,
+        window_revision = window_snapshot.revision,
+        marks = marks,
+        compact_search = buffer_snapshot.compact_search,
+    }
+    return flattened_marks(source_win, source_buf, expand_compact)
 end
 
 ---@param source_win integer
 ---@param source_buf integer
 ---@param height integer
 ---@param marks ScrollbarLayoutMark[]
+---@param line_count? integer
+---@param mark_rows? integer[]
 ---@return ScrollbarGeometry
-local function geometry_for(source_win, source_buf, height, marks)
+local function geometry_for(source_win, source_buf, height, marks, line_count, mark_rows)
     if config.get().render.geometry == "screen" then
         return layout.screen({ source_win = source_win, height = height, marks = marks })
     end
@@ -329,11 +417,77 @@ local function geometry_for(source_win, source_buf, height, marks)
     end)
     return layout.normalized({
         height = height,
-        line_count = vim.api.nvim_buf_line_count(source_buf),
+        line_count = line_count or vim.api.nvim_buf_line_count(source_buf),
         top_line = viewport[1],
         bottom_line = viewport[2],
         marks = marks,
+        mark_rows = mark_rows,
     })
+end
+
+---@param source_win integer
+---@param source_buf integer
+---@param buffer_revision integer
+---@param window_revision integer
+---@param line_count integer
+---@param width integer
+---@param height integer
+---@param active_config ScrollbarConfig
+---@param marks ScrollbarLayoutMark[]
+---@param compact_search? ScrollbarCompactSearch
+---@return ScrollbarLineMarkLayerCache
+local function line_mark_layer(
+    source_win,
+    source_buf,
+    buffer_revision,
+    window_revision,
+    line_count,
+    width,
+    height,
+    active_config,
+    marks,
+    compact_search
+)
+    local config_generation = config.get_layout_generation()
+    local cached = line_layer_cache[source_win]
+    if
+        cached ~= nil
+        and cached.source_buf == source_buf
+        and cached.buffer_revision == buffer_revision
+        and cached.window_revision == window_revision
+        and cached.line_count == line_count
+        and cached.width == width
+        and cached.height == height
+        and cached.config_generation == config_generation
+    then
+        return cached
+    end
+
+    local mark_rows = layout.normalized_mark_rows({
+        height = height,
+        line_count = line_count,
+        marks = marks,
+    })
+    cached = {
+        source_buf = source_buf,
+        buffer_revision = buffer_revision,
+        window_revision = window_revision,
+        line_count = line_count,
+        width = width,
+        height = height,
+        config_generation = config_generation,
+        mark_rows = mark_rows,
+        layer = layout.mark_layer({
+            config = active_config,
+            height = height,
+            line_count = line_count,
+            geometry = { mark_rows = mark_rows },
+            marks = marks,
+            compact_search = compact_search,
+        }),
+    }
+    line_layer_cache[source_win] = cached
+    return cached
 end
 
 ---@param float_buf integer
@@ -401,48 +555,77 @@ local function render_source(source_win)
     end
 
     local source_buf = vim.api.nvim_win_get_buf(source_win)
+    local existing_state = states[source_win]
+    if existing_state ~= nil and existing_state.source_buf ~= source_buf then
+        close_state(existing_state)
+    end
     local area = source_text_area(source_win)
     if area.height < 1 then
         close_source(source_win)
         return nil
     end
 
-    local marks = flattened_marks(source_win, source_buf)
-    local geometry = geometry_for(source_win, source_buf, area.height, marks)
+    local active_config = config.get()
+    local width = active_config.float.width
+    local expand_compact = active_config.render.geometry == "screen"
+    local marks, buffer_revision, window_revision, compact_search =
+        flattened_marks(source_win, source_buf, expand_compact)
+    local geometry
+    local mark_layer
+    if active_config.render.geometry == "line" then
+        local line_count = vim.api.nvim_buf_line_count(source_buf)
+        local cached = line_mark_layer(
+            source_win,
+            source_buf,
+            buffer_revision,
+            window_revision,
+            line_count,
+            width,
+            area.height,
+            active_config,
+            marks,
+            compact_search
+        )
+        geometry = geometry_for(source_win, source_buf, area.height, marks, line_count, cached.mark_rows)
+        mark_layer = cached.layer
+    else
+        geometry = geometry_for(source_win, source_buf, area.height, marks)
+    end
     local all_visible = geometry.total_extent <= area.height
-    if all_visible and config.get().hide_if_all_visible then
+    if all_visible and active_config.hide_if_all_visible then
         close_source(source_win)
         return nil
     end
-    if all_visible and config.get().handle.hide_if_all_visible then
+    if all_visible and active_config.handle.hide_if_all_visible then
         geometry.handle = { first_row = -1, last_row = -1 }
     end
 
     local output = layout.compose({
-        config = config.get(),
+        config = active_config,
         height = area.height,
+        line_count = active_config.render.geometry == "line" and vim.api.nvim_buf_line_count(source_buf) or nil,
         geometry = geometry,
         marks = marks,
+        mark_layer = mark_layer,
+        compact_search = active_config.render.geometry == "line" and compact_search or nil,
     })
+    local active_float_config = float_config(source_win, area)
 
     ---@type ScrollbarWindowState?
     local state = states[source_win]
-    if state ~= nil and state.source_buf ~= source_buf then
-        close_state(state)
-        state = nil
-    end
     if state == nil or not valid_window(state.float_win) or not vim.api.nvim_buf_is_valid(state.float_buf) then
         if state ~= nil then
             close_state(state)
         end
-        state = create_state(source_win, source_buf, area)
-    else
-        vim.api.nvim_win_set_config(state.float_win, float_config(source_win, area))
-        configure_window(state.float_win)
-        configure_buffer(state.float_buf)
+        state = create_state(source_win, source_buf, active_float_config, configure_buffer, configure_window)
+    elseif
+        not vim.deep_equal(state.float_config, active_float_config)
+        or not has_float_config(state.float_win, active_float_config)
+    then
+        vim.api.nvim_win_set_config(state.float_win, active_float_config)
+        state.float_config = active_float_config
     end
 
-    local width = config.get().float.width
     update_buffer(state, output, width, area.height)
     state.width = width
     state.height = area.height
@@ -451,7 +634,7 @@ local function render_source(source_win)
     state.hitmap = output.hitmap
     state.handle = output.handle
     state.geometry = {
-        mode = config.get().render.geometry,
+        mode = active_config.render.geometry,
         total_extent = geometry.total_extent,
         viewport_start = geometry.viewport_start,
         viewport_end = geometry.viewport_end,
@@ -566,13 +749,11 @@ end
 M.hide = function()
     visible = false
     close_all_states()
+    clear_all_caches()
 end
 
 M.show = function()
     visible = true
-    for _, source_win in ipairs(M.source_windows()) do
-        M.render(source_win)
-    end
 end
 
 M.toggle = function()
@@ -597,6 +778,7 @@ M.dispose = function(source_win)
 
     visible = false
     close_all_states()
+    clear_all_caches()
     if lifecycle_group ~= nil then
         pcall(vim.api.nvim_del_augroup_by_id, lifecycle_group)
         lifecycle_group = nil
@@ -620,12 +802,15 @@ M.setup = function()
             local state = states[closed_win] or states_by_float[closed_win]
             if state ~= nil then
                 close_state(state)
+            elseif states[closed_win] == nil then
+                clear_source_cache(closed_win)
             end
         end,
     })
     vim.api.nvim_create_autocmd({ "BufDelete", "BufWipeout" }, {
         group = lifecycle_group,
         callback = function(args)
+            clear_buffer_caches(args.buf)
             local pending = {}
             for _, state in pairs(states) do
                 if state.source_buf == args.buf or state.float_buf == args.buf then

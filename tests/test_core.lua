@@ -350,6 +350,57 @@ T["public commands change visibility globally across every owned window"] = func
     })
 end
 
+T["show defers exactly one render per source window to the scheduler"] = function()
+    local child = new_child()
+    local result = child.lua_func(function(config)
+        local lines = {}
+        for index = 1, 200 do
+            lines[index] = "line " .. index
+        end
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        vim.cmd("split")
+
+        local scrollbar = require("scrollbar")
+        scrollbar.setup(config)
+        local scheduler = require("scrollbar.scheduler")
+        scheduler.flush()
+        scrollbar.hide()
+
+        local renderer = require("scrollbar.renderer")
+        local render = renderer.render
+        local renders = {}
+        rawset(renderer, "render", function(winid)
+            table.insert(renders, winid)
+            return render(winid)
+        end)
+
+        scrollbar.show()
+        local before_flush = {
+            renders = #renders,
+            states = #vim.tbl_filter(function(winid)
+                return renderer.get_state(winid) ~= nil
+            end, renderer.source_windows()),
+            queued = #scheduler.status().dirty_windows,
+        }
+        scheduler.flush()
+        local after_flush = vim.deepcopy(renders)
+        local second_flush = scheduler.flush()
+        rawset(renderer, "render", render)
+
+        return {
+            before_flush = before_flush,
+            after_flush = after_flush,
+            second_flush = second_flush,
+            sources = renderer.source_windows(),
+        }
+    end, root_config())
+
+    table.sort(result.sources)
+    expect.equality(result.before_flush, { renders = 0, states = 0, queued = #result.sources })
+    expect.equality(result.after_flush, result.sources)
+    expect.equality(result.second_flush, false)
+end
+
 T["public refresh recollects displayed buffers through providers and schedules rendering"] = function()
     local child = new_child()
     local result = child.lua_func(function(config)

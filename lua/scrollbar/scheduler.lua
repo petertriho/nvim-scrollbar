@@ -387,11 +387,15 @@ M.flush = function()
         table.insert(windows, winid)
     end
     table.sort(windows)
+    local eligible = {}
+    for _, winid in ipairs(source_windows(current)) do
+        eligible[winid] = true
+    end
     for _, winid in ipairs(windows) do
         if runtime ~= current then
             break
         end
-        if is_source_window(current, winid) then
+        if eligible[winid] then
             local ok, err = pcall(current.renderer.render, winid)
             if not ok then
                 vim.notify("[scrollbar.nvim] render failed: " .. tostring(err), vim.log.levels.WARN)

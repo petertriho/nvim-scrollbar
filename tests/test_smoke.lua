@@ -56,7 +56,7 @@ T["enables accepted search and leaves Coc disabled by default"] = function()
     end)
 
     expect.equality(result, {
-        search = { live = false },
+        search = { live = false, backend = "worker" },
         coc = false,
         search_registered = true,
         coc_registered = false,

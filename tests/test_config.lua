@@ -24,22 +24,45 @@ T["defaults are normalized from a fresh immutable baseline"] = function()
         visibility = "active",
         float = { width = 3 },
         marks = { Search = { text = "x", column = 2 } },
-        providers = { search = { live = true } },
+        providers = { search = { live = true, backend = "sync" } },
     })
 
     expect.equality(first.visibility, "active")
     expect.equality(first.float.width, 3)
     expect.equality(first.marks.Search.text, { "x" })
     expect.equality(first.marks.Search.column, 2)
-    expect.equality(first.providers.search, { live = true })
+    expect.equality(first.providers.search, { live = true, backend = "sync" })
 
     local second = set()
     expect.equality(second.visibility, "all")
     expect.equality(second.float.width, 1)
     expect.equality(second.marks.Search.text, { "-", "=" })
     expect.equality(second.marks.Search.column, 1)
-    expect.equality(second.providers.search, { live = false })
+    expect.equality(second.providers.search, { live = false, backend = "worker" })
     expect.equality(second.providers.coc, false)
+end
+
+T["advances the layout generation only for static mark-layer inputs"] = function()
+    local config = require("scrollbar.config")
+    local initial = config.get_layout_generation()
+
+    set({ visibility = "active", handle = { text = "H" }, float = { zindex = 80 } })
+    local unrelated = config.get_layout_generation()
+    set({ float = { width = 2 }, handle = { column = 2 } })
+    local width = config.get_layout_generation()
+    set({ float = { width = 2 }, handle = { column = 2 }, marks = { Search = { text = "S" } } })
+    local mark_text = config.get_layout_generation()
+    set({
+        float = { width = 2 },
+        handle = { column = 2 },
+        marks = { Search = { text = "S", highlight = "IncSearch" } },
+    })
+    local highlight = config.get_layout_generation()
+
+    expect.equality(unrelated, initial)
+    expect.equality(width, initial + 1)
+    expect.equality(mark_text, initial + 2)
+    expect.equality(highlight, mark_text)
 end
 
 T["accepts the complete typed schema"] = function()
@@ -73,7 +96,7 @@ T["accepts the complete typed schema"] = function()
         providers = {
             cursor = false,
             diagnostic = false,
-            search = { live = true },
+            search = { live = true, backend = "sync" },
             gitsigns = true,
             ale = true,
             coc = false,
@@ -89,6 +112,7 @@ T["accepts the complete typed schema"] = function()
     expect.equality(result.marks.Custom.text, { "!" })
     expect.equality(result.marks.Custom.highlight, mark_highlight)
     expect.equality(result.providers.search.live, true)
+    expect.equality(result.providers.search.backend, "sync")
 
     local normalized_handle = result.handle.highlight
     local normalized_mark = result.marks.Custom.highlight
@@ -175,6 +199,10 @@ T["rejects invalid provider options"] = function()
     expect_invalid({ providers = { cursor = {} } }, "providers.cursor must be a boolean")
     expect_invalid({ providers = { search = "yes" } }, "providers.search must be a boolean or table")
     expect_invalid({ providers = { search = { live = "yes" } } }, "providers.search.live must be a boolean")
+    expect_invalid(
+        { providers = { search = { backend = "thread" } } },
+        "providers.search.backend must be one of: sync, worker"
+    )
     expect_invalid({ providers = { search = { extra = true } } }, "unknown option 'providers.search.extra'")
 end
 

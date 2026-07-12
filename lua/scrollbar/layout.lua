@@ -36,6 +36,17 @@ M.handle_geometry = function(viewport_start, viewport_end, total_extent, height)
     return { first_row = first_row, last_row = math.max(first_row, last_row) }
 end
 
+---@param input ScrollbarNormalizedMarkGeometryInput
+---@return integer[]
+M.normalized_mark_rows = function(input)
+    local total_extent = math.max(0, input.line_count)
+    local mark_rows = {}
+    for index, mark in ipairs(input.marks) do
+        mark_rows[index] = M.map_position(mark.line, total_extent, input.height)
+    end
+    return mark_rows
+end
+
 ---@param input ScrollbarNormalizedGeometryInput
 ---@return ScrollbarGeometry
 M.normalized = function(input)
@@ -43,11 +54,12 @@ M.normalized = function(input)
     local maximum_position = math.max(0, total_extent - 1)
     local viewport_start = clamp(input.top_line, 0, maximum_position)
     local viewport_end = clamp(math.max(input.top_line, input.bottom_line), 0, maximum_position)
-    local mark_rows = {}
-
-    for index, mark in ipairs(input.marks) do
-        mark_rows[index] = M.map_position(mark.line, total_extent, input.height)
-    end
+    local mark_rows = input.mark_rows
+        or M.normalized_mark_rows({
+            height = input.height,
+            line_count = input.line_count,
+            marks = input.marks,
+        })
 
     return {
         total_extent = total_extent,
@@ -176,7 +188,14 @@ M.track_row_to_line = function(source_win, row, height, mode, total_extent)
     return result
 end
 
+local glyph_cache = {}
+
 local function display_glyphs(text)
+    local cached = glyph_cache[text]
+    if cached ~= nil then
+        return cached
+    end
+
     local glyphs = {}
     local join_next = false
     local character_count = vim.fn.strchars(text)
@@ -196,6 +215,7 @@ local function display_glyphs(text)
         join_next = codepoint == 0x200D
     end
 
+    glyph_cache[text] = glyphs
     return glyphs
 end
 
@@ -215,42 +235,83 @@ local function group_candidates(input)
     local groups = {}
     local by_row = {}
 
+    local function group_for(row, mark_type, mark_config)
+        by_row[row] = by_row[row] or {}
+        local by_type = by_row[row]
+        by_type[mark_type] = by_type[mark_type] or {}
+        local by_column = by_type[mark_type]
+        local group = by_column[mark_config.column]
+        if not group then
+            group = {
+                row = row,
+                type = mark_type,
+                column = mark_config.column,
+                priority = mark_config.priority,
+                sources = {},
+                lines = {},
+                count = 0,
+                ordinary_count = 0,
+            }
+            by_column[mark_config.column] = group
+            table.insert(groups, group)
+        end
+        return group
+    end
+
     for index, mark in ipairs(input.marks) do
         local row = input.geometry.mark_rows[index]
         local mark_config = input.config.marks[mark.type]
         if row and row >= 0 and row < input.height and mark_config then
-            by_row[row] = by_row[row] or {}
-            local by_type = by_row[row]
-            by_type[mark.type] = by_type[mark.type] or {}
-            local by_column = by_type[mark.type]
-            local group = by_column[mark_config.column]
-            if not group then
-                group = {
-                    row = row,
-                    type = mark.type,
-                    column = mark_config.column,
-                    priority = mark_config.priority,
-                    sources = {},
-                }
-                by_column[mark_config.column] = group
-                table.insert(groups, group)
-            end
+            local group = group_for(row, mark.type, mark_config)
             table.insert(group.sources, mark)
+            table.insert(group.lines, mark.line)
+            group.count = group.count + 1
+            group.ordinary_count = group.ordinary_count + 1
+        end
+    end
+
+    local compact = input.compact_search
+    local search_config = input.config.marks.Search
+    if compact ~= nil and search_config ~= nil then
+        local total_extent = math.max(0, input.line_count)
+        local maximum_position = math.max(0, total_extent - 1)
+        local maximum_row = math.max(0, input.height - 1)
+        local compact_groups = {}
+        for offset = 1, #compact.data, 4 do
+            local first, second, third, fourth = compact.data:byte(offset, offset + 3)
+            local line = first * 0x1000000 + second * 0x10000 + third * 0x100 + fourth
+            local row
+            if total_extent <= 1 or input.height <= 1 then
+                row = 0
+            elseif total_extent <= input.height then
+                row = math.min(line, maximum_position)
+            else
+                row = math.floor(math.min(line, maximum_position) * maximum_row / maximum_position)
+            end
+            local group = compact_groups[row]
+            if group == nil then
+                group = group_for(row, "Search", search_config)
+                group.compact_source = { provider = "search", line = line, type = "Search" }
+                compact_groups[row] = group
+            end
+            group.count = group.count + 1
+            group.lines[#group.lines + 1] = line
         end
     end
 
     for _, group in ipairs(groups) do
+        if group.compact_source ~= nil then
+            table.insert(group.sources, group.compact_source)
+        end
         table.sort(group.sources, source_less)
         local variants = input.config.marks[group.type].text
         local representative = group.sources[1]
         group.provider = representative.provider or ""
         group.line = representative.line
-        group.lines = {}
-        for _, source in ipairs(group.sources) do
-            table.insert(group.lines, source.line)
+        if group.ordinary_count > 0 or group.compact_source == nil then
+            table.sort(group.lines)
         end
-        table.sort(group.lines)
-        group.text = representative.text or variants[math.min(#group.sources, #variants)]
+        group.text = representative.text or variants[math.min(group.count, #variants)]
     end
 
     table.sort(groups, function(left, right)
@@ -314,6 +375,12 @@ local function place_marks(input, groups)
     end
 
     return rows
+end
+
+---@param input ScrollbarMarkLayerInput
+---@return ScrollbarPlacedMark[][]
+M.mark_layer = function(input)
+    return place_marks(input, group_candidates(input))
 end
 
 local function handle_glyphs(config)
@@ -437,8 +504,7 @@ end
 ---@param input ScrollbarLayoutInput
 ---@return ScrollbarLayoutOutput
 M.compose = function(input)
-    local groups = group_candidates(input)
-    local placed_marks = place_marks(input, groups)
+    local placed_marks = input.mark_layer or place_marks(input, group_candidates(input))
     local base_handle_glyphs = handle_glyphs(input.config)
     local rows = {}
     local highlights = {}
@@ -460,6 +526,10 @@ M.compose = function(input)
             width = input.config.handle.width,
         },
     }
+end
+
+M.clear_cache = function()
+    glyph_cache = {}
 end
 
 return M

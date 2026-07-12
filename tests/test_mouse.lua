@@ -73,6 +73,10 @@ local function setup_single(child, options)
         if opts.marks and #opts.marks > 0 then
             assert(require("scrollbar.store").set("mouse-test", source_buf, opts.marks))
         end
+        if opts.compact_search then
+            local compact = require("scrollbar.providers.search_compact").encode(opts.compact_search)
+            assert(require("scrollbar.store")._set_search_compact(source_buf, compact))
+        end
         local renderer = require("scrollbar.renderer")
         local scheduler = require("scrollbar.scheduler")
         local mouse = require("scrollbar.mouse")
@@ -106,6 +110,7 @@ local function setup_single(child, options)
         height = options.height or 10,
         config = options.config or mouse_config(),
         marks = options.marks or {},
+        compact_search = options.compact_search,
         folds = options.folds or {},
         chrome = options.chrome or false,
     })
@@ -346,6 +351,27 @@ T["jumps to the exact visible mark selected by display column"] = function()
     expect.equality(child.api.nvim_win_get_cursor(setup.source_win)[1], 101)
 end
 
+T["compact search marks keep the ordinary exact click target"] = function()
+    local child = new_child()
+    local setup = setup_single(child, {
+        config = mouse_config({
+            marks = { Search = { text = { "-", "=" }, column = 1 } },
+        }),
+        compact_search = { 20, 20, 21 },
+    })
+
+    local mark_row
+    for row, cells in ipairs(setup.hitmap) do
+        if cells[1].line == 20 then
+            mark_row = row - 1
+        end
+    end
+    expect.no_equality(mark_row, nil)
+    expect.equality(setup.hitmap[mark_row + 1][1].lines, { 20, 20, 21 })
+    click(child, setup, mark_row, 1)
+    expect.equality(child.api.nvim_win_get_cursor(setup.source_win)[1], 21)
+end
+
 T["keeps a mark-over-handle press as an exact mark click without movement"] = function()
     local child = new_child()
     local setup = setup_single(child, {
@@ -513,6 +539,7 @@ T["keeps independent ownership for multiple source windows"] = function()
         }
     end, mouse_config())
     vim.uv.sleep(30)
+    child.cmd("redraw")
 
     click(child, setup.first, setup.first.height - 1, 1)
     expect.equality(child.api.nvim_win_get_cursor(setup.first.source_win)[1], 200)

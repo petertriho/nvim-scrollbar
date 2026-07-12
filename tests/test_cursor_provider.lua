@@ -75,6 +75,8 @@ T["cursor movement updates and invalidates only the event window"] = function()
     expect.equality(store.get(target), {})
     expect.equality(store.get_window(target_win).cursor, { { line = 0, type = "Cursor" } })
     expect.equality(store.get_window(second_target_win).cursor, { { line = 2, type = "Cursor" } })
+    local target_revision = store._get_window_snapshot(target_win).revision
+    local second_revision = store._get_window_snapshot(second_target_win).revision
     local other_before = store.get_window(other_win)
     invalidated_windows = {}
     vim.api.nvim_win_set_cursor(target_win, { 2, 0 })
@@ -84,6 +86,8 @@ T["cursor movement updates and invalidates only the event window"] = function()
     expect.equality(store.get_window(second_target_win).cursor, { { line = 2, type = "Cursor" } })
     expect.equality(store.get_window(other_win), other_before)
     expect.equality(invalidated_windows, { target_win })
+    expect.equality(store._get_window_snapshot(target_win).revision, target_revision + 1)
+    expect.equality(store._get_window_snapshot(second_target_win).revision, second_revision)
 
     invalidated_windows = {}
     vim.api.nvim_win_set_cursor(target_win, { 1, 0 })
@@ -91,6 +95,8 @@ T["cursor movement updates and invalidates only the event window"] = function()
     expect.equality(store.get_window(target_win).cursor, { { line = 0, type = "Cursor" } })
     expect.equality(store.get_window(second_target_win).cursor, { { line = 2, type = "Cursor" } })
     expect.equality(invalidated_windows, { target_win })
+    expect.equality(store._get_window_snapshot(target_win).revision, target_revision + 2)
+    expect.equality(store._get_window_snapshot(second_target_win).revision, second_revision)
 end
 
 T["cursor provider ignores excluded buffers"] = function()

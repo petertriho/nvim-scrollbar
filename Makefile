@@ -6,7 +6,7 @@ MINI_VERSION := v0.18.0
 MINI_DIR := deps/mini.nvim
 LUA_PATHS := lua tests scripts benchmarks
 
-.PHONY: test-deps test test-file benchmark format format-check lint typecheck ci
+.PHONY: test-deps test test-file benchmark benchmark-render benchmark-search format format-check lint typecheck ci
 
 test-deps:
 	@if [ ! -d "$(MINI_DIR)/.git" ]; then \
@@ -27,8 +27,13 @@ test-file: test-deps
 	TEST_FILE="$(FILE)" $(NVIM) --headless --noplugin -u scripts/minimal_init.lua \
 		-c "lua MiniTest.run_file(vim.env.TEST_FILE)"
 
-benchmark:
+benchmark: benchmark-render
+
+benchmark-render:
 	$(NVIM) --headless --noplugin -u NONE -l benchmarks/render.lua
+
+benchmark-search:
+	$(NVIM) --headless --noplugin -u NONE -l benchmarks/search.lua
 
 format:
 	$(STYLUA) $(LUA_PATHS)

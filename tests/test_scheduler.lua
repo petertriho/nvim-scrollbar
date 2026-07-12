@@ -98,6 +98,54 @@ T["requeues work arriving during a flush without losing the final state"] = func
     expect.equality(result, { 1, 2 })
 end
 
+T["uses one source-window snapshot to validate every pending window in a flush"] = function()
+    local child = new_child()
+    local result = child.lua_func(function()
+        local first = vim.api.nvim_get_current_win()
+        vim.cmd("split")
+        local second = vim.api.nvim_get_current_win()
+        vim.cmd("vsplit")
+        local third = vim.api.nvim_get_current_win()
+        local sources = { first, second, third }
+        local enumerations = 0
+        local rendered = {}
+        local scheduler = require("scrollbar.scheduler")
+
+        scheduler.setup({
+            config = require("scrollbar.config").set({
+                set_highlights = false,
+                render = { interval_ms = 1000 },
+            }),
+            renderer = {
+                source_windows = function()
+                    enumerations = enumerations + 1
+                    return sources
+                end,
+                render = function(winid)
+                    table.insert(rendered, winid)
+                end,
+                is_owned_window = function()
+                    return false
+                end,
+            },
+        })
+
+        scheduler.invalidate_all()
+        enumerations = 0
+        scheduler.flush()
+        scheduler.dispose()
+        return {
+            enumerations = enumerations,
+            rendered = rendered,
+            sources = sources,
+        }
+    end)
+
+    table.sort(result.sources)
+    expect.equality(result.enumerations, 1)
+    expect.equality(result.rendered, result.sources)
+end
+
 T["ignores closed and floating windows and scopes buffer invalidation"] = function()
     local child = new_child()
     local result = child.lua_func(function()

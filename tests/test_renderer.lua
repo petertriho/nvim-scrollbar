@@ -172,6 +172,9 @@ T["enforces visibility and editor-relative single ownership"] = function()
         renderer.render(first)
         local setup_hidden = renderer.get_state(first) == nil
         renderer.show()
+        for _, winid in ipairs(renderer.source_windows()) do
+            renderer.render(winid)
+        end
         local explicit_show = renderer.get_state(first) ~= nil and renderer.get_state(second) ~= nil
 
         return {
@@ -578,6 +581,81 @@ T["aligns short-buffer marks without shrinking the track"] = function()
     end
 end
 
+T["renders compact built-in search exactly and invalidates it by revision"] = function()
+    local child = new_child()
+    local result = child.lua_func(
+        function(base_config)
+            local lines = {}
+            for index = 1, 100 do
+                lines[index] = "line " .. index
+            end
+            vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+            vim.cmd("split")
+            local source_win = vim.api.nvim_get_current_win()
+            vim.api.nvim_win_set_height(source_win, 10)
+            local source_buf = vim.api.nvim_win_get_buf(source_win)
+            local store = require("scrollbar.store")
+            local compact = require("scrollbar.providers.search_compact")
+            local renderer = require("scrollbar.renderer")
+            assert(store.set("alpha", source_buf, { { line = 20, type = "Search", text = "A" } }))
+
+            local matches = { 10, 10, 11, 99 }
+            local ordinary_marks = vim.tbl_map(function(line)
+                return { line = line, type = "Search" }
+            end, matches)
+            local cases = {}
+            for _, mode in ipairs({ "line", "screen" }) do
+                local active = vim.deepcopy(base_config)
+                active.render.geometry = mode
+                require("scrollbar.config").set(active)
+                renderer.setup()
+
+                assert(store.set("search", source_buf, ordinary_marks))
+                local ordinary = assert(renderer.render(source_win))
+                local expected = {
+                    rows = vim.deepcopy(ordinary.rows),
+                    highlights = vim.deepcopy(ordinary.highlights),
+                    hitmap = vim.deepcopy(ordinary.hitmap),
+                }
+
+                local before = store._get_snapshot(source_buf).revision
+                assert(store._set_search_compact(source_buf, compact.encode(matches)))
+                local compact_state = assert(renderer.render(source_win))
+                local after = store._get_snapshot(source_buf).revision
+                local no_op_changed = select(2, store._set_search_compact(source_buf, compact.encode(matches)))
+                cases[mode] = {
+                    equivalent = vim.deep_equal(expected, {
+                        rows = compact_state.rows,
+                        highlights = compact_state.highlights,
+                        hitmap = compact_state.hitmap,
+                    }),
+                    revision_advanced = after == before + 1,
+                    no_op = next(no_op_changed) == nil and store._get_snapshot(source_buf).revision == after,
+                }
+            end
+
+            local previous_rows = vim.deepcopy(assert(renderer.get_state(source_win)).rows)
+            assert(store._set_search_compact(source_buf, compact.encode({ 50, 50, 50 })))
+            local invalidated = assert(renderer.render(source_win))
+            cases.changed = not vim.deep_equal(previous_rows, invalidated.rows)
+            return cases
+        end,
+        renderer_config({
+            marks = {
+                Search = { text = { "-", "=", "#" }, column = 1 },
+                Misc = { text = "M", column = 1 },
+            },
+        })
+    )
+
+    for _, mode in ipairs({ "line", "screen" }) do
+        expect.equality(result[mode].equivalent, true)
+        expect.equality(result[mode].revision_advanced, true)
+        expect.equality(result[mode].no_op, true)
+    end
+    expect.equality(result.changed, true)
+end
+
 T["updates only dirty rows and fully replaces rows when dimensions change"] = function()
     local child = new_child()
     local result = child.lua_func(function(config)
@@ -640,6 +718,303 @@ T["updates only dirty rows and fully replaces rows when dimensions change"] = fu
     expect.equality(result.dimension_events[1].new_last, result.new_height)
 end
 
+T["caches line mark work while keeping handle geometry current and invalidating exact inputs"] = function()
+    local child = new_child()
+    local result = child.lua_func(function(base_config)
+        local lines = {}
+        for index = 1, 240 do
+            lines[index] = "line " .. index
+        end
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        vim.cmd("split")
+        local source_win = vim.api.nvim_get_current_win()
+        vim.api.nvim_win_set_height(source_win, 8)
+        local source_buf = vim.api.nvim_win_get_buf(source_win)
+
+        local scrollbar_config = require("scrollbar.config")
+        scrollbar_config.set(base_config)
+        local store = require("scrollbar.store")
+        local buffer_marks = { { line = 120, type = "Misc", text = "A" } }
+        assert(store.set("buffer", source_buf, buffer_marks))
+        assert(store.set_window("window", source_win, { { line = 30, type = "Misc", text = "W" } }))
+
+        local layout = require("scrollbar.layout")
+        local original_mark_layer = layout.mark_layer
+        local builds = 0
+        local mark_tables = {}
+        rawset(layout, "mark_layer", function(input)
+            builds = builds + 1
+            mark_tables[builds] = input.marks
+            return original_mark_layer(input)
+        end)
+
+        local renderer = require("scrollbar.renderer")
+        renderer.setup()
+        local initial = assert(renderer.render(source_win))
+        local initial_handle = vim.deepcopy(initial.handle)
+        local after_initial = builds
+
+        vim.api.nvim_win_call(source_win, function()
+            vim.api.nvim_win_set_cursor(0, { 180, 0 })
+            vim.cmd("normal! zt")
+        end)
+        local scrolled = assert(renderer.render(source_win))
+        local after_scroll = builds
+
+        assert(store.set("buffer", source_buf, buffer_marks))
+        renderer.render(source_win)
+        local after_noop = builds
+
+        assert(store.set("buffer", source_buf, { { line = 121, type = "Misc", text = "B" } }))
+        renderer.render(source_win)
+        local after_buffer_marks = builds
+
+        assert(store.set_window("window", source_win, { { line = 31, type = "Misc", text = "V" } }))
+        renderer.render(source_win)
+        local after_window_marks = builds
+
+        vim.api.nvim_buf_set_lines(source_buf, -1, -1, false, { "extra" })
+        renderer.render(source_win)
+        local after_line_count = builds
+
+        vim.api.nvim_win_set_height(source_win, 7)
+        renderer.render(source_win)
+        local after_resize = builds
+        local resize_reused_flattened = rawequal(mark_tables[after_resize], mark_tables[after_line_count])
+
+        local changed_config = vim.deepcopy(base_config)
+        changed_config.marks.Misc.text = "N"
+        scrollbar_config.set(changed_config)
+        renderer.render(source_win)
+        local after_config = builds
+        local config_reused_flattened = rawequal(mark_tables[after_config], mark_tables[after_resize])
+
+        local replacement_buf = vim.api.nvim_create_buf(true, false)
+        vim.api.nvim_buf_set_lines(replacement_buf, 0, -1, false, lines)
+        assert(store.set("buffer", replacement_buf, { { line = 20, type = "Misc", text = "R" } }))
+        vim.api.nvim_win_set_buf(source_win, replacement_buf)
+        renderer.render(source_win)
+        local after_replacement = builds
+
+        renderer.dispose(source_win)
+        renderer.render(source_win)
+        local after_dispose = builds
+        rawset(layout, "mark_layer", original_mark_layer)
+
+        return {
+            after_initial = after_initial,
+            after_scroll = after_scroll,
+            after_noop = after_noop,
+            after_buffer_marks = after_buffer_marks,
+            after_window_marks = after_window_marks,
+            after_line_count = after_line_count,
+            after_resize = after_resize,
+            after_config = after_config,
+            after_replacement = after_replacement,
+            after_dispose = after_dispose,
+            handle_moved = scrolled.handle.first_row > initial_handle.first_row,
+            resize_reused_flattened = resize_reused_flattened,
+            config_reused_flattened = config_reused_flattened,
+        }
+    end, renderer_config())
+
+    expect.equality(result, {
+        after_initial = 1,
+        after_scroll = 1,
+        after_noop = 1,
+        after_buffer_marks = 2,
+        after_window_marks = 3,
+        after_line_count = 4,
+        after_resize = 5,
+        after_config = 6,
+        after_replacement = 7,
+        after_dispose = 8,
+        handle_moved = true,
+        resize_reused_flattened = true,
+        config_reused_flattened = true,
+    })
+end
+
+T["screen renders reuse flattened marks but always repeat text-height measurements"] = function()
+    local child = new_child()
+    local result = child.lua_func(function(base_config)
+        local lines = {}
+        for index = 1, 200 do
+            lines[index] = string.rep("x", index % 20 + 1)
+        end
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        local source_win = vim.api.nvim_get_current_win()
+        local source_buf = vim.api.nvim_get_current_buf()
+        local active_config = vim.deepcopy(base_config)
+        active_config.render.geometry = "screen"
+        require("scrollbar.config").set(active_config)
+        assert(require("scrollbar.store").set("test", source_buf, {
+            { line = 10, type = "Misc" },
+            { line = 150, type = "Misc" },
+        }))
+
+        local layout = require("scrollbar.layout")
+        local original_screen = layout.screen
+        local mark_tables = {}
+        rawset(layout, "screen", function(input)
+            table.insert(mark_tables, input.marks)
+            return original_screen(input)
+        end)
+        local original_text_height = vim.api.nvim_win_text_height
+        local measurements = 0
+        vim.api.nvim_win_text_height = function(...)
+            measurements = measurements + 1
+            return original_text_height(...)
+        end
+
+        local renderer = require("scrollbar.renderer")
+        renderer.setup()
+        renderer.render(source_win)
+        local first_measurements = measurements
+        vim.api.nvim_win_call(source_win, function()
+            vim.api.nvim_win_set_cursor(0, { 150, 0 })
+            vim.cmd("normal! zt")
+        end)
+        renderer.render(source_win)
+        local second_measurements = measurements - first_measurements
+
+        rawset(layout, "screen", original_screen)
+        vim.api.nvim_win_text_height = original_text_height
+        return {
+            same_marks = rawequal(mark_tables[1], mark_tables[2]),
+            first_measurements = first_measurements,
+            second_measurements = second_measurements,
+        }
+    end, renderer_config())
+
+    expect.equality(result.same_marks, true)
+    expect.equality(result.first_measurements > 0, true)
+    expect.equality(result.second_measurements > 0, true)
+end
+
+T["configures owned state once and reapplies only changed float configuration"] = function()
+    local child = new_child()
+    local result = child.lua_func(function(base_config)
+        local lines = {}
+        for index = 1, 120 do
+            lines[index] = "line " .. index
+        end
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        vim.cmd("split")
+        local source_win = vim.api.nvim_get_current_win()
+        vim.api.nvim_win_set_height(source_win, 8)
+
+        local scrollbar_config = require("scrollbar.config")
+        scrollbar_config.set(base_config)
+        local renderer = require("scrollbar.renderer")
+        renderer.setup()
+
+        local option_calls = { buftype = 0, wrap = 0 }
+        local config_calls = 0
+        local set_option_value = vim.api.nvim_set_option_value
+        local win_set_config = vim.api.nvim_win_set_config
+        rawset(vim.api, "nvim_set_option_value", function(name, value, options)
+            if option_calls[name] ~= nil then
+                option_calls[name] = option_calls[name] + 1
+            end
+            return set_option_value(name, value, options)
+        end)
+        rawset(vim.api, "nvim_win_set_config", function(...)
+            config_calls = config_calls + 1
+            return win_set_config(...)
+        end)
+
+        local first = assert(renderer.render(source_win))
+        local after_create = {
+            buftype = option_calls.buftype,
+            wrap = option_calls.wrap,
+            config = config_calls,
+        }
+        renderer.render(source_win)
+        local after_unchanged = {
+            buftype = option_calls.buftype,
+            wrap = option_calls.wrap,
+            config = config_calls,
+        }
+
+        vim.api.nvim_win_set_height(source_win, 6)
+        renderer.render(source_win)
+        local after_height = config_calls
+
+        local changed = vim.deepcopy(base_config)
+        changed.float.width = 3
+        changed.float.placement.row = 1
+        changed.mouse.enabled = true
+        scrollbar_config.set(changed)
+        renderer.render(source_win)
+        local changed_state = assert(renderer.get_state(source_win))
+        local changed_config = vim.api.nvim_win_get_config(changed_state.float_win)
+        local after_options = {
+            buftype = option_calls.buftype,
+            wrap = option_calls.wrap,
+        }
+        local after_changed = config_calls
+
+        win_set_config(changed_state.float_win, {
+            relative = "editor",
+            anchor = "NW",
+            row = 0,
+            col = 0,
+            width = 1,
+            height = 1,
+        })
+        renderer.render(source_win)
+        local restored_config = vim.api.nvim_win_get_config(changed_state.float_win)
+        local after_restore = config_calls
+
+        local replacement_buf = vim.api.nvim_create_buf(true, false)
+        vim.api.nvim_buf_set_lines(replacement_buf, 0, -1, false, lines)
+        vim.api.nvim_win_set_buf(source_win, replacement_buf)
+        local replacement = assert(renderer.render(source_win))
+
+        rawset(vim.api, "nvim_set_option_value", set_option_value)
+        rawset(vim.api, "nvim_win_set_config", win_set_config)
+        return {
+            after_create = after_create,
+            after_unchanged = after_unchanged,
+            after_height = after_height,
+            after_options = after_options,
+            after_changed = after_changed,
+            changed_config = changed_config,
+            after_restore = after_restore,
+            restored_config = restored_config,
+            replaced = replacement.float_win ~= first.float_win
+                and replacement.float_buf ~= first.float_buf
+                and not vim.api.nvim_win_is_valid(first.float_win)
+                and not vim.api.nvim_buf_is_valid(first.float_buf),
+            replacement_options = {
+                buftype = option_calls.buftype,
+                wrap = option_calls.wrap,
+            },
+        }
+    end, renderer_config())
+
+    expect.equality(result.after_create, { buftype = 1, wrap = 1, config = 0 })
+    expect.equality(result.after_unchanged, result.after_create)
+    expect.equality(result.after_height, 1)
+    expect.equality(result.after_options, { buftype = 1, wrap = 1 })
+    expect.equality(result.after_changed, 2)
+    expect.equality(result.changed_config.width, 3)
+    expect.equality(result.changed_config.height, 6)
+    expect.equality(result.changed_config.row, 1)
+    expect.equality(result.changed_config.focusable, true)
+    expect.equality(result.changed_config.mouse, true)
+    expect.equality(result.after_restore, 3)
+    expect.equality(result.restored_config.anchor, "NE")
+    expect.equality(result.restored_config.width, 3)
+    expect.equality(result.restored_config.height, 6)
+    expect.equality(result.restored_config.row, 1)
+    expect.equality(result.restored_config.focusable, true)
+    expect.equality(result.restored_config.mouse, true)
+    expect.equality(result.replaced, true)
+    expect.equality(result.replacement_options, { buftype = 2, wrap = 2 })
+end
+
 T["cleans resources for lifecycle events, hide, toggle, and setup reset"] = function()
     local child = new_child()
     local result = child.lua_func(function(config)
@@ -673,10 +1048,12 @@ T["cleans resources for lifecycle events, hide, toggle, and setup reset"] = func
         renderer.hide()
         local hide_cleanup = renderer.get_state(second) == nil and not vim.api.nvim_win_is_valid(hidden_float)
         renderer.show()
+        renderer.render(second)
         local show_recreated = renderer.get_state(second) ~= nil
         renderer.toggle()
         local toggle_hidden = renderer.get_state(second) == nil and not renderer.is_visible()
         renderer.toggle()
+        renderer.render(second)
         local toggle_shown = renderer.get_state(second) ~= nil and renderer.is_visible()
 
         local source_buffer = vim.api.nvim_create_buf(true, false)

@@ -1,12 +1,19 @@
 local config = require("scrollbar.config")
+local search_compact = require("scrollbar.providers.search_compact")
 
 local M = {}
 
----@type table<integer, ScrollbarStoreSnapshot>
+---@type table<integer, ScrollbarStoreTrustedSnapshot>
 local marks_by_buffer = {}
 
----@type table<integer, ScrollbarStoreSnapshot>
+---@type table<integer, ScrollbarWindowStoreTrustedSnapshot>
 local marks_by_window = {}
+
+---@type ScrollbarStoreTrustedSnapshot
+local empty_buffer_snapshot = { marks = {}, revision = 0 }
+
+---@type ScrollbarWindowStoreTrustedSnapshot
+local empty_window_snapshot = { marks = {}, revision = 0 }
 
 ---@type table<string, table<string, table<integer, table<string, true>>>>
 local warned = {}
@@ -21,6 +28,22 @@ end
 ---@param target integer
 local function mark_changed(changed, target)
     changed[target] = true
+end
+
+---@param snapshot table<string, ScrollbarMark[]>
+---@return table<string, ScrollbarMark[]>
+local function copy_snapshot(snapshot)
+    local copy = {}
+    for provider, marks in pairs(snapshot) do
+        copy[provider] = marks
+    end
+    return copy
+end
+
+---@param current { revision: integer }?
+---@return integer
+local function next_revision(current)
+    return (current and current.revision or 0) + 1
 end
 
 ---@param provider string
@@ -170,22 +193,71 @@ M.set = function(provider, bufnr, marks)
     end
 
     reset_warnings(provider, "buffer", bufnr)
-    local buffer_marks = marks_by_buffer[bufnr]
-    local previous = buffer_marks and buffer_marks[provider] or nil
-    if previous ~= nil and vim.deep_equal(previous, normalized) then
+    local current = marks_by_buffer[bufnr]
+    local buffer_marks = current and current.marks or empty_buffer_snapshot.marks
+    local previous = buffer_marks[provider]
+    local replacing_compact = provider == "search" and current ~= nil and current.compact_search ~= nil
+    if not replacing_compact and previous ~= nil and vim.deep_equal(previous, normalized) then
         return true, {}
     end
 
-    buffer_marks = buffer_marks or {}
-    marks_by_buffer[bufnr] = buffer_marks
-    buffer_marks[provider] = normalized
+    local updated = copy_snapshot(buffer_marks)
+    updated[provider] = normalized
+    local compact = current and current.compact_search or nil
+    if replacing_compact then
+        compact = nil
+    end
+    marks_by_buffer[bufnr] = {
+        marks = updated,
+        revision = next_revision(current),
+        compact_search = compact,
+    }
     return true, { [bufnr] = true }
 end
 
 ---@param bufnr integer
 ---@return ScrollbarStoreSnapshot
 M.get = function(bufnr)
-    return vim.deepcopy(marks_by_buffer[bufnr] or {})
+    local snapshot = M._get_snapshot(bufnr)
+    local result = vim.deepcopy(snapshot.marks)
+    if snapshot.compact_search ~= nil then
+        result.search = search_compact.to_marks(snapshot.compact_search)
+    end
+    return result
+end
+
+---Stores trusted built-in search matches without changing the public provider mark contract.
+---@param bufnr integer
+---@param compact ScrollbarCompactSearch
+---@return boolean success
+---@return ScrollbarChangedBuffers changed_buffers
+M._set_search_compact = function(bufnr, compact)
+    if not vim.api.nvim_buf_is_valid(bufnr) or not search_compact.valid(compact) then
+        return false, M.clear("search", bufnr)
+    end
+
+    local current = marks_by_buffer[bufnr]
+    if current ~= nil and current.marks.search == nil and vim.deep_equal(current.compact_search, compact) then
+        return true, {}
+    end
+
+    local buffer_marks = current and current.marks or empty_buffer_snapshot.marks
+    local updated = copy_snapshot(buffer_marks)
+    updated.search = nil
+    marks_by_buffer[bufnr] = {
+        marks = updated,
+        revision = next_revision(current),
+        compact_search = compact,
+    }
+    return true, { [bufnr] = true }
+end
+
+---Returns a stored normalized snapshot without copying.
+---Internal callers must treat the snapshot and all nested marks as immutable.
+---@param bufnr integer
+---@return ScrollbarStoreTrustedSnapshot
+M._get_snapshot = function(bufnr)
+    return marks_by_buffer[bufnr] or empty_buffer_snapshot
 end
 
 ---@param provider string
@@ -209,22 +281,31 @@ M.set_window = function(provider, winid, marks)
     end
 
     reset_warnings(provider, "window", winid)
-    local window_marks = marks_by_window[winid]
-    local previous = window_marks and window_marks[provider] or nil
+    local current = marks_by_window[winid]
+    local window_marks = current and current.marks or empty_window_snapshot.marks
+    local previous = window_marks[provider]
     if previous ~= nil and vim.deep_equal(previous, normalized) then
         return true, {}
     end
 
-    window_marks = window_marks or {}
-    marks_by_window[winid] = window_marks
-    window_marks[provider] = normalized
+    local updated = copy_snapshot(window_marks)
+    updated[provider] = normalized
+    marks_by_window[winid] = { marks = updated, revision = next_revision(current) }
     return true, { [winid] = true }
 end
 
 ---@param winid integer
 ---@return ScrollbarWindowStoreSnapshot
 M.get_window = function(winid)
-    return vim.deepcopy(marks_by_window[winid] or {})
+    return vim.deepcopy(M._get_window_snapshot(winid).marks)
+end
+
+---Returns a stored normalized snapshot without copying.
+---Internal callers must treat the snapshot and all nested marks as immutable.
+---@param winid integer
+---@return ScrollbarWindowStoreTrustedSnapshot
+M._get_window_snapshot = function(winid)
+    return marks_by_window[winid] or empty_window_snapshot
 end
 
 ---@param provider string
@@ -232,16 +313,24 @@ end
 ---@return ScrollbarChangedBuffers changed_buffers
 M.clear = function(provider, bufnr)
     local changed = {}
-    local buffer_marks = marks_by_buffer[bufnr]
-    if buffer_marks == nil or buffer_marks[provider] == nil then
+    local current = marks_by_buffer[bufnr]
+    local clears_compact = provider == "search" and current ~= nil and current.compact_search ~= nil
+    if current == nil or (current.marks[provider] == nil and not clears_compact) then
         return changed
     end
 
-    buffer_marks[provider] = nil
-    mark_changed(changed, bufnr)
-    if next(buffer_marks) == nil then
-        marks_by_buffer[bufnr] = nil
+    local updated = copy_snapshot(current.marks)
+    updated[provider] = nil
+    local compact = current.compact_search
+    if clears_compact then
+        compact = nil
     end
+    marks_by_buffer[bufnr] = {
+        marks = updated,
+        revision = next_revision(current),
+        compact_search = compact,
+    }
+    mark_changed(changed, bufnr)
     return changed
 end
 
@@ -250,16 +339,15 @@ end
 ---@return ScrollbarChangedWindows changed_windows
 M.clear_window = function(provider, winid)
     local changed = {}
-    local window_marks = marks_by_window[winid]
-    if window_marks == nil or window_marks[provider] == nil then
+    local current = marks_by_window[winid]
+    if current == nil or current.marks[provider] == nil then
         return changed
     end
 
-    window_marks[provider] = nil
+    local updated = copy_snapshot(current.marks)
+    updated[provider] = nil
+    marks_by_window[winid] = { marks = updated, revision = next_revision(current) }
     mark_changed(changed, winid)
-    if next(window_marks) == nil then
-        marks_by_window[winid] = nil
-    end
     return changed
 end
 
@@ -267,13 +355,21 @@ end
 ---@return ScrollbarChangedBuffers changed_buffers
 M.clear_provider = function(provider)
     local changed = {}
-    for bufnr, buffer_marks in pairs(marks_by_buffer) do
-        if buffer_marks[provider] ~= nil then
-            buffer_marks[provider] = nil
-            mark_changed(changed, bufnr)
-            if next(buffer_marks) == nil then
-                marks_by_buffer[bufnr] = nil
+    for bufnr, current in pairs(marks_by_buffer) do
+        local clears_compact = provider == "search" and current.compact_search ~= nil
+        if current.marks[provider] ~= nil or clears_compact then
+            local updated = copy_snapshot(current.marks)
+            updated[provider] = nil
+            local compact = current.compact_search
+            if clears_compact then
+                compact = nil
             end
+            marks_by_buffer[bufnr] = {
+                marks = updated,
+                revision = next_revision(current),
+                compact_search = compact,
+            }
+            mark_changed(changed, bufnr)
         end
     end
     local provider_warnings = warned[provider]
@@ -290,13 +386,12 @@ end
 ---@return ScrollbarChangedWindows changed_windows
 M.clear_window_provider = function(provider)
     local changed = {}
-    for winid, window_marks in pairs(marks_by_window) do
-        if window_marks[provider] ~= nil then
-            window_marks[provider] = nil
+    for winid, current in pairs(marks_by_window) do
+        if current.marks[provider] ~= nil then
+            local updated = copy_snapshot(current.marks)
+            updated[provider] = nil
+            marks_by_window[winid] = { marks = updated, revision = next_revision(current) }
             mark_changed(changed, winid)
-            if next(window_marks) == nil then
-                marks_by_window[winid] = nil
-            end
         end
     end
     local provider_warnings = warned[provider]
@@ -313,8 +408,9 @@ end
 ---@return ScrollbarChangedBuffers changed_buffers
 M.clear_buffer = function(bufnr)
     local changed = {}
-    if marks_by_buffer[bufnr] ~= nil then
-        marks_by_buffer[bufnr] = nil
+    local current = marks_by_buffer[bufnr]
+    if current ~= nil and (next(current.marks) ~= nil or current.compact_search ~= nil) then
+        marks_by_buffer[bufnr] = { marks = {}, revision = next_revision(current) }
         mark_changed(changed, bufnr)
     end
     for provider in pairs(warned) do
@@ -325,7 +421,10 @@ end
 
 ---@param winid integer
 local function clear_window_state(winid)
-    marks_by_window[winid] = nil
+    local current = marks_by_window[winid]
+    if current ~= nil and next(current.marks) ~= nil then
+        marks_by_window[winid] = { marks = {}, revision = next_revision(current) }
+    end
     for provider in pairs(warned) do
         reset_warnings(provider, "window", winid)
     end
