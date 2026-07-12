@@ -269,6 +269,35 @@ T["clicks an empty track cell proportionally and restores source focus"] = funct
     expect.equality(disposed_mappings, {})
 end
 
+T["uses direct rows and clamps trailing space when short content fits"] = function()
+    local child = new_child()
+    local setup = setup_single(child, {
+        line_count = 5,
+        height = 10,
+        marks = { { line = 2, type = "Misc" } },
+    })
+
+    expect.equality(setup.hitmap[3][1].line, 2)
+    click(child, setup, 2, 1)
+    expect.equality(child.api.nvim_win_get_cursor(setup.source_win)[1], 3)
+
+    click(child, setup, 6, 1)
+    expect.equality(child.api.nvim_win_get_cursor(setup.source_win)[1], 5)
+end
+
+T["uses direct screen rows when short rendered content fits"] = function()
+    local child = new_child()
+    local setup = setup_single(child, {
+        line_count = 5,
+        height = 10,
+        config = mouse_config({ render = { geometry = "screen" } }),
+    })
+
+    expect.equality(setup.geometry.mode, "screen")
+    click(child, setup, 6, 1)
+    expect.equality(child.api.nvim_win_get_cursor(setup.source_win)[1], 5)
+end
+
 T["does not turn movement into a drag when the press starts outside the handle column"] = function()
     local child = new_child()
     local setup = setup_single(child)

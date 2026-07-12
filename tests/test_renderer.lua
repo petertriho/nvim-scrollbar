@@ -525,6 +525,54 @@ T["applies exclusions, limits, all-visible rules, and owned-window filtering"] =
     expect.equality(result.exclusion_cleanup, true)
 end
 
+T["aligns short-buffer marks without shrinking the track"] = function()
+    local child = new_child()
+    local result = child.lua_func(function(base_config)
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, { "one", "two", "three", "four", "five" })
+        vim.cmd("split")
+        local source_win = vim.api.nvim_get_current_win()
+        vim.api.nvim_win_set_height(source_win, 10)
+        local source_buf = vim.api.nvim_win_get_buf(source_win)
+        assert(require("scrollbar.store").set("test", source_buf, {
+            { line = 0, type = "Misc" },
+            { line = 2, type = "Misc" },
+            { line = 4, type = "Misc" },
+        }))
+
+        local scrollbar_config = require("scrollbar.config")
+        local renderer = require("scrollbar.renderer")
+        local cases = {}
+        for _, mode in ipairs({ "line", "screen" }) do
+            local active = vim.deepcopy(base_config)
+            active.render.geometry = mode
+            scrollbar_config.set(active)
+            renderer.setup()
+            local state = assert(renderer.render(source_win))
+            cases[mode] = {
+                height = state.height,
+                float_height = vim.api.nvim_win_get_config(state.float_win).height,
+                handle = state.handle,
+                mark_lines = {
+                    state.hitmap[1][1].line,
+                    state.hitmap[3][1].line,
+                    state.hitmap[5][1].line,
+                },
+                trailing_empty = state.hitmap[6][1].line == nil,
+            }
+        end
+        return cases
+    end, renderer_config())
+
+    for _, mode in ipairs({ "line", "screen" }) do
+        local case = result[mode]
+        expect.equality(case.height, 10)
+        expect.equality(case.float_height, case.height)
+        expect.equality(case.mark_lines, { 0, 2, 4 })
+        expect.equality(case.trailing_empty, true)
+        expect.equality(case.handle, { first_row = 0, last_row = 9, column = 2, width = 1 })
+    end
+end
+
 T["updates only dirty rows and fully replaces rows when dimensions change"] = function()
     local child = new_child()
     local result = child.lua_func(function(config)
