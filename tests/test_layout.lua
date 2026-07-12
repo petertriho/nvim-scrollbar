@@ -102,8 +102,16 @@ T["screen geometry keeps same-buffer window views independent"] = function()
             { line = 199, type = "Search" },
         }
         return {
-            first = child_layout.screen({ source_win = first_win, marks = marks }),
-            second = child_layout.screen({ source_win = second_win, marks = marks }),
+            first = child_layout.screen({
+                source_win = first_win,
+                height = vim.api.nvim_win_get_height(first_win),
+                marks = marks,
+            }),
+            second = child_layout.screen({
+                source_win = second_win,
+                height = vim.api.nvim_win_get_height(second_win),
+                marks = marks,
+            }),
             first_height = vim.api.nvim_win_get_height(first_win),
             second_height = vim.api.nvim_win_get_height(second_win),
         }
@@ -113,6 +121,44 @@ T["screen geometry keeps same-buffer window views independent"] = function()
     expect.equality(result.second.mark_rows, { 0, result.second_height - 1 })
     expect.equality(result.first.handle.first_row, 0)
     expect.equality(result.second.handle.first_row > result.first.handle.first_row, true)
+end
+
+T["screen geometry uses the renderer-owned text track height"] = function()
+    local child = new_child()
+    local result = child.lua_func(function()
+        vim.o.showtabline = 2
+        vim.o.laststatus = 2
+        vim.o.cmdheight = 0
+        vim.o.tabline = "TABLINE"
+        vim.o.statusline = "STATUSLINE"
+        vim.wo.winbar = "WINBAR"
+
+        local lines = {}
+        for index = 1, 200 do
+            lines[index] = "line " .. index
+        end
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        local source_win = vim.api.nvim_get_current_win()
+        local raw_height = vim.api.nvim_win_get_height(source_win)
+        local track_height = raw_height - 1
+        local geometry = require("scrollbar.layout").screen({
+            source_win = source_win,
+            height = track_height,
+            marks = {
+                { line = 0, type = "Search" },
+                { line = 199, type = "Search" },
+            },
+        })
+        return {
+            raw_height = raw_height,
+            track_height = track_height,
+            geometry = geometry,
+        }
+    end)
+
+    expect.equality(result.geometry.mark_rows, { 0, result.track_height - 1 })
+    expect.equality(result.geometry.viewport_end, result.track_height - 1)
+    expect.equality(result.geometry.handle.last_row < result.raw_height, true)
 end
 
 T["screen geometry compresses closed folds without scanning buffer lines"] = function()
@@ -135,6 +181,7 @@ T["screen geometry compresses closed folds without scanning buffer lines"] = fun
 
         return require("scrollbar.layout").screen({
             source_win = vim.api.nvim_get_current_win(),
+            height = vim.api.nvim_win_get_height(0),
             marks = {
                 { line = 1, type = "Search" },
                 { line = 3, type = "Search" },
@@ -170,6 +217,7 @@ T["screen geometry includes virtual lines in mark and handle coordinates"] = fun
         return {
             geometry = require("scrollbar.layout").screen({
                 source_win = winid,
+                height = vim.api.nvim_win_get_height(winid),
                 marks = {
                     { line = 0, type = "Search" },
                     { line = 1, type = "Search" },
@@ -203,6 +251,7 @@ T["screen geometry accounts for wrapped topline offsets"] = function()
         return {
             geometry = require("scrollbar.layout").screen({
                 source_win = winid,
+                height = vim.api.nvim_win_get_height(winid),
                 marks = { { line = 0, type = "Search" } },
             }),
             view = vim.fn.winsaveview(),
@@ -251,7 +300,11 @@ T["screen geometry subtracts visible diff topfill from the viewport offset"] = f
         local prefix = vim.api.nvim_win_text_height(right_win, { end_row = 1, end_vcol = 0 }).all
         local measured = vim.api.nvim_win_text_height(right_win, {})
         return {
-            geometry = require("scrollbar.layout").screen({ source_win = right_win, marks = {} }),
+            geometry = require("scrollbar.layout").screen({
+                source_win = right_win,
+                height = vim.api.nvim_win_get_height(right_win),
+                marks = {},
+            }),
             prefix = prefix,
             fill = measured.fill,
             view = view,

@@ -77,7 +77,7 @@ end
 M.screen = function(input)
     local source_win = input.source_win
     local source_buf = vim.api.nvim_win_get_buf(source_win)
-    local height = vim.api.nvim_win_get_height(source_win)
+    local height = input.height
     local line_count = vim.api.nvim_buf_line_count(source_buf)
     local maximum_line = math.max(0, line_count - 1)
     local total_extent = vim.api.nvim_win_text_height(source_win, {}).all

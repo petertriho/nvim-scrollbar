@@ -252,16 +252,25 @@ T["wires provider context invalidations directly and never refreshes providers o
         end))
         local scroll_renders = vim.deepcopy(rendered)
 
+        rendered = {}
+        vim.o.showtabline = vim.o.showtabline == 2 and 1 or 2
+        assert(vim.wait(1000, function()
+            return #rendered == 1
+        end))
+        local option_renders = vim.deepcopy(rendered)
+
         providers.dispose()
         scheduler.dispose()
         return {
             direct_renders = direct_renders,
             scroll_renders = scroll_renders,
+            option_renders = option_renders,
             refreshes = refreshes,
         }
     end)
 
     expect.equality(result.direct_renders, result.scroll_renders)
+    expect.equality(result.direct_renders, result.option_renders)
     expect.equality(#result.direct_renders, 1)
     expect.equality(result.refreshes, 0)
 end
@@ -372,6 +381,94 @@ T["does not requeue from renderer-owned float autocmds"] = function()
         timer_active = false,
         dirty = {},
     })
+end
+
+T["rerenders every source when editor chrome options change"] = function()
+    local child = new_child()
+    local result = child.lua_func(function()
+        local first = vim.api.nvim_get_current_win()
+        vim.cmd("split")
+        local second = vim.api.nvim_get_current_win()
+        local rendered = {}
+        local owned = {}
+        local scheduler = require("scrollbar.scheduler")
+        scheduler.setup({
+            config = require("scrollbar.config").set({
+                set_highlights = false,
+                render = { interval_ms = 1000 },
+            }),
+            renderer = {
+                source_windows = function()
+                    return { first, second }
+                end,
+                render = function(winid)
+                    table.insert(rendered, winid)
+                end,
+                is_owned_window = function(winid)
+                    return owned[winid] == true
+                end,
+            },
+        })
+
+        local captures = {}
+        local changes = {
+            winbar = function()
+                vim.api.nvim_set_option_value("winbar", "WINBAR", { win = second })
+            end,
+            showtabline = function()
+                vim.o.showtabline = vim.o.showtabline == 2 and 1 or 2
+            end,
+            laststatus = function()
+                vim.o.laststatus = vim.o.laststatus == 3 and 2 or 3
+            end,
+            cmdheight = function()
+                vim.o.cmdheight = vim.o.cmdheight == 0 and 1 or 0
+            end,
+        }
+        for _, name in ipairs({ "winbar", "showtabline", "laststatus", "cmdheight" }) do
+            rendered = {}
+            changes[name]()
+            scheduler.flush()
+            captures[name] = vim.deepcopy(rendered)
+        end
+
+        local float_buf = vim.api.nvim_create_buf(false, true)
+        vim.api.nvim_buf_set_var(float_buf, "scrollbar_owned", true)
+        local float_win = vim.api.nvim_open_win(float_buf, false, {
+            relative = "editor",
+            row = 1,
+            col = 1,
+            width = 1,
+            height = 1,
+            style = "minimal",
+        })
+        vim.api.nvim_win_set_var(float_win, "scrollbar_owned", true)
+        owned[float_win] = true
+        vim.api.nvim_set_current_win(float_win)
+        rendered = {}
+        vim.api.nvim_set_option_value("winbar", "FLOAT", { win = float_win })
+        local owned_flushed = scheduler.flush()
+        local owned_renders = vim.deepcopy(rendered)
+
+        scheduler.dispose()
+        vim.api.nvim_win_close(float_win, true)
+        return {
+            first = first,
+            second = second,
+            captures = captures,
+            owned_flushed = owned_flushed,
+            owned_renders = owned_renders,
+        }
+    end)
+
+    local expected = { result.first, result.second }
+    table.sort(expected)
+    expect.equality(result.captures.winbar, expected)
+    expect.equality(result.captures.showtabline, expected)
+    expect.equality(result.captures.laststatus, expected)
+    expect.equality(result.captures.cmdheight, expected)
+    expect.equality(result.owned_flushed, false)
+    expect.equality(result.owned_renders, {})
 end
 
 T["refreshes colorscheme state and fully disposes timer and autocmd ownership"] = function()

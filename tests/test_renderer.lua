@@ -257,8 +257,8 @@ T["resolves every anchor and restores protected float configuration"] = function
             source_win = source_win,
             source_width = source_width,
             source_height = source_height,
+            source_top = vim.fn.win_screenpos(source_win)[1] - 1,
             editor_width = vim.o.columns,
-            editor_height = vim.o.lines,
         }
     end, renderer_config())
 
@@ -272,15 +272,170 @@ T["resolves every anchor and restores protected float configuration"] = function
     expect.equality(result.anchors.SE.col, result.source_width - 3)
     expect.equality(result.anchors.NE.win, result.source_win)
     expect.equality(result.editor.relative, "editor")
-    expect.equality(result.editor.row, result.editor_height - 2)
+    expect.equality(result.editor.row, result.source_top + result.source_height - 2)
     expect.equality(result.editor.col, result.editor_width - 4)
     expect.equality(result.protected.anchor, "SE")
-    expect.equality(result.protected.row, result.editor_height - 2)
+    expect.equality(result.protected.row, result.source_top + result.source_height - 2)
     expect.equality(result.protected.col, result.editor_width - 4)
     expect.equality(result.protected.width, 2)
     expect.equality(result.protected.focusable, false)
     expect.equality(result.protected.mouse, false)
     expect.equality(result.protected.zindex, 50)
+end
+
+T["aligns editor-relative tracks with active split text rows"] = function()
+    local child = new_child()
+    local result = child.lua_func(function(base_config)
+        vim.o.showtabline = 2
+        vim.o.laststatus = 2
+        vim.o.cmdheight = 0
+        vim.o.tabline = "TABLINE"
+        vim.o.statusline = "STATUSLINE"
+
+        local lines = {}
+        for index = 1, 200 do
+            lines[index] = "line " .. index
+        end
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+
+        local scrollbar_config = require("scrollbar.config")
+        local renderer = require("scrollbar.renderer")
+        local cases = {}
+        for _, split_command in ipairs({ "split", "vsplit" }) do
+            vim.cmd("only")
+            vim.cmd(split_command)
+            local source_win = vim.api.nvim_get_current_win()
+            vim.api.nvim_set_option_value("winbar", "WINBAR", { win = source_win })
+            local raw_height = vim.api.nvim_win_get_height(source_win)
+            local source_position = vim.fn.win_screenpos(source_win)
+            local text_top = source_position[1]
+            local text_bottom = text_top + raw_height - 1
+
+            local placements = {}
+            for _, placement in ipairs({
+                { anchor = "NE", row = 2 },
+                { anchor = "SE", row = -2 },
+            }) do
+                local active = vim.deepcopy(base_config)
+                active.float.placement = {
+                    relative = "editor",
+                    anchor = placement.anchor,
+                    row = placement.row,
+                    col = -3,
+                }
+                scrollbar_config.set(active)
+                renderer.setup()
+                local state = assert(renderer.render(source_win))
+                placements[placement.anchor] = {
+                    config = vim.api.nvim_win_get_config(state.float_win),
+                    height = state.height,
+                }
+            end
+
+            cases[split_command] = {
+                source_win = source_win,
+                text_top = text_top,
+                text_bottom = text_bottom,
+                raw_height = raw_height,
+                placements = placements,
+                owned_sources = renderer.source_windows(),
+            }
+        end
+        return { cases = cases, columns = vim.o.columns }
+    end, renderer_config())
+
+    for _, split_command in ipairs({ "split", "vsplit" }) do
+        local case = result.cases[split_command]
+        expect.equality(case.placements.NE.config.relative, "editor")
+        expect.equality(case.placements.NE.config.row, case.text_top + 2)
+        expect.equality(case.placements.SE.config.row, case.text_bottom - 2)
+        expect.equality(case.placements.NE.config.col, result.columns - 3)
+        expect.equality(case.placements.SE.config.col, result.columns - 3)
+        expect.equality(case.placements.NE.height, case.raw_height - 1)
+        expect.equality(case.placements.SE.height, case.raw_height - 1)
+        expect.equality(case.placements.NE.config.row >= case.text_top, true)
+        expect.equality(case.placements.SE.config.row <= case.text_bottom, true)
+        expect.equality(case.owned_sources, { case.source_win })
+    end
+end
+
+T["keeps window-relative tracks inside source text rows"] = function()
+    local child = new_child()
+    local result = child.lua_func(function(base_config)
+        vim.o.showtabline = 2
+        vim.o.laststatus = 2
+        vim.o.cmdheight = 0
+        vim.o.tabline = "TABLINE"
+        vim.o.statusline = "STATUSLINE"
+
+        local lines = {}
+        for index = 1, 200 do
+            lines[index] = "line " .. index
+        end
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        local source_win = vim.api.nvim_get_current_win()
+        local scrollbar_config = require("scrollbar.config")
+        local renderer = require("scrollbar.renderer")
+
+        local function render(anchor, winbar)
+            vim.api.nvim_set_option_value("winbar", winbar, { win = source_win })
+            local active = vim.deepcopy(base_config)
+            active.float.placement.anchor = anchor
+            scrollbar_config.set(active)
+            renderer.setup()
+            local raw_height = vim.api.nvim_win_get_height(source_win)
+            local state = assert(renderer.render(source_win))
+            vim.cmd("redraw")
+            local source_position = vim.fn.win_screenpos(source_win)
+            local float_configuration = vim.api.nvim_win_get_config(state.float_win)
+            return {
+                raw_height = raw_height,
+                state = state,
+                float_config = float_configuration,
+                float_bottom = anchor:sub(1, 1) == "S" and source_position[1] + float_configuration.row - 1
+                    or source_position[1] + float_configuration.row + state.height - 1,
+                statusline_row = source_position[1] + raw_height,
+            }
+        end
+
+        local north = render("NE", "WINBAR")
+        local south = render("SE", "WINBAR")
+        local control = render("NE", "")
+
+        vim.api.nvim_set_option_value("winbar", "WINBAR", { win = source_win })
+        scrollbar_config.set(base_config)
+        renderer.setup()
+        local get_height = vim.api.nvim_win_get_height
+        vim.api.nvim_win_get_height = function(winid)
+            if winid == source_win then
+                return 1
+            end
+            return get_height(winid)
+        end
+        renderer.render(source_win)
+        vim.api.nvim_win_get_height = get_height
+
+        return {
+            north = north,
+            south = south,
+            control = control,
+            tiny_raw_height = 1,
+            tiny_has_state = renderer.get_state(source_win) ~= nil,
+        }
+    end, renderer_config())
+
+    expect.equality(result.north.state.height, result.north.raw_height - 1)
+    expect.equality(#result.north.state.rows, result.north.state.height)
+    expect.equality(#result.north.state.hitmap, result.north.state.height)
+    expect.equality(result.north.float_config.row, 0)
+    expect.equality(result.north.float_config.height, result.north.state.height)
+    expect.equality(result.north.float_bottom < result.north.statusline_row, true)
+    expect.equality(result.south.state.height, result.south.raw_height - 1)
+    expect.equality(result.south.float_config.row, result.south.state.height)
+    expect.equality(result.south.float_bottom < result.south.statusline_row, true)
+    expect.equality(result.control.state.height, result.control.raw_height)
+    expect.equality(result.tiny_raw_height, 1)
+    expect.equality(result.tiny_has_state, false)
 end
 
 T["applies exclusions, limits, all-visible rules, and owned-window filtering"] = function()

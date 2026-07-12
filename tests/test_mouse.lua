@@ -43,6 +43,13 @@ local function setup_single(child, options)
     options = options or {}
     local result = child.lua_func(function(opts)
         vim.o.mouse = "a"
+        if opts.chrome then
+            vim.o.showtabline = 2
+            vim.o.laststatus = 2
+            vim.o.cmdheight = 0
+            vim.o.tabline = "TABLINE"
+            vim.o.statusline = "STATUSLINE"
+        end
         local lines = {}
         for index = 1, opts.line_count do
             lines[index] = "line " .. index
@@ -51,6 +58,9 @@ local function setup_single(child, options)
         vim.cmd("split")
         local source_win = vim.api.nvim_get_current_win()
         vim.api.nvim_win_set_height(source_win, opts.height)
+        if opts.chrome then
+            vim.api.nvim_set_option_value("winbar", "WINBAR", { win = source_win })
+        end
 
         for _, fold in ipairs(opts.folds or {}) do
             vim.api.nvim_win_call(source_win, function()
@@ -75,13 +85,18 @@ local function setup_single(child, options)
         local state = assert(renderer.render(source_win))
         vim.cmd("redraw")
         local position = vim.fn.win_screenpos(state.float_win)
+        local source_position = vim.fn.win_screenpos(source_win)
+        local raw_height = vim.api.nvim_win_get_height(source_win)
+        local winbar_rows = vim.api.nvim_get_option_value("winbar", { win = source_win }) == "" and 0 or 1
         return {
             source_win = source_win,
             source_buf = source_buf,
             float_win = state.float_win,
             float_buf = state.float_buf,
-            position = { position[1] - 1, position[2] - 1 },
+            position = { source_position[1] - 1 + winbar_rows, position[2] - 1 },
             height = state.height,
+            raw_height = raw_height,
+            statusline_row = source_position[1] + raw_height - 1,
             handle = state.handle,
             hitmap = state.hitmap,
             geometry = state.geometry,
@@ -92,6 +107,7 @@ local function setup_single(child, options)
         config = options.config or mouse_config(),
         marks = options.marks or {},
         folds = options.folds or {},
+        chrome = options.chrome or false,
     })
     vim.uv.sleep(30)
     return result
@@ -121,13 +137,18 @@ local function reset_view(child, setup, line)
         local state = assert(require("scrollbar.renderer").render(source_win))
         vim.cmd("redraw")
         local position = vim.fn.win_screenpos(state.float_win)
+        local source_position = vim.fn.win_screenpos(source_win)
+        local raw_height = vim.api.nvim_win_get_height(source_win)
+        local winbar_rows = vim.api.nvim_get_option_value("winbar", { win = source_win }) == "" and 0 or 1
         return {
             source_win = source_win,
             source_buf = state.source_buf,
             float_win = state.float_win,
             float_buf = state.float_buf,
-            position = { position[1] - 1, position[2] - 1 },
+            position = { source_position[1] - 1 + winbar_rows, position[2] - 1 },
             height = state.height,
+            raw_height = raw_height,
+            statusline_row = source_position[1] + raw_height - 1,
             handle = state.handle,
             hitmap = state.hitmap,
             geometry = state.geometry,
@@ -135,6 +156,37 @@ local function reset_view(child, setup, line)
     end, setup.source_win, line)
     vim.uv.sleep(30)
     return refreshed
+end
+
+T["keeps corrected bottom-row clicks and drags above the statusline"] = function()
+    local child = new_child()
+    local setup = setup_single(child, {
+        line_count = 200,
+        height = 10,
+        chrome = true,
+    })
+
+    expect.equality(setup.height, setup.raw_height - 1)
+    expect.equality(#setup.hitmap, setup.height)
+    expect.equality(setup.position[1] + setup.height <= setup.statusline_row, true)
+
+    local bottom_row = setup.position[1] + setup.height - 1
+    input_mouse(child, "press", bottom_row, setup.position[2])
+    local interaction = child.lua_get([[require("scrollbar.mouse").get_interaction()]])
+    expect.equality(interaction.pressed_row, setup.height - 1)
+    input_mouse(child, "release", bottom_row, setup.position[2])
+    expect.equality(child.api.nvim_win_get_cursor(setup.source_win)[1], 200)
+    expect.equality(child.api.nvim_get_current_win(), setup.source_win)
+
+    setup = reset_view(child, setup, 1)
+    drag(child, setup, setup.handle.first_row, setup.height - 1, setup.handle.column)
+    expect.equality(child.api.nvim_win_get_cursor(setup.source_win)[1], 200)
+    expect.equality(child.api.nvim_get_current_win(), setup.source_win)
+
+    input_mouse(child, "press", setup.statusline_row, setup.position[2])
+    input_mouse(child, "release", setup.statusline_row, setup.position[2])
+    expect.equality(child.api.nvim_get_current_win(), setup.source_win)
+    expect.equality(child.lua_get([[require("scrollbar.mouse").get_interaction()]]), vim.NIL)
 end
 
 T["clicks an empty track cell proportionally and restores source focus"] = function()

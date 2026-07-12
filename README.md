@@ -188,7 +188,9 @@ the right edge without splitting a multi-cell character.
 
 - `"window"` attaches one float to each source window.
 - `"editor"` uses editor coordinates and always renders only the active source
-  window, regardless of `visibility`, so multiple floats do not overlap.
+  window, regardless of `visibility`, so multiple floats do not overlap. Its
+  horizontal anchors use the editor width, while its vertical anchors align with
+  the active source window's text area.
 
 `anchor` selects the float corner attached to the matching container corner.
 `row` and `col` are signed offsets from that corner: positive rows move down and
@@ -210,6 +212,11 @@ require("scrollbar").setup({
 The renderer owns the float height, scratch buffer, focusability, mouse flag,
 style, and source-window association. `float.width`, `float.zindex`, and the
 typed placement fields are the supported float controls.
+
+Scrollbar tracks cover source buffer-text rows only. They exclude the source
+window's winbar and remain within window bounds that already exclude tabline,
+statusline, and command-line chrome. Explicit signed `row` offsets are still
+applied literally and can intentionally move a track outside those bounds.
 
 ### Geometry
 

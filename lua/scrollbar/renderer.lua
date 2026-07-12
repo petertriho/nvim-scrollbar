@@ -172,25 +172,41 @@ local function sweep_states()
 end
 
 ---@param source_win integer
----@param height integer
+---@return table<string, integer>
+local function source_text_area(source_win)
+    local winbar = vim.api.nvim_get_option_value("winbar", { win = source_win })
+    local winbar_rows = winbar == "" and 0 or 1
+    local screen_position = vim.fn.win_screenpos(source_win)
+    return {
+        width = vim.api.nvim_win_get_width(source_win),
+        height = math.max(0, vim.api.nvim_win_get_height(source_win) - winbar_rows),
+        top = screen_position[1] - 1 + winbar_rows,
+    }
+end
+
+---@param source_win integer
+---@param area table<string, integer>
 ---@return table<string, any>
-local function float_config(source_win, height)
+local function float_config(source_win, area)
     local active_config = config.get()
     local placement = active_config.float.placement
-    local source_width = vim.api.nvim_win_get_width(source_win)
-    local source_height = vim.api.nvim_win_get_height(source_win)
-    local container_width = placement.relative == "window" and source_width or vim.o.columns
-    local container_height = placement.relative == "window" and source_height or vim.o.lines
+    local container_width = placement.relative == "window" and area.width or vim.o.columns
     local north = placement.anchor == "NW" or placement.anchor == "NE"
     local west = placement.anchor == "NW" or placement.anchor == "SW"
+    local vertical_anchor
+    if placement.relative == "window" then
+        vertical_anchor = north and 0 or area.height
+    else
+        vertical_anchor = north and area.top or area.top + area.height
+    end
 
     local result = {
         relative = placement.relative == "window" and "win" or "editor",
         anchor = placement.anchor,
-        row = (north and 0 or container_height) + placement.row,
+        row = vertical_anchor + placement.row,
         col = (west and 0 or container_width) + placement.col,
         width = active_config.float.width,
-        height = height,
+        height = area.height,
         style = "minimal",
         focusable = active_config.mouse.enabled,
         mouse = active_config.mouse.enabled,
@@ -235,14 +251,14 @@ end
 
 ---@param source_win integer
 ---@param source_buf integer
----@param height integer
+---@param area table<string, integer>
 ---@return ScrollbarWindowState
-local function create_state(source_win, source_buf, height)
+local function create_state(source_win, source_buf, area)
     local float_buf = vim.api.nvim_create_buf(false, true)
     configure_buffer(float_buf)
     pcall(vim.api.nvim_buf_set_name, float_buf, string.format("scrollbar://source/%d/%d", source_win, float_buf))
 
-    local float_win = vim.api.nvim_open_win(float_buf, false, float_config(source_win, height))
+    local float_win = vim.api.nvim_open_win(float_buf, false, float_config(source_win, area))
     configure_window(float_win)
 
     local state = {
@@ -294,7 +310,7 @@ end
 ---@return ScrollbarGeometry
 local function geometry_for(source_win, source_buf, height, marks)
     if config.get().render.geometry == "screen" then
-        return layout.screen({ source_win = source_win, marks = marks })
+        return layout.screen({ source_win = source_win, height = height, marks = marks })
     end
 
     local viewport = vim.api.nvim_win_call(source_win, function()
@@ -374,15 +390,15 @@ local function render_source(source_win)
     end
 
     local source_buf = vim.api.nvim_win_get_buf(source_win)
-    local height = vim.api.nvim_win_get_height(source_win)
-    if height < 1 then
+    local area = source_text_area(source_win)
+    if area.height < 1 then
         close_source(source_win)
         return nil
     end
 
     local marks = flattened_marks(source_buf)
-    local geometry = geometry_for(source_win, source_buf, height, marks)
-    local all_visible = geometry.total_extent <= height
+    local geometry = geometry_for(source_win, source_buf, area.height, marks)
+    local all_visible = geometry.total_extent <= area.height
     if all_visible and config.get().hide_if_all_visible then
         close_source(source_win)
         return nil
@@ -393,7 +409,7 @@ local function render_source(source_win)
 
     local output = layout.compose({
         config = config.get(),
-        height = height,
+        height = area.height,
         geometry = geometry,
         marks = marks,
     })
@@ -408,17 +424,17 @@ local function render_source(source_win)
         if state ~= nil then
             close_state(state)
         end
-        state = create_state(source_win, source_buf, height)
+        state = create_state(source_win, source_buf, area)
     else
-        vim.api.nvim_win_set_config(state.float_win, float_config(source_win, height))
+        vim.api.nvim_win_set_config(state.float_win, float_config(source_win, area))
         configure_window(state.float_win)
         configure_buffer(state.float_buf)
     end
 
     local width = config.get().float.width
-    update_buffer(state, output, width, height)
+    update_buffer(state, output, width, area.height)
     state.width = width
-    state.height = height
+    state.height = area.height
     state.rows = output.rows
     state.highlights = output.highlights
     state.hitmap = output.hitmap

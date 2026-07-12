@@ -181,6 +181,7 @@
 
 ---@class ScrollbarScreenGeometryInput
 ---@field source_win integer
+---@field height integer Track height in rows
 ---@field marks ScrollbarMark[]
 
 ---@class ScrollbarGeometry

@@ -74,6 +74,9 @@ end
 ---@return integer, integer, integer
 local function mouse_position(float_win)
     local mouse = vim.fn.getmousepos()
+    if mouse.winid == float_win then
+        return mouse.winid, mouse.winrow - 1, mouse.wincol
+    end
     local position = vim.fn.win_screenpos(float_win)
     return mouse.winid, mouse.screenrow - position[1], mouse.screencol - position[2] + 1
 end
