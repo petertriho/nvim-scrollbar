@@ -94,10 +94,10 @@ local DEFAULTS = {
     providers = {
         cursor = true,
         diagnostic = true,
-        search = false,
+        search = true,
         gitsigns = false,
         ale = false,
-        coc = true,
+        coc = false,
     },
     excluded_buftypes = {
         "terminal",
