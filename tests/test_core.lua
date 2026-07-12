@@ -12,81 +12,382 @@ local function new_child()
     return child
 end
 
-local function setup_render_case(child, exclusions)
-    child.lua_func(function(config)
-        require("scrollbar").setup({
-            set_highlights = false,
-            throttle_ms = 0,
-            autocmd = { render = {} },
-            excluded_buftypes = config.excluded_buftypes or {},
-            excluded_filetypes = config.excluded_filetypes or {},
-            handle = { text = "H", hide_if_all_visible = false },
-            handlers = {
-                cursor = false,
-                diagnostic = false,
-                gitsigns = false,
-                search = false,
-                ale = false,
+local function root_config(overrides)
+    return vim.tbl_deep_extend("force", {
+        set_highlights = false,
+        render = { interval_ms = 1000, geometry = "line" },
+        mouse = { enabled = true },
+        handle = { text = "H", hide_if_all_visible = false },
+        providers = {
+            cursor = false,
+            diagnostic = false,
+            search = false,
+            gitsigns = false,
+            ale = false,
+            coc = false,
+        },
+        excluded_buftypes = {},
+        excluded_filetypes = {},
+    }, overrides or {})
+end
+
+T["exposes only the public root orchestration API"] = function()
+    local child = new_child()
+    local result = child.lua_func(function(config)
+        local scrollbar = require("scrollbar")
+        scrollbar.setup(config)
+        local keys = vim.tbl_keys(scrollbar)
+        table.sort(keys)
+        return {
+            keys = keys,
+            commands = {
+                hide = vim.fn.exists(":ScrollbarHide"),
+                refresh = vim.fn.exists(":ScrollbarRefresh"),
+                show = vim.fn.exists(":ScrollbarShow"),
+                toggle = vim.fn.exists(":ScrollbarToggle"),
+            },
+            handlers_load = pcall(require, "scrollbar.handlers"),
+        }
+    end, root_config())
+
+    expect.equality(result.keys, { "hide", "refresh", "setup", "show", "toggle" })
+    expect.equality(result.commands, { hide = 2, refresh = 2, show = 2, toggle = 2 })
+    expect.equality(result.handlers_load, false)
+end
+
+T["validates before disposing the active runtime"] = function()
+    local child = new_child()
+    local result = child.lua_func(function(config)
+        local lines = {}
+        for index = 1, 100 do
+            lines[index] = "line " .. index
+        end
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+
+        local scrollbar = require("scrollbar")
+        scrollbar.setup(config)
+        require("scrollbar.scheduler").flush()
+        local source_win = vim.api.nvim_get_current_win()
+        local before = assert(require("scrollbar.renderer").get_state(source_win))
+        local ok = pcall(scrollbar.setup, { render = { interval_ms = -1 } })
+        local after = require("scrollbar.renderer").get_state(source_win)
+        return {
+            ok = ok,
+            same_float = after ~= nil and after.float_win == before.float_win,
+            float_valid = vim.api.nvim_win_is_valid(before.float_win),
+            scheduler_setup = require("scrollbar.scheduler").status().setup,
+        }
+    end, root_config())
+
+    expect.equality(result, {
+        ok = false,
+        same_float = true,
+        float_valid = true,
+        scheduler_setup = true,
+    })
+end
+
+T["preserves custom providers while reconciling only root-owned built-ins"] = function()
+    local child = new_child()
+    local result = child.lua_func(function(config)
+        local providers = require("scrollbar.providers")
+        local calls = { before = 0, after = 0, cursor = 0 }
+        local before = {
+            name = "before",
+            setup = function()
+                calls.before = calls.before + 1
+            end,
+            refresh = function()
+                return {}
+            end,
+        }
+        local custom_cursor = {
+            name = "cursor",
+            setup = function()
+                calls.cursor = calls.cursor + 1
+            end,
+            refresh = function()
+                return {}
+            end,
+        }
+        providers.register(before)
+        providers.register(custom_cursor)
+
+        local scrollbar = require("scrollbar")
+        scrollbar.setup(config)
+        local after = {
+            name = "after",
+            setup = function()
+                calls.after = calls.after + 1
+            end,
+            refresh = function()
+                return {}
+            end,
+        }
+        providers.register(after)
+        scrollbar.setup(config)
+
+        local first = {
+            before = providers.get("before") == before,
+            after = providers.get("after") == after,
+            cursor = providers.get("cursor") == custom_cursor,
+            calls = vim.deepcopy(calls),
+        }
+
+        local disabled = vim.deepcopy(config)
+        disabled.providers.cursor = false
+        scrollbar.setup(disabled)
+        first.cursor_after_disable = providers.get("cursor") == custom_cursor
+        first.cursor_calls_after_disable = calls.cursor
+        return first
+    end, root_config({ providers = { cursor = true } }))
+
+    expect.equality(result, {
+        before = true,
+        after = true,
+        cursor = true,
+        cursor_after_disable = true,
+        calls = { before = 2, after = 2, cursor = 2 },
+        cursor_calls_after_disable = 3,
+    })
+end
+
+T["registers configured built-ins once and removes disabled root-owned providers"] = function()
+    local child = new_child()
+    local result = child.lua_func(function(config)
+        local scrollbar = require("scrollbar")
+        local providers = require("scrollbar.providers")
+        scrollbar.setup(config)
+        local first_cursor = providers.get("cursor")
+        local first_diagnostic = providers.get("diagnostic")
+        scrollbar.setup(config)
+        local repeated_cursor = providers.get("cursor")
+        local cursor_autocmds = vim.api.nvim_get_autocmds({ group = "ScrollbarProvider_cursor_events" })
+        local diagnostic_autocmds = vim.api.nvim_get_autocmds({ group = "ScrollbarProvider_diagnostic_events" })
+
+        local disabled = vim.deepcopy(config)
+        disabled.providers.cursor = false
+        scrollbar.setup(disabled)
+        return {
+            cursor_registered = first_cursor ~= nil,
+            diagnostic_registered = first_diagnostic ~= nil,
+            cursor_reused = repeated_cursor == first_cursor,
+            cursor_autocmds = #cursor_autocmds,
+            diagnostic_autocmds = #diagnostic_autocmds,
+            cursor_removed = providers.get("cursor") == nil,
+            diagnostic_preserved = providers.get("diagnostic") == first_diagnostic,
+        }
+    end, root_config({ providers = { cursor = true, diagnostic = true } }))
+
+    expect.equality(result, {
+        cursor_registered = true,
+        diagnostic_registered = true,
+        cursor_reused = true,
+        cursor_autocmds = 2,
+        diagnostic_autocmds = 1,
+        cursor_removed = true,
+        diagnostic_preserved = true,
+    })
+end
+
+T["configured cursor and diagnostics publish only through the central store"] = function()
+    local child = new_child()
+    local result = child.lua_func(function(config)
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, { "one", "two", "three" })
+        vim.api.nvim_win_set_cursor(0, { 2, 0 })
+        local bufnr = vim.api.nvim_get_current_buf()
+        require("scrollbar").setup(config)
+
+        local namespace = vim.api.nvim_create_namespace("ScrollbarRootDiagnosticTest")
+        vim.diagnostic.set(namespace, bufnr, {
+            {
+                lnum = 2,
+                col = 0,
+                severity = vim.diagnostic.severity.ERROR,
+                message = "root diagnostic",
             },
         })
-        require("scrollbar.handlers").register("test", function()
-            return { { line = 90, text = "!", type = "Misc", level = 1 } }
-        end)
-    end, exclusions or {})
+        local snapshot = require("scrollbar.store").get(bufnr)
+        local legacy_variable = pcall(vim.api.nvim_buf_get_var, bufnr, "scrollbar_marks")
+        vim.diagnostic.reset(namespace, bufnr)
+        return {
+            cursor = snapshot.cursor,
+            diagnostic = snapshot.diagnostic,
+            legacy_variable = legacy_variable,
+        }
+    end, root_config({ providers = { cursor = true, diagnostic = true } }))
 
-    local lines = {}
-    for index = 1, 100 do
-        lines[index] = "line " .. index
-    end
-    helpers.set_lines(child, lines)
+    expect.equality(result, {
+        cursor = { { line = 1, type = "Cursor" } },
+        diagnostic = { { line = 2, type = "Error" } },
+        legacy_variable = false,
+    })
 end
 
-local function render_extmarks(child)
-    return child.lua_get([[(function()
-        require("scrollbar.handlers").show()
-        require("scrollbar").render()
-        local namespace = vim.api.nvim_get_namespaces().Scrollbar
-        return vim.api.nvim_buf_get_extmarks(0, namespace, 0, -1, { details = true })
-    end)()]])
-end
-
-T["default setup succeeds in a clean child process"] = function()
+T["repeated setup replaces all owned runtime resources without duplication"] = function()
     local child = new_child()
-    expect.no_error(function()
-        child.lua([[require("scrollbar").setup()]])
-    end)
-end
-
-T["renders handler marks as right-aligned extmarks"] = function()
-    local child = new_child()
-    setup_render_case(child)
-    local extmarks = render_extmarks(child)
-    local rendered_mark
-
-    for _, extmark in ipairs(extmarks) do
-        local details = extmark[4]
-        if details.virt_text and details.virt_text[1][1] == "!" then
-            rendered_mark = details
-            break
+    local result = child.lua_func(function(config)
+        local lines = {}
+        for index = 1, 100 do
+            lines[index] = "line " .. index
         end
-    end
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        local orphan_buf = vim.api.nvim_create_buf(false, true)
+        vim.api.nvim_buf_set_var(orphan_buf, "scrollbar_owned", true)
+        local orphan_win = vim.api.nvim_open_win(orphan_buf, false, {
+            relative = "editor",
+            row = 1,
+            col = 1,
+            width = 1,
+            height = 1,
+        })
+        vim.api.nvim_win_set_var(orphan_win, "scrollbar_owned", true)
 
-    expect.no_equality(rendered_mark, nil)
-    expect.equality(rendered_mark.virt_text_pos, "right_align")
+        local scrollbar = require("scrollbar")
+        scrollbar.setup(config)
+        require("scrollbar.scheduler").flush()
+        local source_win = vim.api.nvim_get_current_win()
+        local first = assert(require("scrollbar.renderer").get_state(source_win))
+        local first_group = require("scrollbar.scheduler").status().augroup_id
+
+        scrollbar.setup(config)
+        require("scrollbar.scheduler").flush()
+        local second = assert(require("scrollbar.renderer").get_state(source_win))
+        local second_group = require("scrollbar.scheduler").status().augroup_id
+        local mappings = vim.api.nvim_buf_get_keymap(second.float_buf, "n")
+        local owned_buffers = 0
+        local owned_windows = 0
+        for _, bufnr in ipairs(vim.api.nvim_list_bufs()) do
+            local ok, owned = pcall(vim.api.nvim_buf_get_var, bufnr, "scrollbar_owned")
+            if ok and owned == true then
+                owned_buffers = owned_buffers + 1
+            end
+        end
+        for _, winid in ipairs(vim.api.nvim_list_wins()) do
+            if require("scrollbar.renderer").is_owned_window(winid) then
+                owned_windows = owned_windows + 1
+            end
+        end
+
+        return {
+            old_float_closed = not vim.api.nvim_win_is_valid(first.float_win),
+            old_buffer_deleted = not vim.api.nvim_buf_is_valid(first.float_buf),
+            orphan_float_closed = not vim.api.nvim_win_is_valid(orphan_win),
+            orphan_buffer_deleted = not vim.api.nvim_buf_is_valid(orphan_buf),
+            new_float = second.float_win ~= first.float_win,
+            scheduler_group_replaced = first_group ~= second_group,
+            scheduler_autocmds = #vim.api.nvim_get_autocmds({ group = second_group }),
+            provider_manager_autocmds = #vim.api.nvim_get_autocmds({ group = "ScrollbarProviderManager" }),
+            mouse_autocmds = #vim.api.nvim_get_autocmds({ group = "ScrollbarMouse" }),
+            mappings = #mappings,
+            owned_buffers = owned_buffers,
+            owned_windows = owned_windows,
+            float_is_provider_eligible = require("scrollbar.providers").refresh(second.float_buf),
+        }
+    end, root_config())
+
+    expect.equality(result.old_float_closed, true)
+    expect.equality(result.old_buffer_deleted, true)
+    expect.equality(result.orphan_float_closed, true)
+    expect.equality(result.orphan_buffer_deleted, true)
+    expect.equality(result.new_float, true)
+    expect.equality(result.scheduler_group_replaced, true)
+    expect.equality(result.scheduler_autocmds > 0, true)
+    expect.equality(result.provider_manager_autocmds, 4)
+    expect.equality(result.mouse_autocmds, 4)
+    expect.equality(result.mappings, 3)
+    expect.equality(result.owned_buffers, 1)
+    expect.equality(result.owned_windows, 1)
+    expect.equality(result.float_is_provider_eligible, false)
 end
 
-T["does not render in an excluded filetype"] = function()
+T["public commands change visibility globally across every owned window"] = function()
     local child = new_child()
-    setup_render_case(child, { excluded_filetypes = { "scrollbar-test" } })
-    child.bo.filetype = "scrollbar-test"
-    expect.equality(#render_extmarks(child), 0)
+    local result = child.lua_func(function(config)
+        local lines = {}
+        for index = 1, 200 do
+            lines[index] = "line " .. index
+        end
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        local first = vim.api.nvim_get_current_win()
+        vim.cmd("split")
+        local second = vim.api.nvim_get_current_win()
+
+        require("scrollbar").setup(config)
+        require("scrollbar.scheduler").flush()
+        local renderer = require("scrollbar.renderer")
+        local initially_visible = renderer.get_state(first) ~= nil and renderer.get_state(second) ~= nil
+
+        vim.cmd("ScrollbarHide")
+        local hidden = renderer.get_state(first) == nil and renderer.get_state(second) == nil
+        vim.api.nvim_set_current_win(first)
+        vim.cmd("ScrollbarShow")
+        require("scrollbar.scheduler").flush()
+        local shown = renderer.get_state(first) ~= nil and renderer.get_state(second) ~= nil
+
+        vim.cmd("ScrollbarToggle")
+        local toggled_hidden = renderer.get_state(first) == nil and renderer.get_state(second) == nil
+        vim.api.nvim_set_current_win(second)
+        vim.cmd("ScrollbarToggle")
+        require("scrollbar.scheduler").flush()
+        local toggled_shown = renderer.get_state(first) ~= nil and renderer.get_state(second) ~= nil
+        return {
+            initially_visible = initially_visible,
+            hidden = hidden,
+            shown = shown,
+            toggled_hidden = toggled_hidden,
+            toggled_shown = toggled_shown,
+        }
+    end, root_config())
+
+    expect.equality(result, {
+        initially_visible = true,
+        hidden = true,
+        shown = true,
+        toggled_hidden = true,
+        toggled_shown = true,
+    })
 end
 
-T["does not render in an excluded buftype"] = function()
+T["public refresh recollects displayed buffers through providers and schedules rendering"] = function()
     local child = new_child()
-    setup_render_case(child, { excluded_buftypes = { "nofile" } })
-    child.bo.buftype = "nofile"
-    expect.equality(#render_extmarks(child), 0)
+    local result = child.lua_func(function(config)
+        local lines = {}
+        for index = 1, 100 do
+            lines[index] = "line " .. index
+        end
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        vim.cmd("vsplit")
+        local providers = require("scrollbar.providers")
+        local refreshes = 0
+        providers.register({
+            name = "custom",
+            refresh = function()
+                refreshes = refreshes + 1
+                return { { line = refreshes, type = "Misc" } }
+            end,
+        })
+
+        local scrollbar = require("scrollbar")
+        scrollbar.setup(config)
+        require("scrollbar.scheduler").flush()
+        refreshes = 0
+        vim.cmd("ScrollbarRefresh")
+        local queued = require("scrollbar.scheduler").status().dirty_windows
+        require("scrollbar.scheduler").flush()
+        local bufnr = vim.api.nvim_get_current_buf()
+        return {
+            refreshes = refreshes,
+            marks = require("scrollbar.store").get(bufnr).custom,
+            queued = #queued,
+            source_windows = #require("scrollbar.renderer").source_windows(bufnr),
+        }
+    end, root_config())
+
+    expect.equality(result.refreshes, 1)
+    expect.equality(result.marks, { { line = 1, type = "Misc" } })
+    expect.equality(result.queued, result.source_windows)
+    expect.equality(result.source_windows, 2)
 end
 
 return T

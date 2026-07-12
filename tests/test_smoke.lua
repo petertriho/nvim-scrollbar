@@ -14,19 +14,22 @@ T["loads and sets up in a clean child process"] = function()
         child.lua([[
             require("scrollbar").setup({
                 set_highlights = false,
-                throttle_ms = 0,
-                autocmd = { render = {} },
-                handlers = {
+                render = { interval_ms = 0 },
+                providers = {
                     cursor = false,
                     diagnostic = false,
                     gitsigns = false,
                     search = false,
                     ale = false,
+                    coc = false,
                 },
             })
         ]])
     end)
     expect.equality(child.fn.exists(":ScrollbarToggle"), 2)
+    expect.equality(child.fn.exists(":ScrollbarShow"), 2)
+    expect.equality(child.fn.exists(":ScrollbarHide"), 2)
+    expect.equality(child.fn.exists(":ScrollbarRefresh"), 2)
 end
 
 return T

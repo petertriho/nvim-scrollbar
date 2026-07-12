@@ -23,10 +23,22 @@ jobs:
         uses: taiki-e/install-action@2ca9b94c269419b7b0c711c09d0b21c4e1d51145 # v2.83.1
         with:
           tool: stylua@2.5.2,selene@0.31.0
+      - name: Install Lua language server
+        env:
+          LUALS_VERSION: 3.15.0
+        run: |
+          curl --fail --location --silent --show-error \
+            "https://github.com/LuaLS/lua-language-server/releases/download/${LUALS_VERSION}/lua-language-server-${LUALS_VERSION}-linux-x64.tar.gz" \
+            --output /tmp/lua-language-server.tar.gz
+          mkdir /tmp/lua-language-server
+          tar -xzf /tmp/lua-language-server.tar.gz -C /tmp/lua-language-server
+          echo "/tmp/lua-language-server/bin" >> "$GITHUB_PATH"
       - name: Check formatting
         run: make format-check
       - name: Lint
         run: make lint
+      - name: Typecheck
+        run: make typecheck
 
   test:
     name: Neovim ${{ matrix.neovim }}

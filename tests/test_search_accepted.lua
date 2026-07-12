@@ -4,27 +4,27 @@ local expect = MiniTest.expect
 
 local T = MiniTest.new_set()
 
-local function new_search_child(root_config)
+local function new_search_child(search_config)
     local child = helpers.new_child()
     MiniTest.finally(function()
         helpers.stop_child(child)
     end)
-    if root_config ~= nil then
-        helpers.setup_root_search(child, root_config)
+    if search_config ~= nil then
+        helpers.setup_search_config(child, search_config)
     else
         helpers.setup_search(child)
     end
     return child
 end
 
-T["default direct setup processes accepted searches"] = function()
+T["default managed setup processes accepted searches"] = function()
     local child = new_search_child()
     helpers.set_lines(child, { "start", "direct", "direct" })
     helpers.accept_search(child, "/", "direct")
     expect.equality(helpers.wait_for_mark_lines(child, { 1, 2 }), true)
 end
 
-T["handlers.search=true processes later accepted searches"] = function()
+T["providers.search=true processes later accepted searches"] = function()
     local child = new_search_child(true)
     helpers.set_lines(child, { "start", "roottrue", "roottrue" })
     helpers.accept_search(child, "/", "roottrue")

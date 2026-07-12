@@ -1,11 +1,12 @@
 NVIM ?= nvim
 STYLUA ?= stylua
 SELENE ?= selene
+LUA_LANGUAGE_SERVER ?= lua-language-server
 MINI_VERSION := v0.18.0
 MINI_DIR := deps/mini.nvim
-LUA_PATHS := lua tests scripts
+LUA_PATHS := lua tests scripts benchmarks
 
-.PHONY: test-deps test test-file format format-check lint ci
+.PHONY: test-deps test test-file benchmark format format-check lint typecheck ci
 
 test-deps:
 	@if [ ! -d "$(MINI_DIR)/.git" ]; then \
@@ -26,6 +27,9 @@ test-file: test-deps
 	TEST_FILE="$(FILE)" $(NVIM) --headless --noplugin -u scripts/minimal_init.lua \
 		-c "lua MiniTest.run_file(vim.env.TEST_FILE)"
 
+benchmark:
+	$(NVIM) --headless --noplugin -u NONE -l benchmarks/render.lua
+
 format:
 	$(STYLUA) $(LUA_PATHS)
 
@@ -35,4 +39,7 @@ format-check:
 lint:
 	$(SELENE) $(LUA_PATHS)
 
-ci: format-check lint test
+typecheck:
+	$(LUA_LANGUAGE_SERVER) --check=.
+
+ci: format-check lint typecheck test
