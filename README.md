@@ -234,6 +234,11 @@ virtual lines, `topfill`, and wrapped-line offsets. Screen geometry is recompute
 for each dirty render. It is more accurate and intentionally more expensive;
 it is not expected to outperform line geometry.
 
+When the document's logical or rendered height fits within the track, marks
+align directly with their source or screen rows and unused rows below the
+document remain blank. Taller documents are proportionally compressed across
+the track.
+
 `render.interval_ms` is the frame-coalescing interval. Repeated invalidations
 within one frame render the latest state once. Scrolling invalidates geometry
 without recollecting provider marks.
@@ -245,7 +250,9 @@ only in scrollbar float buffers. It does not install global mappings or modify
 `vim.o.mouse`.
 
 - Clicking a visible mark jumps to that mark's exact source line.
-- Clicking empty track space jumps proportionally through the document.
+- Clicking empty track space jumps directly by row when the document fits and
+  proportionally when it is taller than the track. Rows below short content
+  clamp to the final source line.
 - Pressing on the handle and moving drags it while preserving the grab offset.
 - A mark over the handle is an exact mark click if released without movement;
   moving starts a handle drag.

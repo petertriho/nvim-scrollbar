@@ -15,6 +15,9 @@ M.map_position = function(position, total_extent, height)
 
     local maximum_position = total_extent - 1
     local clamped_position = clamp(position, 0, maximum_position)
+    if total_extent <= height then
+        return clamped_position
+    end
     return math.floor(clamped_position * (height - 1) / maximum_position)
 end
 
@@ -149,11 +152,15 @@ M.track_row_to_line = function(source_win, row, height, mode, total_extent)
 
     local clamped_row = clamp(row, 0, height - 1)
     if mode == "line" then
+        if line_count <= height then
+            return math.min(clamped_row, line_count - 1)
+        end
         return math.floor(clamped_row * (line_count - 1) / (height - 1) + 0.5)
     end
 
     local extent = math.max(1, total_extent)
-    local target = math.floor(clamped_row * (extent - 1) / (height - 1) + 0.5)
+    local target = extent <= height and math.min(clamped_row, extent - 1)
+        or math.floor(clamped_row * (extent - 1) / (height - 1) + 0.5)
     local low = 0
     local high = line_count - 1
     local result = 0

@@ -26,6 +26,14 @@ T["normalized mapping clamps document boundaries"] = function()
     expect.equality(layout.map_position(100, 100, 10), 9)
 end
 
+T["mapping preserves document rows when the content fits"] = function()
+    expect.equality(layout.map_position(-1, 5, 8), 0)
+    expect.equality(layout.map_position(2, 5, 8), 2)
+    expect.equality(layout.map_position(4, 5, 8), 4)
+    expect.equality(layout.map_position(5, 5, 8), 4)
+    expect.equality(layout.map_position(7, 8, 8), 7)
+end
+
 T["normalized geometry handles empty and one-line documents"] = function()
     local empty = layout.normalized({
         height = 6,
@@ -48,7 +56,7 @@ T["normalized geometry handles empty and one-line documents"] = function()
     expect.equality(one_line.handle, { first_row = 0, last_row = 5 })
 end
 
-T["normalized geometry fills the track when all lines are visible"] = function()
+T["normalized geometry aligns marks when all lines are visible"] = function()
     local geometry = layout.normalized({
         height = 8,
         line_count = 5,
@@ -57,7 +65,7 @@ T["normalized geometry fills the track when all lines are visible"] = function()
         marks = { mark(0), mark(4) },
     })
 
-    expect.equality(geometry.mark_rows, { 0, 7 })
+    expect.equality(geometry.mark_rows, { 0, 4 })
     expect.equality(geometry.handle, { first_row = 0, last_row = 7 })
 end
 
@@ -229,9 +237,7 @@ T["screen geometry includes virtual lines in mark and handle coordinates"] = fun
     end)
 
     expect.equality(result.geometry.total_extent, 6)
-    expect.equality(result.geometry.mark_rows[1], 0)
-    expect.equality(result.geometry.mark_rows[2] > result.geometry.mark_rows[1], true)
-    expect.equality(result.geometry.mark_rows[3] < result.height - 1, true)
+    expect.equality(result.geometry.mark_rows, { 0, 3, 4 })
 end
 
 T["screen geometry accounts for wrapped topline offsets"] = function()
