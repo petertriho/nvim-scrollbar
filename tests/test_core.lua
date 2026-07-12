@@ -183,7 +183,7 @@ T["registers configured built-ins once and removes disabled root-owned providers
         cursor_registered = true,
         diagnostic_registered = true,
         cursor_reused = true,
-        cursor_autocmds = 2,
+        cursor_autocmds = 4,
         diagnostic_autocmds = 1,
         cursor_removed = true,
         diagnostic_preserved = true,
@@ -207,11 +207,12 @@ T["configured cursor and diagnostics publish only through the central store"] = 
                 message = "root diagnostic",
             },
         })
-        local snapshot = require("scrollbar.store").get(bufnr)
+        local store = require("scrollbar.store")
+        local snapshot = store.get(bufnr)
         local legacy_variable = pcall(vim.api.nvim_buf_get_var, bufnr, "scrollbar_marks")
         vim.diagnostic.reset(namespace, bufnr)
         return {
-            cursor = snapshot.cursor,
+            cursor = store.get_window(vim.api.nvim_get_current_win()).cursor,
             diagnostic = snapshot.diagnostic,
             legacy_variable = legacy_variable,
         }
@@ -293,7 +294,7 @@ T["repeated setup replaces all owned runtime resources without duplication"] = f
     expect.equality(result.new_float, true)
     expect.equality(result.scheduler_group_replaced, true)
     expect.equality(result.scheduler_autocmds > 0, true)
-    expect.equality(result.provider_manager_autocmds, 4)
+    expect.equality(result.provider_manager_autocmds, 6)
     expect.equality(result.mouse_autocmds, 4)
     expect.equality(result.mappings, 3)
     expect.equality(result.owned_buffers, 1)
@@ -360,11 +361,16 @@ T["public refresh recollects displayed buffers through providers and schedules r
         vim.cmd("vsplit")
         local providers = require("scrollbar.providers")
         local refreshes = 0
+        local window_refreshes = 0
         providers.register({
             name = "custom",
             refresh = function()
                 refreshes = refreshes + 1
                 return { { line = refreshes, type = "Misc" } }
+            end,
+            refresh_window = function()
+                window_refreshes = window_refreshes + 1
+                return { { line = window_refreshes, type = "Misc" } }
             end,
         })
 
@@ -372,12 +378,14 @@ T["public refresh recollects displayed buffers through providers and schedules r
         scrollbar.setup(config)
         require("scrollbar.scheduler").flush()
         refreshes = 0
+        window_refreshes = 0
         vim.cmd("ScrollbarRefresh")
         local queued = require("scrollbar.scheduler").status().dirty_windows
         require("scrollbar.scheduler").flush()
         local bufnr = vim.api.nvim_get_current_buf()
         return {
             refreshes = refreshes,
+            window_refreshes = window_refreshes,
             marks = require("scrollbar.store").get(bufnr).custom,
             queued = #queued,
             source_windows = #require("scrollbar.renderer").source_windows(bufnr),
@@ -385,6 +393,7 @@ T["public refresh recollects displayed buffers through providers and schedules r
     end, root_config())
 
     expect.equality(result.refreshes, 1)
+    expect.equality(result.window_refreshes, 2)
     expect.equality(result.marks, { { line = 1, type = "Misc" } })
     expect.equality(result.queued, result.source_windows)
     expect.equality(result.source_windows, 2)

@@ -17,41 +17,40 @@ local function is_buffer_eligible(bufnr, context)
     return true
 end
 
----@param bufnr integer
+---@param winid integer
 ---@param context ScrollbarProviderContext
 ---@return ScrollbarMark[]?
-local function collect(bufnr, context)
+local function collect(winid, context)
+    if not vim.api.nvim_win_is_valid(winid) then
+        return nil
+    end
+
+    local bufnr = vim.api.nvim_win_get_buf(winid)
     if not is_buffer_eligible(bufnr, context) then
         return nil
     end
 
-    local current_win = vim.api.nvim_get_current_win()
-    local source_win
-    if vim.api.nvim_win_is_valid(current_win) and vim.api.nvim_win_get_buf(current_win) == bufnr then
-        source_win = current_win
-    else
-        for _, winid in ipairs(context.source_windows(bufnr)) do
-            if vim.api.nvim_win_is_valid(winid) and vim.api.nvim_win_get_buf(winid) == bufnr then
-                source_win = winid
-                break
-            end
+    local is_source = false
+    for _, source_win in ipairs(context.source_windows(bufnr)) do
+        if source_win == winid then
+            is_source = true
+            break
         end
     end
-
-    if source_win == nil then
+    if not is_source then
         return nil
     end
-    return { { line = vim.api.nvim_win_get_cursor(source_win)[1] - 1, type = "Cursor" } }
+    return { { line = vim.api.nvim_win_get_cursor(winid)[1] - 1, type = "Cursor" } }
 end
 
----@param bufnr integer
+---@param winid integer
 ---@param context ScrollbarProviderContext
-local function update(bufnr, context)
-    local marks = collect(bufnr, context)
+local function update(winid, context)
+    local marks = collect(winid, context)
     if marks == nil then
-        context.clear_marks(bufnr)
+        context.clear_window_marks(winid)
     else
-        context.set_marks(bufnr, marks)
+        context.set_window_marks(winid, marks)
     end
 end
 
@@ -60,22 +59,25 @@ return {
     name = "cursor",
     setup = function(context)
         local group = context.create_augroup("events")
-        vim.api.nvim_create_autocmd({ "CursorMoved", "CursorMovedI" }, {
+        vim.api.nvim_create_autocmd({ "CursorMoved", "CursorMovedI", "BufWinEnter", "WinEnter" }, {
             group = group,
             callback = function(args)
-                update(args.buf, context)
+                local winid = vim.api.nvim_get_current_win()
+                if vim.api.nvim_win_is_valid(winid) and vim.api.nvim_win_get_buf(winid) == args.buf then
+                    update(winid, context)
+                end
             end,
             desc = "Update scrollbar cursor marks",
         })
     end,
-    refresh = function(bufnr, context)
-        local marks = collect(bufnr, context)
+    refresh_window = function(winid, context)
+        local marks = collect(winid, context)
         if marks == nil then
-            context.clear_marks(bufnr)
+            context.clear_window_marks(winid)
         end
         return marks
     end,
     dispose = function(context)
-        context.clear_marks()
+        context.clear_window_marks()
     end,
 }

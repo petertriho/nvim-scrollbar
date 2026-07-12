@@ -58,6 +58,7 @@ T["keeps same-buffer source windows independent and writes only float buffers"] 
         require("scrollbar.config").set(config)
         local store = require("scrollbar.store")
         assert(store.set("test", vim.api.nvim_win_get_buf(first), { { line = 199, type = "Misc" } }))
+        assert(store.set_window("test", first, { { line = 0, type = "Misc" } }))
         local renderer = require("scrollbar.renderer")
         renderer.setup()
         renderer.render(first)
@@ -75,6 +76,7 @@ T["keeps same-buffer source windows independent and writes only float buffers"] 
             first = first_state,
             second = second_state,
             first_lines = vim.api.nvim_buf_get_lines(first_state.float_buf, 0, -1, false),
+            second_lines = vim.api.nvim_buf_get_lines(second_state.float_buf, 0, -1, false),
             float_extmarks = float_extmarks,
             source_extmarks = source_extmarks,
             float_filetype = vim.bo[first_state.float_buf].filetype,
@@ -92,7 +94,10 @@ T["keeps same-buffer source windows independent and writes only float buffers"] 
     expect.equality(result.reused_buffer, result.first.float_buf)
     expect.equality(result.first.handle.first_row, 0)
     expect.equality(result.second.handle.first_row > result.first.handle.first_row, true)
+    expect.equality(result.first_lines[1]:sub(1, 1), "M")
     expect.equality(result.first_lines[#result.first_lines]:sub(1, 1), "M")
+    expect.no_equality(result.second_lines[1]:sub(1, 1), "M")
+    expect.equality(result.second_lines[#result.second_lines]:sub(1, 1), "M")
     expect.equality(#result.float_extmarks > 0, true)
     expect.equality(result.float_extmarks[1][4].virt_text, nil)
     expect.equality(result.source_extmarks, {})

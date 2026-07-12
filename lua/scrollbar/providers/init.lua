@@ -127,6 +127,16 @@ local function invalidate_changed(changed)
     end
 end
 
+---@param changed ScrollbarChangedWindows
+local function invalidate_changed_windows(changed)
+    if manager == nil then
+        return
+    end
+    for winid in pairs(changed) do
+        guarded_callback(manager.invalidate_window, winid)
+    end
+end
+
 ---@param name string
 ---@return string
 local function augroup_component(name)
@@ -154,6 +164,21 @@ local function make_context(entry)
                 changed = store.clear(provider_name, bufnr)
             end
             invalidate_changed(changed)
+            return next(changed) ~= nil
+        end,
+        set_window_marks = function(winid, marks)
+            local success, changed = store.set_window(provider_name, winid, marks)
+            invalidate_changed_windows(changed)
+            return success
+        end,
+        clear_window_marks = function(winid)
+            local changed
+            if winid == nil then
+                changed = store.clear_window_provider(provider_name)
+            else
+                changed = store.clear_window(provider_name, winid)
+            end
+            invalidate_changed_windows(changed)
             return next(changed) ~= nil
         end,
         create_augroup = function(name)
@@ -209,6 +234,33 @@ local function eligible_buffers()
     return buffers
 end
 
+---@param winid integer
+---@return boolean
+local function is_eligible_window(winid)
+    assert(manager ~= nil, "provider manager is not set up")
+    if not vim.api.nvim_win_is_valid(winid) then
+        return false
+    end
+    local bufnr = vim.api.nvim_win_get_buf(winid)
+    if not manager.is_buffer_eligible(bufnr) then
+        return false
+    end
+    return vim.tbl_contains(manager.source_windows(bufnr), winid)
+end
+
+---@return integer[]
+local function eligible_windows()
+    assert(manager ~= nil, "provider manager is not set up")
+    local windows = {}
+    for _, winid in ipairs(manager.source_windows()) do
+        if is_eligible_window(winid) then
+            table.insert(windows, winid)
+        end
+    end
+    table.sort(windows)
+    return windows
+end
+
 ---@param entry ScrollbarManagedProvider
 ---@param bufnr integer
 ---@return boolean
@@ -238,6 +290,35 @@ local function refresh_entry(entry, bufnr)
     return success
 end
 
+---@param entry ScrollbarManagedProvider
+---@param winid integer
+---@return boolean
+local function refresh_window_entry(entry, winid)
+    if manager == nil or not entry.setup_ok or entry.provider.refresh_window == nil then
+        return false
+    end
+    if not is_eligible_window(winid) then
+        return false
+    end
+
+    local operation = "window refresh for window " .. winid
+    local ok, marks = pcall(entry.provider.refresh_window, winid, entry.context)
+    if not ok then
+        invalidate_changed_windows(store.clear_window(entry.provider.name, winid))
+        warn_once(entry.provider.name, operation, tostring(marks))
+        return false
+    end
+
+    reset_warnings(entry.provider.name, operation)
+    if marks == nil then
+        return true
+    end
+
+    local success, changed = store.set_window(entry.provider.name, winid, marks)
+    invalidate_changed_windows(changed)
+    return success
+end
+
 ---@type fun(entry: ScrollbarManagedProvider)
 local release_resources
 
@@ -251,6 +332,7 @@ local function activate_entry(entry)
             entry.setup_ok = false
             release_resources(entry)
             invalidate_changed(store.clear_provider(entry.provider.name))
+            invalidate_changed_windows(store.clear_window_provider(entry.provider.name))
             warn_once(entry.provider.name, "setup", tostring(err))
             return
         end
@@ -259,6 +341,9 @@ local function activate_entry(entry)
 
     for _, bufnr in ipairs(eligible_buffers()) do
         refresh_entry(entry, bufnr)
+    end
+    for _, winid in ipairs(eligible_windows()) do
+        refresh_window_entry(entry, winid)
     end
 end
 
@@ -291,6 +376,7 @@ local function deactivate_entry(entry)
 
     release_resources(entry)
     invalidate_changed(store.clear_provider(entry.provider.name))
+    invalidate_changed_windows(store.clear_window_provider(entry.provider.name))
     entry.context = nil
     entry.setup_ok = false
 end
@@ -303,7 +389,7 @@ M.register = function(provider)
     if type(provider.name) ~= "string" or provider.name == "" then
         error("[scrollbar.nvim] provider name must be a non-empty string", 2)
     end
-    for _, field in ipairs({ "setup", "refresh", "dispose" }) do
+    for _, field in ipairs({ "setup", "refresh", "refresh_window", "dispose" }) do
         if provider[field] ~= nil and type(provider[field]) ~= "function" then
             error(string.format("[scrollbar.nvim] provider '%s' %s must be a function", provider.name, field), 2)
         end
@@ -338,6 +424,7 @@ M.unregister = function(name)
         deactivate_entry(entry)
     else
         store.clear_provider(name)
+        store.clear_window_provider(name)
     end
     registry[name] = nil
     warned[name] = nil
@@ -371,6 +458,20 @@ M.refresh = function(bufnr)
     return refreshed
 end
 
+---@param winid integer
+---@return boolean
+M.refresh_window = function(winid)
+    if manager == nil or not is_eligible_window(winid) then
+        return false
+    end
+
+    local refreshed = false
+    for _, name in ipairs(order) do
+        refreshed = refresh_window_entry(registry[name], winid) or refreshed
+    end
+    return refreshed
+end
+
 ---@param options? ScrollbarProviderManagerOptions
 M.setup = function(options)
     options = options or {}
@@ -398,6 +499,29 @@ M.setup = function(options)
                 local entry = registry[name]
                 if entry.provider.setup == nil then
                     refresh_entry(entry, args.buf)
+                end
+            end
+        end,
+    })
+    vim.api.nvim_create_autocmd({ "BufWinEnter", "WinEnter" }, {
+        group = manager_group,
+        callback = function(args)
+            if manager == nil then
+                return
+            end
+            local winid = vim.api.nvim_get_current_win()
+            local eligible = is_eligible_window(winid)
+            for _, name in ipairs(order) do
+                local entry = registry[name]
+                if entry.provider.setup == nil and entry.provider.refresh_window ~= nil then
+                    if args.event == "BufWinEnter" then
+                        invalidate_changed_windows(store.clear_window(entry.provider.name, winid))
+                    end
+                    if eligible then
+                        refresh_window_entry(entry, winid)
+                    else
+                        invalidate_changed_windows(store.clear_window(entry.provider.name, winid))
+                    end
                 end
             end
         end,

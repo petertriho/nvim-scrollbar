@@ -33,6 +33,22 @@ local function new_buffer(lines)
     return bufnr
 end
 
+local function show_buffer(bufnr)
+    local previous = vim.api.nvim_get_current_win()
+    vim.cmd("botright new")
+    local winid = vim.api.nvim_get_current_win()
+    vim.api.nvim_win_set_buf(winid, bufnr)
+    MiniTest.finally(function()
+        if vim.api.nvim_win_is_valid(winid) then
+            vim.api.nvim_win_close(winid, true)
+        end
+        if vim.api.nvim_win_is_valid(previous) then
+            vim.api.nvim_set_current_win(previous)
+        end
+    end)
+    return winid
+end
+
 local function capture_notifications()
     local notifications = {}
     local original = vim.notify
@@ -104,6 +120,61 @@ T["registers after setup and immediately sets up and refreshes"] = function()
     })
 end
 
+T["refreshes window providers initially, manually, and on disposal"] = function()
+    local providers = require("scrollbar.providers")
+    local store = require("scrollbar.store")
+    local target = new_buffer({ "one", "two" })
+    local winid = show_buffer(target)
+    local calls = {}
+    local invalidated = {}
+    local line = 0
+
+    providers.register({
+        name = "window",
+        refresh_window = function(refreshed_win)
+            table.insert(calls, refreshed_win)
+            return { { line = line, type = "Custom" } }
+        end,
+    })
+    providers.setup({
+        is_buffer_eligible = function(bufnr)
+            return bufnr == target
+        end,
+        source_windows = function(bufnr)
+            if bufnr == nil or bufnr == target then
+                return { winid }
+            end
+            return {}
+        end,
+        invalidate_window = function(changed_win)
+            table.insert(invalidated, changed_win)
+        end,
+    })
+
+    expect.equality(calls, { winid })
+    expect.equality(invalidated, { winid })
+    expect.equality(store.get_window(winid), {
+        window = { { line = 0, type = "Custom" } },
+    })
+
+    invalidated = {}
+    providers.refresh_window(winid)
+    expect.equality(calls, { winid, winid })
+    expect.equality(invalidated, {})
+
+    line = 1
+    providers.refresh_window(winid)
+    expect.equality(invalidated, { winid })
+    expect.equality(store.get_window(winid), {
+        window = { { line = 1, type = "Custom" } },
+    })
+
+    invalidated = {}
+    expect.equality(providers.unregister("window"), true)
+    expect.equality(store.get_window(winid), {})
+    expect.equality(invalidated, { winid })
+end
+
 T["rejects duplicate provider names without replacing the original"] = function()
     local providers = require("scrollbar.providers")
     local original = { name = "duplicate" }
@@ -167,6 +238,7 @@ T["isolates setup failures and releases partially created resources"] = function
     local notifications = capture_notifications()
     local providers = require("scrollbar.providers")
     local target = new_buffer({ "one" })
+    local winid = show_buffer(target)
     local failed_group
     local good_setup = 0
 
@@ -174,6 +246,7 @@ T["isolates setup failures and releases partially created resources"] = function
         name = "bad-setup",
         setup = function(context)
             failed_group = context.create_augroup("partial")
+            context.set_window_marks(winid, { { line = 0, type = "Custom" } })
             error("setup exploded")
         end,
     })
@@ -191,6 +264,9 @@ T["isolates setup failures and releases partially created resources"] = function
         is_buffer_eligible = function(bufnr)
             return bufnr == target
         end,
+        source_windows = function()
+            return { winid }
+        end,
     }
     providers.setup(options)
 
@@ -198,6 +274,7 @@ T["isolates setup failures and releases partially created resources"] = function
     expect.equality(require("scrollbar.store").get(target), {
         ["good-setup"] = { { line = 0, type = "Custom" } },
     })
+    expect.equality(require("scrollbar.store").get_window(winid), {})
     expect.equality(pcall(vim.api.nvim_get_autocmds, { group = failed_group }), false)
     expect.equality(#notifications, 1)
     expect.no_equality(notifications[1].message:match("provider 'bad%-setup' setup failed.*setup exploded"), nil)
@@ -205,6 +282,78 @@ T["isolates setup failures and releases partially created resources"] = function
     providers.setup(options)
     expect.equality(good_setup, 2)
     expect.equality(#notifications, 1)
+end
+
+T["clears refresh-only window marks when the window becomes ineligible"] = function()
+    local providers = require("scrollbar.providers")
+    local store = require("scrollbar.store")
+    local target = new_buffer({ "one" })
+    local excluded = new_buffer({ "excluded" })
+    local winid = show_buffer(target)
+    local invalidated = {}
+
+    providers.register({
+        name = "window-lifecycle",
+        refresh_window = function()
+            return { { line = 0, type = "Custom" } }
+        end,
+    })
+    providers.setup({
+        is_buffer_eligible = function(bufnr)
+            return bufnr == target
+        end,
+        source_windows = function(bufnr)
+            if bufnr == nil or bufnr == target then
+                return { winid }
+            end
+            return {}
+        end,
+        invalidate_window = function(changed_win)
+            table.insert(invalidated, changed_win)
+        end,
+    })
+    expect.equality(store.get_window(winid)["window-lifecycle"], { { line = 0, type = "Custom" } })
+
+    invalidated = {}
+    vim.api.nvim_win_set_buf(winid, excluded)
+    vim.api.nvim_exec_autocmds("BufWinEnter", { buffer = excluded })
+
+    expect.equality(store.get_window(winid), {})
+    expect.equality(invalidated, { winid })
+end
+
+T["clears refresh-only marks before an eligible window changes buffers"] = function()
+    local providers = require("scrollbar.providers")
+    local store = require("scrollbar.store")
+    local first = new_buffer({ "one" })
+    local second = new_buffer({ "two" })
+    local winid = show_buffer(first)
+
+    providers.register({
+        name = "window-association",
+        refresh_window = function(refreshed_win)
+            if vim.api.nvim_win_get_buf(refreshed_win) == first then
+                return { { line = 0, type = "Custom" } }
+            end
+        end,
+    })
+    providers.setup({
+        is_buffer_eligible = function(bufnr)
+            return bufnr == first or bufnr == second
+        end,
+        source_windows = function(bufnr)
+            if bufnr == nil or bufnr == first or bufnr == second then
+                return { winid }
+            end
+            return {}
+        end,
+    })
+    expect.equality(store.get_window(winid)["window-association"], { { line = 0, type = "Custom" } })
+
+    vim.api.nvim_win_set_buf(winid, second)
+    vim.api.nvim_exec_autocmds("BufWinEnter", { buffer = second })
+
+    expect.equality(store.get_window(winid), {})
 end
 
 T["clears only a failing refresher and resets warning suppression after recovery"] = function()
@@ -247,6 +396,46 @@ T["clears only a failing refresher and resets warning suppression after recovery
     providers.refresh(target)
     should_fail = true
     providers.refresh(target)
+    expect.equality(#notifications, 2)
+end
+
+T["isolates failing window refreshes and resets warnings after recovery"] = function()
+    local notifications = capture_notifications()
+    local providers = require("scrollbar.providers")
+    local store = require("scrollbar.store")
+    local target = new_buffer({ "one" })
+    local winid = show_buffer(target)
+    local should_fail = false
+
+    providers.register({
+        name = "bad-window-refresh",
+        refresh_window = function()
+            if should_fail then
+                error("window refresh exploded")
+            end
+            return { { line = 0, type = "Custom" } }
+        end,
+    })
+    providers.setup({
+        is_buffer_eligible = function(bufnr)
+            return bufnr == target
+        end,
+        source_windows = function()
+            return { winid }
+        end,
+    })
+
+    should_fail = true
+    providers.refresh_window(winid)
+    providers.refresh_window(winid)
+    expect.equality(store.get_window(winid), {})
+    expect.equality(#notifications, 1)
+    expect.no_equality(notifications[1].message:match("window refresh.*window refresh exploded"), nil)
+
+    should_fail = false
+    providers.refresh_window(winid)
+    should_fail = true
+    providers.refresh_window(winid)
     expect.equality(#notifications, 2)
 end
 
@@ -366,6 +555,46 @@ T["provides isolated config, store, window, and invalidation context operations"
     expect.equality(require("scrollbar.store").get(target), {})
     expect.equality(invalidated_buffers, { target, target, target })
     expect.equality(invalidated_windows, { 22 })
+end
+
+T["provides window-scoped store operations through provider contexts"] = function()
+    local providers = require("scrollbar.providers")
+    local store = require("scrollbar.store")
+    local target = new_buffer({ "one" })
+    local winid = show_buffer(target)
+    local invalidated = {}
+
+    providers.register({
+        name = "window-context",
+        setup = function(context)
+            expect.equality(context.set_window_marks(winid, { { line = 0, type = "Custom" } }), true)
+            expect.equality(context.set_window_marks(winid, { { line = 0, type = "Custom" } }), true)
+            expect.equality(context.clear_window_marks(winid), true)
+            expect.equality(context.clear_window_marks(winid), false)
+            expect.equality(context.set_window_marks(winid, { { line = 0, type = "Custom" } }), true)
+        end,
+    })
+    providers.setup({
+        is_buffer_eligible = function(bufnr)
+            return bufnr == target
+        end,
+        source_windows = function()
+            return { winid }
+        end,
+        invalidate_window = function(changed_win)
+            table.insert(invalidated, changed_win)
+        end,
+    })
+
+    expect.equality(store.get_window(winid), {
+        ["window-context"] = { { line = 0, type = "Custom" } },
+    })
+    expect.equality(invalidated, { winid, winid, winid })
+
+    invalidated = {}
+    providers.dispose()
+    expect.equality(store.get_window(winid), {})
+    expect.equality(invalidated, { winid })
 end
 
 return T
