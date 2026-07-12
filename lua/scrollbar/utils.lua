@@ -31,23 +31,40 @@ M.highlight_to_hex_color = function(hl, property, fallback_hl, fallback_hex)
     return hex_color
 end
 
+local function handle_highlight(properties)
+    if type(properties.highlight) == "table" then
+        local highlight = vim.deepcopy(properties.highlight)
+        if highlight.blend == nil then
+            highlight.blend = properties.blend
+        end
+        return highlight
+    end
+
+    return {
+        bg = M.highlight_to_hex_color(properties.highlight, "background", "CursorColumn", "#ffffff"),
+        blend = properties.blend,
+    }
+end
+
+local function mark_highlight(properties)
+    if type(properties.highlight) == "table" then
+        return vim.deepcopy(properties.highlight)
+    end
+
+    return {
+        fg = M.highlight_to_hex_color(properties.highlight, "foreground", "Normal", "#000000"),
+    }
+end
+
 M.set_highlights = function()
     local active_config = require("scrollbar.config").get()
-    local handle_color =
-        M.highlight_to_hex_color(active_config.handle.highlight, "background", "CursorColumn", "#ffffff")
+    local handle = handle_highlight(active_config.handle)
 
-    vim.api.nvim_set_hl(0, M.get_highlight_name("", true), {
-        bg = handle_color,
-        blend = active_config.handle.blend,
-    })
+    vim.api.nvim_set_hl(0, M.get_highlight_name("", true), handle)
     for mark_type, properties in pairs(active_config.marks) do
-        local type_color = M.highlight_to_hex_color(properties.highlight, "foreground", "Normal", "#000000")
-        vim.api.nvim_set_hl(0, M.get_highlight_name(mark_type, false), { fg = type_color })
-        vim.api.nvim_set_hl(0, M.get_highlight_name(mark_type, true), {
-            fg = type_color,
-            bg = handle_color,
-            blend = active_config.handle.blend,
-        })
+        local mark = mark_highlight(properties)
+        vim.api.nvim_set_hl(0, M.get_highlight_name(mark_type, false), mark)
+        vim.api.nvim_set_hl(0, M.get_highlight_name(mark_type, true), vim.tbl_deep_extend("force", {}, handle, mark))
     end
 end
 

@@ -5,6 +5,8 @@
 ---@alias ScrollbarPlacementRelative "window"|"editor"
 ---@alias ScrollbarFloatAnchor "NW"|"NE"|"SW"|"SE"
 ---@alias ScrollbarText string|string[]
+---@alias ScrollbarHighlightDefinition table<string, any> A table accepted by nvim_set_hl()
+---@alias ScrollbarHighlight string|ScrollbarHighlightDefinition
 ---@alias ScrollbarProviderOption boolean|ScrollbarSearchProviderConfig
 
 ---@class ScrollbarUserPlacement
@@ -30,14 +32,14 @@
 ---@field column? integer
 ---@field width? integer
 ---@field blend? integer
----@field highlight? string
+---@field highlight? ScrollbarHighlight
 ---@field hide_if_all_visible? boolean
 
 ---@class ScrollbarUserMarkTypeConfig
 ---@field text? ScrollbarText
 ---@field column? integer
 ---@field priority? integer
----@field highlight? string
+---@field highlight? ScrollbarHighlight
 
 ---@class ScrollbarSearchProviderConfig
 ---@field live boolean
@@ -91,14 +93,14 @@
 ---@field column integer
 ---@field width integer
 ---@field blend integer
----@field highlight string
+---@field highlight ScrollbarHighlight
 ---@field hide_if_all_visible boolean
 
 ---@class ScrollbarMarkTypeConfig
 ---@field text string[] Density variants ordered from least to most dense
 ---@field column integer One-based display column
 ---@field priority integer
----@field highlight string Source highlight group
+---@field highlight ScrollbarHighlight Source highlight group or direct definition
 
 ---@class ScrollbarProvidersConfig
 ---@field cursor boolean
