@@ -171,6 +171,10 @@ require("scrollbar").setup({
 coordinates. The handle must fit within `float.width`. Mark text is clipped at
 the right edge without splitting a multi-cell character.
 
+Handle and mark `highlight` values accept either a highlight group name or a
+full table accepted by `nvim_set_hl()`. String values retain colorscheme-linked
+behavior; tables can define colors and attributes directly.
+
 ### Visibility
 
 - `visibility = "all"` creates an independent scrollbar for every eligible
@@ -408,10 +412,30 @@ rather than split when an overlap would cut through them.
 
 ## Highlights
 
-With `set_highlights = true`, setup derives scrollbar groups from the configured
-source highlight groups. `handle.highlight` supplies the handle background and
-`handle.blend`; each mark's `highlight` supplies its foreground. Groups are
+With `set_highlights = true`, setup generates scrollbar groups from each
+configured `highlight`. A string names a source highlight group:
+`handle.highlight` supplies its background and each mark's `highlight` supplies
+its foreground. A table is passed to `nvim_set_hl()` as a direct definition and
+can include any attributes supported by the active Neovim version. Groups are
 regenerated after `ColorScheme`.
+
+```lua
+require("scrollbar").setup({
+    handle = {
+        highlight = { bg = "#3b4261", blend = 20 },
+    },
+    marks = {
+        Search = {
+            highlight = { fg = "#ff9e64", bold = true },
+        },
+    },
+})
+```
+
+`handle.blend` is used when a direct handle definition does not contain
+`blend`. For a mark overlapping the handle, the handle and mark definitions are
+deep-merged and mark attributes win conflicts. Neovim's normal highlight
+semantics still apply to combinations such as `link` with other attributes.
 
 - `ScrollbarFloat` is the transparent float background.
 - `ScrollbarHandle` styles uncovered handle cells.
@@ -422,8 +446,8 @@ regenerated after `ColorScheme`.
 For example: `ScrollbarSearch`, `ScrollbarSearchHandle`, `ScrollbarError`, and
 `ScrollbarErrorHandle`.
 
-Set `set_highlights = false` to define these groups yourself. The old direct
-color, GUI, and cterm configuration keys are not supported.
+Set `set_highlights = false` to define these groups yourself. Direct highlight
+tables follow this switch and are not applied when it is disabled.
 
 ## Commands
 
@@ -454,8 +478,9 @@ Update configuration and integrations as follows:
   direct buffer-variable writes are ignored.
 - Mark `level` was removed. Density is derived from marks compressed into the
   same rendered row/type/column bucket.
-- Old `color`, `color_nr`, `gui`, and `cterm` keys were removed from handle and
-  mark configuration. Use highlight group names and optionally define generated
+- Old standalone `color`, `color_nr`, `gui`, and `cterm` keys remain removed
+  from handle and mark configuration. Use a highlight group name or a direct
+  `highlight = { ... }` table instead; alternatively define generated
   `Scrollbar*` groups with `set_highlights = false`.
 
 ## Development

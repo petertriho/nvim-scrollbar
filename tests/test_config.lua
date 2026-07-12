@@ -43,6 +43,8 @@ T["defaults are normalized from a fresh immutable baseline"] = function()
 end
 
 T["accepts the complete typed schema"] = function()
+    local handle_highlight = { bg = "#112233", blend = 10 }
+    local mark_highlight = { fg = "#abcdef", bold = true, cterm = { italic = true } }
     local result = set({
         show = false,
         visibility = "active",
@@ -61,12 +63,12 @@ T["accepts the complete typed schema"] = function()
             column = 2,
             width = 3,
             blend = 0,
-            highlight = "CursorColumn",
+            highlight = handle_highlight,
             hide_if_all_visible = false,
         },
         marks = {
             Search = { text = { "-", "=" }, column = 4, priority = 9, highlight = "Search" },
-            Custom = { text = "!", column = 1, priority = 0, highlight = "WarningMsg" },
+            Custom = { text = "!", column = 1, priority = 0, highlight = mark_highlight },
         },
         providers = {
             cursor = false,
@@ -83,8 +85,19 @@ T["accepts the complete typed schema"] = function()
     expect.equality(result.max_lines, 1000)
     expect.equality(result.float.placement.row, -2)
     expect.equality(result.handle.width, 3)
+    expect.equality(result.handle.highlight, handle_highlight)
     expect.equality(result.marks.Custom.text, { "!" })
+    expect.equality(result.marks.Custom.highlight, mark_highlight)
     expect.equality(result.providers.search.live, true)
+
+    local normalized_handle = result.handle.highlight
+    local normalized_mark = result.marks.Custom.highlight
+    assert(type(normalized_handle) == "table", "normalized handle highlight must be a table")
+    assert(type(normalized_mark) == "table", "normalized mark highlight must be a table")
+    normalized_handle.bg = "#000000"
+    normalized_mark.cterm.italic = false
+    expect.equality(handle_highlight.bg, "#112233")
+    expect.equality(mark_highlight.cterm.italic, true)
 end
 
 T["rejects unknown keys at every schema level"] = function()
@@ -147,7 +160,15 @@ T["rejects invalid priorities, mark names, and highlights"] = function()
         { marks = { ["Bad Name"] = { text = "!", column = 1, priority = 1, highlight = "Normal" } } },
         "invalid mark type"
     )
-    expect_invalid({ marks = { Search = { highlight = "" } } }, "marks.Search.highlight must be a non%-empty string")
+    expect_invalid(
+        { marks = { Search = { highlight = "" } } },
+        "marks.Search.highlight must be a non%-empty string or table"
+    )
+    expect_invalid({ handle = { highlight = 1 } }, "handle.highlight must be a non%-empty string or table")
+    expect_invalid(
+        { marks = { Search = { highlight = false } } },
+        "marks.Search.highlight must be a non%-empty string or table"
+    )
 end
 
 T["rejects invalid provider options"] = function()

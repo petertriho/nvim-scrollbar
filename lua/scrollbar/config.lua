@@ -249,6 +249,16 @@ local function validate_text(value, path)
     end
 end
 
+local function normalize_highlight(value, path)
+    if type(value) == "string" and value ~= "" then
+        return value
+    end
+    if type(value) == "table" then
+        return vim.deepcopy(value)
+    end
+    invalid(path .. " must be a non-empty string or table")
+end
+
 local function normalize_text(value, path)
     if type(value) == "string" then
         value = { value }
@@ -377,9 +387,7 @@ local function normalize(overrides)
     if result.handle.blend > 100 then
         invalid("handle.blend must be between 0 and 100")
     end
-    if type(result.handle.highlight) ~= "string" or result.handle.highlight == "" then
-        invalid("handle.highlight must be a non-empty string")
-    end
+    result.handle.highlight = normalize_highlight(result.handle.highlight, "handle.highlight")
     validate_boolean(result.handle.hide_if_all_visible, "handle.hide_if_all_visible")
     if result.handle.column + result.handle.width - 1 > result.float.width then
         invalid("handle.column + handle.width - 1 must not exceed float.width")
@@ -403,9 +411,7 @@ local function normalize(overrides)
             invalid(path .. ".column must fit within float.width")
         end
         validate_integer(mark.priority, path .. ".priority", true)
-        if type(mark.highlight) ~= "string" or mark.highlight == "" then
-            invalid(path .. ".highlight must be a non-empty string")
-        end
+        mark.highlight = normalize_highlight(mark.highlight, path .. ".highlight")
     end
 
     if type(result.providers) ~= "table" then
