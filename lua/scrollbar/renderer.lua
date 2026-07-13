@@ -2,11 +2,13 @@ local config = require("scrollbar.config")
 local layout = require("scrollbar.layout")
 local search_compact = require("scrollbar.providers.search_compact")
 local store = require("scrollbar.store")
+local utils = require("scrollbar.utils")
 
 local M = {}
 
 local NAMESPACE = vim.api.nvim_create_namespace("ScrollbarRenderer")
 local AUGROUP_NAME = "ScrollbarRendererLifecycle"
+local FLOAT_WINHIGHLIGHT = "Normal:ScrollbarFloat,NormalNC:ScrollbarFloat,EndOfBuffer:ScrollbarFloat"
 
 ---@type table<integer, ScrollbarWindowState>
 local states = {}
@@ -276,11 +278,7 @@ local function configure_window(float_win)
     vim.api.nvim_set_option_value("winfixbuf", true, { win = float_win })
     vim.api.nvim_set_option_value("list", false, { win = float_win })
     vim.api.nvim_set_option_value("spell", false, { win = float_win })
-    vim.api.nvim_set_option_value(
-        "winhighlight",
-        "Normal:ScrollbarFloat,NormalNC:ScrollbarFloat,EndOfBuffer:ScrollbarFloat",
-        { win = float_win }
-    )
+    vim.api.nvim_set_option_value("winhighlight", FLOAT_WINHIGHLIGHT, { win = float_win })
     vim.api.nvim_win_set_var(float_win, "scrollbar_owned", true)
 end
 
@@ -308,8 +306,10 @@ local function create_state(source_win, source_buf, active_float_config, configu
         height = 0,
         rows = {},
         highlights = {},
+        rendered_highlights = {},
         hitmap = {},
         handle = { first_row = -1, last_row = -1, column = 1, width = 1 },
+        handle_pressed = false,
         geometry = { mode = "line", total_extent = 0, viewport_start = 0, viewport_end = 0 },
     }
     states[source_win] = state
@@ -518,32 +518,80 @@ local function with_modifiable(float_buf, callback)
     end
 end
 
+---@param highlights ScrollbarHighlightSpan[][]
+---@param pressed boolean
+---@return ScrollbarHighlightSpan[][]
+local function rendered_highlights(highlights, pressed)
+    if not pressed then
+        return highlights
+    end
+
+    local replacements = {
+        [utils.get_highlight_name("", true)] = utils.get_highlight_name("", true, true),
+    }
+    for mark_type in pairs(config.get().marks) do
+        replacements[utils.get_highlight_name(mark_type, true)] = utils.get_highlight_name(mark_type, true, true)
+    end
+
+    local result = {}
+    for row, spans in ipairs(highlights) do
+        local rendered = {}
+        for index, span in ipairs(spans) do
+            rendered[index] = {
+                start_col = span.start_col,
+                end_col = span.end_col,
+                highlight = replacements[span.highlight] or span.highlight,
+            }
+        end
+        result[row] = rendered
+    end
+    return result
+end
+
+---@param state ScrollbarWindowState
+---@param highlights ScrollbarHighlightSpan[][]
+local function update_highlight_extmarks(state, highlights)
+    for row = 1, state.height do
+        if not vim.deep_equal(state.rendered_highlights[row], highlights[row]) then
+            vim.api.nvim_buf_clear_namespace(state.float_buf, NAMESPACE, row - 1, row)
+            write_highlights(state.float_buf, row - 1, highlights[row])
+        end
+    end
+end
+
 ---@param state ScrollbarWindowState
 ---@param output ScrollbarLayoutOutput
 ---@param width integer
 ---@param height integer
+---@return ScrollbarHighlightSpan[][]
 local function update_buffer(state, output, width, height)
+    local highlights = rendered_highlights(output.highlights, state.handle_pressed)
     local dimensions_changed = state.width ~= width or state.height ~= height
     if dimensions_changed then
         with_modifiable(state.float_buf, function()
             vim.api.nvim_buf_set_lines(state.float_buf, 0, -1, false, output.rows)
         end)
         vim.api.nvim_buf_clear_namespace(state.float_buf, NAMESPACE, 0, -1)
-        for row, spans in ipairs(output.highlights) do
+        for row, spans in ipairs(highlights) do
             write_highlights(state.float_buf, row - 1, spans)
         end
-        return
+        return highlights
     end
 
     for row = 1, height do
-        if state.rows[row] ~= output.rows[row] or not vim.deep_equal(state.highlights[row], output.highlights[row]) then
+        local row_changed = state.rows[row] ~= output.rows[row]
+        local highlights_changed = not vim.deep_equal(state.rendered_highlights[row], highlights[row])
+        if row_changed then
             with_modifiable(state.float_buf, function()
                 vim.api.nvim_buf_set_lines(state.float_buf, row - 1, row, false, { output.rows[row] })
             end)
+        end
+        if row_changed or highlights_changed then
             vim.api.nvim_buf_clear_namespace(state.float_buf, NAMESPACE, row - 1, row)
-            write_highlights(state.float_buf, row - 1, output.highlights[row])
+            write_highlights(state.float_buf, row - 1, highlights[row])
         end
     end
+    return highlights
 end
 
 ---@param source_win integer
@@ -626,11 +674,12 @@ local function render_source(source_win)
         state.float_config = active_float_config
     end
 
-    update_buffer(state, output, width, area.height)
+    local active_highlights = update_buffer(state, output, width, area.height)
     state.width = width
     state.height = area.height
     state.rows = output.rows
     state.highlights = output.highlights
+    state.rendered_highlights = active_highlights
     state.hitmap = output.hitmap
     state.handle = output.handle
     state.geometry = {
@@ -695,6 +744,29 @@ end
 M.get_handle = function(source_win)
     local state = states[source_win]
     return state and state.handle or nil
+end
+
+---@param float_win integer
+---@param pressed boolean
+---@return boolean
+M.set_handle_pressed = function(float_win, pressed)
+    local state = states_by_float[float_win]
+    if state == nil or not valid_window(state.float_win) or not vim.api.nvim_buf_is_valid(state.float_buf) then
+        return false
+    end
+
+    pressed = pressed == true
+    if state.handle_pressed == pressed then
+        return true
+    end
+
+    local highlights = rendered_highlights(state.highlights, pressed)
+    local ok = pcall(update_highlight_extmarks, state, highlights)
+    if ok then
+        state.handle_pressed = pressed
+        state.rendered_highlights = highlights
+    end
+    return ok
 end
 
 ---@param callback? fun(state: ScrollbarWindowState)
@@ -788,8 +860,6 @@ end
 M.setup = function()
     M.dispose()
     visible = config.get().show
-    local background = vim.o.background == "light" and "#ffffff" or "#000000"
-    vim.api.nvim_set_hl(0, "ScrollbarFloat", { bg = background, blend = 100 })
     lifecycle_group = vim.api.nvim_create_augroup(AUGROUP_NAME, { clear = true })
 
     vim.api.nvim_create_autocmd("WinClosed", {

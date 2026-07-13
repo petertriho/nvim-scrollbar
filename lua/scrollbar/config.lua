@@ -26,7 +26,7 @@ local DEFAULTS = {
         column = 1,
         width = 1,
         blend = 30,
-        highlight = "CursorColumn",
+        highlight = "PmenuThumb",
         hide_if_all_visible = true,
     },
     marks = {

@@ -270,8 +270,10 @@
 ---@field height integer Float height used for the row cache
 ---@field rows string[]
 ---@field highlights ScrollbarHighlightSpan[][]
+---@field rendered_highlights ScrollbarHighlightSpan[][]
 ---@field hitmap ScrollbarHitCell[][]
 ---@field handle ScrollbarHandleGeometry
+---@field handle_pressed boolean
 ---@field geometry ScrollbarRendererGeometry
 
 ---@class ScrollbarFlattenedMarksCache
@@ -329,6 +331,7 @@
 ---@class ScrollbarMouseRenderer
 ---@field get_state_by_float fun(float_win: integer): ScrollbarWindowState?
 ---@field is_owned_window fun(winid: integer): boolean
+---@field set_handle_pressed fun(float_win: integer, pressed: boolean): boolean
 ---@field set_state_callback fun(callback: fun(state: ScrollbarWindowState)?)
 
 ---@class ScrollbarMouseScheduler

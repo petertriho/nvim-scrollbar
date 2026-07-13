@@ -77,7 +77,7 @@ require("scrollbar").setup({
         column = 1,
         width = 1,
         blend = 30,
-        highlight = "CursorColumn",
+        highlight = "PmenuThumb",
         hide_if_all_visible = true,
     },
     marks = {
@@ -258,6 +258,8 @@ only in scrollbar float buffers. It does not install global mappings or modify
   proportionally when it is taller than the track. Rows below short content
   clamp to the final source line.
 - Pressing on the handle and moving drags it while preserving the grab offset.
+- A pressed handle uses the `PmenuSel` background until release or cancellation,
+  even when the pointer moves outside it during a drag.
 - A mark over the handle is an exact mark click if released without movement;
   moving starts a handle drag.
 - Navigation moves the source cursor, opens only the containing fold with `zv`,
@@ -486,6 +488,11 @@ its foreground. A table is passed to `nvim_set_hl()` as a direct definition and
 can include any attributes supported by the active Neovim version. Groups are
 regenerated after `ColorScheme`.
 
+By default, the track background comes from `PmenuSbar`, the resting handle
+background comes from `PmenuThumb`, and a pressed handle background comes from
+`PmenuSel`. The pressed source is fixed; a custom `handle.highlight` changes the
+resting handle only.
+
 ```lua
 require("scrollbar").setup({
     handle = {
@@ -499,22 +506,27 @@ require("scrollbar").setup({
 })
 ```
 
-`handle.blend` is used when a direct handle definition does not contain
-`blend`. For a mark overlapping the handle, the handle and mark definitions are
-deep-merged and mark attributes win conflicts. Neovim's normal highlight
-semantics still apply to combinations such as `link` with other attributes.
+`handle.blend` is used for the resting and pressed handle. When a direct handle
+definition does not contain `blend`, the configured value is added. For a mark
+overlapping either handle state, the handle and mark definitions are deep-merged
+and mark attributes win conflicts. Neovim's normal highlight semantics still
+apply to combinations such as `link` with other attributes.
 
-- `ScrollbarFloat` is the transparent float background.
+- `ScrollbarFloat` styles the `PmenuSbar`-derived track background.
 - `ScrollbarHandle` styles uncovered handle cells.
+- `ScrollbarHandlePressed` styles uncovered held-handle cells.
 - `Scrollbar<MarkType>` styles a mark outside the handle.
 - `Scrollbar<MarkType>Handle` styles a mark overlapping the handle while
   preserving the handle background.
+- `Scrollbar<MarkType>HandlePressed` combines a mark with the held handle's
+  `PmenuSel`-derived background.
 
-For example: `ScrollbarSearch`, `ScrollbarSearchHandle`, `ScrollbarError`, and
-`ScrollbarErrorHandle`.
+For example: `ScrollbarSearch`, `ScrollbarSearchHandle`,
+`ScrollbarSearchHandlePressed`, `ScrollbarError`, and `ScrollbarErrorHandle`.
 
 Set `set_highlights = false` to define these groups yourself. Direct highlight
-tables follow this switch and are not applied when it is disabled.
+tables follow this switch and are not applied when it is disabled. Renderer
+setup and `ColorScheme` handling also leave manual groups untouched.
 
 ## Commands
 
