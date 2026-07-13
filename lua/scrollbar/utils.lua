@@ -71,11 +71,11 @@ end
 
 M.set_highlights = function()
     local active_config = require("scrollbar.config").get()
-    local track = background_highlight("PmenuSbar", nil, "Pmenu", "#000000")
+    local track = background_highlight(active_config.track.highlight, nil, "PmenuSbar", "#000000")
     local handle = handle_highlight(active_config.handle)
     local pressed = background_highlight("PmenuSel", active_config.handle.blend, "PmenuThumb", "#ffffff")
 
-    vim.api.nvim_set_hl(0, "ScrollbarFloat", track)
+    vim.api.nvim_set_hl(0, "ScrollbarTrack", track)
     vim.api.nvim_set_hl(0, M.get_highlight_name("", true), handle)
     vim.api.nvim_set_hl(0, M.get_highlight_name("", true, true), pressed)
     for mark_type, properties in pairs(active_config.marks) do

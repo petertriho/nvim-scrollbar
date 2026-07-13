@@ -18,6 +18,9 @@ local DEFAULTS = {
             col = 0,
         },
     },
+    track = {
+        highlight = "PmenuSbar",
+    },
     mouse = {
         enabled = true,
     },
@@ -123,6 +126,7 @@ local TOP_LEVEL_KEYS = {
     hide_if_all_visible = true,
     render = true,
     float = true,
+    track = true,
     mouse = true,
     handle = true,
     marks = true,
@@ -135,6 +139,7 @@ local NESTED_KEYS = {
     render = { interval_ms = true, geometry = true },
     float = { width = true, zindex = true, placement = true },
     ["float.placement"] = { relative = true, anchor = true, row = true, col = true },
+    track = { highlight = true },
     mouse = { enabled = true },
     handle = {
         text = true,
@@ -213,6 +218,7 @@ local function validate_shape(overrides)
     if type(overrides.float) == "table" then
         validate_unknown_keys(overrides.float.placement, NESTED_KEYS["float.placement"], "float.placement")
     end
+    validate_unknown_keys(overrides.track, NESTED_KEYS.track, "track")
     validate_unknown_keys(overrides.mouse, NESTED_KEYS.mouse, "mouse")
     validate_unknown_keys(overrides.handle, NESTED_KEYS.handle, "handle")
     validate_unknown_keys(overrides.providers, NESTED_KEYS.providers, "providers")
@@ -391,6 +397,11 @@ local function normalize(overrides)
     if not is_integer(result.float.placement.col) then
         invalid("float.placement.col must be an integer")
     end
+
+    if type(result.track) ~= "table" then
+        invalid("track must be a table")
+    end
+    result.track.highlight = normalize_highlight(result.track.highlight, "track.highlight")
 
     if type(result.mouse) ~= "table" then
         invalid("mouse must be a table")

@@ -8,7 +8,7 @@ local M = {}
 
 local NAMESPACE = vim.api.nvim_create_namespace("ScrollbarRenderer")
 local AUGROUP_NAME = "ScrollbarRendererLifecycle"
-local FLOAT_WINHIGHLIGHT = "Normal:ScrollbarFloat,NormalNC:ScrollbarFloat,EndOfBuffer:ScrollbarFloat"
+local FLOAT_WINHIGHLIGHT = "Normal:ScrollbarTrack,NormalNC:ScrollbarTrack,EndOfBuffer:ScrollbarTrack"
 
 ---@type table<integer, ScrollbarWindowState>
 local states = {}
