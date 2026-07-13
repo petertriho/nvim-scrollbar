@@ -39,6 +39,17 @@ local function input_mouse(child, action, row, col)
     vim.uv.sleep(30)
 end
 
+local function highlight_groups(child, float_buf)
+    return child.lua_func(function(bufnr)
+        local namespace = vim.api.nvim_get_namespaces().ScrollbarRenderer
+        local groups = {}
+        for _, extmark in ipairs(vim.api.nvim_buf_get_extmarks(bufnr, namespace, 0, -1, { details = true })) do
+            groups[extmark[4].hl_group] = true
+        end
+        return groups
+    end, float_buf)
+end
+
 local function setup_single(child, options)
     options = options or {}
     local result = child.lua_func(function(opts)
@@ -61,7 +72,6 @@ local function setup_single(child, options)
         if opts.chrome then
             vim.api.nvim_set_option_value("winbar", "WINBAR", { win = source_win })
         end
-
         for _, fold in ipairs(opts.folds or {}) do
             vim.api.nvim_win_call(source_win, function()
                 vim.cmd(string.format("%d,%dfold", fold[1], fold[2]))
@@ -163,6 +173,32 @@ local function reset_view(child, setup, line)
     return refreshed
 end
 
+T["keeps the handle pressed highlight through drag until release"] = function()
+    local child = new_child()
+    local setup = setup_single(child, {
+        config = mouse_config({
+            marks = {
+                Custom = { text = "!", column = 2, priority = 10, highlight = "Special" },
+            },
+        }),
+        marks = { { line = 0, type = "Custom" } },
+    })
+    local screen_col = setup.position[2] + setup.handle.column - 1
+    expect.equality(highlight_groups(child, setup.float_buf).ScrollbarCustomHandle, true)
+
+    input_mouse(child, "press", setup.position[1] + setup.handle.first_row, screen_col)
+    expect.equality(highlight_groups(child, setup.float_buf).ScrollbarCustomHandlePressed, true)
+
+    input_mouse(child, "drag", setup.position[1] + setup.height - 1, screen_col)
+    expect.equality(highlight_groups(child, setup.float_buf).ScrollbarHandlePressed, true)
+
+    input_mouse(child, "release", setup.position[1] + setup.height - 1, screen_col)
+    local released = highlight_groups(child, setup.float_buf)
+    expect.equality(released.ScrollbarHandlePressed, nil)
+    expect.equality(released.ScrollbarHandle, true)
+    expect.equality(child.api.nvim_get_current_win(), setup.source_win)
+end
+
 T["keeps corrected bottom-row clicks and drags above the statusline"] = function()
     local child = new_child()
     local setup = setup_single(child, {
@@ -233,6 +269,7 @@ T["clicks an empty track cell proportionally and restores source focus"] = funct
     input_mouse(child, "press", setup.row, setup.col)
     expect.equality(child.api.nvim_get_current_win(), setup.float_win)
     expect.no_equality(child.lua_get([[require("scrollbar.mouse").get_interaction()]]), vim.NIL)
+    expect.equality(highlight_groups(child, setup.float_buf).ScrollbarHandlePressed, nil)
     expect.equality(child.api.nvim_win_get_cursor(setup.source_win)[1], 1)
     input_mouse(child, "release", setup.row, setup.col)
 
@@ -577,13 +614,15 @@ end
 T["restores focus when release handling errors"] = function()
     local child = new_child()
     local setup = setup_single(child)
-    local row = setup.position[1] + setup.height - 1
-    local col = setup.position[2]
+    local row = setup.position[1] + setup.handle.first_row
+    local col = setup.position[2] + setup.handle.column - 1
     input_mouse(child, "press", row, col)
     expect.no_equality(child.lua_get([[require("scrollbar.mouse").get_interaction()]]), vim.NIL)
+    expect.equality(highlight_groups(child, setup.float_buf).ScrollbarHandlePressed, true)
     child.lua([[require("scrollbar.layout").track_row_to_line = function() error("mouse test failure") end]])
     input_mouse(child, "release", row, col)
 
+    expect.equality(highlight_groups(child, setup.float_buf).ScrollbarHandlePressed, nil)
     expect.equality(child.api.nvim_get_current_win(), setup.source_win)
     expect.equality(child.api.nvim_win_get_cursor(setup.source_win)[1], 1)
     expect.equality(child.lua_get([[require("scrollbar.mouse").get_interaction()]]), vim.NIL)

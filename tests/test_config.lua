@@ -40,6 +40,7 @@ T["defaults are normalized from a fresh immutable baseline"] = function()
     expect.equality(second.marks.Search.column, 1)
     expect.equality(second.providers.search, { live = false, backend = "worker" })
     expect.equality(second.providers.coc, false)
+    expect.equality(second.handle.highlight, "PmenuThumb")
 end
 
 T["advances the layout generation only for static mark-layer inputs"] = function()

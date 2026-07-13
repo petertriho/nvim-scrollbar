@@ -2,8 +2,14 @@ local const = require("scrollbar.const")
 
 local M = {}
 
-M.get_highlight_name = function(mark_type, handle)
-    return string.format("%s%s%s", const.NAME_PREFIX, mark_type, handle and const.NAME_SUFFIX or "")
+M.get_highlight_name = function(mark_type, handle, pressed)
+    return string.format(
+        "%s%s%s%s",
+        const.NAME_PREFIX,
+        mark_type,
+        handle and const.NAME_SUFFIX or "",
+        pressed and const.NAME_PRESSED_SUFFIX or ""
+    )
 end
 
 M.to_hex_color = function(rgb_color)
@@ -31,19 +37,26 @@ M.highlight_to_hex_color = function(hl, property, fallback_hl, fallback_hex)
     return hex_color
 end
 
-local function handle_highlight(properties)
-    if type(properties.highlight) == "table" then
-        local highlight = vim.deepcopy(properties.highlight)
-        if highlight.blend == nil then
-            highlight.blend = properties.blend
+local function background_highlight(source, blend, fallback_hl, fallback_hex)
+    if type(source) == "table" then
+        local highlight = vim.deepcopy(source)
+        if blend ~= nil and highlight.blend == nil then
+            highlight.blend = blend
         end
         return highlight
     end
 
-    return {
-        bg = M.highlight_to_hex_color(properties.highlight, "background", "CursorColumn", "#ffffff"),
-        blend = properties.blend,
+    local highlight = {
+        bg = M.highlight_to_hex_color(source, "background", fallback_hl, fallback_hex),
     }
+    if blend ~= nil then
+        highlight.blend = blend
+    end
+    return highlight
+end
+
+local function handle_highlight(properties)
+    return background_highlight(properties.highlight, properties.blend, "PmenuThumb", "#ffffff")
 end
 
 local function mark_highlight(properties)
@@ -58,13 +71,22 @@ end
 
 M.set_highlights = function()
     local active_config = require("scrollbar.config").get()
+    local track = background_highlight("PmenuSbar", nil, "Pmenu", "#000000")
     local handle = handle_highlight(active_config.handle)
+    local pressed = background_highlight("PmenuSel", active_config.handle.blend, "PmenuThumb", "#ffffff")
 
+    vim.api.nvim_set_hl(0, "ScrollbarFloat", track)
     vim.api.nvim_set_hl(0, M.get_highlight_name("", true), handle)
+    vim.api.nvim_set_hl(0, M.get_highlight_name("", true, true), pressed)
     for mark_type, properties in pairs(active_config.marks) do
         local mark = mark_highlight(properties)
         vim.api.nvim_set_hl(0, M.get_highlight_name(mark_type, false), mark)
         vim.api.nvim_set_hl(0, M.get_highlight_name(mark_type, true), vim.tbl_deep_extend("force", {}, handle, mark))
+        vim.api.nvim_set_hl(
+            0,
+            M.get_highlight_name(mark_type, true, true),
+            vim.tbl_deep_extend("force", {}, pressed, mark)
+        )
     end
 end
 

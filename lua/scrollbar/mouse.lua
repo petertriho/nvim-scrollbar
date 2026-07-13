@@ -70,6 +70,16 @@ local function restore_focus(current)
     restore_source(current.source_win)
 end
 
+---@param current ScrollbarInteractionState
+---@param pressed boolean
+local function set_handle_pressed(current, pressed)
+    local active = runtime
+    if active == nil or current.handle_grab_offset == nil or type(active.renderer.set_handle_pressed) ~= "function" then
+        return
+    end
+    pcall(active.renderer.set_handle_pressed, current.float_win, pressed)
+end
+
 ---@param float_win integer
 ---@return integer, integer, integer
 local function mouse_position(float_win)
@@ -203,6 +213,9 @@ M.press = function(float_win)
         last_col = col,
         dragging = false,
     }
+    if pressed_handle then
+        set_handle_pressed(interaction, true)
+    end
     if valid_window(state.float_win) then
         pcall(vim.api.nvim_set_current_win, state.float_win)
     end
@@ -253,12 +266,16 @@ M.release = function()
             navigate(current, state, track_line(current, state, current.pressed_row))
         end
     end)
+    set_handle_pressed(current, false)
     interaction = nil
     restore_focus(current)
 end
 
 M.cancel = function()
     local current = interaction
+    if current ~= nil then
+        set_handle_pressed(current, false)
+    end
     interaction = nil
     if current ~= nil then
         restore_focus(current)

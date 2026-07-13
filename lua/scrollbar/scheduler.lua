@@ -301,8 +301,6 @@ M.setup = function(options)
         config = active_config,
         renderer = active_renderer,
         on_colorscheme = options.on_colorscheme or function()
-            local background = vim.o.background == "light" and "#ffffff" or "#000000"
-            vim.api.nvim_set_hl(0, "ScrollbarFloat", { bg = background, blend = 100 })
             if active_config.set_highlights then
                 require("scrollbar.utils").set_highlights()
             end
