@@ -22,6 +22,9 @@ local flattened_cache = {}
 ---@type table<integer, ScrollbarLineMarkLayerCache>
 local line_layer_cache = {}
 
+---@type table<integer, integer>
+local revealed = {}
+
 ---@type integer?
 local lifecycle_group
 local visible = false
@@ -140,15 +143,20 @@ local function active_only()
 end
 
 ---@param state ScrollbarWindowState
-local function forget_state(state)
+---@param retain_cache? boolean
+local function forget_state(state, retain_cache)
     states[state.source_win] = nil
     states_by_float[state.float_win] = nil
-    clear_source_cache(state.source_win)
+    if not retain_cache then
+        revealed[state.source_win] = nil
+        clear_source_cache(state.source_win)
+    end
 end
 
 ---@param state ScrollbarWindowState
-local function close_state(state)
-    forget_state(state)
+---@param retain_cache? boolean
+local function close_state(state, retain_cache)
+    forget_state(state, retain_cache)
     if valid_window(state.float_win) then
         pcall(vim.api.nvim_win_close, state.float_win, true)
     end
@@ -163,7 +171,17 @@ local function close_source(source_win)
     if state ~= nil then
         close_state(state)
     else
+        revealed[source_win] = nil
         clear_source_cache(source_win)
+    end
+end
+
+---@param source_win integer
+local function conceal_source(source_win)
+    revealed[source_win] = nil
+    local state = states[source_win]
+    if state ~= nil then
+        close_state(state, true)
     end
 end
 
@@ -607,13 +625,17 @@ local function render_source(source_win)
     if existing_state ~= nil and existing_state.source_buf ~= source_buf then
         close_state(existing_state)
     end
+    local active_config = config.get()
+    if active_config.autohide.enabled and revealed[source_win] ~= source_buf then
+        conceal_source(source_win)
+        return nil
+    end
     local area = source_text_area(source_win)
     if area.height < 1 then
         close_source(source_win)
         return nil
     end
 
-    local active_config = config.get()
     local width = active_config.float.width
     local expand_compact = active_config.render.geometry == "screen"
     local marks, buffer_revision, window_revision, compact_search =
@@ -746,6 +768,33 @@ M.get_handle = function(source_win)
     return state and state.handle or nil
 end
 
+---@param source_win integer
+---@return boolean
+M.reveal = function(source_win)
+    if not visible or not basic_eligible(source_win) then
+        return false
+    end
+
+    if active_only() and active_source_window() ~= source_win then
+        return false
+    end
+    if config.get().autohide.enabled then
+        revealed[source_win] = vim.api.nvim_win_get_buf(source_win)
+    end
+    return true
+end
+
+---@param source_win integer
+---@return boolean
+M.conceal = function(source_win)
+    if not config.get().autohide.enabled then
+        return false
+    end
+    local was_revealed = revealed[source_win] ~= nil or states[source_win] ~= nil
+    conceal_source(source_win)
+    return was_revealed
+end
+
 ---@param float_win integer
 ---@param pressed boolean
 ---@return boolean
@@ -820,6 +869,7 @@ end
 
 M.hide = function()
     visible = false
+    revealed = {}
     close_all_states()
     clear_all_caches()
 end
@@ -849,6 +899,7 @@ M.dispose = function(source_win)
     end
 
     visible = false
+    revealed = {}
     close_all_states()
     clear_all_caches()
     if lifecycle_group ~= nil then
@@ -873,6 +924,7 @@ M.setup = function()
             if state ~= nil then
                 close_state(state)
             elseif states[closed_win] == nil then
+                revealed[closed_win] = nil
                 clear_source_cache(closed_win)
             end
         end,

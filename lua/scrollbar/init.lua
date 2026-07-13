@@ -117,11 +117,16 @@ end
 
 M.show = function()
     renderer.show()
-    scheduler.invalidate_all()
+    if config.get().autohide.enabled then
+        scheduler.reveal_all()
+    else
+        scheduler.invalidate_all()
+    end
 end
 
 M.hide = function()
     renderer.hide()
+    scheduler.clear_deadlines()
 end
 
 M.toggle = function()

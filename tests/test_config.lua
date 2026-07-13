@@ -40,6 +40,7 @@ T["defaults are normalized from a fresh immutable baseline"] = function()
     expect.equality(second.marks.Search.column, 1)
     expect.equality(second.providers.search, { live = false, backend = "worker" })
     expect.equality(second.providers.coc, false)
+    expect.equality(second.autohide, { enabled = false, delay_ms = 1000 })
     expect.equality(second.track.highlight, "PmenuSbar")
     expect.equality(second.handle.highlight, "PmenuThumb")
 end
@@ -48,7 +49,13 @@ T["advances the layout generation only for static mark-layer inputs"] = function
     local config = require("scrollbar.config")
     local initial = config.get_layout_generation()
 
-    set({ visibility = "active", track = { highlight = "Pmenu" }, handle = { text = "H" }, float = { zindex = 80 } })
+    set({
+        visibility = "active",
+        autohide = { enabled = true, delay_ms = 250 },
+        track = { highlight = "Pmenu" },
+        handle = { text = "H" },
+        float = { zindex = 80 },
+    })
     local unrelated = config.get_layout_generation()
     set({ float = { width = 2 }, handle = { column = 2 } })
     local width = config.get_layout_generation()
@@ -77,6 +84,7 @@ T["accepts the complete typed schema"] = function()
         set_highlights = false,
         max_lines = 1000,
         hide_if_all_visible = true,
+        autohide = { enabled = true, delay_ms = 750 },
         render = { interval_ms = 0, geometry = "screen" },
         float = {
             width = 4,
@@ -110,6 +118,7 @@ T["accepts the complete typed schema"] = function()
     })
 
     expect.equality(result.max_lines, 1000)
+    expect.equality(result.autohide, { enabled = true, delay_ms = 750 })
     expect.equality(result.float.placement.row, -2)
     expect.equality(result.track.highlight, track_highlight)
     expect.equality(result.handle.width, 3)
@@ -136,6 +145,7 @@ end
 T["rejects unknown keys at every schema level"] = function()
     expect_invalid({ throttle_ms = 10 }, "unknown option 'throttle_ms'")
     expect_invalid({ render = { delay = 10 } }, "unknown option 'render.delay'")
+    expect_invalid({ autohide = { timeout = 10 } }, "unknown option 'autohide.timeout'")
     expect_invalid({ float = { border = "none" } }, "unknown option 'float.border'")
     expect_invalid({ float = { placement = { win = 1 } } }, "unknown option 'float.placement.win'")
     expect_invalid({ track = { color = "red" } }, "unknown option 'track.color'")
@@ -151,6 +161,8 @@ T["rejects invalid enums and scalar option types"] = function()
     expect_invalid({ float = { placement = { relative = "cursor" } } }, "float.placement.relative must be one of")
     expect_invalid({ float = { placement = { anchor = "C" } } }, "float.placement.anchor must be one of")
     expect_invalid({ show = 1 }, "show must be a boolean")
+    expect_invalid({ autohide = false }, "autohide must be a table")
+    expect_invalid({ autohide = { enabled = "yes" } }, "autohide.enabled must be a boolean")
     expect_invalid({ mouse = { enabled = "yes" } }, "mouse.enabled must be a boolean")
     expect_invalid({ render = false }, "render must be a table")
     expect_invalid({ float = { placement = false } }, "float.placement must be a table")
@@ -160,6 +172,10 @@ end
 
 T["rejects invalid dimensions, columns, and placement offsets"] = function()
     expect_invalid({ render = { interval_ms = -1 } }, "render.interval_ms must be a non%-negative integer")
+    expect_invalid({ autohide = { delay_ms = 0 } }, "autohide.delay_ms must be a positive integer")
+    expect_invalid({ autohide = { delay_ms = -1 } }, "autohide.delay_ms must be a positive integer")
+    expect_invalid({ autohide = { delay_ms = 1.5 } }, "autohide.delay_ms must be a positive integer")
+    expect_invalid({ autohide = { delay_ms = "500" } }, "autohide.delay_ms must be a positive integer")
     expect_invalid({ float = { width = 0 } }, "float.width must be a positive integer")
     expect_invalid({ float = { zindex = 1.5 } }, "float.zindex must be a positive integer")
     expect_invalid({ float = { placement = { row = 0.5 } } }, "float.placement.row must be an integer")
