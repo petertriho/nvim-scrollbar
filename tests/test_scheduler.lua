@@ -931,6 +931,7 @@ T["refreshes colorscheme state and fully disposes timer and autocmd ownership"] 
     expect.equality(result.events.TextChanged, true)
     expect.equality(result.events.CursorMoved, true)
     expect.equality(result.events.CursorMovedI, true)
+    expect.equality(result.events.WinEnter, true)
     expect.equality(result.events.WinResized, true)
     expect.equality(result.events.VimResized, true)
     expect.equality(result.events.WinScrolled, true)

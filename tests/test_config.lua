@@ -22,13 +22,14 @@ end
 T["defaults are normalized from a fresh immutable baseline"] = function()
     local first = set({
         visibility = "active",
-        float = { width = 3 },
+        float = { width = 3, hide_on_cursor = false },
         marks = { Search = { text = "x", column = 2 } },
         providers = { search = { live = true, backend = "sync" } },
     })
 
     expect.equality(first.visibility, "active")
     expect.equality(first.float.width, 3)
+    expect.equality(first.float.hide_on_cursor, false)
     expect.equality(first.marks.Search.text, { "x" })
     expect.equality(first.marks.Search.column, 2)
     expect.equality(first.providers.search, { live = true, backend = "sync" })
@@ -36,6 +37,7 @@ T["defaults are normalized from a fresh immutable baseline"] = function()
     local second = set()
     expect.equality(second.visibility, "all")
     expect.equality(second.float.width, 1)
+    expect.equality(second.float.hide_on_cursor, true)
     expect.equality(second.marks.Search.text, { "-", "=" })
     expect.equality(second.marks.Search.column, 1)
     expect.equality(second.providers.search, { live = false, backend = "worker" })
@@ -54,7 +56,7 @@ T["advances the layout generation only for static mark-layer inputs"] = function
         autohide = { enabled = true, delay_ms = 250 },
         track = { highlight = "Pmenu" },
         handle = { text = "H" },
-        float = { zindex = 80 },
+        float = { zindex = 80, hide_on_cursor = false },
     })
     local unrelated = config.get_layout_generation()
     set({ float = { width = 2 }, handle = { column = 2 } })
@@ -89,6 +91,7 @@ T["accepts the complete typed schema"] = function()
         float = {
             width = 4,
             zindex = 60,
+            hide_on_cursor = false,
             placement = { relative = "editor", anchor = "SW", row = -2, col = 3 },
         },
         track = { highlight = track_highlight },
@@ -120,6 +123,7 @@ T["accepts the complete typed schema"] = function()
     expect.equality(result.max_lines, 1000)
     expect.equality(result.autohide, { enabled = true, delay_ms = 750 })
     expect.equality(result.float.placement.row, -2)
+    expect.equality(result.float.hide_on_cursor, false)
     expect.equality(result.track.highlight, track_highlight)
     expect.equality(result.handle.width, 3)
     expect.equality(result.handle.highlight, handle_highlight)
@@ -164,6 +168,7 @@ T["rejects invalid enums and scalar option types"] = function()
     expect_invalid({ autohide = false }, "autohide must be a table")
     expect_invalid({ autohide = { enabled = "yes" } }, "autohide.enabled must be a boolean")
     expect_invalid({ mouse = { enabled = "yes" } }, "mouse.enabled must be a boolean")
+    expect_invalid({ float = { hide_on_cursor = "yes" } }, "float.hide_on_cursor must be a boolean")
     expect_invalid({ render = false }, "render must be a table")
     expect_invalid({ float = { placement = false } }, "float.placement must be a table")
     expect_invalid({ track = false }, "track must be a table")

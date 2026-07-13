@@ -15,6 +15,7 @@ local DEFAULTS = {
     float = {
         width = 1,
         zindex = 50,
+        hide_on_cursor = true,
         placement = {
             relative = "window",
             anchor = "NE",
@@ -143,7 +144,7 @@ local TOP_LEVEL_KEYS = {
 local NESTED_KEYS = {
     autohide = { enabled = true, delay_ms = true },
     render = { interval_ms = true, geometry = true },
-    float = { width = true, zindex = true, placement = true },
+    float = { width = true, zindex = true, hide_on_cursor = true, placement = true },
     ["float.placement"] = { relative = true, anchor = true, row = true, col = true },
     track = { highlight = true },
     mouse = { enabled = true },
@@ -399,6 +400,7 @@ local function normalize(overrides)
     end
     validate_integer(result.float.width, "float.width", false)
     validate_integer(result.float.zindex, "float.zindex", false)
+    validate_boolean(result.float.hide_on_cursor, "float.hide_on_cursor")
     if type(result.float.placement) ~= "table" then
         invalid("float.placement must be a table")
     end
