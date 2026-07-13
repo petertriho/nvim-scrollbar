@@ -82,6 +82,7 @@ T["keeps same-buffer source windows independent and writes only float buffers"] 
             float_filetype = vim.bo[first_state.float_buf].filetype,
             float_buftype = vim.bo[first_state.float_buf].buftype,
             float_modifiable = vim.bo[first_state.float_buf].modifiable,
+            winhighlight = vim.api.nvim_get_option_value("winhighlight", { win = first_state.float_win }),
             lookup = assert(renderer.get_state_by_float(first_state.float_win)).source_win,
             reused_float = first_again.float_win,
             reused_buffer = first_again.float_buf,
@@ -104,6 +105,7 @@ T["keeps same-buffer source windows independent and writes only float buffers"] 
     expect.equality(result.float_filetype, "scrollbar")
     expect.equality(result.float_buftype, "nofile")
     expect.equality(result.float_modifiable, false)
+    expect.equality(result.winhighlight, "Normal:ScrollbarTrack,NormalNC:ScrollbarTrack,EndOfBuffer:ScrollbarTrack")
     expect.equality(result.lookup, result.first.source_win)
 end
 

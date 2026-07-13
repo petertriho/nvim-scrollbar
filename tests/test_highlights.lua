@@ -40,7 +40,7 @@ T["uses popup menu backgrounds for the track and handle states"] = function()
                 return vim.api.nvim_get_hl(0, { name = name, link = false })
             end
             return {
-                track = get("ScrollbarFloat"),
+                track = get("ScrollbarTrack"),
                 handle = get("ScrollbarHandle"),
                 pressed = get("ScrollbarHandlePressed"),
                 overlap = get("ScrollbarCustomHandlePressed"),
@@ -79,12 +79,19 @@ T["applies full highlight tables and merges overlaps with mark precedence"] = fu
                 return vim.api.nvim_get_hl(0, { name = name, link = false })
             end
             return {
+                track = get("ScrollbarTrack"),
                 handle = get("ScrollbarHandle"),
                 mark = get("ScrollbarSearch"),
                 overlap = get("ScrollbarSearchHandle"),
             }
         end,
         base_config({
+            track = {
+                highlight = {
+                    bg = "#223344",
+                    italic = true,
+                },
+            },
             handle = {
                 blend = 33,
                 highlight = {
@@ -112,6 +119,11 @@ T["applies full highlight tables and merges overlaps with mark precedence"] = fu
         })
     )
 
+    expect.equality(result.track, {
+        bg = 0x223344,
+        italic = true,
+        cterm = { italic = true },
+    })
     expect.equality(result.handle, {
         fg = 0x010203,
         bg = 0x112233,
@@ -147,6 +159,7 @@ T["preserves string highlight projection and supports mixed definitions"] = func
     local child = new_child()
     local result = child.lua_func(
         function(config)
+            vim.api.nvim_set_hl(0, "DirectTrackSource", { fg = "#030303", bg = "#234567", italic = true })
             vim.api.nvim_set_hl(0, "DirectHandleSource", { fg = "#010101", bg = "#123456", bold = true })
             vim.api.nvim_set_hl(0, "DirectMarkSource", { fg = "#654321", bg = "#020202", italic = true })
             vim.api.nvim_set_hl(0, "PmenuSel", { bg = "#345678" })
@@ -155,6 +168,7 @@ T["preserves string highlight projection and supports mixed definitions"] = func
                 return vim.api.nvim_get_hl(0, { name = name, link = false })
             end
             return {
+                track = get("ScrollbarTrack"),
                 handle = get("ScrollbarHandle"),
                 pressed = get("ScrollbarHandlePressed"),
                 string_mark = get("ScrollbarSearch"),
@@ -164,6 +178,7 @@ T["preserves string highlight projection and supports mixed definitions"] = func
             }
         end,
         base_config({
+            track = { highlight = "DirectTrackSource" },
             handle = { blend = 27, highlight = "DirectHandleSource" },
             marks = {
                 Search = { highlight = "DirectMarkSource" },
@@ -172,6 +187,7 @@ T["preserves string highlight projection and supports mixed definitions"] = func
         })
     )
 
+    expect.equality(result.track, { bg = 0x234567 })
     expect.equality(result.handle, { bg = 0x123456, blend = 27 })
     expect.equality(result.pressed, { bg = 0x345678, blend = 27 })
     expect.equality(result.string_mark, { fg = 0x654321 })
@@ -190,20 +206,20 @@ T["regenerates direct definitions on ColorScheme and respects set_highlights fal
     local child = new_child()
     local result = child.lua_func(function(config)
         local scrollbar = require("scrollbar")
-        vim.api.nvim_set_hl(0, "PmenuSbar", { bg = "#102030" })
+        vim.api.nvim_set_hl(0, "ConfiguredTrackSource", { bg = "#102030" })
         vim.api.nvim_set_hl(0, "PmenuSel", { bg = "#405060" })
         scrollbar.setup(config.enabled)
-        vim.api.nvim_set_hl(0, "ScrollbarFloat", { bg = "#000000" })
+        vim.api.nvim_set_hl(0, "ScrollbarTrack", { bg = "#000000" })
         vim.api.nvim_set_hl(0, "ScrollbarHandle", { bg = "#000000" })
         vim.api.nvim_set_hl(0, "ScrollbarHandlePressed", { bg = "#000000" })
         vim.api.nvim_set_hl(0, "ScrollbarSearch", { fg = "#000000" })
         vim.cmd("doautocmd ColorScheme")
-        local regenerated_track = vim.api.nvim_get_hl(0, { name = "ScrollbarFloat", link = false })
+        local regenerated_track = vim.api.nvim_get_hl(0, { name = "ScrollbarTrack", link = false })
         local regenerated_handle = vim.api.nvim_get_hl(0, { name = "ScrollbarHandle", link = false })
         local regenerated_pressed = vim.api.nvim_get_hl(0, { name = "ScrollbarHandlePressed", link = false })
         local regenerated_mark = vim.api.nvim_get_hl(0, { name = "ScrollbarSearch", link = false })
 
-        vim.api.nvim_set_hl(0, "ScrollbarFloat", { bg = "#123456" })
+        vim.api.nvim_set_hl(0, "ScrollbarTrack", { bg = "#123456" })
         vim.api.nvim_set_hl(0, "ScrollbarHandle", { bg = "#334455", bold = true })
         vim.api.nvim_set_hl(0, "ScrollbarHandlePressed", { bg = "#445566" })
         vim.api.nvim_set_hl(0, "ScrollbarSearch", { fg = "#556677", italic = true })
@@ -214,18 +230,20 @@ T["regenerates direct definitions on ColorScheme and respects set_highlights fal
             regenerated_handle = regenerated_handle,
             regenerated_pressed = regenerated_pressed,
             regenerated_mark = regenerated_mark,
-            disabled_track = vim.api.nvim_get_hl(0, { name = "ScrollbarFloat", link = false }),
+            disabled_track = vim.api.nvim_get_hl(0, { name = "ScrollbarTrack", link = false }),
             disabled_handle = vim.api.nvim_get_hl(0, { name = "ScrollbarHandle", link = false }),
             disabled_pressed = vim.api.nvim_get_hl(0, { name = "ScrollbarHandlePressed", link = false }),
             disabled_mark = vim.api.nvim_get_hl(0, { name = "ScrollbarSearch", link = false }),
         }
     end, {
         enabled = base_config({
+            track = { highlight = "ConfiguredTrackSource" },
             handle = { highlight = { bg = "#112233" } },
             marks = { Search = { highlight = { fg = "#abcdef" } } },
         }),
         disabled = base_config({
             set_highlights = false,
+            track = { highlight = { bg = "#ffffff" } },
             handle = { highlight = { bg = "#ffffff" } },
             marks = { Search = { highlight = { fg = "#ffffff" } } },
         }),

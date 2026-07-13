@@ -21,6 +21,9 @@
 ---@field zindex? integer
 ---@field placement? ScrollbarUserPlacement
 
+---@class ScrollbarUserTrackConfig
+---@field highlight? ScrollbarHighlight
+
 ---@class ScrollbarUserRenderConfig
 ---@field interval_ms? integer
 ---@field geometry? ScrollbarGeometryMode
@@ -66,6 +69,7 @@
 ---@field hide_if_all_visible? boolean
 ---@field render? ScrollbarUserRenderConfig
 ---@field float? ScrollbarUserFloatConfig
+---@field track? ScrollbarUserTrackConfig
 ---@field mouse? ScrollbarUserMouseConfig
 ---@field handle? ScrollbarUserHandleConfig
 ---@field marks? table<string, ScrollbarUserMarkTypeConfig>
@@ -83,6 +87,9 @@
 ---@field width integer
 ---@field zindex integer
 ---@field placement ScrollbarPlacement
+
+---@class ScrollbarTrackConfig
+---@field highlight ScrollbarHighlight
 
 ---@class ScrollbarRenderConfig
 ---@field interval_ms integer
@@ -121,6 +128,7 @@
 ---@field hide_if_all_visible boolean
 ---@field render ScrollbarRenderConfig
 ---@field float ScrollbarFloatConfig
+---@field track ScrollbarTrackConfig
 ---@field mouse ScrollbarMouseConfig
 ---@field handle ScrollbarHandleConfig
 ---@field marks table<string, ScrollbarMarkTypeConfig>

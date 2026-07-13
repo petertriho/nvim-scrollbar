@@ -69,6 +69,9 @@ require("scrollbar").setup({
             col = 0,
         },
     },
+    track = {
+        highlight = "PmenuSbar",
+    },
     mouse = {
         enabled = true,
     },
@@ -171,9 +174,9 @@ require("scrollbar").setup({
 coordinates. The handle must fit within `float.width`. Mark text is clipped at
 the right edge without splitting a multi-cell character.
 
-Handle and mark `highlight` values accept either a highlight group name or a
-full table accepted by `nvim_set_hl()`. String values retain colorscheme-linked
-behavior; tables can define colors and attributes directly.
+Track, handle, and mark `highlight` values accept either a highlight group name
+or a full table accepted by `nvim_set_hl()`. String values retain
+colorscheme-linked behavior; tables can define colors and attributes directly.
 
 ### Visibility
 
@@ -215,7 +218,8 @@ require("scrollbar").setup({
 
 The renderer owns the float height, scratch buffer, focusability, mouse flag,
 style, and source-window association. `float.width`, `float.zindex`, and the
-typed placement fields are the supported float controls.
+typed placement fields are the supported float controls. `track.highlight`
+controls the track background independently of those floating-window settings.
 
 Scrollbar tracks cover source buffer-text rows only. They exclude the source
 window's winbar and remain within window bounds that already exclude tabline,
@@ -483,18 +487,21 @@ rather than split when an overlap would cut through them.
 
 With `set_highlights = true`, setup generates scrollbar groups from each
 configured `highlight`. A string names a source highlight group:
-`handle.highlight` supplies its background and each mark's `highlight` supplies
-its foreground. A table is passed to `nvim_set_hl()` as a direct definition and
-can include any attributes supported by the active Neovim version. Groups are
-regenerated after `ColorScheme`.
+`track.highlight` and `handle.highlight` supply backgrounds, while each mark's
+`highlight` supplies its foreground. A table is passed to `nvim_set_hl()` as a
+direct definition and can include any attributes supported by the active
+Neovim version. Groups are regenerated after `ColorScheme`.
 
-By default, the track background comes from `PmenuSbar`, the resting handle
-background comes from `PmenuThumb`, and a pressed handle background comes from
-`PmenuSel`. The pressed source is fixed; a custom `handle.highlight` changes the
-resting handle only.
+By default, `track.highlight` is `PmenuSbar`, `handle.highlight` is
+`PmenuThumb`, and a pressed handle background comes from `PmenuSel`. The pressed
+source is fixed; custom track and handle highlights change the track and resting
+handle only.
 
 ```lua
 require("scrollbar").setup({
+    track = {
+        highlight = "PmenuSbar",
+    },
     handle = {
         highlight = { bg = "#3b4261", blend = 20 },
     },
@@ -512,7 +519,7 @@ overlapping either handle state, the handle and mark definitions are deep-merged
 and mark attributes win conflicts. Neovim's normal highlight semantics still
 apply to combinations such as `link` with other attributes.
 
-- `ScrollbarFloat` styles the `PmenuSbar`-derived track background.
+- `ScrollbarTrack` styles the `track.highlight`-derived background.
 - `ScrollbarHandle` styles uncovered handle cells.
 - `ScrollbarHandlePressed` styles uncovered held-handle cells.
 - `Scrollbar<MarkType>` styles a mark outside the handle.
@@ -523,6 +530,8 @@ apply to combinations such as `link` with other attributes.
 
 For example: `ScrollbarSearch`, `ScrollbarSearchHandle`,
 `ScrollbarSearchHandlePressed`, `ScrollbarError`, and `ScrollbarErrorHandle`.
+`ScrollbarFloat` is no longer generated; use `ScrollbarTrack` for manual track
+styling.
 
 Set `set_highlights = false` to define these groups yourself. Direct highlight
 tables follow this switch and are not applied when it is disabled. Renderer

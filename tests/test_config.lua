@@ -40,6 +40,7 @@ T["defaults are normalized from a fresh immutable baseline"] = function()
     expect.equality(second.marks.Search.column, 1)
     expect.equality(second.providers.search, { live = false, backend = "worker" })
     expect.equality(second.providers.coc, false)
+    expect.equality(second.track.highlight, "PmenuSbar")
     expect.equality(second.handle.highlight, "PmenuThumb")
 end
 
@@ -47,7 +48,7 @@ T["advances the layout generation only for static mark-layer inputs"] = function
     local config = require("scrollbar.config")
     local initial = config.get_layout_generation()
 
-    set({ visibility = "active", handle = { text = "H" }, float = { zindex = 80 } })
+    set({ visibility = "active", track = { highlight = "Pmenu" }, handle = { text = "H" }, float = { zindex = 80 } })
     local unrelated = config.get_layout_generation()
     set({ float = { width = 2 }, handle = { column = 2 } })
     local width = config.get_layout_generation()
@@ -67,6 +68,7 @@ T["advances the layout generation only for static mark-layer inputs"] = function
 end
 
 T["accepts the complete typed schema"] = function()
+    local track_highlight = { bg = "#010203", bold = true }
     local handle_highlight = { bg = "#112233", blend = 10 }
     local mark_highlight = { fg = "#abcdef", bold = true, cterm = { italic = true } }
     local result = set({
@@ -81,6 +83,7 @@ T["accepts the complete typed schema"] = function()
             zindex = 60,
             placement = { relative = "editor", anchor = "SW", row = -2, col = 3 },
         },
+        track = { highlight = track_highlight },
         mouse = { enabled = false },
         handle = {
             text = "#",
@@ -108,6 +111,7 @@ T["accepts the complete typed schema"] = function()
 
     expect.equality(result.max_lines, 1000)
     expect.equality(result.float.placement.row, -2)
+    expect.equality(result.track.highlight, track_highlight)
     expect.equality(result.handle.width, 3)
     expect.equality(result.handle.highlight, handle_highlight)
     expect.equality(result.marks.Custom.text, { "!" })
@@ -115,12 +119,16 @@ T["accepts the complete typed schema"] = function()
     expect.equality(result.providers.search.live, true)
     expect.equality(result.providers.search.backend, "sync")
 
+    local normalized_track = result.track.highlight
     local normalized_handle = result.handle.highlight
     local normalized_mark = result.marks.Custom.highlight
+    assert(type(normalized_track) == "table", "normalized track highlight must be a table")
     assert(type(normalized_handle) == "table", "normalized handle highlight must be a table")
     assert(type(normalized_mark) == "table", "normalized mark highlight must be a table")
+    normalized_track.bg = "#000000"
     normalized_handle.bg = "#000000"
     normalized_mark.cterm.italic = false
+    expect.equality(track_highlight.bg, "#010203")
     expect.equality(handle_highlight.bg, "#112233")
     expect.equality(mark_highlight.cterm.italic, true)
 end
@@ -130,6 +138,7 @@ T["rejects unknown keys at every schema level"] = function()
     expect_invalid({ render = { delay = 10 } }, "unknown option 'render.delay'")
     expect_invalid({ float = { border = "none" } }, "unknown option 'float.border'")
     expect_invalid({ float = { placement = { win = 1 } } }, "unknown option 'float.placement.win'")
+    expect_invalid({ track = { color = "red" } }, "unknown option 'track.color'")
     expect_invalid({ mouse = { button = "left" } }, "unknown option 'mouse.button'")
     expect_invalid({ handle = { color = "red" } }, "unknown option 'handle.color'")
     expect_invalid({ marks = { Search = { gui = "bold" } } }, "unknown option 'marks.Search.gui'")
@@ -145,6 +154,7 @@ T["rejects invalid enums and scalar option types"] = function()
     expect_invalid({ mouse = { enabled = "yes" } }, "mouse.enabled must be a boolean")
     expect_invalid({ render = false }, "render must be a table")
     expect_invalid({ float = { placement = false } }, "float.placement must be a table")
+    expect_invalid({ track = false }, "track must be a table")
     expect_invalid({ marks = { Search = false } }, "marks.Search must be a table")
 end
 
@@ -190,6 +200,7 @@ T["rejects invalid priorities, mark names, and highlights"] = function()
         "marks.Search.highlight must be a non%-empty string or table"
     )
     expect_invalid({ handle = { highlight = 1 } }, "handle.highlight must be a non%-empty string or table")
+    expect_invalid({ track = { highlight = "" } }, "track.highlight must be a non%-empty string or table")
     expect_invalid(
         { marks = { Search = { highlight = false } } },
         "marks.Search.highlight must be a non%-empty string or table"
