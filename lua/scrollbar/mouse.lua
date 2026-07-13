@@ -174,6 +174,17 @@ local function guarded(callback, fallback_source)
     end
 end
 
+---@param current ScrollbarInteractionState
+---@param resume_deadline boolean
+local function finish_interaction(current, resume_deadline)
+    set_handle_pressed(current, false)
+    interaction = nil
+    restore_focus(current)
+    if resume_deadline and runtime ~= nil then
+        pcall(runtime.scheduler.resume_window, current.source_win)
+    end
+end
+
 ---@param float_win? integer
 M.press = function(float_win)
     local active = runtime
@@ -213,6 +224,7 @@ M.press = function(float_win)
         last_col = col,
         dragging = false,
     }
+    pcall(active.scheduler.hold_window, state.source_win)
     if pressed_handle then
         set_handle_pressed(interaction, true)
     end
@@ -266,19 +278,13 @@ M.release = function()
             navigate(current, state, track_line(current, state, current.pressed_row))
         end
     end)
-    set_handle_pressed(current, false)
-    interaction = nil
-    restore_focus(current)
+    finish_interaction(current, true)
 end
 
 M.cancel = function()
     local current = interaction
     if current ~= nil then
-        set_handle_pressed(current, false)
-    end
-    interaction = nil
-    if current ~= nil then
-        restore_focus(current)
+        finish_interaction(current, true)
     end
 end
 
@@ -361,6 +367,10 @@ M.setup = function(options)
     vim.api.nvim_create_autocmd({ "BufDelete", "BufWipeout" }, {
         group = augroup,
         callback = function(args)
+            local active = runtime
+            if active ~= nil then
+                active.attached[args.buf] = nil
+            end
             local current = interaction
             if current ~= nil and (args.buf == current.float_buf or args.buf == current.source_buf) then
                 M.cancel()
@@ -372,10 +382,12 @@ M.setup = function(options)
 end
 
 M.dispose = function()
-    M.cancel()
     local active = runtime
     if active == nil then
         return
+    end
+    if interaction ~= nil then
+        finish_interaction(interaction, false)
     end
     runtime = nil
     active.renderer.set_state_callback(nil)

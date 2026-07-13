@@ -4,6 +4,10 @@ local DEFAULTS = {
     set_highlights = true,
     max_lines = false,
     hide_if_all_visible = false,
+    autohide = {
+        enabled = false,
+        delay_ms = 1000,
+    },
     render = {
         interval_ms = 16,
         geometry = "line",
@@ -124,6 +128,7 @@ local TOP_LEVEL_KEYS = {
     set_highlights = true,
     max_lines = true,
     hide_if_all_visible = true,
+    autohide = true,
     render = true,
     float = true,
     track = true,
@@ -136,6 +141,7 @@ local TOP_LEVEL_KEYS = {
 }
 
 local NESTED_KEYS = {
+    autohide = { enabled = true, delay_ms = true },
     render = { interval_ms = true, geometry = true },
     float = { width = true, zindex = true, placement = true },
     ["float.placement"] = { relative = true, anchor = true, row = true, col = true },
@@ -214,6 +220,7 @@ local function validate_shape(overrides)
     end
 
     validate_unknown_keys(overrides.render, NESTED_KEYS.render, "render")
+    validate_unknown_keys(overrides.autohide, NESTED_KEYS.autohide, "autohide")
     validate_unknown_keys(overrides.float, NESTED_KEYS.float, "float")
     if type(overrides.float) == "table" then
         validate_unknown_keys(overrides.float.placement, NESTED_KEYS["float.placement"], "float.placement")
@@ -374,6 +381,12 @@ local function normalize(overrides)
             invalid("max_lines must be false or a positive integer")
         end
     end
+
+    if type(result.autohide) ~= "table" then
+        invalid("autohide must be a table")
+    end
+    validate_boolean(result.autohide.enabled, "autohide.enabled")
+    validate_integer(result.autohide.delay_ms, "autohide.delay_ms", false)
 
     if type(result.render) ~= "table" then
         invalid("render must be a table")

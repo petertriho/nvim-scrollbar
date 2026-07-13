@@ -96,12 +96,23 @@ local function setup_single(child, options)
         end
         scheduler.setup({ config = active_config, renderer = renderer })
         mouse.setup({ config = active_config, renderer = renderer, scheduler = scheduler })
-        local state = assert(renderer.render(source_win))
+        local state
+        if active_config.autohide.enabled then
+            vim.api.nvim_set_current_win(source_win)
+            vim.api.nvim_exec_autocmds("CursorMoved", { buffer = source_buf })
+            scheduler.flush()
+            state = assert(renderer.get_state(source_win))
+        else
+            state = assert(renderer.render(source_win))
+        end
         vim.cmd("redraw")
         local position = vim.fn.win_screenpos(state.float_win)
         local source_position = vim.fn.win_screenpos(source_win)
         local raw_height = vim.api.nvim_win_get_height(source_win)
         local winbar_rows = vim.api.nvim_get_option_value("winbar", { win = source_win }) == "" and 0 or 1
+        if active_config.autohide.enabled then
+            scheduler.resume_window(source_win)
+        end
         return {
             source_win = source_win,
             source_buf = source_buf,
@@ -171,6 +182,29 @@ local function reset_view(child, setup, line)
     end, setup.source_win, line)
     vim.uv.sleep(30)
     return refreshed
+end
+
+local function refresh_autohide_state(child, source_win)
+    return child.lua_func(function(target_win)
+        local renderer = require("scrollbar.renderer")
+        local scheduler = require("scrollbar.scheduler")
+        vim.api.nvim_set_current_win(target_win)
+        local state = renderer.get_state(target_win)
+        if state == nil then
+            vim.api.nvim_exec_autocmds("CursorMoved", { buffer = vim.api.nvim_win_get_buf(target_win) })
+            scheduler.flush()
+            state = assert(renderer.get_state(target_win))
+        end
+        scheduler.resume_window(target_win)
+        vim.cmd("redraw")
+        local position = vim.fn.win_screenpos(state.float_win)
+        return {
+            float_win = state.float_win,
+            position = { position[1] - 1, position[2] - 1 },
+            height = state.height,
+            handle = state.handle,
+        }
+    end, source_win)
 end
 
 T["keeps the handle pressed highlight through drag until release"] = function()
@@ -587,6 +621,174 @@ T["keeps independent ownership for multiple source windows"] = function()
     expect.equality(child.api.nvim_win_get_cursor(setup.first.source_win)[1], 200)
     expect.equality(child.api.nvim_win_get_cursor(setup.second.source_win)[1], 1)
     expect.equality(child.api.nvim_get_current_win(), setup.second.source_win)
+end
+
+T["holds autohide through press and drag then resumes a full delay"] = function()
+    local child = new_child()
+    local setup = setup_single(child, {
+        config = mouse_config({ autohide = { enabled = true, delay_ms = 500 } }),
+    })
+    local active = refresh_autohide_state(child, setup.source_win)
+    local row = active.position[1] + active.handle.first_row
+    local col = active.position[2] + active.handle.column - 1
+
+    input_mouse(child, "press", row, col)
+    local pressed = child.lua_func(function(source_win)
+        return {
+            interaction = require("scrollbar.mouse").get_interaction() ~= nil,
+            state = require("scrollbar.renderer").get_state(source_win) ~= nil,
+            current = vim.api.nvim_get_current_win(),
+            mouse = vim.fn.getmousepos().winid,
+        }
+    end, setup.source_win)
+    expect.equality(pressed, {
+        interaction = true,
+        state = true,
+        current = active.float_win,
+        mouse = active.float_win,
+    })
+    vim.uv.sleep(600)
+    expect.no_equality(
+        child.lua_get([[require("scrollbar.renderer").get_state(]] .. setup.source_win .. [[)]]),
+        vim.NIL
+    )
+
+    input_mouse(child, "drag", active.position[1] + active.height - 1, col)
+    vim.uv.sleep(600)
+    expect.no_equality(
+        child.lua_get([[require("scrollbar.renderer").get_state(]] .. setup.source_win .. [[)]]),
+        vim.NIL
+    )
+
+    input_mouse(child, "release", active.position[1] + active.height - 1, col)
+    expect.no_equality(
+        child.lua_get([[require("scrollbar.renderer").get_state(]] .. setup.source_win .. [[)]]),
+        vim.NIL
+    )
+    local concealed = child.lua_func(function(source_win)
+        return vim.wait(1000, function()
+            return require("scrollbar.renderer").get_state(source_win) == nil
+        end)
+    end, setup.source_win)
+    expect.equality(concealed, true)
+end
+
+T["resumes after cancellation but global hide cannot rearm"] = function()
+    local child = new_child()
+    local setup = setup_single(child, {
+        config = mouse_config({ autohide = { enabled = true, delay_ms = 300 } }),
+    })
+    local active = refresh_autohide_state(child, setup.source_win)
+    local row = active.position[1] + active.handle.first_row
+    local col = active.position[2] + active.handle.column - 1
+
+    input_mouse(child, "press", row, col)
+    child.lua([[require("scrollbar.mouse").cancel()]])
+    vim.uv.sleep(30)
+    expect.no_equality(
+        child.lua_get([[require("scrollbar.renderer").get_state(]] .. setup.source_win .. [[)]]),
+        vim.NIL
+    )
+    local cancelled_concealed = child.lua_func(function(source_win)
+        return vim.wait(1000, function()
+            return require("scrollbar.renderer").get_state(source_win) == nil
+        end)
+    end, setup.source_win)
+
+    child.lua_func(function(source_win)
+        vim.api.nvim_set_current_win(source_win)
+        vim.api.nvim_exec_autocmds("CursorMoved", {})
+        require("scrollbar.scheduler").flush()
+    end, setup.source_win)
+    local revealed = child.lua_func(function(source_win)
+        local state = assert(require("scrollbar.renderer").get_state(source_win))
+        vim.cmd("redraw")
+        local position = vim.fn.win_screenpos(state.float_win)
+        return {
+            row = position[1] - 1 + state.handle.first_row,
+            col = position[2] - 1 + state.handle.column - 1,
+        }
+    end, setup.source_win)
+    input_mouse(child, "press", revealed.row, revealed.col)
+    child.lua([[require("scrollbar").hide()]])
+    vim.uv.sleep(350)
+    child.lua_func(function(source_win)
+        vim.api.nvim_set_current_win(source_win)
+        vim.api.nvim_exec_autocmds("CursorMoved", {})
+        require("scrollbar.scheduler").flush()
+    end, setup.source_win)
+    local hidden = child.lua_func(function(source_win)
+        local renderer = require("scrollbar.renderer")
+        return not renderer.is_visible()
+            and renderer.get_state(source_win) == nil
+            and require("scrollbar.mouse").get_interaction() == nil
+    end, setup.source_win)
+
+    expect.equality(cancelled_concealed, true)
+    expect.equality(hidden, true)
+end
+
+T["drops attachment bookkeeping across repeated conceal and reveal cycles"] = function()
+    local child = new_child()
+    local setup = setup_single(child, {
+        config = mouse_config({ autohide = { enabled = true, delay_ms = 80 } }),
+    })
+    local result = child.lua_func(function(source_win, first_buffer)
+        local mouse = require("scrollbar.mouse")
+        local renderer = require("scrollbar.renderer")
+        local scheduler = require("scrollbar.scheduler")
+        local function attached_count()
+            for index = 1, 20 do
+                local name, value = debug.getupvalue(mouse.attach, index)
+                if name == "runtime" then
+                    return vim.tbl_count(value.attached)
+                end
+            end
+            error("mouse runtime upvalue not found")
+        end
+
+        local initial = attached_count()
+        assert(vim.wait(500, function()
+            return renderer.get_state(source_win) == nil
+        end))
+        local after_first_conceal = attached_count()
+
+        vim.api.nvim_set_current_win(source_win)
+        vim.api.nvim_exec_autocmds("CursorMoved", {})
+        scheduler.flush()
+        local second = assert(renderer.get_state(source_win))
+        local after_second_reveal = attached_count()
+        assert(vim.wait(500, function()
+            return renderer.get_state(source_win) == nil
+        end))
+        local after_second_conceal = attached_count()
+
+        vim.api.nvim_exec_autocmds("CursorMoved", {})
+        scheduler.flush()
+        local third = assert(renderer.get_state(source_win))
+        local after_third_reveal = attached_count()
+        return {
+            initial = initial,
+            after_first_conceal = after_first_conceal,
+            after_second_reveal = after_second_reveal,
+            after_second_conceal = after_second_conceal,
+            after_third_reveal = after_third_reveal,
+            first_buffer_deleted = not vim.api.nvim_buf_is_valid(first_buffer),
+            second_buffer_deleted = not vim.api.nvim_buf_is_valid(second.float_buf),
+            buffers_replaced = first_buffer ~= second.float_buf and second.float_buf ~= third.float_buf,
+        }
+    end, setup.source_win, setup.float_buf)
+
+    expect.equality(result, {
+        initial = 1,
+        after_first_conceal = 0,
+        after_second_reveal = 1,
+        after_second_conceal = 0,
+        after_third_reveal = 1,
+        first_buffer_deleted = true,
+        second_buffer_deleted = true,
+        buffers_replaced = true,
+    })
 end
 
 T["does not attach mappings or mutate mouse behavior when disabled"] = function()

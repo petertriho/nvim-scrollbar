@@ -223,6 +223,350 @@ T["ignores closed and floating windows and scopes buffer invalidation"] = functi
     expect.no_equality(result.first, result.second)
 end
 
+T["reveals only navigation sources and keeps other invalidations render-only"] = function()
+    local child = new_child()
+    local result = child.lua_func(function()
+        local first = vim.api.nvim_get_current_win()
+        local first_buf = vim.api.nvim_get_current_buf()
+        vim.cmd("split")
+        local second = vim.api.nvim_get_current_win()
+        local second_buf = vim.api.nvim_create_buf(true, false)
+        vim.api.nvim_win_set_buf(second, second_buf)
+        local float_buf = vim.api.nvim_create_buf(false, true)
+        local float_win = vim.api.nvim_open_win(float_buf, false, {
+            relative = "editor",
+            row = 1,
+            col = 1,
+            width = 1,
+            height = 1,
+            style = "minimal",
+        })
+
+        local rendered = {}
+        local revealed = {}
+        local concealed = {}
+        local visible = true
+        local scheduler = require("scrollbar.scheduler")
+        scheduler.setup({
+            config = require("scrollbar.config").set({
+                set_highlights = false,
+                autohide = { enabled = true, delay_ms = 1000 },
+                render = { interval_ms = 1000 },
+            }),
+            renderer = {
+                source_windows = function(bufnr)
+                    if bufnr == first_buf then
+                        return { first }
+                    end
+                    if bufnr == second_buf then
+                        return { second }
+                    end
+                    if bufnr == float_buf then
+                        return { float_win }
+                    end
+                    return { first, second, float_win }
+                end,
+                reveal = function(winid)
+                    table.insert(revealed, winid)
+                    return true
+                end,
+                conceal = function(winid)
+                    table.insert(concealed, winid)
+                    return true
+                end,
+                render = function(winid)
+                    table.insert(rendered, winid)
+                end,
+                is_visible = function()
+                    return visible
+                end,
+                is_owned_window = function(winid)
+                    return winid == float_win
+                end,
+            },
+        })
+
+        vim.api.nvim_set_current_win(first)
+        scheduler.flush()
+        rendered = {}
+        revealed = {}
+        vim.api.nvim_exec_autocmds("CursorMoved", { buffer = first_buf })
+        scheduler.invalidate_window(first)
+        scheduler.flush()
+        local cursor_revealed = vim.deepcopy(revealed)
+        local cursor_rendered = vim.deepcopy(rendered)
+
+        revealed = {}
+        rendered = {}
+        vim.api.nvim_exec_autocmds("TextChanged", { buffer = first_buf })
+        scheduler.flush()
+        local text_revealed = vim.deepcopy(revealed)
+        local text_rendered = vim.deepcopy(rendered)
+
+        revealed = {}
+        rendered = {}
+        local original_v = vim.v
+        rawset(vim, "v", { event = { all = true } })
+        vim.api.nvim_exec_autocmds("WinScrolled", {})
+        rawset(vim, "v", original_v)
+        scheduler.flush()
+        local all_revealed = vim.deepcopy(revealed)
+        local all_rendered = vim.deepcopy(rendered)
+
+        revealed = {}
+        vim.api.nvim_set_current_win(float_win)
+        vim.api.nvim_exec_autocmds("CursorMoved", { buffer = float_buf })
+        local owned_revealed = vim.deepcopy(revealed)
+        vim.api.nvim_set_current_win(first)
+
+        visible = false
+        revealed = {}
+        vim.api.nvim_exec_autocmds("CursorMovedI", { buffer = first_buf })
+        scheduler.flush()
+        local hidden_revealed = vim.deepcopy(revealed)
+        scheduler.dispose()
+        vim.api.nvim_win_close(float_win, true)
+
+        return {
+            first = first,
+            second = second,
+            cursor_revealed = cursor_revealed,
+            cursor_rendered = cursor_rendered,
+            text_revealed = text_revealed,
+            text_rendered = text_rendered,
+            all_revealed = all_revealed,
+            all_rendered = all_rendered,
+            owned_revealed = owned_revealed,
+            hidden_revealed = hidden_revealed,
+            concealed = concealed,
+        }
+    end)
+
+    expect.equality(result.cursor_revealed, { result.first })
+    expect.equality(result.cursor_rendered, { result.first })
+    expect.equality(result.text_revealed, {})
+    expect.equality(result.text_rendered, { result.first })
+    expect.equality(result.all_revealed, { result.first, result.second })
+    expect.equality(result.all_rendered, { result.first, result.second })
+    expect.equality(result.owned_revealed, {})
+    expect.equality(result.hidden_revealed, {})
+    expect.equality(result.concealed, {})
+end
+
+T["keeps independent deadlines and rejects stale callbacks"] = function()
+    local child = new_child()
+    local result = child.lua_func(function()
+        local first = vim.api.nvim_get_current_win()
+        vim.cmd("split")
+        local second = vim.api.nvim_get_current_win()
+        local timers = {}
+        local uv = vim.uv or vim.loop
+        local original_new_timer = uv.new_timer
+        uv.new_timer = function()
+            local timer = { closed = false, starts = 0 }
+            function timer:start(timeout, _, callback)
+                self.timeout = timeout
+                self.callback = callback
+                self.starts = self.starts + 1
+            end
+            function timer:stop()
+                self.stopped = true
+            end
+            function timer:close()
+                self.closed = true
+            end
+            function timer:is_closing()
+                return self.closed
+            end
+            table.insert(timers, timer)
+            return timer
+        end
+
+        local concealed = {}
+        local scheduler = require("scrollbar.scheduler")
+        scheduler.setup({
+            config = require("scrollbar.config").set({
+                set_highlights = false,
+                autohide = { enabled = true, delay_ms = 50 },
+                render = { interval_ms = 1000 },
+            }),
+            renderer = {
+                source_windows = function()
+                    return { first, second }
+                end,
+                reveal = function()
+                    return true
+                end,
+                conceal = function(winid)
+                    table.insert(concealed, winid)
+                    return true
+                end,
+                render = function() end,
+                is_visible = function()
+                    return true
+                end,
+                is_owned_window = function()
+                    return false
+                end,
+            },
+        })
+
+        vim.api.nvim_set_current_win(first)
+        vim.api.nvim_exec_autocmds("CursorMoved", {})
+        local first_timer = assert(timers[2], "first source timer was not created")
+        local stale_callback = first_timer.callback
+
+        vim.api.nvim_set_current_win(second)
+        vim.api.nvim_exec_autocmds("CursorMoved", {})
+        local second_timer = assert(timers[3], "second source timer was not created")
+
+        vim.api.nvim_set_current_win(first)
+        vim.api.nvim_exec_autocmds("CursorMoved", {})
+        local latest_callback = first_timer.callback
+        stale_callback()
+        vim.wait(20)
+        local after_stale = vim.deepcopy(concealed)
+
+        second_timer.callback()
+        assert(vim.wait(100, function()
+            return #concealed == 1
+        end))
+        local after_second = vim.deepcopy(concealed)
+
+        latest_callback()
+        assert(vim.wait(100, function()
+            return #concealed == 2
+        end))
+        scheduler.dispose()
+        uv.new_timer = original_new_timer
+
+        return {
+            first = first,
+            second = second,
+            after_stale = after_stale,
+            after_second = after_second,
+            final = concealed,
+            first_starts = first_timer.starts,
+        }
+    end)
+
+    expect.equality(result.after_stale, {})
+    expect.equality(result.after_second, { result.second })
+    expect.equality(result.final, { result.second, result.first })
+    expect.equality(result.first_starts, 2)
+end
+
+T["holds deadlines and closes source timers with their lifecycle"] = function()
+    local child = new_child()
+    local result = child.lua_func(function()
+        local first = vim.api.nvim_get_current_win()
+        vim.cmd("split")
+        local second = vim.api.nvim_get_current_win()
+        local timers = {}
+        local uv = vim.uv or vim.loop
+        local original_new_timer = uv.new_timer
+        uv.new_timer = function()
+            local timer = { closed = false, starts = 0 }
+            function timer:start(_, _, callback)
+                self.callback = callback
+                self.starts = self.starts + 1
+            end
+            function timer:stop()
+                self.stopped = true
+            end
+            function timer:close()
+                self.closed = true
+            end
+            function timer:is_closing()
+                return self.closed
+            end
+            table.insert(timers, timer)
+            return timer
+        end
+
+        local concealed = {}
+        local scheduler = require("scrollbar.scheduler")
+        scheduler.setup({
+            config = require("scrollbar.config").set({
+                set_highlights = false,
+                autohide = { enabled = true, delay_ms = 50 },
+                render = { interval_ms = 1000 },
+            }),
+            renderer = {
+                source_windows = function()
+                    local windows = {}
+                    for _, winid in ipairs({ first, second }) do
+                        if vim.api.nvim_win_is_valid(winid) then
+                            table.insert(windows, winid)
+                        end
+                    end
+                    return windows
+                end,
+                reveal = function()
+                    return true
+                end,
+                conceal = function(winid)
+                    table.insert(concealed, winid)
+                    return true
+                end,
+                render = function() end,
+                is_visible = function()
+                    return true
+                end,
+                is_owned_window = function()
+                    return false
+                end,
+            },
+        })
+
+        vim.api.nvim_set_current_win(first)
+        vim.api.nvim_exec_autocmds("CursorMoved", {})
+        local first_timer = assert(timers[2], "first source timer was not created")
+        local before_hold = first_timer.callback
+        assert(scheduler.hold_window(first))
+        before_hold()
+        vim.wait(20)
+        local held_concealed = vim.deepcopy(concealed)
+
+        vim.api.nvim_exec_autocmds("CursorMovedI", {})
+        local starts_while_held = first_timer.starts
+        assert(scheduler.resume_window(first))
+        first_timer.callback()
+        assert(vim.wait(100, function()
+            return #concealed == 1
+        end))
+
+        vim.api.nvim_win_close(first, true)
+        local source_timer_closed = first_timer.closed
+        vim.api.nvim_set_current_win(second)
+        vim.api.nvim_exec_autocmds("CursorMoved", {})
+        local second_timer = assert(timers[3], "second source timer was not created")
+        scheduler.dispose()
+        local render_timer_closed = timers[1].closed
+        local second_timer_closed = second_timer.closed
+        uv.new_timer = original_new_timer
+
+        return {
+            first = first,
+            held_concealed = held_concealed,
+            final_concealed = concealed,
+            starts_while_held = starts_while_held,
+            final_starts = first_timer.starts,
+            source_timer_closed = source_timer_closed,
+            render_timer_closed = render_timer_closed,
+            second_timer_closed = second_timer_closed,
+        }
+    end)
+
+    expect.equality(result.held_concealed, {})
+    expect.equality(result.final_concealed, { result.first })
+    expect.equality(result.starts_while_held, 1)
+    expect.equality(result.final_starts, 2)
+    expect.equality(result.source_timer_closed, true)
+    expect.equality(result.render_timer_closed, true)
+    expect.equality(result.second_timer_closed, true)
+end
+
 T["wires provider context invalidations directly and never refreshes providers on scroll"] = function()
     local child = new_child()
     local result = child.lua_func(function()
@@ -585,6 +929,8 @@ T["refreshes colorscheme state and fully disposes timer and autocmd ownership"] 
     expect.equality(result.events.BufEnter, true)
     expect.equality(result.events.BufWinEnter, true)
     expect.equality(result.events.TextChanged, true)
+    expect.equality(result.events.CursorMoved, true)
+    expect.equality(result.events.CursorMovedI, true)
     expect.equality(result.events.WinResized, true)
     expect.equality(result.events.VimResized, true)
     expect.equality(result.events.WinScrolled, true)

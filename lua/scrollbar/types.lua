@@ -28,6 +28,10 @@
 ---@field interval_ms? integer
 ---@field geometry? ScrollbarGeometryMode
 
+---@class ScrollbarUserAutohideConfig
+---@field enabled? boolean
+---@field delay_ms? integer
+
 ---@class ScrollbarUserMouseConfig
 ---@field enabled? boolean
 
@@ -67,6 +71,7 @@
 ---@field set_highlights? boolean
 ---@field max_lines? false|integer
 ---@field hide_if_all_visible? boolean
+---@field autohide? ScrollbarUserAutohideConfig
 ---@field render? ScrollbarUserRenderConfig
 ---@field float? ScrollbarUserFloatConfig
 ---@field track? ScrollbarUserTrackConfig
@@ -94,6 +99,10 @@
 ---@class ScrollbarRenderConfig
 ---@field interval_ms integer
 ---@field geometry ScrollbarGeometryMode
+
+---@class ScrollbarAutohideConfig
+---@field enabled boolean
+---@field delay_ms integer
 
 ---@class ScrollbarMouseConfig
 ---@field enabled boolean
@@ -126,6 +135,7 @@
 ---@field set_highlights boolean
 ---@field max_lines false|integer
 ---@field hide_if_all_visible boolean
+---@field autohide ScrollbarAutohideConfig
 ---@field render ScrollbarRenderConfig
 ---@field float ScrollbarFloatConfig
 ---@field track ScrollbarTrackConfig
@@ -305,13 +315,30 @@
 
 ---@class ScrollbarSchedulerRenderer
 ---@field render fun(source_win: integer): ScrollbarWindowState?
+---@field reveal? fun(source_win: integer): boolean
+---@field conceal? fun(source_win: integer): boolean
 ---@field source_windows fun(bufnr?: integer): integer[]
+---@field is_visible? fun(): boolean
 ---@field is_owned_window? fun(winid: integer): boolean
 
 ---@class ScrollbarSchedulerOptions
 ---@field config? ScrollbarConfig
 ---@field renderer? ScrollbarSchedulerRenderer
 ---@field on_colorscheme? fun()
+
+---@class ScrollbarSchedulerRuntime
+---@field config ScrollbarConfig
+---@field renderer ScrollbarSchedulerRenderer
+---@field on_colorscheme fun()
+---@field timer any
+---@field timer_armed boolean
+---@field dirty table<integer, true>
+---@field flushing boolean
+---@field augroup integer
+---@field uv any
+---@field hide_timers table<integer, any>
+---@field hide_generations table<integer, integer>
+---@field held table<integer, true>
 
 ---@class ScrollbarSchedulerStatus
 ---@field setup boolean
@@ -344,6 +371,8 @@
 
 ---@class ScrollbarMouseScheduler
 ---@field invalidate_window fun(winid: integer): boolean
+---@field hold_window fun(winid: integer): boolean
+---@field resume_window fun(winid: integer): boolean
 
 ---@class ScrollbarMouseOptions
 ---@field config? ScrollbarConfig

@@ -205,6 +205,129 @@ T["enforces visibility and editor-relative single ownership"] = function()
     expect.equality(result.explicit_show, true)
 end
 
+T["requires and clears per-window reveals when autohide is enabled"] = function()
+    local child = new_child()
+    local result = child.lua_func(function(base_config)
+        local lines = {}
+        for index = 1, 100 do
+            lines[index] = "line " .. index
+        end
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        local first = vim.api.nvim_get_current_win()
+        vim.cmd("split")
+        local second = vim.api.nvim_get_current_win()
+
+        base_config.autohide = { enabled = true, delay_ms = 500 }
+        require("scrollbar.config").set(base_config)
+        local renderer = require("scrollbar.renderer")
+        renderer.setup()
+
+        local initially_hidden = renderer.render(first) == nil and renderer.render(second) == nil
+        assert(renderer.reveal(first))
+        local first_state = assert(renderer.render(first))
+        local only_first = renderer.get_state(second) == nil and renderer.render(second) == nil
+
+        assert(renderer.reveal(second))
+        local second_state = assert(renderer.render(second))
+        local first_float = first_state.float_win
+        local first_buffer = first_state.float_buf
+        assert(renderer.conceal(first))
+        local independent_conceal = renderer.get_state(first) == nil
+            and renderer.get_state(second) == second_state
+            and not vim.api.nvim_win_is_valid(first_float)
+            and not vim.api.nvim_buf_is_valid(first_buffer)
+
+        local second_float = second_state.float_win
+        renderer.hide()
+        renderer.show()
+        local hide_cleared = not vim.api.nvim_win_is_valid(second_float)
+            and renderer.render(first) == nil
+            and renderer.render(second) == nil
+
+        assert(renderer.reveal(first))
+        local reset_state = assert(renderer.render(first))
+        local reset_float = reset_state.float_win
+        renderer.setup()
+        local setup_cleared = not vim.api.nvim_win_is_valid(reset_float) and renderer.render(first) == nil
+
+        return {
+            initially_hidden = initially_hidden,
+            only_first = only_first,
+            independent_conceal = independent_conceal,
+            hide_cleared = hide_cleared,
+            setup_cleared = setup_cleared,
+        }
+    end, renderer_config())
+
+    expect.equality(result, {
+        initially_hidden = true,
+        only_first = true,
+        independent_conceal = true,
+        hide_cleared = true,
+        setup_cleared = true,
+    })
+end
+
+T["retains line caches only across transient concealment"] = function()
+    local child = new_child()
+    local result = child.lua_func(function(base_config)
+        local lines = {}
+        for index = 1, 200 do
+            lines[index] = "line " .. index
+        end
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        local source_win = vim.api.nvim_get_current_win()
+        local source_buf = vim.api.nvim_get_current_buf()
+        base_config.autohide = { enabled = true, delay_ms = 500 }
+        require("scrollbar.config").set(base_config)
+        assert(require("scrollbar.store").set("test", source_buf, { { line = 100, type = "Misc" } }))
+
+        local layout = require("scrollbar.layout")
+        local original_mark_layer = layout.mark_layer
+        local builds = 0
+        rawset(layout, "mark_layer", function(input)
+            builds = builds + 1
+            return original_mark_layer(input)
+        end)
+
+        local renderer = require("scrollbar.renderer")
+        renderer.setup()
+        assert(renderer.reveal(source_win))
+        local first = assert(renderer.render(source_win))
+        local first_float = first.float_win
+        local first_buffer = first.float_buf
+        local after_first = builds
+
+        assert(renderer.conceal(source_win))
+        assert(renderer.reveal(source_win))
+        local second = assert(renderer.render(source_win))
+        local after_conceal = builds
+
+        renderer.hide()
+        renderer.show()
+        assert(renderer.reveal(source_win))
+        renderer.render(source_win)
+        local after_hide = builds
+        rawset(layout, "mark_layer", original_mark_layer)
+
+        return {
+            after_first = after_first,
+            after_conceal = after_conceal,
+            after_hide = after_hide,
+            float_recreated = second.float_win ~= first_float and not vim.api.nvim_win_is_valid(first_float),
+            buffer_recreated = second.float_buf ~= first_buffer and not vim.api.nvim_buf_is_valid(first_buffer),
+        }
+    end, renderer_config())
+
+    expect.equality(result, {
+        after_first = 1,
+        after_conceal = 1,
+        after_hide = 2,
+        float_recreated = true,
+        buffer_recreated = true,
+    })
+end
+
 T["resolves every anchor and restores protected float configuration"] = function()
     local child = new_child()
     local result = child.lua_func(function(base_config)

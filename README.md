@@ -55,6 +55,10 @@ require("scrollbar").setup({
     set_highlights = true,
     max_lines = false, -- false or a positive line limit
     hide_if_all_visible = false,
+    autohide = {
+        enabled = false,
+        delay_ms = 1000,
+    },
     render = {
         interval_ms = 16,
         geometry = "line", -- "line" or "screen"
@@ -183,8 +187,15 @@ colorscheme-linked behavior; tables can define colors and attributes directly.
 - `visibility = "all"` creates an independent scrollbar for every eligible
   normal window. Two windows showing the same buffer retain different handles.
 - `visibility = "active"` keeps only the active source window's scrollbar.
-- `show = false` starts hidden. `show()`, `hide()`, and `toggle()` operate on all
-  plugin-owned scrollbars.
+- `show = false` starts with global visibility disabled. `show()`, `hide()`, and
+  `toggle()` control this master visibility state across all eligible windows.
+- `autohide.enabled = true` keeps each eligible window concealed until its own
+  `CursorMoved`, `CursorMovedI`, or `WinScrolled` activity. Each window is hidden
+  independently after `autohide.delay_ms` of inactivity, which defaults to 1000
+  milliseconds. Even with `show = true`, autohide starts with no visible floats.
+- Provider updates, option changes, resizes, colorscheme changes, and
+  `ScrollbarRefresh` can rerender an already revealed scrollbar but do not reveal
+  a concealed one.
 - `max_lines` excludes buffers above the configured logical line count.
 - `hide_if_all_visible` hides the whole scrollbar when the document fits.
   `handle.hide_if_all_visible` hides only the handle.
@@ -268,6 +279,9 @@ only in scrollbar float buffers. It does not install global mappings or modify
   moving starts a handle drag.
 - Navigation moves the source cursor, opens only the containing fold with `zv`,
   centers with `zz`, and restores source-window focus on completion or cancel.
+- When autohide is enabled, pressing or dragging a scrollbar pauses that source
+  window's deadline. Release or a valid cancellation starts a fresh full delay,
+  so the float cannot disappear during interaction.
 
 Set `mouse.enabled = false` to make scrollbar floats non-focusable and omit the
 mappings. Even when enabled, interaction works only in modes allowed by the
@@ -541,10 +555,10 @@ setup and `ColorScheme` handling also leave manual groups untouched.
 
 | Command | Lua API | Effect |
 | --- | --- | --- |
-| `:ScrollbarShow` | `require("scrollbar").show()` | Show and invalidate all eligible scrollbars |
-| `:ScrollbarHide` | `require("scrollbar").hide()` | Hide and dispose all current scrollbar floats |
-| `:ScrollbarToggle` | `require("scrollbar").toggle()` | Toggle global visibility |
-| `:ScrollbarRefresh` | `require("scrollbar").refresh()` | Refresh providers for visible source buffers and windows, then rerender |
+| `:ScrollbarShow` | `require("scrollbar").show()` | Enable master visibility; with autohide, temporarily reveal and arm every eligible window |
+| `:ScrollbarHide` | `require("scrollbar").hide()` | Disable master visibility, hide current floats, and cancel autohide deadlines and holds |
+| `:ScrollbarToggle` | `require("scrollbar").toggle()` | Toggle master visibility, even when autohide has concealed every float |
+| `:ScrollbarRefresh` | `require("scrollbar").refresh()` | Refresh providers and rerender without revealing concealed autohide windows |
 
 ## Migrating From Earlier Releases
 

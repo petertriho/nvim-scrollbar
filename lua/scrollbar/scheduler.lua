@@ -31,16 +31,6 @@ local OPTION_PATTERNS = {
     "wrap",
 }
 
----@class ScrollbarSchedulerRuntime
----@field config ScrollbarConfig
----@field renderer ScrollbarSchedulerRenderer
----@field on_colorscheme fun()
----@field timer any
----@field timer_armed boolean
----@field dirty table<integer, true>
----@field flushing boolean
----@field augroup integer
-
 ---@type ScrollbarSchedulerRuntime?
 local runtime
 local timer_closed = false
@@ -111,6 +101,92 @@ local function is_source_window(current, winid)
 end
 
 ---@param current ScrollbarSchedulerRuntime
+---@return boolean
+local function renderer_visible(current)
+    if type(current.renderer.is_visible) ~= "function" then
+        return false
+    end
+    local ok, visible = pcall(current.renderer.is_visible)
+    return ok and visible == true
+end
+
+---@param current ScrollbarSchedulerRuntime
+---@param winid integer
+---@return boolean
+local function reveal_source(current, winid)
+    if type(current.renderer.reveal) ~= "function" then
+        return false
+    end
+    local ok, revealed = pcall(current.renderer.reveal, winid)
+    return ok and revealed == true
+end
+
+---@param current ScrollbarSchedulerRuntime
+---@param winid integer
+local function stop_hide_timer(current, winid)
+    local timer = current.hide_timers[winid]
+    if timer ~= nil then
+        pcall(timer.stop, timer)
+    end
+end
+
+---@param current ScrollbarSchedulerRuntime
+---@param winid integer
+local function close_hide_timer(current, winid)
+    current.hide_generations[winid] = (current.hide_generations[winid] or 0) + 1
+    current.held[winid] = nil
+    local timer = current.hide_timers[winid]
+    current.hide_timers[winid] = nil
+    if timer == nil then
+        return
+    end
+    pcall(timer.stop, timer)
+    local ok, closing = pcall(timer.is_closing, timer)
+    if not ok or not closing then
+        pcall(timer.close, timer)
+    end
+end
+
+---@param current ScrollbarSchedulerRuntime
+---@param winid integer
+local function restart_hide_deadline(current, winid)
+    if runtime ~= current or not current.config.autohide.enabled or current.held[winid] then
+        return
+    end
+
+    local timer = current.hide_timers[winid]
+    if timer == nil then
+        timer = assert(current.uv.new_timer())
+        current.hide_timers[winid] = timer
+    end
+    local generation = (current.hide_generations[winid] or 0) + 1
+    current.hide_generations[winid] = generation
+    pcall(timer.stop, timer)
+    timer:start(
+        current.config.autohide.delay_ms,
+        0,
+        vim.schedule_wrap(function()
+            if
+                runtime ~= current
+                or current.hide_generations[winid] ~= generation
+                or current.held[winid]
+                or not renderer_visible(current)
+                or not is_source_window(current, winid)
+            then
+                return
+            end
+            if type(current.renderer.conceal) ~= "function" then
+                return
+            end
+            local ok, err = pcall(current.renderer.conceal, winid)
+            if not ok then
+                vim.notify("[scrollbar.nvim] autohide failed: " .. tostring(err), vim.log.levels.WARN)
+            end
+        end)
+    )
+end
+
+---@param current ScrollbarSchedulerRuntime
 local function arm_timer(current)
     if runtime ~= current or current.timer_armed or current.flushing or next(current.dirty) == nil then
         return
@@ -137,6 +213,23 @@ local function queue_window(current, winid)
     arm_timer(current)
 end
 
+---@param current ScrollbarSchedulerRuntime
+---@param winid integer
+---@return boolean
+local function activity_window(current, winid)
+    if runtime ~= current or not is_source_window(current, winid) then
+        return false
+    end
+    if current.config.autohide.enabled then
+        if not renderer_visible(current) or not reveal_source(current, winid) then
+            return false
+        end
+    end
+    queue_window(current, winid)
+    restart_hide_deadline(current, winid)
+    return true
+end
+
 ---@param args table
 ---@return boolean
 local function event_is_owned(args)
@@ -160,10 +253,25 @@ local function invalidate_event_window(winid)
     M.invalidate_window(winid)
 end
 
-local function invalidate_scrolled_windows()
+---@param winid integer?
+local function activity_event_window(winid)
+    local current = runtime
+    if current == nil or winid == nil or owned_window(current, winid) then
+        return
+    end
+    activity_window(current, winid)
+end
+
+local function activity_scrolled_windows()
+    local current = runtime
+    if current == nil then
+        return
+    end
     local event = vim.v.event or {}
     if event.all == true or event.all == 1 then
-        M.invalidate_all()
+        for _, winid in ipairs(source_windows(current)) do
+            activity_window(current, winid)
+        end
         return
     end
 
@@ -172,11 +280,11 @@ local function invalidate_scrolled_windows()
         local winid = tonumber(key)
         if winid ~= nil then
             found = true
-            invalidate_event_window(winid)
+            activity_event_window(winid)
         end
     end
     if not found then
-        invalidate_event_window(vim.api.nvim_get_current_win())
+        activity_event_window(vim.api.nvim_get_current_win())
     end
 end
 
@@ -210,6 +318,14 @@ local function create_autocmds(group)
             end
         end,
     })
+    vim.api.nvim_create_autocmd({ "CursorMoved", "CursorMovedI" }, {
+        group = group,
+        callback = function(args)
+            if not event_is_owned(args) then
+                activity_event_window(vim.api.nvim_get_current_win())
+            end
+        end,
+    })
     vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI", "TextChangedP", "TextChangedT" }, {
         group = group,
         callback = function(args)
@@ -222,7 +338,7 @@ local function create_autocmds(group)
         group = group,
         callback = function(args)
             if not event_is_owned(args) then
-                invalidate_scrolled_windows()
+                activity_scrolled_windows()
             end
         end,
     })
@@ -271,6 +387,7 @@ local function create_autocmds(group)
             local closed_win = tonumber(args.match)
             if closed_win ~= nil then
                 current.dirty[closed_win] = nil
+                close_hide_timer(current, closed_win)
             end
             if not event_is_owned(args) then
                 M.invalidate_all()
@@ -310,6 +427,10 @@ M.setup = function(options)
         dirty = {},
         flushing = false,
         augroup = augroup,
+        uv = uv,
+        hide_timers = {},
+        hide_generations = {},
+        held = {},
     }
     timer_closed = false
     create_autocmds(augroup)
@@ -359,6 +480,67 @@ M.invalidate_all = function()
         queue_window(current, winid)
     end
     return count
+end
+
+---@return integer
+M.reveal_all = function()
+    local current = runtime
+    if current == nil or not current.config.autohide.enabled then
+        return 0
+    end
+
+    local count = 0
+    for _, winid in ipairs(source_windows(current)) do
+        if activity_window(current, winid) then
+            count = count + 1
+        end
+    end
+    return count
+end
+
+M.clear_deadlines = function()
+    local current = runtime
+    if current == nil then
+        return
+    end
+    for winid in pairs(current.hide_timers) do
+        current.hide_generations[winid] = (current.hide_generations[winid] or 0) + 1
+        stop_hide_timer(current, winid)
+    end
+    current.held = {}
+end
+
+---@param winid integer
+---@return boolean
+M.hold_window = function(winid)
+    local current = runtime
+    if
+        current == nil
+        or not current.config.autohide.enabled
+        or not renderer_visible(current)
+        or not is_source_window(current, winid)
+    then
+        return false
+    end
+    current.held[winid] = true
+    current.hide_generations[winid] = (current.hide_generations[winid] or 0) + 1
+    stop_hide_timer(current, winid)
+    return true
+end
+
+---@param winid integer
+---@return boolean
+M.resume_window = function(winid)
+    local current = runtime
+    if current == nil or not current.config.autohide.enabled then
+        return false
+    end
+    current.held[winid] = nil
+    if not renderer_visible(current) or not is_source_window(current, winid) then
+        return false
+    end
+    restart_hide_deadline(current, winid)
+    return true
 end
 
 ---@return boolean
@@ -437,6 +619,13 @@ M.dispose = function()
     runtime = nil
     current.dirty = {}
     current.timer_armed = false
+    local hide_windows = {}
+    for winid in pairs(current.hide_timers) do
+        table.insert(hide_windows, winid)
+    end
+    for _, winid in ipairs(hide_windows) do
+        close_hide_timer(current, winid)
+    end
     pcall(current.timer.stop, current.timer)
     if not current.timer:is_closing() then
         current.timer:close()

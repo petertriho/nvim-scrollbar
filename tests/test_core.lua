@@ -350,6 +350,97 @@ T["public commands change visibility globally across every owned window"] = func
     })
 end
 
+T["autohide commands preserve global master visibility and temporary reveals"] = function()
+    local child = new_child()
+    local result = child.lua_func(function(config)
+        local lines = {}
+        for index = 1, 200 do
+            lines[index] = "line " .. index
+        end
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        local first = vim.api.nvim_get_current_win()
+        vim.cmd("split")
+        local second = vim.api.nvim_get_current_win()
+
+        require("scrollbar").setup(config)
+        local scheduler = require("scrollbar.scheduler")
+        local renderer = require("scrollbar.renderer")
+        scheduler.flush()
+        local startup_hidden = renderer.is_visible()
+            and renderer.get_state(first) == nil
+            and renderer.get_state(second) == nil
+
+        vim.api.nvim_set_current_win(first)
+        scheduler.flush()
+        vim.api.nvim_exec_autocmds("CursorMoved", {})
+        scheduler.flush()
+        local navigation_scoped = renderer.get_state(first) ~= nil and renderer.get_state(second) == nil
+        assert(vim.wait(500, function()
+            return renderer.get_state(first) == nil
+        end))
+        local expired = renderer.is_visible() and renderer.get_state(first) == nil
+
+        vim.cmd("ScrollbarHide")
+        vim.api.nvim_set_current_win(second)
+        vim.api.nvim_exec_autocmds("CursorMovedI", {})
+        scheduler.flush()
+        local hide_blocked = not renderer.is_visible()
+            and renderer.get_state(first) == nil
+            and renderer.get_state(second) == nil
+
+        vim.cmd("ScrollbarShow")
+        scheduler.flush()
+        local show_revealed = renderer.is_visible()
+            and renderer.get_state(first) ~= nil
+            and renderer.get_state(second) ~= nil
+        assert(vim.wait(500, function()
+            return renderer.get_state(first) == nil and renderer.get_state(second) == nil
+        end))
+
+        vim.cmd("ScrollbarToggle")
+        local toggle_disabled = not renderer.is_visible()
+        vim.cmd("ScrollbarToggle")
+        local toggle_enabled_before_flush = renderer.is_visible()
+            and renderer.get_state(first) == nil
+            and renderer.get_state(second) == nil
+        scheduler.flush()
+        local toggle_revealed = renderer.get_state(first) ~= nil and renderer.get_state(second) ~= nil
+        assert(vim.wait(500, function()
+            return renderer.get_state(first) == nil and renderer.get_state(second) == nil
+        end))
+
+        vim.cmd("ScrollbarRefresh")
+        scheduler.flush()
+        local refresh_hidden = renderer.is_visible()
+            and renderer.get_state(first) == nil
+            and renderer.get_state(second) == nil
+
+        return {
+            startup_hidden = startup_hidden,
+            navigation_scoped = navigation_scoped,
+            expired = expired,
+            hide_blocked = hide_blocked,
+            show_revealed = show_revealed,
+            toggle_disabled = toggle_disabled,
+            toggle_enabled_before_flush = toggle_enabled_before_flush,
+            toggle_revealed = toggle_revealed,
+            refresh_hidden = refresh_hidden,
+        }
+    end, root_config({ autohide = { enabled = true, delay_ms = 30 } }))
+
+    expect.equality(result, {
+        startup_hidden = true,
+        navigation_scoped = true,
+        expired = true,
+        hide_blocked = true,
+        show_revealed = true,
+        toggle_disabled = true,
+        toggle_enabled_before_flush = true,
+        toggle_revealed = true,
+        refresh_hidden = true,
+    })
+end
+
 T["show defers exactly one render per source window to the scheduler"] = function()
     local child = new_child()
     local result = child.lua_func(function(config)
