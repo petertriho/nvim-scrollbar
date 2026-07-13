@@ -813,6 +813,126 @@ T["does not attach mappings or mutate mouse behavior when disabled"] = function(
     expect.equality(child.api.nvim_get_current_win(), setup.source_win)
 end
 
+T["passes input to the source while cursor-hidden and restores interaction"] = function()
+    local child = new_child()
+    local setup = child.lua_func(function(config)
+        vim.o.mouse = "a"
+        local lines = {}
+        for index = 1, 200 do
+            lines[index] = "line " .. index
+        end
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        vim.cmd("split")
+        local source_win = vim.api.nvim_get_current_win()
+        vim.api.nvim_win_set_height(source_win, 10)
+
+        local active_config = require("scrollbar.config").set(config)
+        local source_position = vim.fn.win_screenpos(source_win)
+        local overlap = true
+        local screenrow = vim.fn.screenrow
+        local screencol = vim.fn.screencol
+        local get_position = vim.api.nvim_win_get_position
+        rawset(vim.fn, "screenrow", function()
+            return overlap and source_position[1] or 1
+        end)
+        rawset(vim.fn, "screencol", function()
+            return overlap and source_position[2] + 5 or 1
+        end)
+        rawset(vim.api, "nvim_win_get_position", function()
+            return { source_position[1] - 1, source_position[2] - 1 + 5 }
+        end)
+
+        local renderer = require("scrollbar.renderer")
+        local scheduler = require("scrollbar.scheduler")
+        local mouse = require("scrollbar.mouse")
+        renderer.setup()
+        scheduler.setup({ config = active_config, renderer = renderer })
+        mouse.setup({ config = active_config, renderer = renderer, scheduler = scheduler })
+        local state = assert(renderer.render(source_win))
+        vim.cmd("redraw")
+        local float_position = vim.fn.win_screenpos(state.float_win)
+        package.loaded["scrollbar.test.cursor_hidden_mouse"] = {
+            restore = function()
+                overlap = false
+                local restored = assert(renderer.render(source_win))
+                vim.cmd("redraw")
+                return {
+                    float_win = restored.float_win,
+                    float_buf = restored.float_buf,
+                    hide = vim.api.nvim_win_get_config(restored.float_win).hide,
+                    hidden_by_cursor = restored.hidden_by_cursor,
+                    handle = restored.handle,
+                }
+            end,
+            cleanup = function()
+                rawset(vim.fn, "screenrow", screenrow)
+                rawset(vim.fn, "screencol", screencol)
+                rawset(vim.api, "nvim_win_get_position", get_position)
+                package.loaded["scrollbar.test.cursor_hidden_mouse"] = nil
+            end,
+        }
+        return {
+            source_win = source_win,
+            float_win = state.float_win,
+            float_buf = state.float_buf,
+            position = { float_position[1] - 1, float_position[2] - 1 },
+            height = state.height,
+            hide = vim.api.nvim_win_get_config(state.float_win).hide,
+            hidden_by_cursor = state.hidden_by_cursor,
+            owned_windows = vim.tbl_filter(function(winid)
+                return renderer.is_owned_window(winid)
+            end, vim.api.nvim_list_wins()),
+        }
+    end, mouse_config())
+    vim.uv.sleep(30)
+
+    expect.equality(setup.hide, true)
+    expect.equality(setup.hidden_by_cursor, true)
+    expect.equality(setup.owned_windows, { setup.float_win })
+
+    local row = setup.position[1] + math.floor(setup.height / 2)
+    local col = setup.position[2]
+    input_mouse(child, "press", row, col)
+    input_mouse(child, "release", row, col)
+    local hidden_input = child.lua_func(function(source_win)
+        return {
+            current = vim.api.nvim_get_current_win(),
+            mouse_win = vim.fn.getmousepos().winid,
+            interaction = require("scrollbar.mouse").get_interaction() ~= nil,
+            cursor = vim.api.nvim_win_get_cursor(source_win),
+        }
+    end, setup.source_win)
+    expect.equality(hidden_input.current, setup.source_win)
+    expect.equality(hidden_input.mouse_win, setup.source_win)
+    expect.equality(hidden_input.interaction, false)
+    expect.equality(hidden_input.cursor[1] > 1, true)
+
+    local restored = child.lua_get([[package.loaded["scrollbar.test.cursor_hidden_mouse"].restore()]])
+    expect.equality(restored.float_win, setup.float_win)
+    expect.equality(restored.float_buf, setup.float_buf)
+    expect.equality(restored.hide, false)
+    expect.equality(restored.hidden_by_cursor, false)
+
+    input_mouse(child, "press", setup.position[1] + restored.handle.first_row, setup.position[2] + 1)
+    local visible_input = child.lua_func(function(float_win)
+        local interaction = require("scrollbar.mouse").get_interaction()
+        return {
+            current = vim.api.nvim_get_current_win(),
+            mouse_win = vim.fn.getmousepos().winid,
+            interaction = interaction ~= nil,
+            interaction_float = interaction and interaction.float_win or nil,
+            float_valid = vim.api.nvim_win_is_valid(float_win),
+        }
+    end, setup.float_win)
+    expect.equality(visible_input.current, setup.float_win)
+    expect.equality(visible_input.mouse_win, setup.float_win)
+    expect.equality(visible_input.interaction, true)
+    expect.equality(visible_input.interaction_float, setup.float_win)
+    expect.equality(visible_input.float_valid, true)
+    input_mouse(child, "release", setup.position[1] + restored.handle.first_row, setup.position[2] + 1)
+    child.lua([[package.loaded["scrollbar.test.cursor_hidden_mouse"].cleanup()]])
+end
+
 T["restores focus when release handling errors"] = function()
     local child = new_child()
     local setup = setup_single(child)

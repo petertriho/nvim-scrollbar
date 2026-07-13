@@ -1030,6 +1030,7 @@ T["configures owned state once and reapplies only changed float configuration"] 
         vim.api.nvim_win_set_height(source_win, 8)
 
         local scrollbar_config = require("scrollbar.config")
+        base_config.float.hide_on_cursor = false
         scrollbar_config.set(base_config)
         local renderer = require("scrollbar.renderer")
         renderer.setup()
@@ -1140,6 +1141,521 @@ T["configures owned state once and reapplies only changed float configuration"] 
     expect.equality(result.replacement_options, { buftype = 2, wrap = 2 })
 end
 
+T["hides on cursor overlap and restores the same resources only on transitions"] = function()
+    local child = new_child()
+    local result = child.lua_func(function(base_config)
+        local lines = {}
+        for index = 1, 120 do
+            lines[index] = "line " .. index
+        end
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        local source_win = vim.api.nvim_get_current_win()
+
+        require("scrollbar.config").set(base_config)
+        local renderer = require("scrollbar.renderer")
+        renderer.setup()
+
+        local cursor = { row = 3, col = 7 }
+        local screenrow = vim.fn.screenrow
+        local screencol = vim.fn.screencol
+        local get_position = vim.api.nvim_win_get_position
+        local set_config = vim.api.nvim_win_set_config
+        local redraw = vim.api.nvim__redraw
+        local config_calls = 0
+        local redraw_calls = 0
+        local position_resolved = false
+        rawset(vim.fn, "screenrow", function()
+            return cursor.row
+        end)
+        rawset(vim.fn, "screencol", function()
+            return cursor.col
+        end)
+        rawset(vim.api, "nvim_win_get_position", function()
+            return position_resolved and { 1, 5 } or { 1, 8 }
+        end)
+        rawset(vim.api, "nvim_win_set_config", function(...)
+            config_calls = config_calls + 1
+            return set_config(...)
+        end)
+        rawset(vim.api, "nvim__redraw", function(options)
+            redraw_calls = redraw_calls + 1
+            position_resolved = true
+            return redraw(options)
+        end)
+
+        local hidden = assert(renderer.render(source_win))
+        local hidden_config = vim.api.nvim_win_get_config(hidden.float_win)
+        local hidden_by_cursor = hidden.hidden_by_cursor
+        local after_hide = config_calls
+        renderer.render(source_win)
+        local after_hidden_steady = config_calls
+
+        cursor.col = 5
+        local restored = assert(renderer.render(source_win))
+        local restored_config = vim.api.nvim_win_get_config(restored.float_win)
+        local after_restore = config_calls
+        renderer.render(source_win)
+        local after_visible_steady = config_calls
+
+        rawset(vim.fn, "screenrow", screenrow)
+        rawset(vim.fn, "screencol", screencol)
+        rawset(vim.api, "nvim_win_get_position", get_position)
+        rawset(vim.api, "nvim_win_set_config", set_config)
+        rawset(vim.api, "nvim__redraw", redraw)
+        return {
+            hidden_by_cursor = hidden_by_cursor,
+            hidden_config = hidden_config.hide,
+            restored_by_cursor = restored.hidden_by_cursor,
+            restored_config = restored_config.hide,
+            same_float = hidden.float_win == restored.float_win,
+            same_buffer = hidden.float_buf == restored.float_buf,
+            resources_valid = vim.api.nvim_win_is_valid(restored.float_win)
+                and vim.api.nvim_buf_is_valid(restored.float_buf),
+            redraw_calls = redraw_calls,
+            calls = {
+                after_hide = after_hide,
+                after_hidden_steady = after_hidden_steady,
+                after_restore = after_restore,
+                after_visible_steady = after_visible_steady,
+            },
+        }
+    end, renderer_config())
+
+    expect.equality(result, {
+        hidden_by_cursor = true,
+        hidden_config = true,
+        restored_by_cursor = false,
+        restored_config = false,
+        same_float = true,
+        same_buffer = true,
+        resources_valid = true,
+        redraw_calls = 1,
+        calls = {
+            after_hide = 0,
+            after_hidden_steady = 0,
+            after_restore = 1,
+            after_visible_steady = 1,
+        },
+    })
+end
+
+T["skips disabled cursor work and keeps unavailable coordinates visible"] = function()
+    local child = new_child()
+    local result = child.lua_func(function(base_config)
+        local lines = {}
+        for index = 1, 120 do
+            lines[index] = "line " .. index
+        end
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        local source_win = vim.api.nvim_get_current_win()
+        local scrollbar_config = require("scrollbar.config")
+        local renderer = require("scrollbar.renderer")
+
+        local calls = { row = 0, col = 0, position = 0 }
+        local screenrow = vim.fn.screenrow
+        local screencol = vim.fn.screencol
+        local get_position = vim.api.nvim_win_get_position
+        rawset(vim.fn, "screenrow", function()
+            calls.row = calls.row + 1
+            return 0
+        end)
+        rawset(vim.fn, "screencol", function()
+            calls.col = calls.col + 1
+            return 0
+        end)
+        rawset(vim.api, "nvim_win_get_position", function(...)
+            calls.position = calls.position + 1
+            return get_position(...)
+        end)
+
+        local disabled_config = vim.deepcopy(base_config)
+        disabled_config.float.hide_on_cursor = false
+        scrollbar_config.set(disabled_config)
+        renderer.setup()
+        local disabled = assert(renderer.render(source_win))
+        local disabled_hide = vim.api.nvim_win_get_config(disabled.float_win).hide
+        local disabled_calls = vim.deepcopy(calls)
+
+        calls = { row = 0, col = 0, position = 0 }
+        scrollbar_config.set(base_config)
+        renderer.setup()
+        local unavailable = assert(renderer.render(source_win))
+        local unavailable_calls = vim.deepcopy(calls)
+
+        rawset(vim.fn, "screenrow", screenrow)
+        rawset(vim.fn, "screencol", screencol)
+        rawset(vim.api, "nvim_win_get_position", get_position)
+        return {
+            disabled_hide = disabled_hide,
+            disabled_calls = disabled_calls,
+            unavailable_hide = vim.api.nvim_win_get_config(unavailable.float_win).hide,
+            unavailable_calls = unavailable_calls,
+        }
+    end, renderer_config())
+
+    expect.equality(result, {
+        disabled_hide = false,
+        disabled_calls = { row = 0, col = 0, position = 0 },
+        unavailable_hide = false,
+        unavailable_calls = { row = 1, col = 1, position = 0 },
+    })
+end
+
+T["uses reported float bounds across widths placements anchors and clipping"] = function()
+    local child = new_child()
+    local result = child.lua_func(function(base_config)
+        local lines = {}
+        for index = 1, 120 do
+            lines[index] = "line " .. index
+        end
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        local source_win = vim.api.nvim_get_current_win()
+        local scrollbar_config = require("scrollbar.config")
+        local renderer = require("scrollbar.renderer")
+        renderer.setup()
+
+        local cursor = { row = 1, col = 1 }
+        local position = { 0, 0 }
+        local screenrow = vim.fn.screenrow
+        local screencol = vim.fn.screencol
+        local get_position = vim.api.nvim_win_get_position
+        rawset(vim.fn, "screenrow", function()
+            return cursor.row
+        end)
+        rawset(vim.fn, "screencol", function()
+            return cursor.col
+        end)
+        rawset(vim.api, "nvim_win_get_position", function()
+            return position
+        end)
+
+        local cases = {}
+        for _, case in ipairs({
+            {
+                name = "window_north_west",
+                placement = { relative = "window", anchor = "NW", row = 2, col = -3 },
+                position = { 4, 6 },
+                cursor = { row = 5, col = 9 },
+                hidden = true,
+            },
+            {
+                name = "window_south_east_clipped",
+                placement = { relative = "window", anchor = "SE", row = -2, col = 3 },
+                position = { -2, -1 },
+                cursor = { row = 1, col = 1 },
+                hidden = true,
+            },
+            {
+                name = "editor_north_east",
+                placement = { relative = "editor", anchor = "NE", row = 3, col = -4 },
+                position = { 7, 10 },
+                cursor = { row = 8, col = 13 },
+                hidden = true,
+            },
+            {
+                name = "editor_south_west_out_of_bounds",
+                placement = { relative = "editor", anchor = "SW", row = -3, col = 4 },
+                position = { 100, 100 },
+                cursor = { row = 1, col = 1 },
+                hidden = false,
+            },
+        }) do
+            local active = vim.deepcopy(base_config)
+            active.float.width = 3
+            active.handle.column = 3
+            active.float.placement = case.placement
+            scrollbar_config.set(active)
+            position = case.position
+            cursor = case.cursor
+            local state = assert(renderer.render(source_win), case.name)
+            local float = vim.api.nvim_win_get_config(state.float_win)
+            cases[case.name] = {
+                hidden = state.hidden_by_cursor,
+                config_hide = float.hide,
+                relative = float.relative,
+                anchor = float.anchor,
+                width = float.width,
+            }
+        end
+
+        position = { 4, 6 }
+        cursor = { row = 5, col = 10 }
+        local boundary = assert(renderer.render(source_win))
+        cases.right_boundary = {
+            hidden = boundary.hidden_by_cursor,
+            config_hide = vim.api.nvim_win_get_config(boundary.float_win).hide,
+        }
+
+        rawset(vim.fn, "screenrow", screenrow)
+        rawset(vim.fn, "screencol", screencol)
+        rawset(vim.api, "nvim_win_get_position", get_position)
+        return cases
+    end, renderer_config())
+
+    expect.equality(result.window_north_west, {
+        hidden = true,
+        config_hide = true,
+        relative = "win",
+        anchor = "NW",
+        width = 3,
+    })
+    expect.equality(result.window_south_east_clipped, {
+        hidden = true,
+        config_hide = true,
+        relative = "win",
+        anchor = "SE",
+        width = 3,
+    })
+    expect.equality(result.editor_north_east, {
+        hidden = true,
+        config_hide = true,
+        relative = "editor",
+        anchor = "NE",
+        width = 3,
+    })
+    expect.equality(result.editor_south_west_out_of_bounds, {
+        hidden = false,
+        config_hide = false,
+        relative = "editor",
+        anchor = "SW",
+        width = 3,
+    })
+    expect.equality(result.right_boundary, { hidden = false, config_hide = false })
+end
+
+T["transfers cursor hiding between source windows on WinEnter"] = function()
+    local child = new_child()
+    local result = child.lua_func(function(base_config)
+        local lines = {}
+        for index = 1, 120 do
+            lines[index] = "line " .. index
+        end
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        local first = vim.api.nvim_get_current_win()
+        vim.cmd("split")
+        local second = vim.api.nvim_get_current_win()
+
+        local active_config = require("scrollbar.config").set(base_config)
+        local renderer = require("scrollbar.renderer")
+        renderer.setup()
+
+        local screenrow = vim.fn.screenrow
+        local screencol = vim.fn.screencol
+        local get_position = vim.api.nvim_win_get_position
+        rawset(vim.fn, "screenrow", function()
+            return 3
+        end)
+        rawset(vim.fn, "screencol", function()
+            return 3
+        end)
+        rawset(vim.api, "nvim_win_get_position", function()
+            return { 2, 2 }
+        end)
+
+        local first_state = assert(renderer.render(first))
+        local second_state = assert(renderer.render(second))
+        local initial = {
+            first = first_state.hidden_by_cursor,
+            second = second_state.hidden_by_cursor,
+        }
+
+        local scheduler = require("scrollbar.scheduler")
+        scheduler.setup({ config = active_config, renderer = renderer })
+        vim.api.nvim_set_current_win(first)
+        scheduler.flush()
+        local transferred = {
+            first = assert(renderer.get_state(first)).hidden_by_cursor,
+            second = assert(renderer.get_state(second)).hidden_by_cursor,
+            same_first = assert(renderer.get_state(first)).float_win == first_state.float_win,
+            same_second = assert(renderer.get_state(second)).float_win == second_state.float_win,
+        }
+        scheduler.dispose()
+
+        rawset(vim.fn, "screenrow", screenrow)
+        rawset(vim.fn, "screencol", screencol)
+        rawset(vim.api, "nvim_win_get_position", get_position)
+        return { initial = initial, transferred = transferred }
+    end, renderer_config())
+
+    expect.equality(result, {
+        initial = { first = false, second = true },
+        transferred = { first = true, second = false, same_first = true, same_second = true },
+    })
+end
+
+T["performs cursor position work only for the current source window"] = function()
+    local child = new_child()
+    local result = child.lua_func(function(base_config)
+        local lines = {}
+        for index = 1, 120 do
+            lines[index] = "line " .. index
+        end
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        local first = vim.api.nvim_get_current_win()
+        vim.cmd("split")
+        local second = vim.api.nvim_get_current_win()
+        require("scrollbar.config").set(base_config)
+        local renderer = require("scrollbar.renderer")
+        renderer.setup()
+
+        local calls = { row = 0, col = 0, position = 0 }
+        local screenrow = vim.fn.screenrow
+        local screencol = vim.fn.screencol
+        local get_position = vim.api.nvim_win_get_position
+        rawset(vim.fn, "screenrow", function()
+            calls.row = calls.row + 1
+            return 1
+        end)
+        rawset(vim.fn, "screencol", function()
+            calls.col = calls.col + 1
+            return 1
+        end)
+        rawset(vim.api, "nvim_win_get_position", function()
+            calls.position = calls.position + 1
+            return { 0, 0 }
+        end)
+
+        renderer.render(first)
+        local after_inactive = vim.deepcopy(calls)
+        renderer.render(second)
+        local after_current = vim.deepcopy(calls)
+        renderer.render(first)
+        local after_second_inactive = vim.deepcopy(calls)
+
+        rawset(vim.fn, "screenrow", screenrow)
+        rawset(vim.fn, "screencol", screencol)
+        rawset(vim.api, "nvim_win_get_position", get_position)
+        return {
+            first = first,
+            second = second,
+            current = vim.api.nvim_get_current_win(),
+            after_inactive = after_inactive,
+            after_current = after_current,
+            after_second_inactive = after_second_inactive,
+        }
+    end, renderer_config())
+
+    expect.equality(result.current, result.second)
+    expect.no_equality(result.first, result.second)
+    expect.equality(result.after_inactive, { row = 0, col = 0, position = 0 })
+    expect.equality(result.after_current, { row = 1, col = 1, position = 1 })
+    expect.equality(result.after_second_inactive, result.after_current)
+end
+
+T["repairs external hide mutations from cursor overlap state"] = function()
+    local child = new_child()
+    local result = child.lua_func(function(base_config)
+        local lines = {}
+        for index = 1, 120 do
+            lines[index] = "line " .. index
+        end
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        local source_win = vim.api.nvim_get_current_win()
+        require("scrollbar.config").set(base_config)
+        local renderer = require("scrollbar.renderer")
+        renderer.setup()
+
+        local cursor_col = 2
+        local screenrow = vim.fn.screenrow
+        local screencol = vim.fn.screencol
+        local get_position = vim.api.nvim_win_get_position
+        rawset(vim.fn, "screenrow", function()
+            return 2
+        end)
+        rawset(vim.fn, "screencol", function()
+            return cursor_col
+        end)
+        rawset(vim.api, "nvim_win_get_position", function()
+            return { 1, 5 }
+        end)
+
+        local state = assert(renderer.render(source_win))
+        local corrupted_visible = vim.api.nvim_win_get_config(state.float_win)
+        corrupted_visible.hide = true
+        vim.api.nvim_win_set_config(state.float_win, corrupted_visible)
+        renderer.render(source_win)
+        local repaired_visible = vim.api.nvim_win_get_config(state.float_win).hide
+
+        cursor_col = 6
+        renderer.render(source_win)
+        local corrupted_hidden = vim.api.nvim_win_get_config(state.float_win)
+        corrupted_hidden.hide = false
+        vim.api.nvim_win_set_config(state.float_win, corrupted_hidden)
+        renderer.render(source_win)
+        local repaired_hidden = vim.api.nvim_win_get_config(state.float_win).hide
+
+        rawset(vim.fn, "screenrow", screenrow)
+        rawset(vim.fn, "screencol", screencol)
+        rawset(vim.api, "nvim_win_get_position", get_position)
+        return {
+            repaired_visible = repaired_visible,
+            repaired_hidden = repaired_hidden,
+            hidden_by_cursor = state.hidden_by_cursor,
+        }
+    end, renderer_config())
+
+    expect.equality(result, {
+        repaired_visible = false,
+        repaired_hidden = true,
+        hidden_by_cursor = true,
+    })
+end
+
+T["resets cursor-hidden state across autohide concealment and recreation"] = function()
+    local child = new_child()
+    local result = child.lua_func(function(base_config)
+        local lines = {}
+        for index = 1, 120 do
+            lines[index] = "line " .. index
+        end
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        local source_win = vim.api.nvim_get_current_win()
+        base_config.autohide = { enabled = true, delay_ms = 500 }
+        require("scrollbar.config").set(base_config)
+        local renderer = require("scrollbar.renderer")
+        renderer.setup()
+
+        local cursor_col = 6
+        local screenrow = vim.fn.screenrow
+        local screencol = vim.fn.screencol
+        local get_position = vim.api.nvim_win_get_position
+        rawset(vim.fn, "screenrow", function()
+            return 2
+        end)
+        rawset(vim.fn, "screencol", function()
+            return cursor_col
+        end)
+        rawset(vim.api, "nvim_win_get_position", function()
+            return { 1, 5 }
+        end)
+
+        assert(renderer.reveal(source_win))
+        local hidden = assert(renderer.render(source_win))
+        local old_float = hidden.float_win
+        local old_buffer = hidden.float_buf
+        assert(renderer.conceal(source_win))
+
+        cursor_col = 2
+        assert(renderer.reveal(source_win))
+        local restored = assert(renderer.render(source_win))
+
+        rawset(vim.fn, "screenrow", screenrow)
+        rawset(vim.fn, "screencol", screencol)
+        rawset(vim.api, "nvim_win_get_position", get_position)
+        return {
+            hidden = hidden.hidden_by_cursor,
+            recreated_visible = not restored.hidden_by_cursor
+                and vim.api.nvim_win_get_config(restored.float_win).hide == false,
+            replaced = restored.float_win ~= old_float
+                and restored.float_buf ~= old_buffer
+                and not vim.api.nvim_win_is_valid(old_float)
+                and not vim.api.nvim_buf_is_valid(old_buffer),
+        }
+    end, renderer_config())
+
+    expect.equality(result, { hidden = true, recreated_visible = true, replaced = true })
+end
+
 T["cleans resources for lifecycle events, hide, toggle, and setup reset"] = function()
     local child = new_child()
     local result = child.lua_func(function(config)
@@ -1155,7 +1671,22 @@ T["cleans resources for lifecycle events, hide, toggle, and setup reset"] = func
         local renderer = require("scrollbar.renderer")
         renderer.setup()
 
+        local screenrow = vim.fn.screenrow
+        local screencol = vim.fn.screencol
+        local get_position = vim.api.nvim_win_get_position
+        rawset(vim.fn, "screenrow", function()
+            return 1
+        end)
+        rawset(vim.fn, "screencol", function()
+            return 1
+        end)
+        rawset(vim.api, "nvim_win_get_position", function()
+            return { 0, 0 }
+        end)
+
+        vim.api.nvim_set_current_win(first)
         local close_state = assert(renderer.render(first))
+        local window_state_hidden = close_state.hidden_by_cursor
         local closed_float = close_state.float_win
         local closed_buffer = close_state.float_buf
         vim.api.nvim_win_close(first, true)
@@ -1164,11 +1695,14 @@ T["cleans resources for lifecycle events, hide, toggle, and setup reset"] = func
             and not vim.api.nvim_buf_is_valid(closed_buffer)
 
         local reset_state = assert(renderer.render(second))
+        local reset_state_hidden = reset_state.hidden_by_cursor
         local reset_float = reset_state.float_win
         renderer.setup()
         local setup_cleanup = renderer.get_state(second) == nil and not vim.api.nvim_win_is_valid(reset_float)
 
         local hidden_state = assert(renderer.render(second))
+        local hide_state_hidden = hidden_state.hidden_by_cursor
+        local hidden_owned = renderer.is_owned_window(hidden_state.float_win)
         local hidden_float = hidden_state.float_win
         renderer.hide()
         local hide_cleanup = renderer.get_state(second) == nil and not vim.api.nvim_win_is_valid(hidden_float)
@@ -1185,6 +1719,7 @@ T["cleans resources for lifecycle events, hide, toggle, and setup reset"] = func
         vim.api.nvim_buf_set_lines(source_buffer, 0, -1, false, { "source", "buffer" })
         vim.api.nvim_win_set_buf(second, source_buffer)
         local buffer_state = assert(renderer.render(second))
+        local buffer_state_hidden = buffer_state.hidden_by_cursor
         local buffer_float = buffer_state.float_win
         vim.api.nvim_win_set_buf(second, vim.api.nvim_create_buf(true, false))
         vim.api.nvim_buf_delete(source_buffer, { force = true })
@@ -1194,31 +1729,61 @@ T["cleans resources for lifecycle events, hide, toggle, and setup reset"] = func
         local tab_source = vim.api.nvim_get_current_win()
         vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
         local tab_state = assert(renderer.render(tab_source))
+        local tab_state_hidden = tab_state.hidden_by_cursor
         local tab_float = tab_state.float_win
         vim.cmd("tabclose")
         local tab_cleanup = renderer.get_state(tab_source) == nil and not vim.api.nvim_win_is_valid(tab_float)
 
+        local dispose_state = assert(renderer.render(second))
+        local dispose_state_hidden = dispose_state.hidden_by_cursor
+        local dispose_float = dispose_state.float_win
+        local dispose_buffer = dispose_state.float_buf
+        renderer.dispose()
+        local dispose_cleanup = renderer.get_state(second) == nil
+            and not vim.api.nvim_win_is_valid(dispose_float)
+            and not vim.api.nvim_buf_is_valid(dispose_buffer)
+
+        rawset(vim.fn, "screenrow", screenrow)
+        rawset(vim.fn, "screencol", screencol)
+        rawset(vim.api, "nvim_win_get_position", get_position)
+
         return {
+            window_state_hidden = window_state_hidden,
             window_cleanup = window_cleanup,
+            reset_state_hidden = reset_state_hidden,
             setup_cleanup = setup_cleanup,
+            hide_state_hidden = hide_state_hidden,
+            hidden_owned = hidden_owned,
             hide_cleanup = hide_cleanup,
             show_recreated = show_recreated,
             toggle_hidden = toggle_hidden,
             toggle_shown = toggle_shown,
+            buffer_state_hidden = buffer_state_hidden,
             buffer_cleanup = buffer_cleanup,
+            tab_state_hidden = tab_state_hidden,
             tab_cleanup = tab_cleanup,
+            dispose_state_hidden = dispose_state_hidden,
+            dispose_cleanup = dispose_cleanup,
         }
     end, renderer_config())
 
     expect.equality(result, {
+        window_state_hidden = true,
         window_cleanup = true,
+        reset_state_hidden = true,
         setup_cleanup = true,
+        hide_state_hidden = true,
+        hidden_owned = true,
         hide_cleanup = true,
         show_recreated = true,
         toggle_hidden = true,
         toggle_shown = true,
+        buffer_state_hidden = true,
         buffer_cleanup = true,
+        tab_state_hidden = true,
         tab_cleanup = true,
+        dispose_state_hidden = true,
+        dispose_cleanup = true,
     })
 end
 

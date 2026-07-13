@@ -19,6 +19,7 @@
 ---@class ScrollbarUserFloatConfig
 ---@field width? integer
 ---@field zindex? integer
+---@field hide_on_cursor? boolean
 ---@field placement? ScrollbarUserPlacement
 
 ---@class ScrollbarUserTrackConfig
@@ -91,6 +92,7 @@
 ---@class ScrollbarFloatConfig
 ---@field width integer
 ---@field zindex integer
+---@field hide_on_cursor boolean
 ---@field placement ScrollbarPlacement
 
 ---@class ScrollbarTrackConfig
@@ -292,6 +294,7 @@
 ---@field hitmap ScrollbarHitCell[][]
 ---@field handle ScrollbarHandleGeometry
 ---@field handle_pressed boolean
+---@field hidden_by_cursor boolean
 ---@field geometry ScrollbarRendererGeometry
 
 ---@class ScrollbarFlattenedMarksCache

@@ -241,8 +241,9 @@ end
 
 ---@param source_win integer
 ---@param area table<string, integer>
+---@param hidden boolean
 ---@return table<string, any>
-local function float_config(source_win, area)
+local function float_config(source_win, area, hidden)
     local active_config = config.get()
     local placement = active_config.float.placement
     local container_width = placement.relative == "window" and area.width or vim.o.columns
@@ -266,6 +267,7 @@ local function float_config(source_win, area)
         focusable = active_config.mouse.enabled,
         mouse = active_config.mouse.enabled,
         zindex = active_config.float.zindex,
+        hide = hidden,
     }
     if placement.relative == "window" then
         result.win = source_win
@@ -328,6 +330,7 @@ local function create_state(source_win, source_buf, active_float_config, configu
         hitmap = {},
         handle = { first_row = -1, last_row = -1, column = 1, width = 1 },
         handle_pressed = false,
+        hidden_by_cursor = active_float_config.hide == true,
         geometry = { mode = "line", total_extent = 0, viewport_start = 0, viewport_end = 0 },
     }
     states[source_win] = state
@@ -350,6 +353,76 @@ local function has_float_config(float_win, expected)
         end
     end
     return true
+end
+
+---@param source_win integer
+---@return integer? row
+---@return integer? col
+local function cursor_screen_position(source_win)
+    if not config.get().float.hide_on_cursor or vim.api.nvim_get_current_win() ~= source_win then
+        return nil, nil
+    end
+
+    local cursor_row = vim.fn.screenrow()
+    local cursor_col = vim.fn.screencol()
+    if type(cursor_row) ~= "number" or type(cursor_col) ~= "number" or cursor_row <= 0 or cursor_col <= 0 then
+        return nil, nil
+    end
+
+    return cursor_row - 1, cursor_col - 1
+end
+
+---@param state ScrollbarWindowState
+---@param cursor_row? integer
+---@param cursor_col? integer
+---@return boolean
+local function cursor_overlaps_float(state, cursor_row, cursor_col)
+    if cursor_row == nil or cursor_col == nil then
+        return false
+    end
+
+    local ok, position = pcall(vim.api.nvim_win_get_position, state.float_win)
+    if not ok or type(position) ~= "table" then
+        return false
+    end
+
+    local top = position[1]
+    local left = position[2]
+    local height = state.float_config.height
+    local width = state.float_config.width
+    if
+        type(top) ~= "number"
+        or type(left) ~= "number"
+        or type(height) ~= "number"
+        or type(width) ~= "number"
+        or height <= 0
+        or width <= 0
+    then
+        return false
+    end
+
+    return cursor_row >= top and cursor_row < top + height and cursor_col >= left and cursor_col < left + width
+end
+
+---@param state ScrollbarWindowState
+---@param cursor_row? integer
+---@param cursor_col? integer
+local function update_cursor_visibility(state, cursor_row, cursor_col)
+    local hidden = cursor_overlaps_float(state, cursor_row, cursor_col)
+    if state.hidden_by_cursor == hidden then
+        return
+    end
+
+    local active_float_config = vim.deepcopy(state.float_config)
+    active_float_config.hide = hidden
+    vim.api.nvim_win_set_config(state.float_win, active_float_config)
+    state.float_config = active_float_config
+    state.hidden_by_cursor = hidden
+end
+
+local function resolve_float_position()
+    -- Anchored positions settle during redraw; flush while hidden so the first visible frame is correct.
+    vim.api.nvim__redraw({ flush = true })
 end
 
 ---@param source_win integer
@@ -679,22 +752,40 @@ local function render_source(source_win)
         mark_layer = mark_layer,
         compact_search = active_config.render.geometry == "line" and compact_search or nil,
     })
-    local active_float_config = float_config(source_win, area)
-
+    local cursor_row, cursor_col = cursor_screen_position(source_win)
+    local cursor_position_available = cursor_row ~= nil and cursor_col ~= nil
     ---@type ScrollbarWindowState?
     local state = states[source_win]
     if state == nil or not valid_window(state.float_win) or not vim.api.nvim_buf_is_valid(state.float_buf) then
         if state ~= nil then
             close_state(state)
         end
+        local active_float_config = float_config(source_win, area, cursor_position_available)
         state = create_state(source_win, source_buf, active_float_config, configure_buffer, configure_window)
-    elseif
-        not vim.deep_equal(state.float_config, active_float_config)
-        or not has_float_config(state.float_win, active_float_config)
-    then
-        vim.api.nvim_win_set_config(state.float_win, active_float_config)
-        state.float_config = active_float_config
+        if cursor_position_available then
+            resolve_float_position()
+        end
+    else
+        local active_float_config =
+            float_config(source_win, area, cursor_position_available and state.hidden_by_cursor or false)
+        if not vim.deep_equal(state.float_config, active_float_config) then
+            if cursor_position_available then
+                active_float_config.hide = true
+            end
+            vim.api.nvim_win_set_config(state.float_win, active_float_config)
+            state.float_config = active_float_config
+            state.hidden_by_cursor = active_float_config.hide
+            if cursor_position_available then
+                resolve_float_position()
+            end
+        elseif not has_float_config(state.float_win, active_float_config) then
+            vim.api.nvim_win_set_config(state.float_win, active_float_config)
+            state.float_config = active_float_config
+            state.hidden_by_cursor = active_float_config.hide
+        end
     end
+
+    update_cursor_visibility(state, cursor_row, cursor_col)
 
     local active_highlights = update_buffer(state, output, width, area.height)
     state.width = width

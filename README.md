@@ -66,6 +66,7 @@ require("scrollbar").setup({
     float = {
         width = 1,
         zindex = 50,
+        hide_on_cursor = true,
         placement = {
             relative = "window", -- "window" or "editor"
             anchor = "NE", -- "NW", "NE", "SW", or "SE"
@@ -228,14 +229,34 @@ require("scrollbar").setup({
 ```
 
 The renderer owns the float height, scratch buffer, focusability, mouse flag,
-style, and source-window association. `float.width`, `float.zindex`, and the
-typed placement fields are the supported float controls. `track.highlight`
-controls the track background independently of those floating-window settings.
+style, and source-window association. `float.width`, `float.zindex`,
+`float.hide_on_cursor`, and the typed placement fields are the supported float
+controls. `track.highlight` controls the track background independently of those
+floating-window settings.
 
 Scrollbar tracks cover source buffer-text rows only. They exclude the source
 window's winbar and remain within window bounds that already exclude tabline,
 statusline, and command-line chrome. Explicit signed `row` offsets are still
 applied literally and can intentionally move a track outside those bounds.
+
+### Cursor Visibility
+
+`float.hide_on_cursor = true` keeps the active editing cursor and source text
+visible. When the current source window's cursor enters any cell in the float's
+actual screen rectangle, the whole scrollbar temporarily hides. Moving the
+cursor away restores the same float window, scratch buffer, rows, highlights,
+and mouse mappings.
+
+Only the cursor in `nvim_get_current_win()` triggers this behavior. Stored
+cursor positions in inactive split windows do not hide their scrollbars. The
+intersection check uses the cursor and float screen bounds, including the full
+configured width, anchors, and placement offsets; it does not scan source lines
+or visible text.
+
+Mouse interaction with the scrollbar is unavailable while the float is hidden,
+so input at those cells reaches the source window. Interaction returns when the
+same float is restored. Set `float.hide_on_cursor = false` to preserve the
+uninterrupted overlay behavior.
 
 ### Geometry
 
@@ -282,6 +303,8 @@ only in scrollbar float buffers. It does not install global mappings or modify
 - When autohide is enabled, pressing or dragging a scrollbar pauses that source
   window's deadline. Release or a valid cancellation starts a fresh full delay,
   so the float cannot disappear during interaction.
+- A scrollbar hidden by `float.hide_on_cursor` does not capture mouse input. The
+  source window receives input until the same scrollbar becomes visible again.
 
 Set `mouse.enabled = false` to make scrollbar floats non-focusable and omit the
 mappings. Even when enabled, interaction works only in modes allowed by the
