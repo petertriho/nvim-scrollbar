@@ -156,8 +156,8 @@ local function validate_marks(bufnr, marks)
         if not is_integer(mark.line) then
             return nil, string.format("marks[%d].line must be an integer", index)
         end
-        if mark.line < 0 or mark.line >= line_count then
-            return nil, string.format("marks[%d].line must be between 0 and %d", index, line_count - 1)
+        if mark.line < 0 then
+            return nil, string.format("marks[%d].line must be non-negative", index)
         end
         if type(mark.type) ~= "string" or mark_types[mark.type] == nil then
             return nil, string.format("marks[%d].type is not configured", index)
@@ -169,11 +169,13 @@ local function validate_marks(bufnr, marks)
             end
         end
 
-        normalized[index] = {
-            line = mark.line,
-            type = mark.type,
-            text = mark.text,
-        }
+        if mark.line < line_count then
+            table.insert(normalized, {
+                line = mark.line,
+                type = mark.type,
+                text = mark.text,
+            })
+        end
     end
     return normalized, nil
 end
