@@ -843,6 +843,221 @@ T["updates only dirty rows and fully replaces rows when dimensions change"] = fu
     expect.equality(result.dimension_events[1].new_last, result.new_height)
 end
 
+T["grows and shrinks expanded floats in place while pinning base cells for every anchor"] = function()
+    local child = new_child()
+    local result = child.lua_func(function(base_config)
+        local lines = {}
+        for index = 1, 200 do
+            lines[index] = "line " .. index
+        end
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        vim.cmd("split")
+        local source_win = vim.api.nvim_get_current_win()
+        vim.api.nvim_win_set_height(source_win, 8)
+        local source_buf = vim.api.nvim_win_get_buf(source_win)
+        local store = require("scrollbar.store")
+        assert(store.set("test", source_buf, { { line = 100, type = "Misc" } }))
+
+        local scrollbar_config = require("scrollbar.config")
+        local renderer = require("scrollbar.renderer")
+        local cases = {}
+
+        local function cell_screen_column(state, row, column)
+            vim.api.nvim__redraw({ flush = true })
+            vim.api.nvim__redraw({ flush = true })
+            return vim.fn.screenpos(state.float_win, row + 1, column).col
+        end
+
+        local function screen_column(state, predicate)
+            for row, cells in ipairs(state.hitmap) do
+                for column, cell in ipairs(cells) do
+                    if predicate(cell) then
+                        return cell_screen_column(state, row - 1, column)
+                    end
+                end
+            end
+        end
+
+        local function rows_are_padded(state)
+            for _, row in ipairs(vim.api.nvim_buf_get_lines(state.float_buf, 0, -1, false)) do
+                if vim.fn.strdisplaywidth(row) ~= state.width then
+                    return false
+                end
+            end
+            return true
+        end
+
+        for _, anchor in ipairs({ "NW", "NE", "SW", "SE" }) do
+            local active = vim.deepcopy(base_config)
+            active.float.hide_on_cursor = false
+            active.float.placement.anchor = anchor
+            active.providers.marks = { max_width = 6 }
+            scrollbar_config.set(active)
+            renderer.setup()
+
+            assert(store.set("marks", source_buf, { { line = 0, type = "Mark", text = "a" } }))
+            local initial = assert(renderer.render(source_win))
+            local float_win = initial.float_win
+            local float_buf = initial.float_buf
+            local initial_width = initial.width
+            local initial_float_width = vim.api.nvim_win_get_config(float_win).width
+            local initial_handle_column = cell_screen_column(initial, initial.handle.first_row, initial.handle.column)
+            local initial_mark_column = screen_column(initial, function(cell)
+                return cell.provider == "test"
+            end)
+            local events = {}
+            vim.api.nvim_buf_attach(float_buf, false, {
+                on_lines = function(_, _, _, first, last, new_last)
+                    table.insert(events, { first = first, last = last, new_last = new_last })
+                end,
+            })
+
+            assert(store.set("marks", source_buf, {
+                { line = 0, type = "Mark", text = "a" },
+                { line = 1, type = "Mark", text = "b" },
+                { line = 2, type = "Mark", text = "c" },
+                { line = 3, type = "Mark", text = "d" },
+            }))
+            local grown = assert(renderer.render(source_win))
+            local grown_width = grown.width
+            local grown_float = vim.api.nvim_win_get_config(grown.float_win)
+            local grown_handle_column = cell_screen_column(grown, grown.handle.first_row, grown.handle.column)
+            local grown_mark_column = screen_column(grown, function(cell)
+                return cell.provider == "test"
+            end)
+            local grown_rows_padded = rows_are_padded(grown)
+            local grow_events = events
+
+            events = {}
+            assert(store.set("marks", source_buf, { { line = 0, type = "Mark", text = "a" } }))
+            local shrunk = assert(renderer.render(source_win))
+            local shrunk_width = shrunk.width
+            local shrunk_float = vim.api.nvim_win_get_config(shrunk.float_win)
+            local shrunk_handle_column = cell_screen_column(shrunk, shrunk.handle.first_row, shrunk.handle.column)
+            local shrunk_mark_column = screen_column(shrunk, function(cell)
+                return cell.provider == "test"
+            end)
+
+            cases[anchor] = {
+                widths = { initial_width, grown_width, shrunk_width },
+                float_widths = { initial_float_width, grown_float.width, shrunk_float.width },
+                same_resources = grown.float_win == float_win
+                    and shrunk.float_win == float_win
+                    and grown.float_buf == float_buf
+                    and shrunk.float_buf == float_buf,
+                resources_valid = vim.api.nvim_win_is_valid(float_win) and vim.api.nvim_buf_is_valid(float_buf),
+                handle_columns = { initial_handle_column, grown_handle_column, shrunk_handle_column },
+                mark_columns = { initial_mark_column, grown_mark_column, shrunk_mark_column },
+                rows_padded = grown_rows_padded and rows_are_padded(shrunk),
+                dimensions_replaced = vim.deep_equal(grow_events, {
+                    { first = 0, last = grown.height, new_last = grown.height },
+                }) and vim.deep_equal(events, {
+                    { first = 0, last = shrunk.height, new_last = shrunk.height },
+                }),
+            }
+        end
+        return cases
+    end, renderer_config())
+
+    for _, anchor in ipairs({ "NW", "NE", "SW", "SE" }) do
+        local case = result[anchor]
+        local expected_grown = anchor:sub(2, 2) == "E" and 5 or 4
+        expect.equality(case.widths, { 2, expected_grown, 2 })
+        expect.equality(case.float_widths, case.widths)
+        expect.equality(case.same_resources, true)
+        expect.equality(case.resources_valid, true)
+        expect.equality(case.handle_columns, {
+            case.handle_columns[1],
+            case.handle_columns[1],
+            case.handle_columns[1],
+        })
+        expect.equality(case.mark_columns, { case.mark_columns[1], case.mark_columns[1], case.mark_columns[1] })
+        expect.equality(case.rows_padded, true)
+        expect.equality(case.dimensions_replaced, true)
+    end
+end
+
+T["uses window and editor placement containers and resolves width per source window height"] = function()
+    local child = new_child()
+    local result = child.lua_func(function(base_config)
+        local lines = {}
+        for index = 1, 200 do
+            lines[index] = "line " .. index
+        end
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        local first = vim.api.nvim_get_current_win()
+        vim.cmd("split")
+        local second = vim.api.nvim_get_current_win()
+        vim.api.nvim_win_set_height(second, 4)
+        local source_buf = vim.api.nvim_get_current_buf()
+        assert(require("scrollbar.store").set("marks", source_buf, {
+            { line = 0, type = "Mark", text = "a" },
+            { line = 10, type = "Mark", text = "b" },
+            { line = 20, type = "Mark", text = "c" },
+        }))
+
+        local active = vim.deepcopy(base_config)
+        active.float.hide_on_cursor = false
+        active.float.placement.anchor = "NW"
+        active.providers.marks = { max_width = 8 }
+        local scrollbar_config = require("scrollbar.config")
+        scrollbar_config.set(active)
+        local renderer = require("scrollbar.renderer")
+        renderer.setup()
+        local tall = assert(renderer.render(first))
+        local short = assert(renderer.render(second))
+        local per_height = { tall = tall.width, short = short.width }
+
+        vim.cmd("only")
+        vim.cmd("vsplit")
+        local narrow_win = vim.api.nvim_get_current_win()
+        vim.api.nvim_win_set_width(narrow_win, 4)
+        local narrow_width = vim.api.nvim_win_get_width(narrow_win)
+        local dense_marks = {}
+        for index = 1, 8 do
+            dense_marks[index] = { line = index - 1, type = "Mark", text = string.char(96 + index) }
+        end
+        assert(require("scrollbar.store").set("marks", source_buf, dense_marks))
+        local narrow = assert(renderer.render(narrow_win))
+        local narrow_state_width = narrow.width
+
+        vim.api.nvim_win_set_width(narrow_win, 6)
+        local wider_width = vim.api.nvim_win_get_width(narrow_win)
+        local wider = assert(renderer.render(narrow_win))
+        local wider_state_width = wider.width
+
+        local editor = vim.deepcopy(active)
+        editor.float.placement.relative = "editor"
+        scrollbar_config.set(editor)
+        renderer.setup()
+        vim.api.nvim_set_current_win(narrow_win)
+        local editor_state = assert(renderer.render(narrow_win))
+
+        return {
+            per_height = per_height,
+            window = {
+                narrow = narrow_state_width,
+                narrow_container = narrow_width,
+                wider = wider_state_width,
+                wider_container = wider_width,
+                same_resources = narrow.float_win == wider.float_win and narrow.float_buf == wider.float_buf,
+            },
+            editor = {
+                width = editor_state.width,
+                container = vim.o.columns,
+                float_width = vim.api.nvim_win_get_config(editor_state.float_win).width,
+            },
+        }
+    end, renderer_config())
+
+    expect.equality(result.per_height, { tall = 2, short = 3 })
+    expect.equality(result.window.narrow, math.min(8, result.window.narrow_container))
+    expect.equality(result.window.wider, math.min(8, result.window.wider_container))
+    expect.equality(result.window.same_resources, true)
+    expect.equality(result.editor.width, math.min(8, result.editor.container))
+    expect.equality(result.editor.float_width, result.editor.width)
+end
+
 T["caches line mark work while keeping handle geometry current and invalidating exact inputs"] = function()
     local child = new_child()
     local result = child.lua_func(function(base_config)
@@ -851,7 +1066,7 @@ T["caches line mark work while keeping handle geometry current and invalidating 
             lines[index] = "line " .. index
         end
         vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
-        vim.cmd("split")
+        vim.cmd("vsplit")
         local source_win = vim.api.nvim_get_current_win()
         vim.api.nvim_win_set_height(source_win, 8)
         local source_buf = vim.api.nvim_win_get_buf(source_win)
@@ -867,9 +1082,11 @@ T["caches line mark work while keeping handle geometry current and invalidating 
         local original_mark_layer = layout.mark_layer
         local builds = 0
         local mark_tables = {}
+        local container_widths = {}
         rawset(layout, "mark_layer", function(input)
             builds = builds + 1
             mark_tables[builds] = input.marks
+            container_widths[builds] = input.container_width
             return original_mark_layer(input)
         end)
 
@@ -902,13 +1119,19 @@ T["caches line mark work while keeping handle geometry current and invalidating 
         renderer.render(source_win)
         local after_line_count = builds
 
+        local old_width = vim.api.nvim_win_get_width(source_win)
+        vim.api.nvim_win_set_width(source_win, old_width - 1)
+        renderer.render(source_win)
+        local after_container = builds
+        local container_changed = container_widths[after_container] ~= container_widths[after_line_count]
+
         vim.api.nvim_win_set_height(source_win, 7)
         renderer.render(source_win)
         local after_resize = builds
-        local resize_reused_flattened = rawequal(mark_tables[after_resize], mark_tables[after_line_count])
+        local resize_reused_flattened = rawequal(mark_tables[after_resize], mark_tables[after_container])
 
         local changed_config = vim.deepcopy(base_config)
-        changed_config.marks.Misc.text = "N"
+        changed_config.float.placement.anchor = "NW"
         scrollbar_config.set(changed_config)
         renderer.render(source_win)
         local after_config = builds
@@ -933,11 +1156,13 @@ T["caches line mark work while keeping handle geometry current and invalidating 
             after_buffer_marks = after_buffer_marks,
             after_window_marks = after_window_marks,
             after_line_count = after_line_count,
+            after_container = after_container,
             after_resize = after_resize,
             after_config = after_config,
             after_replacement = after_replacement,
             after_dispose = after_dispose,
             handle_moved = scrolled.handle.first_row > initial_handle.first_row,
+            container_changed = container_changed,
             resize_reused_flattened = resize_reused_flattened,
             config_reused_flattened = config_reused_flattened,
         }
@@ -950,11 +1175,13 @@ T["caches line mark work while keeping handle geometry current and invalidating 
         after_buffer_marks = 2,
         after_window_marks = 3,
         after_line_count = 4,
-        after_resize = 5,
-        after_config = 6,
-        after_replacement = 7,
-        after_dispose = 8,
+        after_container = 5,
+        after_resize = 6,
+        after_config = 7,
+        after_replacement = 8,
+        after_dispose = 9,
         handle_moved = true,
+        container_changed = true,
         resize_reused_flattened = true,
         config_reused_flattened = true,
     })
@@ -985,6 +1212,15 @@ T["screen renders reuse flattened marks but always repeat text-height measuremen
             table.insert(mark_tables, input.marks)
             return original_screen(input)
         end)
+        local original_compose = layout.compose
+        local compose_inputs = {}
+        rawset(layout, "compose", function(input)
+            table.insert(compose_inputs, {
+                container_width = input.container_width,
+                has_mark_layer = input.mark_layer ~= nil,
+            })
+            return original_compose(input)
+        end)
         local original_text_height = vim.api.nvim_win_text_height
         local measurements = 0
         vim.api.nvim_win_text_height = function(...)
@@ -1004,17 +1240,24 @@ T["screen renders reuse flattened marks but always repeat text-height measuremen
         local second_measurements = measurements - first_measurements
 
         rawset(layout, "screen", original_screen)
+        rawset(layout, "compose", original_compose)
         vim.api.nvim_win_text_height = original_text_height
         return {
             same_marks = rawequal(mark_tables[1], mark_tables[2]),
             first_measurements = first_measurements,
             second_measurements = second_measurements,
+            compose_inputs = compose_inputs,
+            source_width = vim.api.nvim_win_get_width(source_win),
         }
     end, renderer_config())
 
     expect.equality(result.same_marks, true)
     expect.equality(result.first_measurements > 0, true)
     expect.equality(result.second_measurements > 0, true)
+    expect.equality(result.compose_inputs, {
+        { container_width = result.source_width, has_mark_layer = false },
+        { container_width = result.source_width, has_mark_layer = false },
+    })
 end
 
 T["configures owned state once and reapplies only changed float configuration"] = function()
@@ -1236,6 +1479,70 @@ T["hides on cursor overlap and restores the same resources only on transitions"]
             after_restore = 1,
             after_visible_steady = 1,
         },
+    })
+end
+
+T["uses the full expanded width for cursor hiding"] = function()
+    local child = new_child()
+    local result = child.lua_func(function(base_config)
+        local lines = {}
+        for index = 1, 120 do
+            lines[index] = "line " .. index
+        end
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        local source_win = vim.api.nvim_get_current_win()
+        local source_buf = vim.api.nvim_get_current_buf()
+        base_config.float.placement.anchor = "NW"
+        base_config.providers.marks = { max_width = 6 }
+        require("scrollbar.config").set(base_config)
+        assert(require("scrollbar.store").set("marks", source_buf, {
+            { line = 0, type = "Mark", text = "a" },
+            { line = 1, type = "Mark", text = "b" },
+            { line = 2, type = "Mark", text = "c" },
+            { line = 3, type = "Mark", text = "d" },
+        }))
+        local renderer = require("scrollbar.renderer")
+        renderer.setup()
+
+        local cursor_col = 9
+        local screenrow = vim.fn.screenrow
+        local screencol = vim.fn.screencol
+        local get_position = vim.api.nvim_win_get_position
+        rawset(vim.fn, "screenrow", function()
+            return 2
+        end)
+        rawset(vim.fn, "screencol", function()
+            return cursor_col
+        end)
+        rawset(vim.api, "nvim_win_get_position", function()
+            return { 1, 5 }
+        end)
+
+        local hidden = assert(renderer.render(source_win))
+        local hidden_by_cursor = hidden.hidden_by_cursor
+        local expanded_width = hidden.width
+        local float_width = vim.api.nvim_win_get_config(hidden.float_win).width
+        cursor_col = 10
+        local restored = assert(renderer.render(source_win))
+
+        rawset(vim.fn, "screenrow", screenrow)
+        rawset(vim.fn, "screencol", screencol)
+        rawset(vim.api, "nvim_win_get_position", get_position)
+        return {
+            width = expanded_width,
+            float_width = float_width,
+            hidden = hidden_by_cursor,
+            restored = not restored.hidden_by_cursor,
+            same_resources = hidden.float_win == restored.float_win and hidden.float_buf == restored.float_buf,
+        }
+    end, renderer_config())
+
+    expect.equality(result, {
+        width = 4,
+        float_width = 4,
+        hidden = true,
+        restored = true,
+        same_resources = true,
     })
 end
 

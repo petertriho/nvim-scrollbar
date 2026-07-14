@@ -23,8 +23,8 @@ T["defaults are normalized from a fresh immutable baseline"] = function()
     local first = set({
         visibility = "active",
         float = { width = 3, hide_on_cursor = false },
-        marks = { Search = { text = "x", column = 2 } },
-        providers = { search = { live = true, backend = "sync" } },
+        marks = { Search = { text = "x", column = 2 }, Mark = { text = "X" } },
+        providers = { search = { live = true, backend = "sync" }, marks = { max_width = 3 } },
     })
 
     expect.equality(first.visibility, "active")
@@ -32,7 +32,12 @@ T["defaults are normalized from a fresh immutable baseline"] = function()
     expect.equality(first.float.hide_on_cursor, false)
     expect.equality(first.marks.Search.text, { "x" })
     expect.equality(first.marks.Search.column, 2)
+    expect.equality(first.marks.Mark.text, { "X" })
     expect.equality(first.providers.search, { live = true, backend = "sync" })
+    expect.equality(first.providers.marks, { max_width = 3, letters = true, numbers = false })
+
+    first.marks.Mark.text[1] = "changed"
+    first.providers.marks.max_width = 99
 
     local second = set()
     expect.equality(second.visibility, "all")
@@ -40,7 +45,9 @@ T["defaults are normalized from a fresh immutable baseline"] = function()
     expect.equality(second.float.hide_on_cursor, true)
     expect.equality(second.marks.Search.text, { "-", "=" })
     expect.equality(second.marks.Search.column, 1)
+    expect.equality(second.marks.Mark, { text = {}, column = 1, priority = 1, highlight = "Special" })
     expect.equality(second.providers.search, { live = false, backend = "worker" })
+    expect.equality(second.providers.marks, { max_width = false, letters = true, numbers = false })
     expect.equality(second.providers.coc, false)
     expect.equality(second.autohide, { enabled = false, delay_ms = 1000 })
     expect.equality(second.track.highlight, "PmenuSbar")
@@ -69,11 +76,77 @@ T["advances the layout generation only for static mark-layer inputs"] = function
         marks = { Search = { text = "S", highlight = "IncSearch" } },
     })
     local highlight = config.get_layout_generation()
+    set({
+        float = { width = 2 },
+        handle = { column = 2 },
+        marks = { Search = { text = "S", highlight = "IncSearch" } },
+        providers = { marks = true },
+    })
+    local collapsed_marks = config.get_layout_generation()
+    set({
+        float = { width = 2 },
+        handle = { column = 2 },
+        marks = { Search = { text = "S", highlight = "IncSearch" } },
+        providers = { marks = { max_width = 4 } },
+    })
+    local expanded_marks = config.get_layout_generation()
+    set({
+        float = { width = 2 },
+        handle = { column = 2 },
+        marks = { Search = { text = "S", highlight = "IncSearch" } },
+        providers = { marks = { max_width = 5 } },
+    })
+    local changed_expansion_cap = config.get_layout_generation()
+    set({
+        float = { width = 2, placement = { anchor = "SE" } },
+        handle = { column = 2 },
+        marks = { Search = { text = "S", highlight = "IncSearch" } },
+        providers = { marks = { max_width = 5 } },
+    })
+    local same_horizontal_anchor = config.get_layout_generation()
+    set({
+        float = { width = 2, placement = { anchor = "SW" } },
+        handle = { column = 2 },
+        marks = { Search = { text = "S", highlight = "IncSearch" } },
+        providers = { marks = { max_width = 5 } },
+    })
+    local changed_horizontal_anchor = config.get_layout_generation()
 
     expect.equality(unrelated, initial)
     expect.equality(width, initial + 1)
     expect.equality(mark_text, initial + 2)
     expect.equality(highlight, mark_text)
+    expect.equality(collapsed_marks, highlight)
+    expect.equality(expanded_marks, highlight + 1)
+    expect.equality(changed_expansion_cap, expanded_marks + 1)
+    expect.equality(same_horizontal_anchor, changed_expansion_cap)
+    expect.equality(changed_horizontal_anchor, changed_expansion_cap + 1)
+end
+
+T["normalizes marks provider modes"] = function()
+    expect.equality(set().providers.marks, { max_width = false, letters = true, numbers = false })
+    expect.equality(set({ providers = { marks = false } }).providers.marks, false)
+
+    local collapsed = set({ providers = { marks = true } })
+    expect.equality(collapsed.providers.marks, { max_width = false, letters = true, numbers = false })
+    collapsed.providers.marks.max_width = 8
+    expect.equality(
+        set({ providers = { marks = true } }).providers.marks,
+        { max_width = false, letters = true, numbers = false }
+    )
+
+    expect.equality(
+        set({ providers = { marks = { max_width = 8 } } }).providers.marks,
+        { max_width = 8, letters = true, numbers = false }
+    )
+    expect.equality(
+        set({ providers = { marks = { numbers = true } } }).providers.marks,
+        { max_width = false, letters = true, numbers = true }
+    )
+    expect.equality(
+        set({ providers = { marks = { letters = false, numbers = true } } }).providers.marks,
+        { max_width = false, letters = false, numbers = true }
+    )
 end
 
 T["accepts the complete typed schema"] = function()
@@ -112,6 +185,7 @@ T["accepts the complete typed schema"] = function()
             cursor = false,
             diagnostic = false,
             search = { live = true, backend = "sync" },
+            marks = { max_width = 8, letters = false, numbers = true },
             gitsigns = true,
             ale = true,
             coc = false,
@@ -131,6 +205,7 @@ T["accepts the complete typed schema"] = function()
     expect.equality(result.marks.Custom.highlight, mark_highlight)
     expect.equality(result.providers.search.live, true)
     expect.equality(result.providers.search.backend, "sync")
+    expect.equality(result.providers.marks, { max_width = 8, letters = false, numbers = true })
 
     local normalized_track = result.track.highlight
     local normalized_handle = result.handle.highlight
@@ -157,6 +232,10 @@ T["rejects unknown keys at every schema level"] = function()
     expect_invalid({ handle = { color = "red" } }, "unknown option 'handle.color'")
     expect_invalid({ marks = { Search = { gui = "bold" } } }, "unknown option 'marks.Search.gui'")
     expect_invalid({ providers = { custom = true } }, "unknown option 'providers.custom'")
+    expect_invalid(
+        { providers = { marks = { expand = true, max_width = 8 } } },
+        "unknown option 'providers.marks.expand'"
+    )
 end
 
 T["rejects invalid enums and scalar option types"] = function()
@@ -200,6 +279,7 @@ T["enforces handle fit within the float"] = function()
 end
 
 T["rejects unsafe text and malformed density variants"] = function()
+    expect.equality(set({ marks = { Mark = { text = {} } } }).marks.Mark.text, {})
     expect_invalid({ handle = { text = "" } }, "handle.text must have positive display width")
     expect_invalid({ handle = { text = "\n" } }, "handle.text must not contain control characters")
     expect_invalid({ marks = { Search = { text = {} } } }, "marks.Search.text must contain at least one variant")
@@ -237,6 +317,33 @@ T["rejects invalid provider options"] = function()
         "providers.search.backend must be one of: sync, worker"
     )
     expect_invalid({ providers = { search = { extra = true } } }, "unknown option 'providers.search.extra'")
+    expect_invalid({ providers = { marks = "yes" } }, "providers.marks must be a boolean or table")
+    expect_invalid(
+        { providers = { marks = { max_width = false } } },
+        "providers.marks.max_width must be a positive integer"
+    )
+    expect_invalid(
+        { providers = { marks = { max_width = 0 } } },
+        "providers.marks.max_width must be a positive integer"
+    )
+    expect_invalid(
+        { providers = { marks = { max_width = 1.5 } } },
+        "providers.marks.max_width must be a positive integer"
+    )
+    expect_invalid(
+        { providers = { marks = { max_width = math.huge } } },
+        "providers.marks.max_width must be a positive integer"
+    )
+    expect_invalid(
+        { providers = { marks = { max_width = "8" } } },
+        "providers.marks.max_width must be a positive integer"
+    )
+    expect_invalid(
+        { float = { width = 4 }, providers = { marks = { max_width = 3 } } },
+        "providers.marks.max_width must be greater than or equal to float.width"
+    )
+    expect_invalid({ providers = { marks = { letters = "yes" } } }, "providers.marks.letters must be a boolean")
+    expect_invalid({ providers = { marks = { numbers = 1 } } }, "providers.marks.numbers must be a boolean")
 end
 
 T["rejects malformed exclusion lists without changing active config"] = function()

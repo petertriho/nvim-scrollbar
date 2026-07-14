@@ -21,11 +21,34 @@ local function base_config(overrides)
             cursor = false,
             diagnostic = false,
             search = false,
+            marks = false,
             gitsigns = false,
             ale = false,
             coc = false,
         },
     }, overrides or {})
+end
+
+T["generates named mark highlights from Special"] = function()
+    local child = new_child()
+    local result = child.lua_func(function(config)
+        vim.api.nvim_set_hl(0, "Special", { fg = "#abcdef" })
+        vim.api.nvim_set_hl(0, "PmenuThumb", { bg = "#445566" })
+        vim.api.nvim_set_hl(0, "PmenuSel", { bg = "#778899" })
+        require("scrollbar").setup(config)
+        local get = function(name)
+            return vim.api.nvim_get_hl(0, { name = name, link = false })
+        end
+        return {
+            mark = get("ScrollbarMark"),
+            handle = get("ScrollbarMarkHandle"),
+            pressed = get("ScrollbarMarkHandlePressed"),
+        }
+    end, base_config())
+
+    expect.equality(result.mark, { fg = 0xABCDEF })
+    expect.equality(result.handle, { fg = 0xABCDEF, bg = 0x445566, blend = 30 })
+    expect.equality(result.pressed, { fg = 0xABCDEF, bg = 0x778899, blend = 30 })
 end
 
 T["uses popup menu backgrounds for the track and handle states"] = function()

@@ -231,28 +231,56 @@ local function source_less(left, right)
     return (left.text or "") < (right.text or "")
 end
 
-local function group_candidates(input)
+local function candidate_less(left, right)
+    if left.priority ~= right.priority then
+        return left.priority < right.priority
+    end
+    if left.type ~= right.type then
+        return left.type < right.type
+    end
+    if left.provider ~= right.provider then
+        return left.provider < right.provider
+    end
+    if left.line ~= right.line then
+        return left.line < right.line
+    end
+    return left.column < right.column
+end
+
+local function resolved_text(mark_type, variants, source_text, count)
+    if mark_type == "Mark" then
+        if #variants == 0 then
+            return source_text or ""
+        end
+        return variants[math.min(count, #variants)]
+    end
+    return source_text or variants[math.min(count, #variants)]
+end
+
+local function group_candidates(input, column_offset, expand_marks)
     local groups = {}
     local by_row = {}
 
     local function group_for(row, mark_type, mark_config)
+        local column = mark_config.column + column_offset
         by_row[row] = by_row[row] or {}
         local by_type = by_row[row]
         by_type[mark_type] = by_type[mark_type] or {}
         local by_column = by_type[mark_type]
-        local group = by_column[mark_config.column]
+        local group = by_column[column]
         if not group then
             group = {
                 row = row,
                 type = mark_type,
-                column = mark_config.column,
+                column = column,
+                max_column = input.config.float.width + column_offset,
                 priority = mark_config.priority,
                 sources = {},
                 lines = {},
                 count = 0,
                 ordinary_count = 0,
             }
-            by_column[mark_config.column] = group
+            by_column[column] = group
             table.insert(groups, group)
         end
         return group
@@ -261,7 +289,8 @@ local function group_candidates(input)
     for index, mark in ipairs(input.marks) do
         local row = input.geometry.mark_rows[index]
         local mark_config = input.config.marks[mark.type]
-        if row and row >= 0 and row < input.height and mark_config then
+        local expanded = expand_marks and mark.provider == "marks" and mark.type == "Mark"
+        if not expanded and row and row >= 0 and row < input.height and mark_config then
             local group = group_for(row, mark.type, mark_config)
             table.insert(group.sources, mark)
             table.insert(group.lines, mark.line)
@@ -311,26 +340,94 @@ local function group_candidates(input)
         if group.ordinary_count > 0 or group.compact_source == nil then
             table.sort(group.lines)
         end
-        group.text = representative.text or variants[math.min(group.count, #variants)]
+        group.text = resolved_text(group.type, variants, representative.text, group.count)
     end
 
-    table.sort(groups, function(left, right)
-        if left.priority ~= right.priority then
-            return left.priority < right.priority
-        end
-        if left.type ~= right.type then
-            return left.type < right.type
-        end
-        if left.provider ~= right.provider then
-            return left.provider < right.provider
-        end
-        if left.line ~= right.line then
-            return left.line < right.line
-        end
-        return left.column < right.column
-    end)
+    table.sort(groups, candidate_less)
 
     return groups
+end
+
+local function expanded_buckets(input, expand_marks)
+    if not expand_marks then
+        return {}
+    end
+
+    local buckets = {}
+    for index, mark in ipairs(input.marks) do
+        local row = input.geometry.mark_rows[index]
+        if
+            mark.provider == "marks"
+            and mark.type == "Mark"
+            and row
+            and row >= 0
+            and row < input.height
+            and input.config.marks.Mark
+        then
+            buckets[row] = buckets[row] or {}
+            table.insert(buckets[row], mark)
+        end
+    end
+
+    for _, sources in pairs(buckets) do
+        table.sort(sources, function(left, right)
+            if left.line ~= right.line then
+                return left.line < right.line
+            end
+            return (left.text or "") < (right.text or "")
+        end)
+    end
+    return buckets
+end
+
+local function layer_dimensions(input, buckets, expand_marks)
+    local base_width = input.config.float.width
+    if not expand_marks then
+        return base_width, 0
+    end
+
+    local mark_column = input.config.marks.Mark.column
+    local east = input.config.float.placement.anchor:sub(2, 2) == "E"
+    local demand = base_width
+    for _, sources in pairs(buckets) do
+        if east then
+            demand = math.max(demand, base_width + math.max(0, #sources - mark_column))
+        else
+            demand = math.max(demand, mark_column + #sources - 1)
+        end
+    end
+
+    local container_width = math.max(base_width, input.container_width or base_width)
+    local maximum_width = math.max(base_width, math.min(input.config.providers.marks.max_width, container_width))
+    local width = math.min(demand, maximum_width)
+    return width, east and width - base_width or 0
+end
+
+local function add_expanded_candidates(input, candidates, buckets, width, column_offset)
+    local mark_config = input.config.marks.Mark
+    local east = input.config.float.placement.anchor:sub(2, 2) == "E"
+
+    for row, sources in pairs(buckets) do
+        local last_column = mark_config.column + column_offset
+        local capacity = east and last_column or width - mark_config.column + 1
+        local visible_count = math.min(#sources, math.max(0, capacity))
+        local first_column = east and last_column - visible_count + 1 or mark_config.column
+
+        for index = 1, visible_count do
+            local source = sources[index]
+            table.insert(candidates, {
+                row = row,
+                type = "Mark",
+                column = first_column + index - 1,
+                max_column = width,
+                priority = mark_config.priority,
+                provider = source.provider,
+                line = source.line,
+                lines = { source.line },
+                text = resolved_text("Mark", mark_config.text, source.text, 1),
+            })
+        end
+    end
 end
 
 local function place_marks(input, groups)
@@ -343,7 +440,7 @@ local function place_marks(input, groups)
         local column = group.column
         for _, glyph in ipairs(display_glyphs(group.text)) do
             local last_column = column + glyph.width - 1
-            if glyph.width > 0 and last_column <= input.config.float.width then
+            if glyph.width > 0 and last_column <= group.max_column then
                 local available = true
                 for cell = column, last_column do
                     if rows[group.row][cell] then
@@ -367,7 +464,7 @@ local function place_marks(input, groups)
                         rows[group.row][cell] = placed
                     end
                 end
-            elseif last_column > input.config.float.width then
+            elseif last_column > group.max_column then
                 break
             end
             column = column + glyph.width
@@ -377,16 +474,32 @@ local function place_marks(input, groups)
     return rows
 end
 
----@param input ScrollbarMarkLayerInput
----@return ScrollbarPlacedMark[][]
-M.mark_layer = function(input)
-    return place_marks(input, group_candidates(input))
+local function resolve_mark_layer(input)
+    local marks_config = input.config.providers.marks
+    local expand_marks = marks_config ~= false and type(marks_config.max_width) == "number"
+    local buckets = expanded_buckets(input, expand_marks)
+    local width, column_offset = layer_dimensions(input, buckets, expand_marks)
+    local candidates = group_candidates(input, column_offset, expand_marks)
+    add_expanded_candidates(input, candidates, buckets, width, column_offset)
+    table.sort(candidates, candidate_less)
+
+    return {
+        rows = place_marks(input, candidates),
+        width = width,
+        column_offset = column_offset,
+    }
 end
 
-local function handle_glyphs(config)
+---@param input ScrollbarMarkLayerInput
+---@return ScrollbarResolvedMarkLayer
+M.mark_layer = function(input)
+    return resolve_mark_layer(input)
+end
+
+local function handle_glyphs(config, column_offset)
     local glyphs = display_glyphs(config.handle.text)
     local placed = {}
-    local column = config.handle.column
+    local column = config.handle.column + column_offset
     local last_column = column + config.handle.width - 1
     local index = 1
 
@@ -422,10 +535,9 @@ local function add_span(spans, start_col, end_col, highlight)
     end
 end
 
-local function render_row(input, row, marks, base_handle_glyphs)
-    local width = input.config.float.width
+local function render_row(input, row, marks, base_handle_glyphs, width, column_offset)
     local handle = input.geometry.handle
-    local handle_first_column = input.config.handle.column
+    local handle_first_column = input.config.handle.column + column_offset
     local handle_last_column = handle_first_column + input.config.handle.width - 1
     local in_handle_row = row >= handle.first_row and row <= handle.last_row
     local handle_starts = {}
@@ -504,25 +616,29 @@ end
 ---@param input ScrollbarLayoutInput
 ---@return ScrollbarLayoutOutput
 M.compose = function(input)
-    local placed_marks = input.mark_layer or place_marks(input, group_candidates(input))
-    local base_handle_glyphs = handle_glyphs(input.config)
+    local mark_layer = input.mark_layer or resolve_mark_layer(input)
+    local placed_marks = mark_layer.rows
+    local width = mark_layer.width
+    local column_offset = mark_layer.column_offset
+    local base_handle_glyphs = handle_glyphs(input.config, column_offset)
     local rows = {}
     local highlights = {}
     local hitmap = {}
 
     for row = 0, input.height - 1 do
         rows[row + 1], highlights[row + 1], hitmap[row + 1] =
-            render_row(input, row, placed_marks[row], base_handle_glyphs)
+            render_row(input, row, placed_marks[row], base_handle_glyphs, width, column_offset)
     end
 
     return {
         rows = rows,
+        width = width,
         highlights = highlights,
         hitmap = hitmap,
         handle = {
             first_row = input.geometry.handle.first_row,
             last_row = input.geometry.handle.last_row,
-            column = input.config.handle.column,
+            column = input.config.handle.column + column_offset,
             width = input.config.handle.width,
         },
     }

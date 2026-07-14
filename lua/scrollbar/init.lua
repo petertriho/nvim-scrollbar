@@ -11,6 +11,7 @@ local BUILTINS = {
     { name = "cursor", module = "scrollbar.providers.cursor" },
     { name = "diagnostic", module = "scrollbar.providers.diagnostic" },
     { name = "search", module = "scrollbar.providers.search" },
+    { name = "marks", module = "scrollbar.providers.marks" },
     { name = "gitsigns", module = "scrollbar.providers.gitsigns" },
     { name = "ale", module = "scrollbar.providers.ale" },
     { name = "coc", module = "scrollbar.providers.coc" },

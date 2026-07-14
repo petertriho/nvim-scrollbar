@@ -95,6 +95,12 @@ require("scrollbar").setup({
             priority = 0,
             highlight = "Normal",
         },
+        Mark = {
+            text = {},
+            column = 1,
+            priority = 1,
+            highlight = "Special",
+        },
         Search = {
             text = { "-", "=" },
             column = 1,
@@ -154,6 +160,7 @@ require("scrollbar").setup({
         cursor = true,
         diagnostic = true,
         search = true, -- true or { live = boolean, backend = "worker" | "sync" }
+        marks = true, -- false, true, or { letters = boolean, numbers = boolean, max_width = integer }
         gitsigns = false,
         ale = false,
         coc = false,
@@ -228,6 +235,12 @@ require("scrollbar").setup({
 })
 ```
 
+When named-mark expansion is enabled, `float.width` remains the base width.
+`NW` and `SW` floats add columns to the right, while `NE` and `SE` floats add
+columns to the left. This grows the scrollbar inward while keeping the original
+base track and handle screen cells pinned. Signed placement offsets remain
+literal and can intentionally move or clip the expanded float.
+
 The renderer owns the float height, scratch buffer, focusability, mouse flag,
 style, and source-window association. `float.width`, `float.zindex`,
 `float.hide_on_cursor`, and the typed placement fields are the supported float
@@ -250,8 +263,8 @@ and mouse mappings.
 Only the cursor in `nvim_get_current_win()` triggers this behavior. Stored
 cursor positions in inactive split windows do not hide their scrollbars. The
 intersection check uses the cursor and float screen bounds, including the full
-configured width, anchors, and placement offsets; it does not scan source lines
-or visible text.
+current effective width, anchors, and placement offsets; it does not scan source
+lines or visible text.
 
 Mouse interaction with the scrollbar is unavailable while the float is hidden,
 so input at those cells reaches the source window. Interaction returns when the
@@ -319,11 +332,89 @@ Built-in providers are configured under `providers`:
 | `cursor` | on | Current source cursor | None |
 | `diagnostic` | on | Neovim 0.11 `vim.diagnostic` | None |
 | `search` | on | Native `/` and `?` search | None |
+| `marks` | on | Letter marks `[a-zA-Z]`; optional numbered marks `[0-9]` | None |
 | `gitsigns` | off | Git hunks | gitsigns.nvim |
 | `ale` | off | ALE location list | ALE |
 | `coc` | off | Coc diagnostic list | coc.nvim |
 
 Optional providers safely produce no marks when their dependency is absent.
+
+### Marks
+
+The built-in `marks` provider is on by default. It renders each enabled mark as
+its literal name. Letter marks `[a-zA-Z]` are enabled by default; numbered marks
+`[0-9]` are disabled by default, and special marks such as `.`, `^`, `[`, `]`,
+`<`, and `>` are not included.
+
+`true` uses the category defaults in collapsed mode. Table form accepts
+`letters`, `numbers`, and `max_width`; omitted fields default to
+`letters = true`, `numbers = false`, and collapsed width. Set the provider to
+`false` to disable it entirely.
+
+Enable numbered marks as well with:
+
+```lua
+require("scrollbar").setup({
+    providers = {
+        marks = {
+            numbers = true,
+        },
+    },
+})
+```
+
+Use `{ letters = false, numbers = true }` to show only numbered marks. Numbered
+marks are global file marks normally restored from ShaDa; unlike letter marks,
+they cannot be set directly with `m{char}`.
+
+Collapsed mode keeps the normal one-representative behavior when multiple named
+marks map to the same rendered row. Marks are ordered by source line and then
+mark name; for marks on the same line, `0`-`9` sort before `A`-`Z`, which sort
+before `a`-`z`. The visible representative owns the row's exact click target.
+
+Use table form to opt into bounded horizontal expansion:
+
+```lua
+require("scrollbar").setup({
+    providers = {
+        marks = { max_width = 8 },
+    },
+})
+```
+
+`max_width` is a positive-integer cap on the total float width, not a count of
+extra columns, and it must be greater than or equal to `float.width`. The
+effective width never shrinks below that base width. It grows only as needed and
+is also limited by the active window or editor placement container unless the
+configured base width already exceeds that container. Because rendered-row
+density and container width can differ, effective width can vary by source
+window and can grow or shrink between renders.
+
+Expanded mark names retain source-line/name order from left to right and grow
+inward from the configured anchor while the base track and handle stay pinned.
+If all names do not fit, the provider keeps the deterministic ordered prefix,
+omits the tail, and displays no synthetic `+`. Every visible expanded mark has
+its own exact source-line click target; omitted marks have no click cell.
+
+Lowercase marks are buffer-local. Uppercase and numbered marks are shown only
+for their eligible, loaded target buffer and therefore only on source-window
+scrollbars for that buffer. The provider never loads a buffer or file solely to
+display a global mark.
+
+On Neovim 0.11 through 0.12.1, mark changes are reconciled for visible source
+buffers on `SafeState`. On Neovim 0.12.2 and newer, the default letter-only path
+is event-only through `MarkSet` and installs no `SafeState` polling autocmd.
+Enabling numbered marks retains `SafeState` reconciliation because explicit
+ShaDa reads and writes can change `[0-9]` without emitting `MarkSet`. Normal
+buffer, window, and text-change events still refresh positions on every
+supported version.
+
+Expansion is specific to this built-in provider. Custom providers that emit
+`type = "Mark"` continue through normal collapsed composition and are not
+expanded. The built-in provider always supplies each literal mark name, so the
+default `marks.Mark.text = {}` displays those literal names. Set a non-empty
+text list to render its configured glyphs instead: collapsed marks use normal
+density variants, while each individually expanded mark uses the first variant.
 
 ### Search
 
@@ -511,10 +602,19 @@ require("scrollbar").setup({
 })
 ```
 
+`float.width` is the fixed base width for ordinary rendering and for the pinned
+track/handle portion of expanded named-mark rendering. With
+`providers.marks = { max_width = N }`, the actual float width may independently
+grow and shrink for each source window, up to the total-width cap and available
+placement-container width. A base width that already exceeds the container is
+preserved rather than reduced.
+
 Text arrays are density variants. Marks compressed into the same rendered row,
 type, and column use variant `min(mark_count, variant_count)`. For example,
 `{ "·", "•", "#" }` displays `·` for one mark, `•` for two, and `#` for three
-or more. A string is accepted as a one-variant shorthand.
+or more. A string is accepted as a one-variant shorthand. The empty
+`marks.Mark.text` default is the exception: it uses the literal text supplied by
+the built-in marks provider.
 
 Overlapping mark display-cell ranges are resolved by priority; lower numeric
 values win. Ties are deterministic. Multi-cell glyphs are atomic and are omitted
@@ -567,6 +667,8 @@ apply to combinations such as `link` with other attributes.
 
 For example: `ScrollbarSearch`, `ScrollbarSearchHandle`,
 `ScrollbarSearchHandlePressed`, `ScrollbarError`, and `ScrollbarErrorHandle`.
+Named marks use `ScrollbarMark`, `ScrollbarMarkHandle`, and
+`ScrollbarMarkHandlePressed`; their default foreground source is `Special`.
 `ScrollbarFloat` is no longer generated; use `ScrollbarTrack` for manual track
 styling.
 
