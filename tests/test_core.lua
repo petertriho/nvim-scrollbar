@@ -22,6 +22,7 @@ local function root_config(overrides)
             cursor = false,
             diagnostic = false,
             search = false,
+            marks = false,
             gitsigns = false,
             ale = false,
             coc = false,
@@ -187,6 +188,59 @@ T["registers configured built-ins once and removes disabled root-owned providers
         diagnostic_autocmds = 1,
         cursor_removed = true,
         diagnostic_preserved = true,
+    })
+end
+
+T["registers both marks modes and fully removes the disabled builtin"] = function()
+    local child = new_child()
+    local result = child.lua_func(function(config)
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, { "one", "two", "three" })
+        vim.api.nvim_buf_set_mark(0, "a", 2, 0, {})
+
+        local scrollbar = require("scrollbar")
+        local providers = require("scrollbar.providers")
+        local store = require("scrollbar.store")
+        local disabled_by_default = vim.deepcopy(config)
+        scrollbar.setup(disabled_by_default)
+        local default_registered = providers.get("marks") ~= nil
+        local default_group_exists = pcall(vim.api.nvim_get_autocmds, { group = "ScrollbarProvider_marks_events" })
+        local default_marks = store.get(vim.api.nvim_get_current_buf()).marks
+
+        local collapsed = vim.deepcopy(config)
+        collapsed.providers.marks = true
+        scrollbar.setup(collapsed)
+        local first = providers.get("marks")
+        local collapsed_marks = store.get(vim.api.nvim_get_current_buf()).marks
+
+        local expanded = vim.deepcopy(config)
+        expanded.providers.marks = { max_width = 4 }
+        scrollbar.setup(expanded)
+        local repeated = providers.get("marks")
+
+        scrollbar.setup(disabled_by_default)
+        local group_exists = pcall(vim.api.nvim_get_autocmds, { group = "ScrollbarProvider_marks_events" })
+        return {
+            default_registered = default_registered,
+            default_group_exists = default_group_exists,
+            default_marks = default_marks,
+            collapsed_registered = first ~= nil,
+            collapsed_marks = collapsed_marks,
+            table_mode_reused = repeated == first,
+            removed = providers.get("marks") == nil,
+            marks_cleared = store.get(vim.api.nvim_get_current_buf()).marks == nil,
+            group_exists = group_exists,
+        }
+    end, root_config())
+
+    expect.equality(result, {
+        default_registered = false,
+        default_group_exists = false,
+        collapsed_registered = true,
+        collapsed_marks = { { line = 1, type = "Mark", text = "a" } },
+        table_mode_reused = true,
+        removed = true,
+        marks_cleared = true,
+        group_exists = false,
     })
 end
 

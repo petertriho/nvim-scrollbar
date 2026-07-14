@@ -44,6 +44,12 @@ local DEFAULTS = {
             priority = 0,
             highlight = "Normal",
         },
+        Mark = {
+            text = {},
+            column = 1,
+            priority = 1,
+            highlight = "Special",
+        },
         Search = {
             text = { "-", "=" },
             column = 1,
@@ -103,6 +109,7 @@ local DEFAULTS = {
         cursor = true,
         diagnostic = true,
         search = true,
+        marks = true,
         gitsigns = false,
         ale = false,
         coc = false,
@@ -157,8 +164,17 @@ local NESTED_KEYS = {
         hide_if_all_visible = true,
     },
     mark = { text = true, column = true, priority = true, highlight = true },
-    providers = { cursor = true, diagnostic = true, search = true, gitsigns = true, ale = true, coc = true },
+    providers = {
+        cursor = true,
+        diagnostic = true,
+        search = true,
+        marks = true,
+        gitsigns = true,
+        ale = true,
+        coc = true,
+    },
     search = { live = true, backend = true },
+    ["providers.marks"] = { max_width = true, letters = true, numbers = true },
 }
 
 local ENUMS = {
@@ -183,7 +199,13 @@ local function layout_config(value)
             priority = mark.priority,
         }
     end
-    return { width = value.float.width, marks = marks }
+    local marks_provider = value.providers.marks
+    return {
+        width = value.float.width,
+        marks = marks,
+        marks_max_width = type(marks_provider) == "table" and marks_provider.max_width or false,
+        horizontal_anchor = value.float.placement.anchor:sub(2, 2),
+    }
 end
 
 local function invalid(message)
@@ -191,7 +213,7 @@ local function invalid(message)
 end
 
 local function is_integer(value)
-    return type(value) == "number" and value == math.floor(value)
+    return type(value) == "number" and value > -math.huge and value < math.huge and value == math.floor(value)
 end
 
 local function validate_unknown_keys(value, allowed, path)
@@ -233,6 +255,9 @@ local function validate_shape(overrides)
 
     if type(overrides.providers) == "table" and type(overrides.providers.search) == "table" then
         validate_unknown_keys(overrides.providers.search, NESTED_KEYS.search, "providers.search")
+    end
+    if type(overrides.providers) == "table" and type(overrides.providers.marks) == "table" then
+        validate_unknown_keys(overrides.providers.marks, NESTED_KEYS["providers.marks"], "providers.marks")
     end
 
     if type(overrides.marks) == "table" then
@@ -289,14 +314,14 @@ local function normalize_highlight(value, path)
     invalid(path .. " must be a non-empty string or table")
 end
 
-local function normalize_text(value, path)
+local function normalize_text(value, path, allow_empty)
     if type(value) == "string" then
         value = { value }
     elseif type(value) ~= "table" then
         invalid(path .. " must be a string or dense list of strings")
     end
 
-    if #value == 0 then
+    if #value == 0 and not allow_empty then
         invalid(path .. " must contain at least one variant")
     end
 
@@ -345,7 +370,7 @@ local function validate_string_list(value, path)
     end
 end
 
-local function normalize_providers(providers)
+local function normalize_providers(providers, float_width)
     for _, name in ipairs({ "cursor", "diagnostic", "gitsigns", "ale", "coc" }) do
         validate_boolean(providers[name], "providers." .. name)
     end
@@ -353,8 +378,6 @@ local function normalize_providers(providers)
     local search = providers.search
     if search == true then
         providers.search = { live = false, backend = "worker" }
-    elseif search == false then
-        return
     elseif type(search) == "table" then
         if search.live == nil then
             search.live = false
@@ -364,8 +387,32 @@ local function normalize_providers(providers)
         end
         validate_boolean(search.live, "providers.search.live")
         validate_enum(search.backend, "providers.search.backend", ENUMS.search_backend)
-    else
+    elseif search ~= false then
         invalid("providers.search must be a boolean or table")
+    end
+
+    local marks = providers.marks
+    if marks == true then
+        providers.marks = { max_width = false, letters = true, numbers = false }
+    elseif type(marks) == "table" then
+        if marks.max_width == nil then
+            marks.max_width = false
+        else
+            validate_integer(marks.max_width, "providers.marks.max_width", false)
+            if marks.max_width < float_width then
+                invalid("providers.marks.max_width must be greater than or equal to float.width")
+            end
+        end
+        if marks.letters == nil then
+            marks.letters = true
+        end
+        if marks.numbers == nil then
+            marks.numbers = false
+        end
+        validate_boolean(marks.letters, "providers.marks.letters")
+        validate_boolean(marks.numbers, "providers.marks.numbers")
+    elseif marks ~= false then
+        invalid("providers.marks must be a boolean or table")
     end
 end
 
@@ -451,7 +498,7 @@ local function normalize(overrides)
         end
 
         local path = "marks." .. mark_type
-        mark.text = normalize_text(mark.text, path .. ".text")
+        mark.text = normalize_text(mark.text, path .. ".text", mark_type == "Mark")
         validate_integer(mark.column, path .. ".column", false)
         if mark.column > result.float.width then
             invalid(path .. ".column must fit within float.width")
@@ -463,7 +510,7 @@ local function normalize(overrides)
     if type(result.providers) ~= "table" then
         invalid("providers must be a table")
     end
-    normalize_providers(result.providers)
+    normalize_providers(result.providers, result.float.width)
     validate_string_list(result.excluded_buftypes, "excluded_buftypes")
     validate_string_list(result.excluded_filetypes, "excluded_filetypes")
 

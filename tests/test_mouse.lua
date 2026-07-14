@@ -81,7 +81,7 @@ local function setup_single(child, options)
         local active_config = require("scrollbar.config").set(opts.config)
         local source_buf = vim.api.nvim_win_get_buf(source_win)
         if opts.marks and #opts.marks > 0 then
-            assert(require("scrollbar.store").set("mouse-test", source_buf, opts.marks))
+            assert(require("scrollbar.store").set(opts.mark_provider, source_buf, opts.marks))
         end
         if opts.compact_search then
             local compact = require("scrollbar.providers.search_compact").encode(opts.compact_search)
@@ -131,6 +131,7 @@ local function setup_single(child, options)
         height = options.height or 10,
         config = options.config or mouse_config(),
         marks = options.marks or {},
+        mark_provider = options.mark_provider or "mouse-test",
         compact_search = options.compact_search,
         folds = options.folds or {},
         chrome = options.chrome or false,
@@ -443,6 +444,143 @@ T["compact search marks keep the ordinary exact click target"] = function()
     expect.equality(child.api.nvim_win_get_cursor(setup.source_win)[1], 21)
 end
 
+T["expanded named marks navigate by letter and adjacent cells do not drag"] = function()
+    local child = new_child()
+    local setup = setup_single(child, {
+        config = mouse_config({
+            float = { width = 4 },
+            handle = { column = 4, width = 1 },
+            providers = { marks = { max_width = 4 } },
+        }),
+        mark_provider = "marks",
+        marks = {
+            { line = 100, type = "Mark", text = "c" },
+            { line = 101, type = "Mark", text = "a" },
+            { line = 102, type = "Mark", text = "b" },
+        },
+    })
+    local positions = {}
+    for row, cells in ipairs(setup.hitmap) do
+        for column, cell in ipairs(cells) do
+            if cell.provider == "marks" then
+                positions[cell.line] = { row - 1, column }
+            end
+        end
+    end
+    local mark_row = positions[100][1]
+    expect.equality(positions, {
+        [100] = { mark_row, 1 },
+        [101] = { mark_row, 2 },
+        [102] = { mark_row, 3 },
+    })
+
+    for _, line in ipairs({ 100, 101, 102 }) do
+        setup = reset_view(child, setup, 1)
+        click(child, setup, positions[line][1], positions[line][2])
+        expect.equality(child.api.nvim_win_get_cursor(setup.source_win)[1], line + 1)
+    end
+
+    setup = reset_view(child, setup, 1)
+    local screen_row = setup.position[1] + mark_row
+    local screen_col = setup.position[2] + 1
+    input_mouse(child, "press", screen_row, screen_col)
+    input_mouse(child, "drag", screen_row + 1, screen_col)
+    expect.equality(child.lua_get([[require("scrollbar.mouse").get_interaction().dragging]]), false)
+    input_mouse(child, "release", screen_row + 1, screen_col)
+    expect.equality(child.api.nvim_win_get_cursor(setup.source_win)[1], 102)
+end
+
+T["collapsed named marks keep their deterministic representative click"] = function()
+    local child = new_child()
+    local setup = setup_single(child, {
+        config = mouse_config({ providers = { marks = true } }),
+        mark_provider = "marks",
+        marks = {
+            { line = 100, type = "Mark", text = "c" },
+            { line = 101, type = "Mark", text = "a" },
+            { line = 102, type = "Mark", text = "b" },
+        },
+    })
+    local mark_row
+    for row, cells in ipairs(setup.hitmap) do
+        if cells[1].provider == "marks" then
+            mark_row = row - 1
+        end
+    end
+    expect.no_equality(mark_row, nil)
+    expect.equality(setup.hitmap[mark_row + 1][1].line, 100)
+    expect.equality(setup.hitmap[mark_row + 1][1].lines, { 100, 101, 102 })
+
+    click(child, setup, mark_row, 1)
+    expect.equality(child.api.nvim_win_get_cursor(setup.source_win)[1], 101)
+end
+
+T["uses mark rest and pressed highlights on the translated east handle"] = function()
+    local child = new_child()
+    local setup = setup_single(child, {
+        config = mouse_config({
+            float = { width = 1, placement = { anchor = "NE" } },
+            handle = { column = 1, width = 1 },
+            providers = { marks = { max_width = 4 } },
+        }),
+        mark_provider = "marks",
+        marks = {
+            { line = 0, type = "Mark", text = "a" },
+            { line = 1, type = "Mark", text = "b" },
+            { line = 2, type = "Mark", text = "c" },
+        },
+    })
+    expect.equality(setup.handle.column, 3)
+    expect.equality(setup.hitmap[1][3], {
+        handle = true,
+        provider = "marks",
+        type = "Mark",
+        line = 2,
+        lines = { 2 },
+        start_col = 3,
+        end_col = 3,
+    })
+    local resting = highlight_groups(child, setup.float_buf)
+    expect.equality(resting.ScrollbarMark, true)
+    expect.equality(resting.ScrollbarMarkHandle, true)
+
+    local screen_row = setup.position[1]
+    local screen_col = setup.position[2] + setup.handle.column - 1
+    input_mouse(child, "press", screen_row, screen_col)
+    local pressed = highlight_groups(child, setup.float_buf)
+    expect.equality(pressed.ScrollbarMark, true)
+    expect.equality(pressed.ScrollbarMarkHandle, nil)
+    expect.equality(pressed.ScrollbarMarkHandlePressed, true)
+    expect.equality(child.lua_get([[require("scrollbar.mouse").get_interaction().pressed_col]]), 3)
+
+    input_mouse(child, "release", screen_row, screen_col)
+    expect.equality(child.api.nvim_win_get_cursor(setup.source_win)[1], 3)
+    local released = highlight_groups(child, setup.float_buf)
+    expect.equality(released.ScrollbarMarkHandle, true)
+    expect.equality(released.ScrollbarMarkHandlePressed, nil)
+end
+
+T["drags from the translated east handle column"] = function()
+    local child = new_child()
+    local setup = setup_single(child, {
+        config = mouse_config({
+            float = { width = 1, placement = { anchor = "NE" } },
+            handle = { column = 1, width = 1 },
+            providers = { marks = { max_width = 4 } },
+        }),
+        mark_provider = "marks",
+        marks = {
+            { line = 0, type = "Mark", text = "a" },
+            { line = 1, type = "Mark", text = "b" },
+            { line = 2, type = "Mark", text = "c" },
+        },
+    })
+    expect.equality(setup.handle.column, 3)
+
+    drag(child, setup, setup.handle.first_row, 5, setup.handle.column)
+    expect.equality(child.api.nvim_win_get_cursor(setup.source_win)[1], 112)
+end
+
 T["keeps a mark-over-handle press as an exact mark click without movement"] = function()
     local child = new_child()
     local setup = setup_single(child, {
@@ -486,6 +624,60 @@ T["turns a mark-over-handle press into a handle drag after movement"] = function
     input_mouse(child, "release", setup.position[1] + 5, screen_col)
     expect.equality(child.api.nvim_win_get_cursor(setup.source_win)[1], 112)
     expect.equality(child.api.nvim_get_current_win(), setup.source_win)
+end
+
+T["keeps an east handle press stationary when expansion changes relative columns"] = function()
+    local child = new_child()
+    local setup = setup_single(child, {
+        config = mouse_config({
+            float = { width = 1, placement = { anchor = "NE" } },
+            handle = { column = 1, width = 1 },
+            providers = { marks = { max_width = 4 } },
+        }),
+        mark_provider = "marks",
+        marks = { { line = 2, type = "Mark", text = "c" } },
+    })
+    local screen_row = setup.position[1] + setup.handle.first_row
+    local screen_col = setup.position[2] + setup.handle.column - 1
+
+    input_mouse(child, "press", screen_row, screen_col)
+    expect.equality(child.lua_get([[require("scrollbar.mouse").get_interaction().pressed_col]]), 1)
+    local grown = child.lua_func(function(source_win, source_buf)
+        assert(require("scrollbar.store").set("marks", source_buf, {
+            { line = 0, type = "Mark", text = "a" },
+            { line = 1, type = "Mark", text = "b" },
+            { line = 2, type = "Mark", text = "c" },
+        }))
+        local state = assert(require("scrollbar.renderer").render(source_win))
+        vim.cmd("redraw")
+        return {
+            width = state.width,
+            handle_column = state.handle.column,
+            position = vim.fn.win_screenpos(state.float_win),
+        }
+    end, setup.source_win, setup.source_buf)
+    expect.equality(grown.width, 3)
+    expect.equality(grown.handle_column, 3)
+    expect.equality(grown.position[2] - 1 + grown.handle_column - 1, screen_col)
+
+    child.lua([[require("scrollbar.mouse").drag()]])
+    local active = child.lua_func(function()
+        local mouse = vim.fn.getmousepos()
+        local current = assert(require("scrollbar.mouse").get_interaction())
+        return {
+            mouse_col = mouse.wincol,
+            last_col = current.last_col,
+            dragging = current.dragging,
+        }
+    end)
+    expect.equality(active, {
+        mouse_col = 3,
+        last_col = 3,
+        dragging = false,
+    })
+    input_mouse(child, "release", screen_row, screen_col)
+    expect.equality(child.api.nvim_win_get_cursor(setup.source_win)[1], 3)
+    expect.equality(child.lua_get([[require("scrollbar.mouse").get_interaction()]]), vim.NIL)
 end
 
 T["drags to top middle and bottom while preserving the handle grab offset"] = function()

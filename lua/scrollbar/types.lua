@@ -8,7 +8,7 @@
 ---@alias ScrollbarText string|string[]
 ---@alias ScrollbarHighlightDefinition table<string, any> A table accepted by nvim_set_hl()
 ---@alias ScrollbarHighlight string|ScrollbarHighlightDefinition
----@alias ScrollbarProviderOption boolean|ScrollbarSearchProviderConfig
+---@alias ScrollbarProviderOption boolean|ScrollbarSearchProviderConfig|ScrollbarMarksProviderConfig
 
 ---@class ScrollbarUserPlacement
 ---@field relative? ScrollbarPlacementRelative
@@ -58,10 +58,21 @@
 ---@field live? boolean
 ---@field backend? ScrollbarSearchBackend
 
+---@class ScrollbarMarksProviderConfig
+---@field max_width false|integer
+---@field letters boolean
+---@field numbers boolean
+
+---@class ScrollbarUserMarksProviderConfig
+---@field max_width? integer
+---@field letters? boolean
+---@field numbers? boolean
+
 ---@class ScrollbarUserProvidersConfig
 ---@field cursor? boolean
 ---@field diagnostic? boolean
 ---@field search? boolean|ScrollbarUserSearchProviderConfig
+---@field marks? boolean|ScrollbarUserMarksProviderConfig
 ---@field gitsigns? boolean
 ---@field ale? boolean
 ---@field coc? boolean
@@ -118,7 +129,7 @@
 ---@field hide_if_all_visible boolean
 
 ---@class ScrollbarMarkTypeConfig
----@field text string[] Density variants ordered from least to most dense
+---@field text string[] Density variants ordered from least to most dense; an empty Mark list uses provider text
 ---@field column integer One-based display column
 ---@field priority integer
 ---@field highlight ScrollbarHighlight Source highlight group or direct definition
@@ -127,6 +138,7 @@
 ---@field cursor boolean
 ---@field diagnostic boolean
 ---@field search false|ScrollbarSearchProviderConfig
+---@field marks false|ScrollbarMarksProviderConfig
 ---@field gitsigns boolean
 ---@field ale boolean
 ---@field coc boolean
@@ -245,15 +257,17 @@
 ---@field config ScrollbarConfig
 ---@field height integer
 ---@field line_count? integer Logical line count required by compact line-mode search
+---@field container_width? integer Placement container width; defaults to the configured base width
 ---@field geometry ScrollbarGeometry
 ---@field marks ScrollbarLayoutMark[] Marks aligned with geometry.mark_rows
----@field mark_layer? ScrollbarPlacedMark[][] Precomputed static placed mark cells by zero-based row
+---@field mark_layer? ScrollbarResolvedMarkLayer Precomputed static placed mark cells and resolved width
 ---@field compact_search? ScrollbarCompactSearch Private built-in search matches
 
 ---@class ScrollbarMarkLayerInput
 ---@field config ScrollbarConfig
 ---@field height integer
 ---@field line_count? integer Logical line count required by compact line-mode search
+---@field container_width? integer Placement container width; defaults to the configured base width
 ---@field geometry { mark_rows: integer[] }
 ---@field marks ScrollbarLayoutMark[]
 ---@field compact_search? ScrollbarCompactSearch Private built-in search matches
@@ -268,8 +282,14 @@
 ---@field line integer
 ---@field lines integer[]
 
+---@class ScrollbarResolvedMarkLayer
+---@field rows ScrollbarPlacedMark[][] Placed mark cells by zero-based row
+---@field width integer Effective total layout width
+---@field column_offset integer East-anchor translation applied to base content
+
 ---@class ScrollbarLayoutOutput
 ---@field rows string[]
+---@field width integer Effective total layout width
 ---@field highlights ScrollbarHighlightSpan[][]
 ---@field hitmap ScrollbarHitCell[][]
 ---@field handle ScrollbarHandleGeometry
@@ -310,11 +330,11 @@
 ---@field buffer_revision integer
 ---@field window_revision integer
 ---@field line_count integer
----@field width integer
+---@field container_width integer
 ---@field height integer
 ---@field config_generation integer
 ---@field mark_rows integer[]
----@field layer ScrollbarPlacedMark[][]
+---@field layer ScrollbarResolvedMarkLayer
 
 ---@class ScrollbarSchedulerRenderer
 ---@field render fun(source_win: integer): ScrollbarWindowState?
@@ -359,6 +379,8 @@
 ---@field float_buf integer
 ---@field pressed_row integer
 ---@field pressed_col integer
+---@field pressed_screen_row integer
+---@field pressed_screen_col integer
 ---@field pressed_hit ScrollbarHitCell
 ---@field handle ScrollbarHandleGeometry
 ---@field handle_grab_offset? integer

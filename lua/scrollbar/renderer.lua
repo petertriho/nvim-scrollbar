@@ -241,12 +241,13 @@ end
 
 ---@param source_win integer
 ---@param area table<string, integer>
+---@param container_width integer
+---@param width integer
 ---@param hidden boolean
 ---@return table<string, any>
-local function float_config(source_win, area, hidden)
+local function float_config(source_win, area, container_width, width, hidden)
     local active_config = config.get()
     local placement = active_config.float.placement
-    local container_width = placement.relative == "window" and area.width or vim.o.columns
     local north = placement.anchor == "NW" or placement.anchor == "NE"
     local west = placement.anchor == "NW" or placement.anchor == "SW"
     local vertical_anchor
@@ -261,7 +262,7 @@ local function float_config(source_win, area, hidden)
         anchor = placement.anchor,
         row = vertical_anchor + placement.row,
         col = (west and 0 or container_width) + placement.col,
-        width = active_config.float.width,
+        width = width,
         height = area.height,
         style = "minimal",
         focusable = active_config.mouse.enabled,
@@ -521,7 +522,7 @@ end
 ---@param buffer_revision integer
 ---@param window_revision integer
 ---@param line_count integer
----@param width integer
+---@param container_width integer
 ---@param height integer
 ---@param active_config ScrollbarConfig
 ---@param marks ScrollbarLayoutMark[]
@@ -533,7 +534,7 @@ local function line_mark_layer(
     buffer_revision,
     window_revision,
     line_count,
-    width,
+    container_width,
     height,
     active_config,
     marks,
@@ -547,7 +548,7 @@ local function line_mark_layer(
         and cached.buffer_revision == buffer_revision
         and cached.window_revision == window_revision
         and cached.line_count == line_count
-        and cached.width == width
+        and cached.container_width == container_width
         and cached.height == height
         and cached.config_generation == config_generation
     then
@@ -564,7 +565,7 @@ local function line_mark_layer(
         buffer_revision = buffer_revision,
         window_revision = window_revision,
         line_count = line_count,
-        width = width,
+        container_width = container_width,
         height = height,
         config_generation = config_generation,
         mark_rows = mark_rows,
@@ -572,6 +573,7 @@ local function line_mark_layer(
             config = active_config,
             height = height,
             line_count = line_count,
+            container_width = container_width,
             geometry = { mark_rows = mark_rows },
             marks = marks,
             compact_search = compact_search,
@@ -709,7 +711,7 @@ local function render_source(source_win)
         return nil
     end
 
-    local width = active_config.float.width
+    local container_width = active_config.float.placement.relative == "window" and area.width or vim.o.columns
     local expand_compact = active_config.render.geometry == "screen"
     local marks, buffer_revision, window_revision, compact_search =
         flattened_marks(source_win, source_buf, expand_compact)
@@ -723,7 +725,7 @@ local function render_source(source_win)
             buffer_revision,
             window_revision,
             line_count,
-            width,
+            container_width,
             area.height,
             active_config,
             marks,
@@ -747,6 +749,7 @@ local function render_source(source_win)
         config = active_config,
         height = area.height,
         line_count = active_config.render.geometry == "line" and vim.api.nvim_buf_line_count(source_buf) or nil,
+        container_width = container_width,
         geometry = geometry,
         marks = marks,
         mark_layer = mark_layer,
@@ -760,14 +763,20 @@ local function render_source(source_win)
         if state ~= nil then
             close_state(state)
         end
-        local active_float_config = float_config(source_win, area, cursor_position_available)
+        local active_float_config =
+            float_config(source_win, area, container_width, output.width, cursor_position_available)
         state = create_state(source_win, source_buf, active_float_config, configure_buffer, configure_window)
         if cursor_position_available then
             resolve_float_position()
         end
     else
-        local active_float_config =
-            float_config(source_win, area, cursor_position_available and state.hidden_by_cursor or false)
+        local active_float_config = float_config(
+            source_win,
+            area,
+            container_width,
+            output.width,
+            cursor_position_available and state.hidden_by_cursor or false
+        )
         if not vim.deep_equal(state.float_config, active_float_config) then
             if cursor_position_available then
                 active_float_config.hide = true
@@ -787,8 +796,8 @@ local function render_source(source_win)
 
     update_cursor_visibility(state, cursor_row, cursor_col)
 
-    local active_highlights = update_buffer(state, output, width, area.height)
-    state.width = width
+    local active_highlights = update_buffer(state, output, output.width, area.height)
+    state.width = output.width
     state.height = area.height
     state.rows = output.rows
     state.highlights = output.highlights

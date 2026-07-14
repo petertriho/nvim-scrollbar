@@ -150,8 +150,10 @@ local function instrument_renderer()
     wrap_upvalue(render_source, "update_buffer", "buffer/extmark updates")
 
     local original_compose = layout.compose
-    wrap_upvalue(original_compose, "group_candidates", "mark grouping/placement")
-    wrap_upvalue(original_compose, "place_marks", "mark grouping/placement")
+    local resolve_index = upvalue_index(original_compose, "resolve_mark_layer")
+    local _, resolve_mark_layer = debug.getupvalue(original_compose, resolve_index)
+    wrap_upvalue(resolve_mark_layer, "group_candidates", "mark grouping/placement")
+    wrap_upvalue(resolve_mark_layer, "place_marks", "mark grouping/placement")
     rawset(layout, "compose", function(...)
         local grouping_before = current_sample and current_sample["mark grouping/placement"] or 0
         local started = vim.uv.hrtime()

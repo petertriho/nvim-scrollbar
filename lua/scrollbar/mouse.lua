@@ -81,14 +81,18 @@ local function set_handle_pressed(current, pressed)
 end
 
 ---@param float_win integer
----@return integer, integer, integer
+---@return integer, integer, integer, integer, integer
 local function mouse_position(float_win)
     local mouse = vim.fn.getmousepos()
     if mouse.winid == float_win then
-        return mouse.winid, mouse.winrow - 1, mouse.wincol
+        return mouse.winid, mouse.winrow - 1, mouse.wincol, mouse.screenrow, mouse.screencol
     end
     local position = vim.fn.win_screenpos(float_win)
-    return mouse.winid, mouse.screenrow - position[1], mouse.screencol - position[2] + 1
+    return mouse.winid,
+        mouse.screenrow - position[1],
+        mouse.screencol - position[2] + 1,
+        mouse.screenrow,
+        mouse.screencol
 end
 
 ---@param current ScrollbarInteractionState
@@ -199,7 +203,7 @@ M.press = function(float_win)
     if state == nil or not valid_state(state) then
         return
     end
-    local _, row, col = mouse_position(state.float_win)
+    local _, row, col, screen_row, screen_col = mouse_position(state.float_win)
     if row < 0 or row >= state.height or col < 1 or col > state.width then
         return
     end
@@ -217,6 +221,8 @@ M.press = function(float_win)
         float_buf = state.float_buf,
         pressed_row = row,
         pressed_col = col,
+        pressed_screen_row = screen_row,
+        pressed_screen_col = screen_col,
         pressed_hit = vim.deepcopy(hit),
         handle = vim.deepcopy(state.handle),
         handle_grab_offset = pressed_handle and row - state.handle.first_row or nil,
@@ -244,10 +250,10 @@ M.drag = function()
         return
     end
 
-    local _, row, col = mouse_position(current.float_win)
+    local _, row, col, screen_row, screen_col = mouse_position(current.float_win)
     row = clamp(row, 0, state.height - 1)
     col = clamp(col, 1, state.width)
-    local moved = row ~= current.pressed_row or col ~= current.pressed_col
+    local moved = screen_row ~= current.pressed_screen_row or screen_col ~= current.pressed_screen_col
     if moved and current.handle_grab_offset ~= nil then
         current.dragging = true
         navigate(current, state, drag_line(current, state, row))
