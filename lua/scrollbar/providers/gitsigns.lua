@@ -24,12 +24,12 @@ local function collect_marks(bufnr)
                 table.insert(marks, { line = line - 1, type = "GitAdd" })
             end
         elseif hunk.type == "change" then
-            local added_end = hunk.added.start + hunk.added.count - hunk.removed.count + 1
-            for line = hunk.added.start + hunk.removed.count, added_end do
-                table.insert(marks, { line = line - 1, type = "GitAdd" })
-            end
-            for line = hunk.added.start, hunk.added.start + hunk.removed.count - 1 do
+            local changed_count = math.min(hunk.added.count, hunk.removed.count)
+            for line = hunk.added.start, hunk.added.start + changed_count - 1 do
                 table.insert(marks, { line = line - 1, type = "GitChange" })
+            end
+            for line = hunk.added.start + changed_count, hunk.added.start + hunk.added.count - 1 do
+                table.insert(marks, { line = line - 1, type = "GitAdd" })
             end
         elseif hunk.type == "delete" then
             table.insert(marks, { line = hunk.added.start - 1, type = "GitDelete" })

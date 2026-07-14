@@ -10,6 +10,7 @@ local SEVERITY_TYPES = {
 local state = {
     context = nil,
     generation = 0,
+    request_sequence = 0,
     marks = {},
 }
 
@@ -37,10 +38,11 @@ end
 
 ---@param context ScrollbarProviderContext
 ---@param generation integer
+---@param request_sequence integer
 ---@param err any
 ---@param diagnostic_list any
-local function apply_diagnostics(context, generation, err, diagnostic_list)
-    if generation ~= state.generation or context ~= state.context then
+local function apply_diagnostics(context, generation, request_sequence, err, diagnostic_list)
+    if generation ~= state.generation or request_sequence ~= state.request_sequence or context ~= state.context then
         return
     end
     if err ~= nil and err ~= vim.NIL then
@@ -78,8 +80,10 @@ end
 ---@param context ScrollbarProviderContext
 ---@param generation integer
 local function request_diagnostics(context, generation)
+    state.request_sequence = state.request_sequence + 1
+    local request_sequence = state.request_sequence
     pcall(vim.fn.CocActionAsync, "diagnosticList", function(err, diagnostic_list)
-        apply_diagnostics(context, generation, err, diagnostic_list)
+        apply_diagnostics(context, generation, request_sequence, err, diagnostic_list)
     end)
 end
 
@@ -87,6 +91,7 @@ end
 M.setup = function(context)
     state.generation = state.generation + 1
     state.context = context
+    state.request_sequence = 0
     state.marks = {}
     local generation = state.generation
     local group = context.create_augroup("events")
@@ -110,6 +115,7 @@ end
 M.dispose = function()
     state.generation = state.generation + 1
     state.context = nil
+    state.request_sequence = 0
     state.marks = {}
 end
 

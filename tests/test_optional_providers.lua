@@ -145,6 +145,52 @@ T["gitsigns fans out fallback updates, clears marks, and disposes its augroup"] 
     expect.equality(require("scrollbar.store").get(second), {})
 end
 
+T["gitsigns bounds change marks to the surviving added range"] = function()
+    local target = new_buffer({ "1", "2", "3", "4", "5" })
+    local hunks = {}
+    package.preload["gitsigns"] = function()
+        return {
+            get_hunks = function()
+                return hunks
+            end,
+        }
+    end
+
+    local providers = require("scrollbar.providers")
+    providers.register(require("scrollbar.providers.gitsigns"))
+    providers.setup({
+        is_buffer_eligible = function(bufnr)
+            return bufnr == target
+        end,
+    })
+
+    hunks = {
+        { type = "change", added = { start = 2, count = 1 }, removed = { count = 1 } },
+    }
+    providers.refresh(target)
+    expect.equality(require("scrollbar.store").get(target).gitsigns, {
+        { line = 1, type = "GitChange" },
+    })
+
+    hunks = {
+        { type = "change", added = { start = 2, count = 3 }, removed = { count = 1 } },
+    }
+    providers.refresh(target)
+    expect.equality(require("scrollbar.store").get(target).gitsigns, {
+        { line = 1, type = "GitChange" },
+        { line = 2, type = "GitAdd" },
+        { line = 3, type = "GitAdd" },
+    })
+
+    hunks = {
+        { type = "change", added = { start = 2, count = 1 }, removed = { count = 3 } },
+    }
+    providers.refresh(target)
+    expect.equality(require("scrollbar.store").get(target).gitsigns, {
+        { line = 1, type = "GitChange" },
+    })
+end
+
 T["ALE converts one-based lines and updates only each event buffer"] = function()
     local first = new_buffer({ "1", "2", "3" })
     local second = new_buffer({ "1", "2", "3" })
@@ -290,6 +336,41 @@ T["Coc asynchronously replaces all URI diagnostics and preserves severity mappin
         true
     )
     expect.equality(require("scrollbar.store").get(first), {})
+end
+
+T["Coc ignores diagnostic responses older than the latest request"] = function()
+    local target = new_buffer({ "1", "2", "3" })
+    local callbacks = {}
+    rawset(vim.fn, "CocActionAsync", function(_, callback)
+        table.insert(callbacks, callback)
+    end)
+
+    local providers = require("scrollbar.providers")
+    providers.register(require("scrollbar.providers.coc"))
+    providers.setup({
+        is_buffer_eligible = function(bufnr)
+            return bufnr == target
+        end,
+    })
+    vim.api.nvim_exec_autocmds("User", { pattern = "CocDiagnosticChange" })
+    expect.equality(#callbacks, 2)
+
+    callbacks[2](vim.NIL, {
+        {
+            severity = "Warning",
+            location = { uri = vim.uri_from_bufnr(target), range = { start = { line = 1 } } },
+        },
+    })
+    callbacks[1](vim.NIL, {
+        {
+            severity = "Error",
+            location = { uri = vim.uri_from_bufnr(target), range = { start = { line = 0 } } },
+        },
+    })
+
+    expect.equality(require("scrollbar.store").get(target).coc, {
+        { line = 1, type = "Warn" },
+    })
 end
 
 T["missing optional dependencies leave runtime and provider setup usable"] = function()
