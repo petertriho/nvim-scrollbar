@@ -45,11 +45,11 @@ end
 local function capture_notifications()
     local notifications = {}
     local original = vim.notify
-    vim.notify = function(message, level)
+    rawset(vim, "notify", function(message, level)
         table.insert(notifications, { message = message, level = level })
-    end
+    end)
     MiniTest.finally(function()
-        vim.notify = original
+        rawset(vim, "notify", original)
     end)
     return notifications
 end
@@ -123,6 +123,103 @@ T["tracks independent revisions and preserves trusted snapshots across no-op upd
     expect.equality(first_buffer.marks, {
         alpha = { { line = 0, type = "Custom" } },
     })
+end
+
+T["filters stale buffer marks before replacement and revision checks"] = function()
+    local notifications = capture_notifications()
+    local store = require("scrollbar.store")
+    local bufnr = new_buffer({ "one", "two", "three", "four" })
+    store.set("alpha", bufnr, {
+        { line = 0, type = "Custom" },
+        { line = 3, type = "Search" },
+    })
+    local before = store._get_snapshot(bufnr)
+    vim.api.nvim_buf_set_lines(bufnr, 2, -1, false, {})
+
+    local ok, changed = store.set("alpha", bufnr, {
+        { line = 1, type = "Custom", text = "x" },
+        { line = 3, type = "Search" },
+    })
+    expect.equality(ok, true)
+    expect.equality(changed, { [bufnr] = true })
+    local mixed = store._get_snapshot(bufnr)
+    expect.equality(mixed.marks, {
+        alpha = { { line = 1, type = "Custom", text = "x" } },
+    })
+    expect.equality(mixed.revision, before.revision + 1)
+
+    ok, changed = store.set("alpha", bufnr, {
+        { line = 1, type = "Custom", text = "x" },
+        { line = 20, type = "Custom" },
+    })
+    expect.equality(ok, true)
+    expect.equality(changed, {})
+    expect.equality(rawequal(store._get_snapshot(bufnr), mixed), true)
+
+    ok, changed = store.set("alpha", bufnr, {
+        { line = 2, type = "Custom" },
+        { line = 30, type = "Search" },
+    })
+    expect.equality(ok, true)
+    expect.equality(changed, { [bufnr] = true })
+    local empty = store._get_snapshot(bufnr)
+    expect.equality(empty.marks, { alpha = {} })
+    expect.equality(empty.revision, mixed.revision + 1)
+
+    ok, changed = store.set("alpha", bufnr, { { line = 100, type = "Custom" } })
+    expect.equality(ok, true)
+    expect.equality(changed, {})
+    expect.equality(rawequal(store._get_snapshot(bufnr), empty), true)
+    expect.equality(notifications, {})
+end
+
+T["filters stale window marks before replacement and revision checks"] = function()
+    local notifications = capture_notifications()
+    local store = require("scrollbar.store")
+    local bufnr = new_buffer({ "one", "two", "three", "four" })
+    local winid = show_buffer(bufnr)
+    store.set_window("alpha", winid, {
+        { line = 0, type = "Custom" },
+        { line = 3, type = "Search" },
+    })
+    local before = store._get_window_snapshot(winid)
+    vim.api.nvim_buf_set_lines(bufnr, 2, -1, false, {})
+
+    local ok, changed = store.set_window("alpha", winid, {
+        { line = 1, type = "Custom", text = "x" },
+        { line = 3, type = "Search" },
+    })
+    expect.equality(ok, true)
+    expect.equality(changed, { [winid] = true })
+    local mixed = store._get_window_snapshot(winid)
+    expect.equality(mixed.marks, {
+        alpha = { { line = 1, type = "Custom", text = "x" } },
+    })
+    expect.equality(mixed.revision, before.revision + 1)
+
+    ok, changed = store.set_window("alpha", winid, {
+        { line = 1, type = "Custom", text = "x" },
+        { line = 20, type = "Custom" },
+    })
+    expect.equality(ok, true)
+    expect.equality(changed, {})
+    expect.equality(rawequal(store._get_window_snapshot(winid), mixed), true)
+
+    ok, changed = store.set_window("alpha", winid, {
+        { line = 2, type = "Custom" },
+        { line = 30, type = "Search" },
+    })
+    expect.equality(ok, true)
+    expect.equality(changed, { [winid] = true })
+    local empty = store._get_window_snapshot(winid)
+    expect.equality(empty.marks, { alpha = {} })
+    expect.equality(empty.revision, mixed.revision + 1)
+
+    ok, changed = store.set_window("alpha", winid, { { line = 100, type = "Custom" } })
+    expect.equality(ok, true)
+    expect.equality(changed, {})
+    expect.equality(rawequal(store._get_window_snapshot(winid), empty), true)
+    expect.equality(notifications, {})
 end
 
 T["stores built-in search compactly while preserving ordinary public snapshots"] = function()
@@ -264,7 +361,7 @@ T["provider disposal advances only affected buffer and window revisions"] = func
     expect.equality(rawequal(store._get_window_snapshot(winid), window_after), true)
 end
 
-T["validates complete lists against the current config and buffer bounds"] = function()
+T["validates complete lists against the current config and mark contract"] = function()
     local notifications = capture_notifications()
     local store = require("scrollbar.store")
     local bufnr = new_buffer({ "one", "two" })
@@ -275,7 +372,6 @@ T["validates complete lists against the current config and buffer bounds"] = fun
         { { line = "0", type = "Custom" } },
         { { line = 0.5, type = "Custom" } },
         { { line = -1, type = "Custom" } },
-        { { line = 2, type = "Custom" } },
         { { line = 0, type = "Missing" } },
         { { line = 0, type = "Custom", extra = true } },
         { { line = 0, type = "Custom", text = 1 } },
@@ -301,7 +397,7 @@ T["validates complete lists against the current config and buffer bounds"] = fun
     expect.equality(changed, { [bufnr] = true })
 end
 
-T["clears an existing entry when any replacement mark is invalid"] = function()
+T["stale positions do not hide malformed fields in atomic replacements"] = function()
     capture_notifications()
     local store = require("scrollbar.store")
     local bufnr = new_buffer({ "one", "two" })
@@ -309,7 +405,7 @@ T["clears an existing entry when any replacement mark is invalid"] = function()
 
     local ok, changed = store.set("alpha", bufnr, {
         { line = 1, type = "Custom" },
-        { line = 2, type = "Custom" },
+        { line = 2, type = "Missing" },
     })
 
     expect.equality(ok, false)
@@ -322,7 +418,7 @@ T["rate limits warnings by provider, buffer, and signature until success"] = fun
     local store = require("scrollbar.store")
     local first = new_buffer({ "one" })
     local second = new_buffer({ "one" })
-    local invalid_line = { { line = 1, type = "Custom" } }
+    local invalid_line = { { line = -1, type = "Custom" } }
 
     store.set("alpha", first, invalid_line)
     store.set("alpha", first, invalid_line)
@@ -415,16 +511,16 @@ T["validates and clears window marks with targeted change reporting"] = function
     expect.equality(store.get_window(first), {})
     expect.equality(store.get_window(second), {})
 
-    local ok, changed = store.set_window("invalid", first, { { line = 2, type = "Custom" } })
+    local ok, changed = store.set_window("invalid", first, { { line = -1, type = "Custom" } })
     expect.equality(ok, false)
     expect.equality(changed, {})
-    store.set_window("invalid", first, { { line = 2, type = "Custom" } })
+    store.set_window("invalid", first, { { line = -1, type = "Custom" } })
     expect.equality(#notifications, 1)
     expect.no_equality(notifications[1].message:match("provider 'invalid'.*window " .. first), nil)
 
     ok = store.set_window("invalid", first, { { line = 1, type = "Custom" } })
     expect.equality(ok, true)
-    store.set_window("invalid", first, { { line = 2, type = "Custom" } })
+    store.set_window("invalid", first, { { line = -1, type = "Custom" } })
     expect.equality(#notifications, 2)
 end
 

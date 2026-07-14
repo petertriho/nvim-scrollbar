@@ -184,10 +184,19 @@ and every mark must contain only:
 }
 ```
 
-Validation is atomic: no valid prefix is published when any mark is invalid.
-The invalid replacement clears this provider's existing list for that target,
-returns `false` from the context setter, and emits a rate-limited warning. It
-does not clear another provider's marks.
+Providers should normally publish only lines within the current buffer. As a
+narrow exception for providers racing with buffer edits, marks whose `line` is
+a non-negative integer past the current EOF are silently omitted after their
+other fields are validated. Valid survivors are published, the context setter
+returns `true`, and a list containing only such stale marks is accepted as an
+empty replacement.
+
+Validation remains atomic for every other error. Negative or non-integer lines,
+unknown fields, unconfigured types, invalid text, and malformed lists clear this
+provider's existing list for that target, return `false` from the context
+setter, and emit a rate-limited warning. A past-EOF line does not hide another
+malformed field on the same mark. Rejection does not clear another provider's
+marks.
 
 ## Context Operations
 

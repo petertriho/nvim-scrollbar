@@ -72,6 +72,18 @@ local function diagnostic(namespace, bufnr, lnum, severity, message)
     })
 end
 
+local function capture_notifications()
+    local notifications = {}
+    local original = vim.notify
+    rawset(vim, "notify", function(message, level)
+        table.insert(notifications, { message = message, level = level })
+    end)
+    MiniTest.finally(function()
+        rawset(vim, "notify", original)
+    end)
+    return notifications
+end
+
 T["DiagnosticChanged maps zero-based severities, replaces marks, and clears all source windows"] = function()
     local providers = require("scrollbar.providers")
     local store = require("scrollbar.store")
@@ -149,6 +161,40 @@ T["diagnostic events update only their buffer"] = function()
         diagnostic = { { line = 0, type = "Error" } },
     })
     expect.equality(store.get(other), {})
+end
+
+T["manual refresh omits native diagnostics left past EOF after a buffer shrink"] = function()
+    local notifications = capture_notifications()
+    local providers = require("scrollbar.providers")
+    local store = require("scrollbar.store")
+    local target = new_buffer({ "one", "two", "three", "four" })
+    local namespace = vim.api.nvim_create_namespace("ScrollbarDiagnosticProviderStaleTest")
+
+    MiniTest.finally(function()
+        if vim.api.nvim_buf_is_valid(target) then
+            vim.diagnostic.reset(namespace, target)
+        end
+    end)
+    providers.register(require("scrollbar.providers.diagnostic"))
+    providers.setup()
+    vim.diagnostic.set(namespace, target, {
+        { lnum = 1, col = 0, severity = vim.diagnostic.severity.WARN, message = "valid" },
+        { lnum = 3, col = 0, severity = vim.diagnostic.severity.ERROR, message = "stale" },
+    })
+    vim.api.nvim_buf_set_lines(target, 2, -1, false, {})
+
+    local diagnostics = vim.diagnostic.get(target)
+    expect.equality(
+        vim.tbl_map(function(item)
+            return item.lnum
+        end, diagnostics),
+        { 1, 3 }
+    )
+    expect.equality(providers.refresh(target), true)
+    expect.equality(store.get(target), {
+        diagnostic = { { line = 1, type = "Warn" } },
+    })
+    expect.equality(notifications, {})
 end
 
 T["diagnostic provider ignores excluded buffers"] = function()
