@@ -5,9 +5,9 @@
 
 ![diagnostics](./assets/diagnostics.gif)
 
-`nvim-scrollbar` renders one floating scrollbar per source window, with independent
-handles for split windows, typed mark providers, optional screen-row-accurate
-geometry, and mouse navigation.
+`nvim-scrollbar` renders one floating scrollbar per source window, with
+independent handles for split windows, typed mark providers, optional
+screen-row-accurate geometry, and mouse navigation.
 
 ## Requirements
 
@@ -18,8 +18,6 @@ geometry, and mouse navigation.
   [gitsigns.nvim](https://github.com/lewis6991/gitsigns.nvim),
   [ALE](https://github.com/dense-analysis/ale), and
   [coc.nvim](https://github.com/neoclide/coc.nvim)
-
-Versions of Neovim older than 0.11 are not supported.
 
 ## Installation
 
@@ -32,710 +30,90 @@ Versions of Neovim older than 0.11 are not supported.
 }
 ```
 
+`opts = {}` calls `require("scrollbar").setup({})` automatically. Put any
+configuration overrides inside `opts`.
+
 [vim-plug](https://github.com/junegunn/vim-plug):
 
 ```vim
 Plug 'petertriho/nvim-scrollbar'
 ```
 
-Then configure the plugin from Lua:
+With vim-plug or another manual installation, configure the plugin from Lua:
 
 ```lua
 require("scrollbar").setup()
 ```
 
-## Configuration
+## Quick Start
 
-Unknown keys and invalid values are rejected. The complete defaults are:
+The defaults enable cursor, diagnostic, search, and named-mark providers for
+every eligible source window. A small customized setup might look like:
 
 ```lua
 require("scrollbar").setup({
-    show = true,
-    visibility = "all", -- "all" or "active"
-    set_highlights = true,
-    max_lines = false, -- false or a positive line limit
-    hide_if_all_visible = false,
     autohide = {
-        enabled = false,
-        delay_ms = 1000,
-    },
-    render = {
-        interval_ms = 16,
-        geometry = "line", -- "line" or "screen"
-    },
-    float = {
-        width = 1,
-        zindex = 50,
-        hide_on_cursor = true,
-        placement = {
-            relative = "window", -- "window" or "editor"
-            anchor = "NE", -- "NW", "NE", "SW", or "SE"
-            row = 0,
-            col = 0,
-        },
-    },
-    track = {
-        highlight = "PmenuSbar",
-    },
-    mouse = {
         enabled = true,
     },
-    handle = {
-        text = " ",
-        column = 1,
-        width = 1,
-        blend = 30,
-        highlight = "PmenuThumb",
-        hide_if_all_visible = true,
-    },
-    marks = {
-        Cursor = {
-            text = { "•" },
-            column = 1,
-            priority = 0,
-            highlight = "Normal",
-        },
-        Mark = {
-            text = {},
-            column = 1,
-            priority = 1,
-            highlight = "Special",
-        },
-        Search = {
-            text = { "-", "=" },
-            column = 1,
-            priority = 1,
-            highlight = "Search",
-        },
-        Error = {
-            text = { "-", "=" },
-            column = 1,
-            priority = 2,
-            highlight = "DiagnosticVirtualTextError",
-        },
-        Warn = {
-            text = { "-", "=" },
-            column = 1,
-            priority = 3,
-            highlight = "DiagnosticVirtualTextWarn",
-        },
-        Info = {
-            text = { "-", "=" },
-            column = 1,
-            priority = 4,
-            highlight = "DiagnosticVirtualTextInfo",
-        },
-        Hint = {
-            text = { "-", "=" },
-            column = 1,
-            priority = 5,
-            highlight = "DiagnosticVirtualTextHint",
-        },
-        Misc = {
-            text = { "-", "=" },
-            column = 1,
-            priority = 6,
-            highlight = "Normal",
-        },
-        GitAdd = {
-            text = { "┆" },
-            column = 1,
-            priority = 7,
-            highlight = "GitSignsAdd",
-        },
-        GitChange = {
-            text = { "┆" },
-            column = 1,
-            priority = 7,
-            highlight = "GitSignsChange",
-        },
-        GitDelete = {
-            text = { "▁" },
-            column = 1,
-            priority = 7,
-            highlight = "GitSignsDelete",
-        },
-    },
     providers = {
-        cursor = true,
-        diagnostic = true,
-        search = true, -- true or { live = boolean, backend = "worker" | "sync" }
-        marks = true, -- false, true, or { letters = boolean, numbers = boolean, max_width = integer }
-        gitsigns = false,
-        ale = false,
-        coc = false,
-    },
-    excluded_buftypes = {
-        "terminal",
-    },
-    excluded_filetypes = {
-        "blink-cmp-menu",
-        "dropbar_menu",
-        "dropbar_menu_fzf",
-        "DressingInput",
-        "cmp_docs",
-        "cmp_menu",
-        "noice",
-        "prompt",
-        "TelescopePrompt",
+        search = { live = true },
+        marks = { numbers = true, max_width = 8 },
     },
 })
 ```
 
-`handle.column`, `handle.width`, and mark columns are one-based display-cell
-coordinates. The handle must fit within `float.width`. Mark text is clipped at
-the right edge without splitting a multi-cell character.
+Because this example enables autohide, scrollbars begin concealed and are
+revealed by cursor movement or scrolling in the affected source window.
 
-Track, handle, and mark `highlight` values accept either a highlight group name
-or a full table accepted by `nvim_set_hl()`. String values retain
-colorscheme-linked behavior; tables can define colors and attributes directly.
-
-### Visibility
-
-- `visibility = "all"` creates an independent scrollbar for every eligible
-  normal window. Two windows showing the same buffer retain different handles.
-- `visibility = "active"` keeps only the active source window's scrollbar.
-- `show = false` starts with global visibility disabled. `show()`, `hide()`, and
-  `toggle()` control this master visibility state across all eligible windows.
-- `autohide.enabled = true` keeps each eligible window concealed until its own
-  `CursorMoved`, `CursorMovedI`, or `WinScrolled` activity. Each window is hidden
-  independently after `autohide.delay_ms` of inactivity, which defaults to 1000
-  milliseconds. Even with `show = true`, autohide starts with no visible floats.
-- Provider updates, option changes, resizes, colorscheme changes, and
-  `ScrollbarRefresh` can rerender an already revealed scrollbar but do not reveal
-  a concealed one.
-- `max_lines` excludes buffers above the configured logical line count.
-- `hide_if_all_visible` hides the whole scrollbar when the document fits.
-  `handle.hide_if_all_visible` hides only the handle.
-
-### Placement
-
-`float.placement.relative` selects the placement container:
-
-- `"window"` attaches one float to each source window.
-- `"editor"` uses editor coordinates and always renders only the active source
-  window, regardless of `visibility`, so multiple floats do not overlap. Its
-  horizontal anchors use the editor width, while its vertical anchors align with
-  the active source window's text area.
-
-`anchor` selects the float corner attached to the matching container corner.
-`row` and `col` are signed offsets from that corner: positive rows move down and
-positive columns move right. For example:
-
-```lua
-require("scrollbar").setup({
-    float = {
-        placement = {
-            relative = "window",
-            anchor = "NW",
-            row = 1,
-            col = 2,
-        },
-    },
-})
-```
-
-When named-mark expansion is enabled, `float.width` remains the base width.
-`NW` and `SW` floats add columns to the right, while `NE` and `SE` floats add
-columns to the left. This grows the scrollbar inward while keeping the original
-base track and handle screen cells pinned. Signed placement offsets remain
-literal and can intentionally move or clip the expanded float.
-
-The renderer owns the float height, scratch buffer, focusability, mouse flag,
-style, and source-window association. `float.width`, `float.zindex`,
-`float.hide_on_cursor`, and the typed placement fields are the supported float
-controls. `track.highlight` controls the track background independently of those
-floating-window settings.
-
-Scrollbar tracks cover source buffer-text rows only. They exclude the source
-window's winbar and remain within window bounds that already exclude tabline,
-statusline, and command-line chrome. Explicit signed `row` offsets are still
-applied literally and can intentionally move a track outside those bounds.
-
-### Cursor Visibility
-
-`float.hide_on_cursor = true` keeps the active editing cursor and source text
-visible. When the current source window's cursor enters any cell in the float's
-actual screen rectangle, the whole scrollbar temporarily hides. Moving the
-cursor away restores the same float window, scratch buffer, rows, highlights,
-and mouse mappings.
-
-Only the cursor in `nvim_get_current_win()` triggers this behavior. Stored
-cursor positions in inactive split windows do not hide their scrollbars. The
-intersection check uses the cursor and float screen bounds, including the full
-current effective width, anchors, and placement offsets; it does not scan source
-lines or visible text.
-
-Mouse interaction with the scrollbar is unavailable while the float is hidden,
-so input at those cells reaches the source window. Interaction returns when the
-same float is restored. Set `float.hide_on_cursor = false` to preserve the
-uninterrupted overlay behavior.
-
-### Geometry
-
-`render.geometry = "line"` is the default. It maps logical source lines to the
-track and performs no fold scan. The renderer caches the static mark layer by
-buffer/window mark revisions, dimensions, line count, and render configuration;
-scroll-only frames reuse that layer and recompute only the current viewport
-handle. Provider, buffer, window, size, or configuration changes invalidate the
-relevant cache.
-
-`render.geometry = "screen"` uses `nvim_win_text_height()` so marks and the
-handle share coordinates that account for wrapping, closed folds, diff filler,
-virtual lines, `topfill`, and wrapped-line offsets. Screen geometry is recomputed
-for each dirty render. It is more accurate and intentionally more expensive;
-it is not expected to outperform line geometry.
-
-When the document's logical or rendered height fits within the track, marks
-align directly with their source or screen rows and unused rows below the
-document remain blank. Taller documents are proportionally compressed across
-the track.
-
-`render.interval_ms` is the frame-coalescing interval. Repeated invalidations
-within one frame render the latest state once. Scrolling invalidates geometry
-without recollecting provider marks, and a logical show operation is queued into
-the same latest-frame path rather than rendering twice.
-
-### Mouse
-
-Mouse support installs `<LeftMouse>`, `<LeftDrag>`, and `<LeftRelease>` mappings
-only in scrollbar float buffers. It does not install global mappings or modify
-`vim.o.mouse`.
-
-- Clicking a visible mark jumps to that mark's exact source line.
-- Clicking empty track space jumps directly by row when the document fits and
-  proportionally when it is taller than the track. Rows below short content
-  clamp to the final source line.
-- Pressing on the handle and moving drags it while preserving the grab offset.
-- A pressed handle uses the `PmenuSel` background until release or cancellation,
-  even when the pointer moves outside it during a drag.
-- A mark over the handle is an exact mark click if released without movement;
-  moving starts a handle drag.
-- Navigation moves the source cursor, opens only the containing fold with `zv`,
-  centers with `zz`, and restores source-window focus on completion or cancel.
-- When autohide is enabled, pressing or dragging a scrollbar pauses that source
-  window's deadline. Release or a valid cancellation starts a fresh full delay,
-  so the float cannot disappear during interaction.
-- A scrollbar hidden by `float.hide_on_cursor` does not capture mouse input. The
-  source window receives input until the same scrollbar becomes visible again.
-
-Set `mouse.enabled = false` to make scrollbar floats non-focusable and omit the
-mappings. Even when enabled, interaction works only in modes allowed by the
-user's `mouse` option, such as `vim.o.mouse = "a"`.
+Unknown keys and invalid values are rejected. See the
+[complete configuration reference](docs/configuration.md) for every default and
+accepted value.
 
 ## Providers
 
-Built-in providers are configured under `providers`:
-
-| Provider | Default | Source | Optional dependency |
+| Provider | Default | Source | Dependency |
 | --- | --- | --- | --- |
-| `cursor` | on | Current source cursor | None |
-| `diagnostic` | on | Neovim 0.11 `vim.diagnostic` | None |
-| `search` | on | Native `/` and `?` search | None |
-| `marks` | on | Letter marks `[a-zA-Z]`; optional numbered marks `[0-9]` | None |
-| `gitsigns` | off | Git hunks | gitsigns.nvim |
-| `ale` | off | ALE location list | ALE |
-| `coc` | off | Coc diagnostic list | coc.nvim |
-
-Optional providers safely produce no marks when their dependency is absent.
-
-### Marks
-
-The built-in `marks` provider is on by default. It renders each enabled mark as
-its literal name. Letter marks `[a-zA-Z]` are enabled by default; numbered marks
-`[0-9]` are disabled by default, and special marks such as `.`, `^`, `[`, `]`,
-`<`, and `>` are not included.
-
-`true` uses the category defaults in collapsed mode. Table form accepts
-`letters`, `numbers`, and `max_width`; omitted fields default to
-`letters = true`, `numbers = false`, and collapsed width. Set the provider to
-`false` to disable it entirely.
-
-Enable numbered marks as well with:
-
-```lua
-require("scrollbar").setup({
-    providers = {
-        marks = {
-            numbers = true,
-        },
-    },
-})
-```
-
-Use `{ letters = false, numbers = true }` to show only numbered marks. Numbered
-marks are global file marks normally restored from ShaDa; unlike letter marks,
-they cannot be set directly with `m{char}`.
-
-Collapsed mode keeps the normal one-representative behavior when multiple named
-marks map to the same rendered row. Marks are ordered by source line and then
-mark name; for marks on the same line, `0`-`9` sort before `A`-`Z`, which sort
-before `a`-`z`. The visible representative owns the row's exact click target.
-
-Use table form to opt into bounded horizontal expansion:
-
-```lua
-require("scrollbar").setup({
-    providers = {
-        marks = { max_width = 8 },
-    },
-})
-```
-
-`max_width` is a positive-integer cap on the total float width, not a count of
-extra columns, and it must be greater than or equal to `float.width`. The
-effective width never shrinks below that base width. It grows only as needed and
-is also limited by the active window or editor placement container unless the
-configured base width already exceeds that container. Because rendered-row
-density and container width can differ, effective width can vary by source
-window and can grow or shrink between renders.
-
-Expanded mark names retain source-line/name order from left to right and grow
-inward from the configured anchor while the base track and handle stay pinned.
-If all names do not fit, the provider keeps the deterministic ordered prefix,
-omits the tail, and displays no synthetic `+`. Every visible expanded mark has
-its own exact source-line click target; omitted marks have no click cell.
-
-Lowercase marks are buffer-local. Uppercase and numbered marks are shown only
-for their eligible, loaded target buffer and therefore only on source-window
-scrollbars for that buffer. The provider never loads a buffer or file solely to
-display a global mark.
-
-On Neovim 0.11 through 0.12.1, mark changes are reconciled for visible source
-buffers on `SafeState`. On Neovim 0.12.2 and newer, the default letter-only path
-is event-only through `MarkSet` and installs no `SafeState` polling autocmd.
-Enabling numbered marks retains `SafeState` reconciliation because explicit
-ShaDa reads and writes can change `[0-9]` without emitting `MarkSet`. Normal
-buffer, window, and text-change events still refresh positions on every
-supported version.
-
-Expansion is specific to this built-in provider. Custom providers that emit
-`type = "Mark"` continue through normal collapsed composition and are not
-expanded. The built-in provider always supplies each literal mark name, so the
-default `marks.Mark.text = {}` displays those literal names. Set a non-empty
-text list to render its configured glyphs instead: collapsed marks use normal
-density variants, while each individually expanded mark uses the first variant.
-
-### Search
-
-Accepted-search mode is enabled by default. `search = true` is equivalent to
-`search = { live = false, backend = "worker" }`. It updates after `/` or `?` is
-accepted and follows native search visibility. Marks clear after `:nohlsearch`,
-`set nohlsearch`, or an empty search pattern. Set `providers.search = false` to
-disable it.
-
-Native search remains exact and uses Neovim's Vim-regex search semantics. Search
-requests are generation-based and coalesced per buffer: accepted searches begin
-on the next safe main-loop turn, while live changes and edit-driven rescans use
-short internal debounces. Only the newest still-valid request publishes. The
-previous accepted result remains visible while its replacement is pending, so
-rapid input and continuous edits do not flicker or publish stale generations.
-
-Built-in search results use a private compact line representation that preserves
-duplicate matches, density variants, collision ordering, and click targets
-without allocating one renderer mark table per match. This does not change the
-custom-provider mark contract or the defensive results returned by the public
-store path.
-
-The production search backend uses one persistent embedded headless Neovim
-process per parent Neovim instance. The worker is shared by all searched buffers,
-mirrors them incrementally, and executes the exact Vim-regex scan outside the
-parent event loop. Completed results are published only when their generation,
-buffer version, pattern, and matching options are still current.
-
-The worker starts directly from `vim.v.progpath` without a shell and is disposed
-during plugin reconfiguration or parent shutdown. If startup fails or the child
-exits unexpectedly, the plugin warns once and switches to the exact debounced
-synchronous scanner. That fallback preserves results but can pause Neovim for an
-expensive pattern or a large dense result set.
-
-Worker state can be inspected for troubleshooting:
-
-```vim
-:lua print(vim.inspect(require("scrollbar.providers.search_worker").status()))
-```
-
-A healthy worker reports `state = "ready"` and one `job_id`. The worker is the
-default backend. To disable the child process and always scan on the parent main
-loop, configure:
-
-```lua
-require("scrollbar").setup({
-    providers = {
-        search = { backend = "sync" },
-    },
-})
-```
-
-Live mode previews valid patterns while the search command line changes:
-
-```lua
-require("scrollbar").setup({
-    providers = {
-        search = { live = true },
-    },
-})
-```
-
-Live mode coalesces rapid command-line changes and scans only the newest pattern
-after its debounce. Because each eventual scan is still exact and synchronous,
-accepted-search mode remains preferable for large buffers.
-
-### Custom Providers
-
-Managed providers can be registered before or after `require("scrollbar").setup()`.
-Names must be unique; registration never replaces another provider implicitly.
-Unregistering disposes the provider, removes its augroups and cleanups, clears
-its marks, and invalidates affected windows.
-
-Marks use zero-based source lines:
-
-```lua
----@class ScrollbarMark
----@field line integer -- zero-based source line
----@field type string -- a configured entry in `marks`
----@field text? string -- optional text override
-```
-
-A simple refresh-only provider is refreshed initially and on eligible buffer
-entry and content changes:
-
-```lua
-local providers = require("scrollbar.providers")
-
-providers.register({
-    name = "bookmarks",
-    refresh = function(bufnr, context)
-        local last = vim.api.nvim_buf_line_count(bufnr) - 1
-        return {
-            { line = 0, type = "Bookmark" },
-            { line = last, type = "Bookmark", text = "B" },
-        }
-    end,
-})
-
-require("scrollbar").setup({
-    marks = {
-        Bookmark = {
-            text = { "·", "•", "#" },
-            column = 1,
-            priority = 1,
-            highlight = "Special",
-        },
-    },
-})
-
--- This also works after setup and triggers immediate setup/refresh.
--- providers.register(another_provider)
-
-providers.unregister("bookmarks")
-```
-
-The optional provider methods are:
-
-```lua
----@class ScrollbarProvider
----@field name string
----@field setup? fun(context: ScrollbarProviderContext)
----@field refresh? fun(bufnr: integer, context: ScrollbarProviderContext): ScrollbarMark[]?
----@field refresh_window? fun(winid: integer, context: ScrollbarProviderContext): ScrollbarMark[]?
----@field dispose? fun(context: ScrollbarProviderContext)
-```
-
-`refresh()` publishes marks shared by every window displaying a buffer.
-`refresh_window()` publishes marks local to one source window, such as a cursor
-position. If a provider uses both scopes, both mark lists are rendered. Refresh-only
-window providers are refreshed initially and when source windows are entered;
-`:ScrollbarRefresh` invokes both refresh methods.
-
-`context` exposes a read-only-by-convention configuration snapshot and these
-managed operations:
-
-| Context member | Purpose |
-| --- | --- |
-| `config` | Provider-local copy of the normalized configuration |
-| `set_marks(bufnr, marks)` | Atomically validate and replace this provider's marks |
-| `clear_marks(bufnr?)` | Clear one buffer or all marks owned by this provider |
-| `set_window_marks(winid, marks)` | Atomically validate and replace marks for one source window |
-| `clear_window_marks(winid?)` | Clear one window or all window marks owned by this provider |
-| `create_augroup(name)` | Create a provider-owned augroup removed on dispose |
-| `add_cleanup(fn)` | Register another provider-owned cleanup callback |
-| `source_windows(bufnr?)` | Enumerate eligible source windows |
-| `invalidate_buffer(bufnr)` | Queue windows displaying a buffer |
-| `invalidate_window(winid)` | Queue one source window |
-
-Providers with custom subscriptions should create them in `setup()` through
-`context.create_augroup()`, publish through `set_marks()` or
-`set_window_marks()`, and release non-autocmd resources through `add_cleanup()`
-or `dispose()`. Buffer changes invalidate every source window displaying that
-buffer; window changes invalidate only that source window. Provider failures are
-isolated: the failing provider's marks are cleared and repeated identical warnings
-are rate-limited until recovery.
-
-## Wide Scrollbars
-
-Handle and mark ranges may occupy separate columns. Non-overlapping ranges on
-the same row coexist:
-
-```lua
-require("scrollbar").setup({
-    float = { width = 4 },
-    handle = {
-        text = "██",
-        column = 3,
-        width = 2,
-    },
-    marks = {
-        Error = {
-            text = { "E", "!" },
-            column = 1,
-            priority = 0,
-            highlight = "DiagnosticError",
-        },
-        Search = {
-            text = { "s", "S" },
-            column = 2,
-            priority = 1,
-            highlight = "Search",
-        },
-    },
-})
-```
-
-`float.width` is the fixed base width for ordinary rendering and for the pinned
-track/handle portion of expanded named-mark rendering. With
-`providers.marks = { max_width = N }`, the actual float width may independently
-grow and shrink for each source window, up to the total-width cap and available
-placement-container width. A base width that already exceeds the container is
-preserved rather than reduced.
-
-Text arrays are density variants. Marks compressed into the same rendered row,
-type, and column use variant `min(mark_count, variant_count)`. For example,
-`{ "·", "•", "#" }` displays `·` for one mark, `•` for two, and `#` for three
-or more. A string is accepted as a one-variant shorthand. The empty
-`marks.Mark.text` default is the exception: it uses the literal text supplied by
-the built-in marks provider.
-
-Overlapping mark display-cell ranges are resolved by priority; lower numeric
-values win. Ties are deterministic. Multi-cell glyphs are atomic and are omitted
-rather than split when an overlap would cut through them.
-
-## Highlights
-
-With `set_highlights = true`, setup generates scrollbar groups from each
-configured `highlight`. A string names a source highlight group:
-`track.highlight` and `handle.highlight` supply backgrounds, while each mark's
-`highlight` supplies its foreground. A table is passed to `nvim_set_hl()` as a
-direct definition and can include any attributes supported by the active
-Neovim version. Groups are regenerated after `ColorScheme`.
-
-By default, `track.highlight` is `PmenuSbar`, `handle.highlight` is
-`PmenuThumb`, and a pressed handle background comes from `PmenuSel`. The pressed
-source is fixed; custom track and handle highlights change the track and resting
-handle only.
-
-```lua
-require("scrollbar").setup({
-    track = {
-        highlight = "PmenuSbar",
-    },
-    handle = {
-        highlight = { bg = "#3b4261", blend = 20 },
-    },
-    marks = {
-        Search = {
-            highlight = { fg = "#ff9e64", bold = true },
-        },
-    },
-})
-```
-
-`handle.blend` is used for the resting and pressed handle. When a direct handle
-definition does not contain `blend`, the configured value is added. For a mark
-overlapping either handle state, the handle and mark definitions are deep-merged
-and mark attributes win conflicts. Neovim's normal highlight semantics still
-apply to combinations such as `link` with other attributes.
-
-- `ScrollbarTrack` styles the `track.highlight`-derived background.
-- `ScrollbarHandle` styles uncovered handle cells.
-- `ScrollbarHandlePressed` styles uncovered held-handle cells.
-- `Scrollbar<MarkType>` styles a mark outside the handle.
-- `Scrollbar<MarkType>Handle` styles a mark overlapping the handle while
-  preserving the handle background.
-- `Scrollbar<MarkType>HandlePressed` combines a mark with the held handle's
-  `PmenuSel`-derived background.
-
-For example: `ScrollbarSearch`, `ScrollbarSearchHandle`,
-`ScrollbarSearchHandlePressed`, `ScrollbarError`, and `ScrollbarErrorHandle`.
-Named marks use `ScrollbarMark`, `ScrollbarMarkHandle`, and
-`ScrollbarMarkHandlePressed`; their default foreground source is `Special`.
-`ScrollbarFloat` is no longer generated; use `ScrollbarTrack` for manual track
-styling.
-
-Set `set_highlights = false` to define these groups yourself. Direct highlight
-tables follow this switch and are not applied when it is disabled. Renderer
-setup and `ColorScheme` handling also leave manual groups untouched.
-
-## Commands
-
-| Command | Lua API | Effect |
-| --- | --- | --- |
-| `:ScrollbarShow` | `require("scrollbar").show()` | Enable master visibility; with autohide, temporarily reveal and arm every eligible window |
-| `:ScrollbarHide` | `require("scrollbar").hide()` | Disable master visibility, hide current floats, and cancel autohide deadlines and holds |
-| `:ScrollbarToggle` | `require("scrollbar").toggle()` | Toggle master visibility, even when autohide has concealed every float |
-| `:ScrollbarRefresh` | `require("scrollbar").refresh()` | Refresh providers and rerender without revealing concealed autohide windows |
-
-## Migrating From Earlier Releases
-
-This release intentionally has no compatibility aliases or fallback renderer.
-Update configuration and integrations as follows:
-
-- Neovim 0.11+ is required; pre-0.11 support and compatibility branches were removed.
-- `show_in_active_only` was removed. Use `visibility = "active"` or `"all"`.
-- `folds` was removed. Use fast `render.geometry = "line"` or opt into
-  `render.geometry = "screen"` for folds, wraps, filler, and virtual lines.
-- `throttle_ms` was removed. Use `render.interval_ms` for latest-state frame coalescing.
-- The user-configurable `autocmd` table was removed. Runtime events are owned internally.
-- The old `handlers` table was removed. Use `providers`.
-- Direct setup APIs such as `require("scrollbar.handlers.search").setup()` and
-  `require("scrollbar.handlers.gitsigns").setup()` were removed.
-- `require("scrollbar.handlers").register(name, fn)` was removed. Register a
-  managed provider with `require("scrollbar.providers").register(provider)`.
-- `b:scrollbar_marks` was removed. Providers publish marks through their context;
-  direct buffer-variable writes are ignored.
-- Mark `level` was removed. Density is derived from marks compressed into the
-  same rendered row/type/column bucket.
-- Old standalone `color`, `color_nr`, `gui`, and `cterm` keys remain removed
-  from handle and mark configuration. Use a highlight group name or a direct
-  `highlight = { ... }` table instead; alternatively define generated
-  `Scrollbar*` groups with `set_highlights = false`.
-
-## Development
-
-Tests require Neovim 0.11+, Git, and Make. Quality checks additionally require
-[StyLua](https://github.com/JohnnyMorganz/StyLua),
-[Selene](https://github.com/Kampfkarren/selene), and
-[Lua language server](https://github.com/LuaLS/lua-language-server).
-
-```sh
-make test
-make test-file FILE=tests/test_core.lua
-make format
-make format-check
-make lint
-make typecheck
-make benchmark
-make ci
-```
-
-`make test` installs test-only `mini.nvim v0.18.0` under the ignored `deps/`
-directory. `make ci` runs formatting, linting, LuaLS type checking, and the full
-test suite.
-
-CI blocks on quality checks and tests with Neovim `v0.11.4` and the current
-stable release. The same tests run against Neovim nightly as informational,
-nonblocking coverage.
+| [`cursor`](docs/providers/cursor.md) | on | Source-window cursor | None |
+| [`diagnostic`](docs/providers/diagnostic.md) | on | Neovim `vim.diagnostic` | None |
+| [`search`](docs/providers/search.md) | on | Native `/` and `?` search | None |
+| [`marks`](docs/providers/marks.md) | on | Letter marks; optional numbered marks | None |
+| [`gitsigns`](docs/providers/gitsigns.md) | off | Git hunks | gitsigns.nvim |
+| [`ale`](docs/providers/ale.md) | off | ALE location list | ALE |
+| [`coc`](docs/providers/coc.md) | off | Coc diagnostic list | coc.nvim |
+
+See the [provider overview](docs/providers/README.md) for shared configuration
+rules, dependencies, update behavior, and links to every provider. New data
+sources can be added through the [custom provider API](docs/providers/custom.md).
+
+## Documentation
+
+### Guides
+
+- [Configuration](docs/configuration.md): complete defaults, validation,
+  eligibility, mark text, columns, and priorities
+- [Visibility](docs/visibility.md): source-window visibility, autohide,
+  hide-on-cursor behavior, commands, and Lua APIs
+- [Layout and geometry](docs/layout-and-geometry.md): placement, line and screen
+  geometry, rendering cadence, and wide scrollbars
+- [Mouse](docs/mouse.md): clicks, mark navigation, handle dragging, and focus
+  behavior
+- [Highlights](docs/highlights.md): generated groups, direct definitions,
+  blending, and manual highlights
+- [Migration](docs/migration.md): changes required from earlier releases
+- [Development](docs/development.md): tests, quality checks, benchmarks, and CI
+
+### Provider Guides
+
+- [Provider overview](docs/providers/README.md)
+- [Cursor](docs/providers/cursor.md)
+- [Diagnostics](docs/providers/diagnostic.md)
+- [Search](docs/providers/search.md)
+- [Marks](docs/providers/marks.md)
+- [Gitsigns](docs/providers/gitsigns.md)
+- [ALE](docs/providers/ale.md)
+- [Coc](docs/providers/coc.md)
+- [Custom providers](docs/providers/custom.md)
 
 ## License
 
-[MIT](https://choosealicense.com/licenses/mit/)
+[MIT](LICENSE)
