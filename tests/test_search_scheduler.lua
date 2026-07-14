@@ -177,7 +177,7 @@ T["visible buffers debounce independently"] = function()
     })
 end
 
-T["aborting before live debounce cancels preview without rescanning the accepted signature"] = function()
+T["aborting before incsearch debounce cancels preview without rescanning the accepted signature"] = function()
     local child = helpers.new_child()
     MiniTest.finally(function()
         helpers.stop_child(child)
@@ -194,7 +194,7 @@ T["aborting before live debounce cancels preview without rescanning the accepted
     expect.equality(scan_calls(child), {})
 end
 
-T["live input coalesces to the latest preview and restores on abort"] = function()
+T["incsearch input coalesces to the latest preview and restores on abort"] = function()
     local child = helpers.new_child()
     MiniTest.finally(function()
         helpers.stop_child(child)

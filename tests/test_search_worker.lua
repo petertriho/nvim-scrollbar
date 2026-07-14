@@ -4,12 +4,12 @@ local expect = MiniTest.expect
 
 local T = MiniTest.new_set()
 
-local function new_worker_child(live, worker_test)
+local function new_worker_child(incsearch, worker_test)
     local child = helpers.new_child()
     MiniTest.finally(function()
         helpers.stop_child(child)
     end)
-    helpers.setup_search_worker(child, live, worker_test)
+    helpers.setup_search_worker(child, incsearch, worker_test)
     return child
 end
 
@@ -155,14 +155,16 @@ T["one child is shared across mirrored buffers"] = function()
     })
 end
 
-T["worker live search previews and restores the accepted result"] = function()
+T["worker incsearch override previews and restores the accepted result"] = function()
     local child = new_worker_child(true)
+    child.o.incsearch = false
     helpers.set_lines(child, { "start", "accepted", "preview", "preview" })
     helpers.accept_search(child, "/", "accepted")
     expect.equality(helpers.wait_for_mark_lines(child, { 1 }), true)
 
     expect.equality(helpers.inspect_during_cmdline(child, "/", "preview").lines, { 2, 3 })
     expect.equality(helpers.wait_for_mark_lines(child, { 1 }), true)
+    expect.equality(child.o.incsearch, false)
 end
 
 T["rapid replacements retain one scan and publish only the newest request"] = function()

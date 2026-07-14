@@ -3,25 +3,25 @@ local compact_search = require("scrollbar.providers.search_compact")
 local store = require("scrollbar.store")
 local worker = require("scrollbar.providers.search_worker")
 
-local LIVE_DEBOUNCE_MS = 30
+local INCSEARCH_DEBOUNCE_MS = 30
 local EDIT_DEBOUNCE_MS = 50
 
 ---@class ScrollbarSearchCommandlineState
 ---@field bufnr integer
 ---@field pattern string
----@field live_pattern string
+---@field incsearch_pattern string
 ---@field visible boolean
 
 ---@type ScrollbarProviderContext?
 local active_context
 
 ---@type ScrollbarSearchProviderConfig
-local options = { live = false, backend = "worker" }
+local options = { backend = "worker" }
 
 ---@type ScrollbarSearchCommandlineState?
 local commandline
 
----@alias ScrollbarSearchRequestMode "accepted"|"live"|"edit"
+---@alias ScrollbarSearchRequestMode "accepted"|"incsearch"|"edit"
 
 ---@class ScrollbarSearchRequest
 ---@field bufnr integer
@@ -63,6 +63,13 @@ end
 
 local function search_is_visible()
     return vim.o.hlsearch and vim.v.hlsearch ~= 0 and vim.fn.getreg("/") ~= ""
+end
+
+local function incsearch_enabled()
+    if options.incsearch ~= nil then
+        return options.incsearch
+    end
+    return vim.o.incsearch
 end
 
 ---@param bufnr integer
@@ -227,9 +234,12 @@ local function request_is_current(request)
         return false
     end
 
-    if request.mode == "live" then
+    if request.mode == "incsearch" then
+        if not incsearch_enabled() then
+            return false
+        end
         return commandline == nil
-            or (commandline.bufnr == request.bufnr and commandline.live_pattern == request.pattern)
+            or (commandline.bufnr == request.bufnr and commandline.incsearch_pattern == request.pattern)
     end
 
     if vim.fn.getreg("/") ~= request.pattern then
@@ -370,7 +380,7 @@ local function request_refresh(context, bufnr, pattern, mode, ignore_visibility)
         return false
     end
     if pattern == "" then
-        if mode == "live" then
+        if mode == "incsearch" then
             cancel_request(bufnr)
             return false
         end
@@ -420,8 +430,8 @@ local function request_refresh(context, bufnr, pattern, mode, ignore_visibility)
     end
     if mode == "accepted" then
         vim.schedule(callback)
-    elseif mode == "live" then
-        vim.defer_fn(callback, LIVE_DEBOUNCE_MS)
+    elseif mode == "incsearch" then
+        vim.defer_fn(callback, INCSEARCH_DEBOUNCE_MS)
     else
         vim.defer_fn(callback, EDIT_DEBOUNCE_MS)
     end
@@ -489,7 +499,7 @@ function M.setup(context)
             commandline = {
                 bufnr = vim.api.nvim_get_current_buf(),
                 pattern = vim.fn.getreg("/"),
-                live_pattern = vim.fn.getcmdline(),
+                incsearch_pattern = vim.fn.getcmdline(),
                 visible = search_is_visible(),
             }
         end,
@@ -498,12 +508,12 @@ function M.setup(context)
         group = group,
         pattern = { "/", "?" },
         callback = function()
-            if options.live then
-                local pattern = vim.fn.getcmdline()
-                if commandline ~= nil then
-                    commandline.live_pattern = pattern
-                end
-                request_refresh(context, vim.api.nvim_get_current_buf(), pattern, "live", true)
+            local pattern = vim.fn.getcmdline()
+            if commandline ~= nil then
+                commandline.incsearch_pattern = pattern
+            end
+            if incsearch_enabled() then
+                request_refresh(context, vim.api.nvim_get_current_buf(), pattern, "incsearch", true)
             end
         end,
     })

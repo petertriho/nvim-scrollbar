@@ -119,7 +119,7 @@ require("scrollbar").setup({
     providers = {
         cursor = true,
         diagnostic = true,
-        search = true, -- true or { live = boolean, backend = "worker" | "sync" }
+        search = true, -- true or { incsearch = nil | boolean, backend = "worker" | "sync" }
         marks = true, -- false, true, or { letters = boolean, numbers = boolean, max_width = integer }
         gitsigns = false,
         ale = false,
@@ -146,8 +146,9 @@ Each call starts from these defaults and applies the supplied overrides. It does
 not incrementally merge with the previous active setup.
 
 The defaults above use accepted user-facing shorthand. Internally,
-`search = true` normalizes to `{ live = false, backend = "worker" }`, and
-`marks = true` normalizes to
+`search = true` normalizes to `{ backend = "worker" }`. The absent `incsearch`
+key dynamically follows Neovim's current `vim.o.incsearch` value. `marks = true`
+normalizes to
 `{ letters = true, numbers = false, max_width = false }`.
 
 ## Validation
@@ -168,8 +169,9 @@ The defaults above use accepted user-facing shorthand. Internally,
   characters. Mark text accepts a string or dense list of such strings; only
   `marks.Mark.text` may be empty.
 - Mark type names must match `^[%a_][%w_]*$`.
-- `providers.search` is a boolean or a table containing only `live` and
-  `backend`; `backend` accepts `"worker"` or `"sync"`.
+- `providers.search` is a boolean or a table containing only `incsearch` and
+  `backend`. When present, `incsearch` is a boolean; when omitted, it follows
+  the current `vim.o.incsearch` value. `backend` accepts `"worker"` or `"sync"`.
 - `providers.marks` is a boolean or a table containing only `letters`,
   `numbers`, and `max_width`. When present, `max_width` is a positive integer at
   least as large as `float.width`.

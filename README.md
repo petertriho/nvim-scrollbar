@@ -62,7 +62,7 @@ require("scrollbar").setup({
         enabled = true,
     },
     providers = {
-        search = { live = true },
+        search = { incsearch = true },
         marks = { numbers = true, max_width = 8 },
     },
 })

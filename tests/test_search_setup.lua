@@ -12,13 +12,13 @@ local function new_child()
     return child
 end
 
-T["configuration rejects a non-boolean live option without mutation"] = function()
+T["configuration rejects a non-boolean incsearch option without mutation"] = function()
     local child = new_child()
     helpers.setup_search(child, false)
     local result = child.lua_get([[(function()
         local config = require("scrollbar.config").get()
         local before = vim.deepcopy(config.providers.search)
-        local ok, err = pcall(require("scrollbar.config").set, { providers = { search = { live = "yes" } } })
+        local ok, err = pcall(require("scrollbar.config").set, { providers = { search = { incsearch = "yes" } } })
         return {
             ok = ok,
             error = err,
@@ -28,17 +28,17 @@ T["configuration rejects a non-boolean live option without mutation"] = function
     end)()]])
 
     expect.equality(result.ok, false)
-    expect.no_equality(result.error:match("live must be a boolean"), nil)
+    expect.no_equality(result.error:match("incsearch must be a boolean"), nil)
     expect.equality(result.after, result.before)
 end
 
-T["a rejected reconfiguration leaves the managed provider active"] = function()
+T["a rejected legacy reconfiguration leaves the managed provider active"] = function()
     local child = new_child()
     helpers.setup_search(child, false)
     local result = child.lua_get([[(function()
         local config = require("scrollbar.config").get()
         local before = vim.deepcopy(config.providers.search)
-        local ok, err = pcall(require("scrollbar.config").set, { providers = { search = { live = "yes" } } })
+        local ok, err = pcall(require("scrollbar.config").set, { providers = { search = { live = true } } })
         return {
             ok = ok,
             error = err,
@@ -48,7 +48,7 @@ T["a rejected reconfiguration leaves the managed provider active"] = function()
     end)()]])
 
     expect.equality(result.ok, false)
-    expect.no_equality(result.error:match("live must be a boolean"), nil)
+    expect.no_equality(result.error:match("unknown option 'providers.search.live'"), nil)
     expect.equality(result.after, result.before)
     helpers.set_lines(child, { "start", "active", "active" })
     helpers.accept_search(child, "/", "active")
@@ -62,7 +62,6 @@ T["providers.search=true normalizes configuration and scans an existing search"]
     helpers.setup_search_config(child, true)
 
     expect.equality(child.lua_get([[require("scrollbar.config").get().providers.search]]), {
-        live = false,
         backend = "worker",
     })
     expect.equality(helpers.mark_lines(child), { 1 })
@@ -104,7 +103,7 @@ T["providers.search.backend=sync disables child startup"] = function()
         end)
     ]])
 
-    helpers.setup_search_default_config(child, { live = false, backend = "sync" })
+    helpers.setup_search_default_config(child, { incsearch = false, backend = "sync" })
     helpers.set_lines(child, { "start", "synchronous", "synchronous" })
     helpers.accept_search(child, "/", "synchronous")
 
@@ -119,7 +118,7 @@ T["repeated provider manager setup is idempotent"] = function()
     helpers.setup_search(child, false)
 
     expect.equality(child.lua_get([[require("scrollbar.config").get().providers.search]]), {
-        live = false,
+        incsearch = false,
         backend = "worker",
     })
     expect.equality(
@@ -130,7 +129,7 @@ end
 
 T["table search configuration processes accepted searches"] = function()
     local child = new_child()
-    helpers.setup_search_config(child, { live = false })
+    helpers.setup_search_config(child, { incsearch = false })
     helpers.set_lines(child, { "start", "root", "root" })
     helpers.accept_search(child, "/", "root")
     expect.equality(helpers.wait_for_mark_lines(child, { 1, 2 }), true)
