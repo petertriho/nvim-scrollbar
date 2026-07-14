@@ -43,14 +43,16 @@ also accept provider-specific tables:
 
 ```lua
 providers = {
-    search = { live = false, backend = "worker" },
+    search = { incsearch = false, backend = "worker" },
     marks = { letters = true, numbers = false, max_width = 8 },
 }
 ```
 
-`search = true` defaults to `live = false` and `backend = "worker"`.
-`marks = true` defaults to `letters = true`, `numbers = false`, and collapsed
-width (`max_width` unset).
+`search = true` normalizes to `{ backend = "worker" }`. With `incsearch`
+omitted, incremental previews dynamically follow Neovim's current
+`vim.o.incsearch` value. Set `incsearch = true` or `false` to override that
+behavior without changing the native option. `marks = true` defaults to
+`letters = true`, `numbers = false`, and collapsed width (`max_width` unset).
 
 ## Strict Configuration
 
@@ -58,8 +60,9 @@ width (`max_width` unset).
   built-in names; register custom providers through the provider API instead of
   adding a custom key here.
 - `cursor`, `diagnostic`, `gitsigns`, `ale`, and `coc` must be booleans.
-- A `search` table accepts only `live` (boolean) and `backend` (`"worker"` or
-  `"sync"`). A `marks` table accepts only `letters`, `numbers`, and `max_width`.
+- A `search` table accepts only optional `incsearch` (boolean) and `backend`
+  (`"worker"` or `"sync"`). A `marks` table accepts only `letters`, `numbers`,
+  and `max_width`.
 - `providers.marks.max_width` must be a positive integer at least as large as
   `float.width`.
 - Provider output types are styled separately under `marks.<Type>`. Each mark

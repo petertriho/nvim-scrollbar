@@ -12,7 +12,7 @@ local function new_search_child(search_config)
     if search_config ~= nil then
         helpers.setup_search_config(child, search_config)
     else
-        helpers.setup_search(child)
+        helpers.setup_search(child, false)
     end
     return child
 end

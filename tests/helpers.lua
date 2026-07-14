@@ -72,18 +72,18 @@ local function setup_search_provider(child, search_config, worker_test)
     end, { search_config = search_config, worker_test = worker_test })
 end
 
-M.setup_search = function(child, live)
-    setup_search_provider(child, { live = live or false }, { backend = "sync" })
+M.setup_search = function(child, incsearch)
+    setup_search_provider(child, { incsearch = incsearch }, { backend = "sync" })
 end
 
-M.setup_search_worker = function(child, live, worker_test)
+M.setup_search_worker = function(child, incsearch, worker_test)
     worker_test = worker_test or {}
     worker_test.backend = "worker"
-    setup_search_provider(child, { live = live or false }, worker_test)
+    setup_search_provider(child, { incsearch = incsearch }, worker_test)
 end
 
-M.setup_search_default = function(child, live)
-    setup_search_provider(child, { live = live or false })
+M.setup_search_default = function(child, incsearch)
+    setup_search_provider(child, { incsearch = incsearch })
 end
 
 M.setup_search_default_config = function(child, search_config)

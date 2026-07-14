@@ -51,11 +51,11 @@
 ---@field highlight? ScrollbarHighlight
 
 ---@class ScrollbarSearchProviderConfig
----@field live boolean
+---@field incsearch? boolean
 ---@field backend ScrollbarSearchBackend
 
 ---@class ScrollbarUserSearchProviderConfig
----@field live? boolean
+---@field incsearch? boolean
 ---@field backend? ScrollbarSearchBackend
 
 ---@class ScrollbarMarksProviderConfig

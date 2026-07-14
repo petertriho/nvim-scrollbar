@@ -6,56 +6,70 @@ dependency.
 
 ## Configuration
 
-The default configuration is accepted-search mode with the worker backend:
+The default configuration uses the worker backend and follows Neovim's current
+`incsearch` option:
 
 ```lua
 require("scrollbar").setup({
     providers = {
         search = {
-            live = false,
             backend = "worker",
         },
     },
 })
 ```
 
-`providers.search = true` is equivalent to that table. Set it to `false` to
-disable search marks.
+`providers.search = true` is equivalent to that table. The omitted `incsearch`
+key is intentional: incremental previews are enabled when `vim.o.incsearch` is
+currently true and disabled when it is false. Changing the native option takes
+effect without rerunning setup. Set `providers.search` to `false` to disable
+search marks.
 
 The table accepts these fields:
 
 | Option | Default | Meaning |
 | --- | --- | --- |
-| `live` | `false` | Preview valid patterns while the `/` or `?` command line changes. |
-| `backend` | `"worker"` | Use `"worker"` or `"sync"` for every accepted, live, and edit-driven scan. |
+| `incsearch` | omitted (`nil`) | Follow `vim.o.incsearch`; `true` or `false` explicitly overrides it. |
+| `backend` | `"worker"` | Use `"worker"` or `"sync"` for every accepted, incremental, and edit-driven scan. |
 
-Live mode uses the configured backend. It is not always synchronous: with the
-default configuration, both accepted searches and live previews are scanned by
-the worker.
+Incremental previews use the configured backend. They are not always
+synchronous: with the default backend, both accepted searches and incremental
+previews are scanned by the worker. Explicit `incsearch` values do not modify
+Neovim's native option.
 
-## Accepted And Live Modes
+## Accepted And Incremental Modes
 
 Accepted-search mode updates marks after a `/` or `?` search is accepted. This
-is the default and is usually the best choice for large buffers because typing
-on the search command line does not start preview scans.
-
-Live mode previews the current command-line pattern after a short debounce:
+can be forced explicitly for large buffers when typing on the search command
+line should not start preview scans:
 
 ```lua
 require("scrollbar").setup({
     providers = {
-        search = { live = true },
+        search = { incsearch = false },
     },
 })
 ```
 
-Live behavior follows these rules:
+Set `incsearch = true` to force previews of the current command-line pattern
+after a short debounce, even when Neovim's native option is disabled:
+
+```lua
+require("scrollbar").setup({
+    providers = {
+        search = { incsearch = true },
+    },
+})
+```
+
+Incremental preview behavior follows these rules:
 
 - Forward and backward command lines are both supported.
-- Pending live changes are debounced and coalesced. An obsolete scan that has
-  already started may finish, but its result cannot replace the newest request.
-- An empty live pattern leaves the previous accepted result visible.
-- An invalid live pattern produces no preview marks.
+- Pending incremental changes are debounced and coalesced. An obsolete scan
+  that has already started may finish, but its result cannot replace the newest
+  request.
+- An empty incremental pattern leaves the previous accepted result visible.
+- An invalid incremental pattern produces no preview marks.
 - Cancelling the command line restores the previous accepted result when that
   result was natively visible.
 - Accepting the command line commits the new accepted-search result.
@@ -74,9 +88,9 @@ are shown only when all of the following are true:
 search marks. A later accepted search can make them visible again. The provider
 does not enable `hlsearch` or undo `:nohlsearch` for you.
 
-During an active live `/` or `?` command line, the preview may be displayed even
-when the previous accepted search is hidden. Once the command line closes,
-accepted marks return to the native visibility rules above.
+During an active incremental `/` or `?` command line, the preview may be
+displayed even when the previous accepted search is hidden. Once the command
+line closes, accepted marks return to the native visibility rules above.
 
 Search marks can also be unavailable because the scrollbar itself is excluded,
 globally hidden, limited by `max_lines`, concealed by autohide, or hidden because
@@ -138,13 +152,13 @@ The synchronous backend uses the same native Vim-regex scan on the parent main
 loop. It preserves the selected source window's view, but an expensive pattern
 or a large dense result set can pause editing until the scan completes.
 
-Live synchronous scanning is also supported:
+Incremental synchronous scanning is also supported:
 
 ```lua
 require("scrollbar").setup({
     providers = {
         search = {
-            live = true,
+            incsearch = true,
             backend = "sync",
         },
     },
@@ -154,9 +168,9 @@ require("scrollbar").setup({
 ## Requests And Updates
 
 Requests are tracked independently per buffer. Accepted searches run on the next
-safe main-loop turn; live changes and edit-driven rescans use short debounces.
-Rapid replacements are coalesced, and only the newest request whose buffer
-version, pattern, options, and visibility are still current may publish.
+safe main-loop turn; incremental changes and edit-driven rescans use short
+debounces. Rapid replacements are coalesced, and only the newest request whose
+buffer version, pattern, options, and visibility are still current may publish.
 
 The previous accepted result normally remains visible while its replacement is
 pending. This avoids flicker during rapid searches and continuous edits. It also
@@ -183,8 +197,8 @@ until they are displayed.
 
 - Keep the default worker backend for large buffers, dense matches, or patterns
   that may be expensive.
-- Prefer accepted mode when live feedback is not essential, especially while
-  editing large files.
+- Set `incsearch = false` when incremental feedback is not essential,
+  especially while editing large files.
 - Use synchronous mode for state-dependent Vim patterns or environments that do
   not permit the embedded child process, not as a performance optimization.
 - Search requests and edit rescans are coalesced, but every eventual scan still
@@ -279,11 +293,13 @@ autohide, excluded buffer/file types, `max_lines`, and the hide-if-all-visible
 settings. `:ScrollbarRefresh` refreshes data but does not reveal an autohide
 window.
 
-### No live preview
+### No incremental preview
 
-Confirm `providers.search.live = true`. Live preview applies only while editing
-a `/` or `?` command line. Empty patterns retain accepted marks, and invalid Vim
-patterns intentionally produce no preview.
+Check `:set incsearch?`. With `providers.search.incsearch` omitted, the provider
+follows that native value. Set `providers.search.incsearch = true` to force
+previews regardless of the native option. Incremental preview applies only while
+editing a `/` or `?` command line. Empty patterns retain accepted marks, and
+invalid Vim patterns intentionally produce no preview.
 
 ### Worker reports `failed`
 
@@ -301,7 +317,7 @@ that the synchronous scan still uses one eligible source window as its context.
 
 Check the configured backend and worker status. A synchronous configuration or
 a `failed` worker runs scans on the parent event loop. Prefer the worker backend
-and disable live mode for expensive searches.
+and set `incsearch = false` for expensive searches.
 
 ### Marks look briefly out of date
 

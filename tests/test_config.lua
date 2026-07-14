@@ -24,7 +24,7 @@ T["defaults are normalized from a fresh immutable baseline"] = function()
         visibility = "active",
         float = { width = 3, hide_on_cursor = false },
         marks = { Search = { text = "x", column = 2 }, Mark = { text = "X" } },
-        providers = { search = { live = true, backend = "sync" }, marks = { max_width = 3 } },
+        providers = { search = { incsearch = true, backend = "sync" }, marks = { max_width = 3 } },
     })
 
     expect.equality(first.visibility, "active")
@@ -33,7 +33,7 @@ T["defaults are normalized from a fresh immutable baseline"] = function()
     expect.equality(first.marks.Search.text, { "x" })
     expect.equality(first.marks.Search.column, 2)
     expect.equality(first.marks.Mark.text, { "X" })
-    expect.equality(first.providers.search, { live = true, backend = "sync" })
+    expect.equality(first.providers.search, { incsearch = true, backend = "sync" })
     expect.equality(first.providers.marks, { max_width = 3, letters = true, numbers = false })
 
     first.marks.Mark.text[1] = "changed"
@@ -46,7 +46,7 @@ T["defaults are normalized from a fresh immutable baseline"] = function()
     expect.equality(second.marks.Search.text, { "-", "=" })
     expect.equality(second.marks.Search.column, 1)
     expect.equality(second.marks.Mark, { text = {}, column = 1, priority = 1, highlight = "Special" })
-    expect.equality(second.providers.search, { live = false, backend = "worker" })
+    expect.equality(second.providers.search, { backend = "worker" })
     expect.equality(second.providers.marks, { max_width = false, letters = true, numbers = false })
     expect.equality(second.providers.coc, false)
     expect.equality(second.autohide, { enabled = false, delay_ms = 1000 })
@@ -149,6 +149,20 @@ T["normalizes marks provider modes"] = function()
     )
 end
 
+T["normalizes tri-state search provider modes"] = function()
+    expect.equality(set().providers.search, { backend = "worker" })
+    expect.equality(set({ providers = { search = true } }).providers.search, { backend = "worker" })
+    expect.equality(set({ providers = { search = { backend = "sync" } } }).providers.search, { backend = "sync" })
+    expect.equality(set({ providers = { search = { incsearch = true } } }).providers.search, {
+        incsearch = true,
+        backend = "worker",
+    })
+    expect.equality(set({ providers = { search = { incsearch = false } } }).providers.search, {
+        incsearch = false,
+        backend = "worker",
+    })
+end
+
 T["accepts the complete typed schema"] = function()
     local track_highlight = { bg = "#010203", bold = true }
     local handle_highlight = { bg = "#112233", blend = 10 }
@@ -184,7 +198,7 @@ T["accepts the complete typed schema"] = function()
         providers = {
             cursor = false,
             diagnostic = false,
-            search = { live = true, backend = "sync" },
+            search = { incsearch = true, backend = "sync" },
             marks = { max_width = 8, letters = false, numbers = true },
             gitsigns = true,
             ale = true,
@@ -203,7 +217,7 @@ T["accepts the complete typed schema"] = function()
     expect.equality(result.handle.highlight, handle_highlight)
     expect.equality(result.marks.Custom.text, { "!" })
     expect.equality(result.marks.Custom.highlight, mark_highlight)
-    expect.equality(result.providers.search.live, true)
+    expect.equality(result.providers.search.incsearch, true)
     expect.equality(result.providers.search.backend, "sync")
     expect.equality(result.providers.marks, { max_width = 8, letters = false, numbers = true })
 
@@ -236,6 +250,7 @@ T["rejects unknown keys at every schema level"] = function()
         { providers = { marks = { expand = true, max_width = 8 } } },
         "unknown option 'providers.marks.expand'"
     )
+    expect_invalid({ providers = { search = { live = true } } }, "unknown option 'providers.search.live'")
 end
 
 T["rejects invalid enums and scalar option types"] = function()
@@ -311,7 +326,7 @@ end
 T["rejects invalid provider options"] = function()
     expect_invalid({ providers = { cursor = {} } }, "providers.cursor must be a boolean")
     expect_invalid({ providers = { search = "yes" } }, "providers.search must be a boolean or table")
-    expect_invalid({ providers = { search = { live = "yes" } } }, "providers.search.live must be a boolean")
+    expect_invalid({ providers = { search = { incsearch = "yes" } } }, "providers.search.incsearch must be a boolean")
     expect_invalid(
         { providers = { search = { backend = "thread" } } },
         "providers.search.backend must be one of: sync, worker"

@@ -143,7 +143,7 @@ local function setup_fixture(kind)
             cursor = false,
             diagnostic = false,
             gitsigns = false,
-            search = { live = true },
+            search = { incsearch = true },
             ale = false,
             coc = false,
         },
@@ -253,7 +253,7 @@ for _, kind in ipairs({ "sparse", "dense" }) do
 
     patterns, expected = setup_fixture(kind)
     local changed = callback("CmdlineChanged")
-    local live = run_series(function(index)
+    local incsearch = run_series(function(index)
         local pattern = patterns[index % 2 + 1]
         return function()
             local original_getcmdline = vim.fn.getcmdline
@@ -265,7 +265,7 @@ for _, kind in ipairs({ "sparse", "dense" }) do
         end,
             expected
     end)
-    table.insert(results, { trigger = "live", fixture = kind, result = live })
+    table.insert(results, { trigger = "incsearch", fixture = kind, result = incsearch })
 
     patterns, expected = setup_fixture(kind)
     local pattern = patterns[1]
@@ -440,7 +440,7 @@ local function configure_worker_fixture(kind, worker_test)
             cursor = false,
             diagnostic = false,
             gitsigns = false,
-            search = { live = true },
+            search = { incsearch = true },
             ale = false,
             coc = false,
         },

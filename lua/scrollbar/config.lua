@@ -173,7 +173,7 @@ local NESTED_KEYS = {
         ale = true,
         coc = true,
     },
-    search = { live = true, backend = true },
+    search = { incsearch = true, backend = true },
     ["providers.marks"] = { max_width = true, letters = true, numbers = true },
 }
 
@@ -377,15 +377,14 @@ local function normalize_providers(providers, float_width)
 
     local search = providers.search
     if search == true then
-        providers.search = { live = false, backend = "worker" }
+        providers.search = { backend = "worker" }
     elseif type(search) == "table" then
-        if search.live == nil then
-            search.live = false
-        end
         if search.backend == nil then
             search.backend = "worker"
         end
-        validate_boolean(search.live, "providers.search.live")
+        if search.incsearch ~= nil then
+            validate_boolean(search.incsearch, "providers.search.incsearch")
+        end
         validate_enum(search.backend, "providers.search.backend", ENUMS.search_backend)
     elseif search ~= false then
         invalid("providers.search must be a boolean or table")
