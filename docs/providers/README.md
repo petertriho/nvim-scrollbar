@@ -91,10 +91,11 @@ concealed by autohide.
 The optional integrations are safe to enable when their dependency is absent;
 they produce no marks instead of preventing scrollbar setup. The gitsigns and
 mini.diff providers always own their `User` update autocmd while enabled, even
-when dependency resolution fails. Their Lua modules are resolved only once per
-scrollbar setup, so configure and load the upstream plugin before
-`require("scrollbar").setup()`. If either dependency loads later, rerun
-scrollbar setup; `:ScrollbarRefresh` does not retry the missing module.
+when the dependency is initially unavailable. Configure and load the upstream
+plugin before `require("scrollbar").setup()` for deterministic initial data. If
+it loads later, the provider adopts its module from `package.loaded` on the next
+provider event or `:ScrollbarRefresh`; scrollbar does not configure the upstream
+plugin itself.
 
 Gitsigns and mini.diff may both be enabled. Their marks are stored separately,
 but both describe diff data and can overlap visually; disable one provider or

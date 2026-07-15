@@ -9,15 +9,24 @@ local state = {
     context = nil,
 }
 
+---@return ScrollbarGitsignsModule?
+local function get_module()
+    if state.module == nil and type(package.loaded.gitsigns) == "table" then
+        state.module = package.loaded.gitsigns
+    end
+    return state.module
+end
+
 ---@param bufnr integer
 ---@return ScrollbarMark[]
 local function collect_marks(bufnr)
-    if state.module == nil then
+    local gitsigns = get_module()
+    if gitsigns == nil then
         return {}
     end
 
     local marks = {}
-    local hunks = state.module.get_hunks(bufnr) or {}
+    local hunks = gitsigns.get_hunks(bufnr) or {}
     for _, hunk in ipairs(hunks) do
         if hunk.type == "add" then
             for line = hunk.added.start, hunk.added.start + hunk.added.count - 1 do

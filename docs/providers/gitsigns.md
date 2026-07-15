@@ -18,8 +18,8 @@ require("scrollbar").setup({
 })
 ```
 
-For lazy.nvim, declaring gitsigns as a dependency gives it the required load
-order:
+For lazy.nvim, declaring gitsigns as a dependency provides marks during the
+initial scrollbar refresh:
 
 ```lua
 {
@@ -31,10 +31,10 @@ order:
 }
 ```
 
-> **Load order is significant.** The provider tries to load `gitsigns` once
-> during scrollbar setup. If gitsigns loads later, rerun
-> `require("scrollbar").setup()` with your configuration after it is available.
-> `:ScrollbarRefresh` alone does not attach the missing integration.
+Loading and configuring gitsigns first is recommended but not required. If it
+loads after scrollbar, the provider adopts the module from `package.loaded` on
+the next `GitSignsUpdate` event or `:ScrollbarRefresh`. Scrollbar does not call
+`require("gitsigns").setup()`.
 
 Gitsigns and [mini.diff](mini_diff.md) can be enabled together, but their diff
 marks may overlap because each provider publishes its own view of changes.
@@ -93,8 +93,8 @@ highlight groups.
 - Deletions have no surviving source range, so each deletion is represented by
   one mark.
 - Missing gitsigns at setup produces no marks and does not break scrollbar
-  setup. The provider still owns one `GitSignsUpdate` autocmd, but events remain
-  empty because dependency lookup is not retried.
+  setup. The provider still owns one `GitSignsUpdate` autocmd and attaches after
+  gitsigns loads and an update or manual refresh occurs.
 - If hunk collection fails, only this provider's marks for the affected buffer
   are cleared. Other providers continue to render.
 - Standard scrollbar eligibility rules still apply, including excluded buffer
@@ -102,8 +102,8 @@ highlight groups.
 
 ## Troubleshooting
 
-- No marks after a late gitsigns load: rerun scrollbar setup. The owned
-  `GitSignsUpdate` autocmd does not dynamically reattach the missing module.
+- No marks after a late gitsigns load: wait for `GitSignsUpdate` or run
+  `:ScrollbarRefresh`, and confirm gitsigns itself was configured.
 - No marks in one buffer: check `:Gitsigns debug_messages` and confirm
   `require("gitsigns").get_hunks(0)` returns hunks.
 - Marks use unexpected colors: inspect `GitSignsAdd`, `GitSignsChange`, and

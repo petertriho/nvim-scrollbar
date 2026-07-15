@@ -322,6 +322,45 @@ T["missing mini.diff still owns and disposes its update autocmd"] = function()
     expect.equality(require("scrollbar.store").get(target), {})
 end
 
+T["late-loaded diff modules attach without rerunning setup"] = function()
+    local target = new_buffer({ "one", "two" })
+    rawset(package.preload, "mini.diff", function()
+        error("mini.diff missing")
+    end)
+
+    local providers = require("scrollbar.providers")
+    providers.register(require("scrollbar.providers.gitsigns"))
+    providers.register(require("scrollbar.providers.mini_diff"))
+    providers.setup({
+        is_buffer_eligible = function(bufnr)
+            return bufnr == target
+        end,
+    })
+    expect.equality(require("scrollbar.store").get(target), {
+        gitsigns = {},
+        mini_diff = {},
+    })
+
+    rawset(package.loaded, "gitsigns", {
+        get_hunks = function()
+            return { { type = "add", added = { start = 1, count = 1 } } }
+        end,
+    })
+    rawset(package.loaded, "mini.diff", {
+        get_buf_data = function()
+            return { hunks = { { type = "change", buf_start = 2, buf_count = 1 } } }
+        end,
+    })
+
+    vim.api.nvim_set_current_buf(target)
+    vim.api.nvim_exec_autocmds("User", { pattern = "GitSignsUpdate", data = { buffer = target } })
+    vim.api.nvim_exec_autocmds("User", { pattern = "MiniDiffUpdated" })
+    expect.equality(require("scrollbar.store").get(target), {
+        gitsigns = { { line = 0, type = "GitAdd" } },
+        mini_diff = { { line = 1, type = "MiniDiffChange" } },
+    })
+end
+
 T["ALE converts one-based lines and updates only each event buffer"] = function()
     local first = new_buffer({ "1", "2", "3" })
     local second = new_buffer({ "1", "2", "3" })
