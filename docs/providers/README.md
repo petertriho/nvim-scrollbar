@@ -17,6 +17,7 @@ means every source window showing the buffer shares the same provider marks.
 | [`marks`](marks.md) | on | Named letter marks; optional numbered marks | Buffer | `Mark` | None |
 | [`gitsigns`](gitsigns.md) | off | Git hunks | Buffer | `GitAdd`, `GitChange`, `GitDelete` | [gitsigns.nvim](https://github.com/lewis6991/gitsigns.nvim) |
 | [`mini_diff`](mini_diff.md) | off | Hunks from any configured mini.diff source | Buffer | `MiniDiffAdd`, `MiniDiffChange`, `MiniDiffDelete` | [mini.diff](https://github.com/nvim-mini/mini.diff) |
+| [`signify`](signify.md) | off | Hunks read from placed `Signify*` signs | Buffer | `SignifyAdd`, `SignifyChange`, `SignifyDelete` | [vim-signify](https://github.com/mhinz/vim-signify) |
 | [`ale`](ale.md) | off | ALE location list | Buffer | `Error`, `Warn` | [ALE](https://github.com/dense-analysis/ale) |
 | [`coc`](coc.md) | off | Coc diagnostic list, partitioned by target buffer | Buffer | `Error`, `Warn`, `Info`, `Hint` | [coc.nvim](https://github.com/neoclide/coc.nvim) |
 
@@ -34,6 +35,7 @@ require("scrollbar").setup({
         marks = true,
         gitsigns = false,
         mini_diff = false,
+        signify = false,
         ale = false,
         coc = false,
     },
@@ -58,11 +60,11 @@ behavior without changing the native option. `marks = true` defaults to
 
 ## Strict Configuration
 
-- Unknown keys are errors. The `providers` table accepts only the eight
+- Unknown keys are errors. The `providers` table accepts only the nine
   built-in names; register custom providers through the provider API instead of
   adding a custom key here.
-- `cursor`, `diagnostic`, `gitsigns`, `mini_diff`, `ale`, and `coc` must be
-  booleans.
+- `cursor`, `diagnostic`, `gitsigns`, `mini_diff`, `signify`, `ale`, and `coc`
+  must be booleans.
 - A `search` table accepts only optional `incsearch` (boolean) and `backend`
   (`"worker"` or `"sync"`). A `marks` table accepts only `letters`, `numbers`,
   and `max_width`.
@@ -97,11 +99,12 @@ it loads later, the provider adopts its module from `package.loaded` on the next
 provider event or `:ScrollbarRefresh`; scrollbar does not configure the upstream
 plugin itself.
 
-Gitsigns and mini.diff may both be enabled. Their marks are stored separately,
-but both describe diff data and can overlap visually; disable one provider or
-adjust mark columns and priorities if that duplication is not desired. ALE and
-Coc can begin updating from their integration events after they load, though
-loading them first still gives predictable initial state.
+Gitsigns, mini.diff, and signify may all be enabled. Their marks are stored
+separately, but all describe diff data and can overlap visually; disable
+overlapping providers or adjust mark columns and priorities if that duplication
+is not desired. ALE and Coc can begin updating from their integration events
+after they load, though loading them first still gives predictable initial
+state.
 
 ## Related
 
@@ -109,4 +112,5 @@ loading them first still gives predictable initial state.
 - [Configuration](../configuration.md)
 - [Layout and geometry](../layout-and-geometry.md)
 - [MiniDiff](mini_diff.md)
+- [Signify](signify.md)
 - [Custom providers](custom.md)

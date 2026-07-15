@@ -3,6 +3,7 @@ local expect = MiniTest.expect
 
 local original_coc_action
 local original_ale_buffer_info
+local original_loaded_signify
 
 local T = MiniTest.new_set({
     hooks = {
@@ -14,8 +15,10 @@ local T = MiniTest.new_set({
 
             original_coc_action = rawget(vim.fn, "CocActionAsync")
             original_ale_buffer_info = vim.g.ale_buffer_info
+            original_loaded_signify = vim.g.loaded_signify
             rawset(vim.fn, "CocActionAsync", nil)
             vim.g.ale_buffer_info = nil
+            vim.g.loaded_signify = nil
             package.preload["gitsigns"] = nil
             package.loaded["gitsigns"] = nil
             rawset(package.preload, "mini.diff", nil)
@@ -27,6 +30,7 @@ local T = MiniTest.new_set({
                 "scrollbar.providers",
                 "scrollbar.providers.gitsigns",
                 "scrollbar.providers.mini_diff",
+                "scrollbar.providers.signify",
                 "scrollbar.providers.ale",
                 "scrollbar.providers.coc",
             }) do
@@ -41,6 +45,7 @@ local T = MiniTest.new_set({
             end
             rawset(vim.fn, "CocActionAsync", original_coc_action)
             vim.g.ale_buffer_info = original_ale_buffer_info
+            vim.g.loaded_signify = original_loaded_signify
             package.preload["gitsigns"] = nil
             package.loaded["gitsigns"] = nil
             rawset(package.preload, "mini.diff", nil)
@@ -87,6 +92,17 @@ end
 local function sorted(values)
     table.sort(values)
     return values
+end
+
+local function with_signs(names)
+    for _, name in ipairs(names) do
+        vim.fn.sign_define(name, { text = "x" })
+    end
+    MiniTest.finally(function()
+        for _, name in ipairs(names) do
+            pcall(vim.fn.sign_undefine, name)
+        end
+    end)
 end
 
 T["gitsigns fans out fallback updates, clears marks, and disposes its augroup"] = function()
@@ -358,6 +374,154 @@ T["late-loaded diff modules attach without rerunning setup"] = function()
     expect.equality(require("scrollbar.store").get(target), {
         gitsigns = { { line = 0, type = "GitAdd" } },
         mini_diff = { { line = 1, type = "MiniDiffChange" } },
+    })
+end
+
+T["signify maps placed Signify signs to add/change/delete marks"] = function()
+    local target = new_buffer({ "1", "2", "3", "4", "5" })
+    local sign_names = {
+        "SignifyAdd",
+        "SignifyChange",
+        "SignifyChangeDelete",
+        "SignifyRemoveFirstLine",
+        "SignifyDelete5",
+    }
+    with_signs(sign_names)
+
+    vim.fn.sign_place(0, "", "SignifyAdd", target, { lnum = 1 })
+    vim.fn.sign_place(0, "", "SignifyChange", target, { lnum = 2 })
+    vim.fn.sign_place(0, "", "SignifyChangeDelete", target, { lnum = 3 })
+    vim.fn.sign_place(0, "", "SignifyRemoveFirstLine", target, { lnum = 4 })
+    vim.fn.sign_place(0, "", "SignifyDelete5", target, { lnum = 5 })
+    vim.g.loaded_signify = 1
+
+    local providers = require("scrollbar.providers")
+    providers.register(require("scrollbar.providers.signify"))
+    providers.setup({
+        is_buffer_eligible = function(bufnr)
+            return bufnr == target
+        end,
+    })
+
+    expect.equality(require("scrollbar.store").get(target).signify, {
+        { line = 0, type = "SignifyAdd" },
+        { line = 1, type = "SignifyChange" },
+        { line = 2, type = "SignifyChange" },
+        { line = 3, type = "SignifyDelete" },
+        { line = 4, type = "SignifyDelete" },
+    })
+end
+
+T["signify fans out User Signify updates and clears marks"] = function()
+    local first = new_buffer({ "1", "2", "3", "4" })
+    local second = new_buffer({ "1", "2", "3", "4" })
+    local windows = show_in_two_windows(first, second)
+    with_signs({ "SignifyAdd", "SignifyChange", "SignifyDelete5" })
+
+    vim.g.loaded_signify = 1
+
+    local invalidated = {}
+    local providers = require("scrollbar.providers")
+    providers.register(require("scrollbar.providers.signify"))
+    providers.setup({
+        is_buffer_eligible = function(bufnr)
+            return bufnr == first or bufnr == second
+        end,
+        source_windows = function()
+            return windows
+        end,
+        invalidate_buffer = function(bufnr)
+            table.insert(invalidated, bufnr)
+        end,
+    })
+
+    expect.equality(require("scrollbar.store").get(first).signify, {})
+    expect.equality(require("scrollbar.store").get(second).signify, {})
+
+    invalidated = {}
+    vim.fn.sign_place(0, "", "SignifyAdd", first, { lnum = 2 })
+    vim.fn.sign_place(0, "", "SignifyChange", second, { lnum = 3 })
+    vim.api.nvim_exec_autocmds("User", { pattern = "Signify" })
+    expect.equality(require("scrollbar.store").get(first).signify, {
+        { line = 1, type = "SignifyAdd" },
+    })
+    expect.equality(require("scrollbar.store").get(second).signify, {
+        { line = 2, type = "SignifyChange" },
+    })
+    expect.equality(sorted(invalidated), sorted({ first, second }))
+
+    invalidated = {}
+    vim.fn.sign_place(0, "", "SignifyDelete5", first, { lnum = 4 })
+    vim.fn.sign_place(0, "", "SignifyDelete5", second, { lnum = 1 })
+    vim.api.nvim_exec_autocmds("User", { pattern = "Signify" })
+    expect.equality(require("scrollbar.store").get(first).signify, {
+        { line = 1, type = "SignifyAdd" },
+        { line = 3, type = "SignifyDelete" },
+    })
+    expect.equality(require("scrollbar.store").get(second).signify, {
+        { line = 0, type = "SignifyDelete" },
+        { line = 2, type = "SignifyChange" },
+    })
+    expect.equality(sorted(invalidated), sorted({ first, second }))
+
+    invalidated = {}
+    vim.fn.sign_unplace("*", { buffer = first })
+    vim.fn.sign_unplace("*", { buffer = second })
+    vim.api.nvim_exec_autocmds("User", { pattern = "Signify" })
+    expect.equality(require("scrollbar.store").get(first).signify, {})
+    expect.equality(require("scrollbar.store").get(second).signify, {})
+    expect.equality(sorted(invalidated), sorted({ first, second }))
+
+    expect.equality(#vim.api.nvim_get_autocmds({ event = "User", pattern = "Signify" }), 1)
+    providers.dispose()
+    expect.equality(#vim.api.nvim_get_autocmds({ event = "User", pattern = "Signify" }), 0)
+    expect.equality(require("scrollbar.store").get(first), {})
+    expect.equality(require("scrollbar.store").get(second), {})
+end
+
+T["missing signify dependency still owns and disposes its autocmd"] = function()
+    local target = new_buffer({ "one" })
+
+    local providers = require("scrollbar.providers")
+    providers.register(require("scrollbar.providers.signify"))
+    expect.equality(
+        pcall(providers.setup, {
+            is_buffer_eligible = function(bufnr)
+                return bufnr == target
+            end,
+        }),
+        true
+    )
+    expect.equality(require("scrollbar.store").get(target).signify, {})
+    expect.equality(#vim.api.nvim_get_autocmds({ event = "User", pattern = "Signify" }), 1)
+
+    providers.dispose()
+    expect.equality(#vim.api.nvim_get_autocmds({ event = "User", pattern = "Signify" }), 0)
+    expect.equality(require("scrollbar.store").get(target), {})
+end
+
+T["late-loaded signify attaches marks after User Signify"] = function()
+    local target = new_buffer({ "one", "two" })
+    with_signs({ "SignifyAdd", "SignifyChange" })
+
+    local providers = require("scrollbar.providers")
+    providers.register(require("scrollbar.providers.signify"))
+    providers.setup({
+        is_buffer_eligible = function(bufnr)
+            return bufnr == target
+        end,
+    })
+    expect.equality(require("scrollbar.store").get(target).signify, {})
+
+    vim.fn.sign_place(0, "", "SignifyAdd", target, { lnum = 1 })
+    vim.fn.sign_place(0, "", "SignifyChange", target, { lnum = 2 })
+    vim.g.loaded_signify = 1
+    vim.api.nvim_set_current_buf(target)
+    vim.api.nvim_exec_autocmds("User", { pattern = "Signify" })
+
+    expect.equality(require("scrollbar.store").get(target).signify, {
+        { line = 0, type = "SignifyAdd" },
+        { line = 1, type = "SignifyChange" },
     })
 end
 

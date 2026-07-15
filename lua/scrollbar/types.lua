@@ -75,6 +75,7 @@
 ---@field marks? boolean|ScrollbarUserMarksProviderConfig
 ---@field gitsigns? boolean
 ---@field mini_diff? boolean
+---@field signify? boolean
 ---@field ale? boolean
 ---@field coc? boolean
 
@@ -142,6 +143,7 @@
 ---@field marks false|ScrollbarMarksProviderConfig
 ---@field gitsigns boolean
 ---@field mini_diff boolean
+---@field signify boolean
 ---@field ale boolean
 ---@field coc boolean
 
