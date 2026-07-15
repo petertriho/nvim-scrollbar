@@ -74,6 +74,7 @@
 ---@field search? boolean|ScrollbarUserSearchProviderConfig
 ---@field marks? boolean|ScrollbarUserMarksProviderConfig
 ---@field gitsigns? boolean
+---@field mini_diff? boolean
 ---@field ale? boolean
 ---@field coc? boolean
 
@@ -140,6 +141,7 @@
 ---@field search false|ScrollbarSearchProviderConfig
 ---@field marks false|ScrollbarMarksProviderConfig
 ---@field gitsigns boolean
+---@field mini_diff boolean
 ---@field ale boolean
 ---@field coc boolean
 

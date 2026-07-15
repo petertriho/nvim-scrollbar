@@ -49,6 +49,7 @@ T["defaults are normalized from a fresh immutable baseline"] = function()
     expect.equality(second.providers.search, { backend = "worker" })
     expect.equality(second.providers.marks, { max_width = false, letters = true, numbers = false })
     expect.equality(second.providers.coc, false)
+    expect.equality(second.providers.mini_diff, false)
     expect.equality(second.autohide, { enabled = false, delay_ms = 1000 })
     expect.equality(second.track.highlight, "PmenuSbar")
     expect.equality(second.handle.highlight, "PmenuThumb")
@@ -201,6 +202,7 @@ T["accepts the complete typed schema"] = function()
             search = { incsearch = true, backend = "sync" },
             marks = { max_width = 8, letters = false, numbers = true },
             gitsigns = true,
+            mini_diff = true,
             ale = true,
             coc = false,
         },
@@ -220,6 +222,7 @@ T["accepts the complete typed schema"] = function()
     expect.equality(result.providers.search.incsearch, true)
     expect.equality(result.providers.search.backend, "sync")
     expect.equality(result.providers.marks, { max_width = 8, letters = false, numbers = true })
+    expect.equality(result.providers.mini_diff, true)
 
     local normalized_track = result.track.highlight
     local normalized_handle = result.handle.highlight
@@ -325,6 +328,7 @@ end
 
 T["rejects invalid provider options"] = function()
     expect_invalid({ providers = { cursor = {} } }, "providers.cursor must be a boolean")
+    expect_invalid({ providers = { mini_diff = "yes" } }, "providers.mini_diff must be a boolean")
     expect_invalid({ providers = { search = "yes" } }, "providers.search must be a boolean or table")
     expect_invalid({ providers = { search = { incsearch = "yes" } } }, "providers.search.incsearch must be a boolean")
     expect_invalid(
@@ -359,6 +363,20 @@ T["rejects invalid provider options"] = function()
     )
     expect_invalid({ providers = { marks = { letters = "yes" } } }, "providers.marks.letters must be a boolean")
     expect_invalid({ providers = { marks = { numbers = 1 } } }, "providers.marks.numbers must be a boolean")
+end
+
+T["uses the exact MiniDiff mark defaults"] = function()
+    local marks = set().marks
+
+    expect.equality(marks.MiniDiffAdd, { text = { "▒" }, column = 1, priority = 7, highlight = "MiniDiffSignAdd" })
+    expect.equality(
+        marks.MiniDiffChange,
+        { text = { "▒" }, column = 1, priority = 7, highlight = "MiniDiffSignChange" }
+    )
+    expect.equality(
+        marks.MiniDiffDelete,
+        { text = { "▒" }, column = 1, priority = 7, highlight = "MiniDiffSignDelete" }
+    )
 end
 
 T["rejects malformed exclusion lists without changing active config"] = function()

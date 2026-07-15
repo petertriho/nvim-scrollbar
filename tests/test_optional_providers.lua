@@ -18,12 +18,15 @@ local T = MiniTest.new_set({
             vim.g.ale_buffer_info = nil
             package.preload["gitsigns"] = nil
             package.loaded["gitsigns"] = nil
+            rawset(package.preload, "mini.diff", nil)
+            package.loaded["mini.diff"] = nil
 
             for _, module in ipairs({
                 "scrollbar.config",
                 "scrollbar.store",
                 "scrollbar.providers",
                 "scrollbar.providers.gitsigns",
+                "scrollbar.providers.mini_diff",
                 "scrollbar.providers.ale",
                 "scrollbar.providers.coc",
             }) do
@@ -40,6 +43,8 @@ local T = MiniTest.new_set({
             vim.g.ale_buffer_info = original_ale_buffer_info
             package.preload["gitsigns"] = nil
             package.loaded["gitsigns"] = nil
+            rawset(package.preload, "mini.diff", nil)
+            package.loaded["mini.diff"] = nil
         end,
     },
 })
@@ -189,6 +194,132 @@ T["gitsigns bounds change marks to the surviving added range"] = function()
     expect.equality(require("scrollbar.store").get(target).gitsigns, {
         { line = 1, type = "GitChange" },
     })
+end
+
+T["mini.diff maps hunks directly and updates only the event buffer"] = function()
+    local first = new_buffer({ "1", "2", "3", "4", "5", "6" })
+    local second = new_buffer({ "1", "2", "3", "4", "5", "6" })
+    local data = {
+        [first] = {
+            hunks = {
+                { type = "add", buf_start = 2, buf_count = 2 },
+                { type = "change", buf_start = 4, buf_count = 2, ref_count = 1 },
+                { type = "delete", buf_start = 0, buf_count = 0 },
+                { type = "unknown", buf_start = 6, buf_count = 1 },
+            },
+        },
+        [second] = { hunks = { { type = "add", buf_start = 1, buf_count = 1 } } },
+    }
+    local calls = {}
+    rawset(package.preload, "mini.diff", function()
+        return {
+            get_buf_data = function(bufnr)
+                table.insert(calls, bufnr)
+                return data[bufnr]
+            end,
+        }
+    end)
+
+    local invalidated = {}
+    local providers = require("scrollbar.providers")
+    providers.register(require("scrollbar.providers.mini_diff"))
+    providers.setup({
+        is_buffer_eligible = function(bufnr)
+            return bufnr == first or bufnr == second
+        end,
+        invalidate_buffer = function(bufnr)
+            table.insert(invalidated, bufnr)
+        end,
+    })
+
+    expect.equality(require("scrollbar.store").get(first).mini_diff, {
+        { line = 1, type = "MiniDiffAdd" },
+        { line = 2, type = "MiniDiffAdd" },
+        { line = 3, type = "MiniDiffChange" },
+        { line = 4, type = "MiniDiffChange" },
+        { line = 0, type = "MiniDiffDelete" },
+    })
+    expect.equality(require("scrollbar.store").get(second).mini_diff, {
+        { line = 0, type = "MiniDiffAdd" },
+    })
+
+    calls = {}
+    invalidated = {}
+    data[first] = { hunks = { { type = "change", buf_start = 3, buf_count = 1, ref_count = 4 } } }
+    vim.api.nvim_set_current_buf(first)
+    vim.api.nvim_exec_autocmds("User", { pattern = "MiniDiffUpdated" })
+    expect.equality(calls, { first })
+    expect.equality(invalidated, { first })
+    expect.equality(require("scrollbar.store").get(first).mini_diff, {
+        { line = 2, type = "MiniDiffChange" },
+    })
+    expect.equality(require("scrollbar.store").get(second).mini_diff, {
+        { line = 0, type = "MiniDiffAdd" },
+    })
+
+    data[first] = nil
+    providers.refresh(first)
+    expect.equality(require("scrollbar.store").get(first).mini_diff, {})
+end
+
+T["mini.diff event failures clear only its marks"] = function()
+    local target = new_buffer({ "one", "two" })
+    local fail = false
+    rawset(package.preload, "mini.diff", function()
+        return {
+            get_buf_data = function()
+                if fail then
+                    error("mini.diff exploded")
+                end
+                return { hunks = { { type = "add", buf_start = 1, buf_count = 1 } } }
+            end,
+        }
+    end)
+
+    local providers = require("scrollbar.providers")
+    providers.register(require("scrollbar.providers.mini_diff"))
+    providers.register({
+        name = "other",
+        refresh = function()
+            return { { line = 1, type = "Error" } }
+        end,
+    })
+    providers.setup({
+        is_buffer_eligible = function(bufnr)
+            return bufnr == target
+        end,
+    })
+
+    fail = true
+    vim.api.nvim_set_current_buf(target)
+    expect.equality(pcall(vim.api.nvim_exec_autocmds, "User", { pattern = "MiniDiffUpdated" }), true)
+    expect.equality(require("scrollbar.store").get(target), {
+        other = { { line = 1, type = "Error" } },
+    })
+end
+
+T["missing mini.diff still owns and disposes its update autocmd"] = function()
+    local target = new_buffer({ "one" })
+    rawset(package.preload, "mini.diff", function()
+        error("mini.diff missing")
+    end)
+
+    local providers = require("scrollbar.providers")
+    providers.register(require("scrollbar.providers.mini_diff"))
+    expect.equality(
+        pcall(providers.setup, {
+            is_buffer_eligible = function(bufnr)
+                return bufnr == target
+            end,
+        }),
+        true
+    )
+    expect.equality(require("scrollbar.store").get(target).mini_diff, {})
+    expect.equality(#vim.api.nvim_get_autocmds({ event = "User", pattern = "MiniDiffUpdated" }), 1)
+
+    providers.dispose()
+    expect.equality(#vim.api.nvim_get_autocmds({ event = "User", pattern = "MiniDiffUpdated" }), 0)
+    expect.equality(require("scrollbar.store").get(target), {})
 end
 
 T["ALE converts one-based lines and updates only each event buffer"] = function()
@@ -375,8 +506,12 @@ end
 
 T["missing optional dependencies leave runtime and provider setup usable"] = function()
     local target = new_buffer({ "one" })
+    rawset(package.preload, "mini.diff", function()
+        error("mini.diff missing")
+    end)
     local providers = require("scrollbar.providers")
     providers.register(require("scrollbar.providers.gitsigns"))
+    providers.register(require("scrollbar.providers.mini_diff"))
     providers.register(require("scrollbar.providers.ale"))
     providers.register(require("scrollbar.providers.coc"))
 
@@ -392,7 +527,9 @@ T["missing optional dependencies leave runtime and provider setup usable"] = fun
         ale = {},
         coc = {},
         gitsigns = {},
+        mini_diff = {},
     })
+    expect.equality(#vim.api.nvim_get_autocmds({ event = "User", pattern = "MiniDiffUpdated" }), 1)
     vim.api.nvim_set_current_buf(target)
     expect.equality(pcall(vim.api.nvim_exec_autocmds, "User", { pattern = "ALELintPost" }), true)
     expect.equality(pcall(vim.api.nvim_exec_autocmds, "User", { pattern = "CocDiagnosticChange" }), true)

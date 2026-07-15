@@ -115,6 +115,24 @@ require("scrollbar").setup({
             priority = 7,
             highlight = "GitSignsDelete",
         },
+        MiniDiffAdd = {
+            text = { "▒" },
+            column = 1,
+            priority = 7,
+            highlight = "MiniDiffSignAdd",
+        },
+        MiniDiffChange = {
+            text = { "▒" },
+            column = 1,
+            priority = 7,
+            highlight = "MiniDiffSignChange",
+        },
+        MiniDiffDelete = {
+            text = { "▒" },
+            column = 1,
+            priority = 7,
+            highlight = "MiniDiffSignDelete",
+        },
     },
     providers = {
         cursor = true,
@@ -122,6 +140,7 @@ require("scrollbar").setup({
         search = true, -- true or { incsearch = nil | boolean, backend = "worker" | "sync" }
         marks = true, -- false, true, or { letters = boolean, numbers = boolean, max_width = integer }
         gitsigns = false,
+        mini_diff = false,
         ale = false,
         coc = false,
     },
@@ -153,6 +172,8 @@ normalizes to
 
 ## Validation
 
+- The `providers` table accepts exactly eight built-in names. `cursor`,
+  `diagnostic`, `gitsigns`, `mini_diff`, `ale`, and `coc` are strict booleans.
 - `visibility` accepts only `"all"` or `"active"`.
 - `render.geometry` accepts only `"line"` or `"screen"`.
 - `float.placement.relative` accepts only `"window"` or `"editor"`.
