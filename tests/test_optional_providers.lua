@@ -529,6 +529,7 @@ T["missing optional dependencies leave runtime and provider setup usable"] = fun
         gitsigns = {},
         mini_diff = {},
     })
+    expect.equality(#vim.api.nvim_get_autocmds({ event = "User", pattern = "GitSignsUpdate" }), 1)
     expect.equality(#vim.api.nvim_get_autocmds({ event = "User", pattern = "MiniDiffUpdated" }), 1)
     vim.api.nvim_set_current_buf(target)
     expect.equality(pcall(vim.api.nvim_exec_autocmds, "User", { pattern = "ALELintPost" }), true)

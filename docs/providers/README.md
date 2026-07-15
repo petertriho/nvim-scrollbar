@@ -89,18 +89,18 @@ Refreshes can rerender an already revealed scrollbar but do not reveal one
 concealed by autohide.
 
 The optional integrations are safe to enable when their dependency is absent;
-they produce no marks instead of preventing scrollbar setup. For deterministic
-initial data, load the integration before `require("scrollbar").setup()`.
-This ordering is required for gitsigns and mini.diff, whose Lua modules are
-resolved during provider setup; if either loads later, run scrollbar setup
-again or express the dependency/order in the plugin manager. The mini.diff
-provider still owns its `MiniDiffUpdated` autocmd when dependency resolution
-fails. ALE and Coc can begin updating from their integration events after they
-load, but loading them first also provides predictable initial state.
+they produce no marks instead of preventing scrollbar setup. The gitsigns and
+mini.diff providers always own their `User` update autocmd while enabled, even
+when dependency resolution fails. Their Lua modules are resolved only once per
+scrollbar setup, so configure and load the upstream plugin before
+`require("scrollbar").setup()`. If either dependency loads later, rerun
+scrollbar setup; `:ScrollbarRefresh` does not retry the missing module.
 
 Gitsigns and mini.diff may both be enabled. Their marks are stored separately,
 but both describe diff data and can overlap visually; disable one provider or
-adjust mark columns and priorities if that duplication is not desired.
+adjust mark columns and priorities if that duplication is not desired. ALE and
+Coc can begin updating from their integration events after they load, though
+loading them first still gives predictable initial state.
 
 ## Related
 

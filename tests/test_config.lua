@@ -379,6 +379,14 @@ T["uses the exact MiniDiff mark defaults"] = function()
     )
 end
 
+T["uses the exact gitsigns mark defaults"] = function()
+    local marks = set().marks
+
+    expect.equality(marks.GitAdd, { text = { "┃" }, column = 1, priority = 7, highlight = "GitSignsAdd" })
+    expect.equality(marks.GitChange, { text = { "┃" }, column = 1, priority = 7, highlight = "GitSignsChange" })
+    expect.equality(marks.GitDelete, { text = { "▁" }, column = 1, priority = 7, highlight = "GitSignsDelete" })
+end
+
 T["rejects malformed exclusion lists without changing active config"] = function()
     local before = set({ visibility = "active" })
     expect_invalid({ excluded_filetypes = { "lua", false } }, "excluded_filetypes%[2%] must be a string")
