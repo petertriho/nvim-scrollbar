@@ -8,7 +8,7 @@ options.
 ## Setup
 
 Configure mini.diff before scrollbar so its module and initial buffer data are
-available when the provider performs its one-time dependency lookup:
+available during the first provider refresh:
 
 ```lua
 require("mini.diff").setup()
@@ -38,9 +38,9 @@ With lazy.nvim:
 }
 ```
 
-If mini.diff loads after scrollbar, rerun `require("scrollbar").setup()` with
-your configuration. `:ScrollbarRefresh` does not retry a failed dependency
-lookup.
+If mini.diff loads after scrollbar, the provider adopts it from `package.loaded`
+on the next `MiniDiffUpdated` event or `:ScrollbarRefresh`. Scrollbar does not
+call `require("mini.diff").setup()`.
 
 ## Data And Marks
 
@@ -92,14 +92,15 @@ Override `text`, `column`, `priority`, or `highlight` under the top-level
   source name.
 - Enabling both `mini_diff` and `gitsigns` is supported, but their marks can
   overlap. Disable one or customize columns and priorities if needed.
-- A dependency missing during setup is not resolved dynamically. The owned
-  autocmd remains safe but cannot collect data until scrollbar setup is rerun.
+- A dependency missing during setup remains safe and is adopted after it loads,
+  but marks do not appear until the next provider event or manual refresh.
 
 ## Troubleshooting
 
 - No marks after enabling: confirm `MiniDiff.get_buf_data(0)` returns a table
   with hunks and that mini.diff was configured before scrollbar.
-- mini.diff loaded late: rerun scrollbar setup; refresh alone cannot attach it.
+- mini.diff loaded late: wait for `MiniDiffUpdated` or run
+  `:ScrollbarRefresh`, and confirm mini.diff itself was configured.
 - Marks remain after `MiniDiff.disable()`: run `:ScrollbarRefresh`.
 - Duplicate diff marks: disable either `gitsigns` or `mini_diff`, or place their
   mark types in different columns.

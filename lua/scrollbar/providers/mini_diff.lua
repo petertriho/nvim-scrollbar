@@ -17,6 +17,15 @@ local state = {
     context = nil,
 }
 
+---@return ScrollbarMiniDiffModule?
+local function get_module()
+    local loaded = package.loaded["mini.diff"]
+    if state.module == nil and type(loaded) == "table" then
+        state.module = loaded
+    end
+    return state.module
+end
+
 local MARK_TYPES = {
     add = "MiniDiffAdd",
     change = "MiniDiffChange",
@@ -26,11 +35,12 @@ local MARK_TYPES = {
 ---@param bufnr integer
 ---@return ScrollbarMark[]
 local function collect_marks(bufnr)
-    if state.module == nil then
+    local mini_diff = get_module()
+    if mini_diff == nil then
         return {}
     end
 
-    local data = state.module.get_buf_data(bufnr)
+    local data = mini_diff.get_buf_data(bufnr)
     if data == nil then
         return {}
     end
