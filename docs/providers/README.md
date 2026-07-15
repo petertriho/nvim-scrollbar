@@ -16,6 +16,7 @@ means every source window showing the buffer shares the same provider marks.
 | [`search`](search.md) | on | Native `/` and `?` search | Buffer | `Search` | None |
 | [`marks`](marks.md) | on | Named letter marks; optional numbered marks | Buffer | `Mark` | None |
 | [`gitsigns`](gitsigns.md) | off | Git hunks | Buffer | `GitAdd`, `GitChange`, `GitDelete` | [gitsigns.nvim](https://github.com/lewis6991/gitsigns.nvim) |
+| [`mini_diff`](mini_diff.md) | off | Hunks from any configured mini.diff source | Buffer | `MiniDiffAdd`, `MiniDiffChange`, `MiniDiffDelete` | [mini.diff](https://github.com/nvim-mini/mini.diff) |
 | [`ale`](ale.md) | off | ALE location list | Buffer | `Error`, `Warn` | [ALE](https://github.com/dense-analysis/ale) |
 | [`coc`](coc.md) | off | Coc diagnostic list, partitioned by target buffer | Buffer | `Error`, `Warn`, `Info`, `Hint` | [coc.nvim](https://github.com/neoclide/coc.nvim) |
 
@@ -32,6 +33,7 @@ require("scrollbar").setup({
         search = true,
         marks = true,
         gitsigns = false,
+        mini_diff = false,
         ale = false,
         coc = false,
     },
@@ -56,10 +58,11 @@ behavior without changing the native option. `marks = true` defaults to
 
 ## Strict Configuration
 
-- Unknown keys are errors. The `providers` table accepts only the seven
+- Unknown keys are errors. The `providers` table accepts only the eight
   built-in names; register custom providers through the provider API instead of
   adding a custom key here.
-- `cursor`, `diagnostic`, `gitsigns`, `ale`, and `coc` must be booleans.
+- `cursor`, `diagnostic`, `gitsigns`, `mini_diff`, `ale`, and `coc` must be
+  booleans.
 - A `search` table accepts only optional `incsearch` (boolean) and `backend`
   (`"worker"` or `"sync"`). A `marks` table accepts only `letters`, `numbers`,
   and `max_width`.
@@ -88,15 +91,21 @@ concealed by autohide.
 The optional integrations are safe to enable when their dependency is absent;
 they produce no marks instead of preventing scrollbar setup. For deterministic
 initial data, load the integration before `require("scrollbar").setup()`.
-This ordering is required for `gitsigns`, whose Lua module is resolved during
-provider setup; if gitsigns loads later, run scrollbar setup again or express
-the dependency/order in the plugin manager. ALE and Coc can begin updating from
-their integration events after they load, but loading them first also provides
-predictable initial state.
+This ordering is required for gitsigns and mini.diff, whose Lua modules are
+resolved during provider setup; if either loads later, run scrollbar setup
+again or express the dependency/order in the plugin manager. The mini.diff
+provider still owns its `MiniDiffUpdated` autocmd when dependency resolution
+fails. ALE and Coc can begin updating from their integration events after they
+load, but loading them first also provides predictable initial state.
+
+Gitsigns and mini.diff may both be enabled. Their marks are stored separately,
+but both describe diff data and can overlap visually; disable one provider or
+adjust mark columns and priorities if that duplication is not desired.
 
 ## Related
 
 - [README](../../README.md)
 - [Configuration](../configuration.md)
 - [Layout and geometry](../layout-and-geometry.md)
+- [MiniDiff](mini_diff.md)
 - [Custom providers](custom.md)

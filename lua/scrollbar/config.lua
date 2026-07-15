@@ -104,6 +104,24 @@ local DEFAULTS = {
             priority = 7,
             highlight = "GitSignsDelete",
         },
+        MiniDiffAdd = {
+            text = { "▒" },
+            column = 1,
+            priority = 7,
+            highlight = "MiniDiffSignAdd",
+        },
+        MiniDiffChange = {
+            text = { "▒" },
+            column = 1,
+            priority = 7,
+            highlight = "MiniDiffSignChange",
+        },
+        MiniDiffDelete = {
+            text = { "▒" },
+            column = 1,
+            priority = 7,
+            highlight = "MiniDiffSignDelete",
+        },
     },
     providers = {
         cursor = true,
@@ -111,6 +129,7 @@ local DEFAULTS = {
         search = true,
         marks = true,
         gitsigns = false,
+        mini_diff = false,
         ale = false,
         coc = false,
     },
@@ -170,6 +189,7 @@ local NESTED_KEYS = {
         search = true,
         marks = true,
         gitsigns = true,
+        mini_diff = true,
         ale = true,
         coc = true,
     },
@@ -371,7 +391,7 @@ local function validate_string_list(value, path)
 end
 
 local function normalize_providers(providers, float_width)
-    for _, name in ipairs({ "cursor", "diagnostic", "gitsigns", "ale", "coc" }) do
+    for _, name in ipairs({ "cursor", "diagnostic", "gitsigns", "mini_diff", "ale", "coc" }) do
         validate_boolean(providers[name], "providers." .. name)
     end
 

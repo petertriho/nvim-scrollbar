@@ -16,6 +16,7 @@ screen-row-accurate geometry, and mouse navigation.
   interaction, for example `set mouse=a`. The plugin never changes `mouse`.
 - Optional integrations:
   [gitsigns.nvim](https://github.com/lewis6991/gitsigns.nvim),
+  [mini.diff](https://github.com/nvim-mini/mini.diff),
   [ALE](https://github.com/dense-analysis/ale), and
   [coc.nvim](https://github.com/neoclide/coc.nvim)
 
@@ -78,6 +79,7 @@ accepted value.
 | [`search`](docs/providers/search.md) | on | Native `/` and `?` search | None |
 | [`marks`](docs/providers/marks.md) | on | Letter marks; optional numbered marks | None |
 | [`gitsigns`](docs/providers/gitsigns.md) | off | Git hunks | gitsigns.nvim |
+| [`mini_diff`](docs/providers/mini_diff.md) | off | mini.diff hunks | mini.diff |
 | [`ale`](docs/providers/ale.md) | off | ALE location list | ALE |
 | [`coc`](docs/providers/coc.md) | off | Coc diagnostic list | coc.nvim |
 
@@ -110,6 +112,7 @@ sources can be added through the [custom provider API](docs/providers/custom.md)
 - [Search](docs/providers/search.md)
 - [Marks](docs/providers/marks.md)
 - [Gitsigns](docs/providers/gitsigns.md)
+- [MiniDiff](docs/providers/mini_diff.md)
 - [ALE](docs/providers/ale.md)
 - [Coc](docs/providers/coc.md)
 - [Custom providers](docs/providers/custom.md)

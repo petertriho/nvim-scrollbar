@@ -36,6 +36,9 @@ order:
 > `require("scrollbar").setup()` with your configuration after it is available.
 > `:ScrollbarRefresh` alone does not attach the missing integration.
 
+Gitsigns and [mini.diff](mini_diff.md) can be enabled together, but their diff
+marks may overlap because each provider publishes its own view of changes.
+
 ## Data And Marks
 
 The provider calls `require("gitsigns").get_hunks(bufnr)` and translates the

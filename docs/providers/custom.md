@@ -78,7 +78,7 @@ providers.unregister("bookmarks")
 - `get(name)` returns the registered provider table or `nil`.
 
 > **Avoid built-in names:** `cursor`, `diagnostic`, `search`, `marks`,
-> `gitsigns`, `ale`, and `coc`. Registering one before root setup shadows that
+> `gitsigns`, `mini_diff`, `ale`, and `coc`. Registering one before root setup shadows that
 > built-in. Registering afterward fails only when the name is currently
 > registered, which is normally true for default-on providers but not
 > necessarily for optional or explicitly disabled providers. Built-in

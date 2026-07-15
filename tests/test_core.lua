@@ -24,6 +24,7 @@ local function root_config(overrides)
             search = false,
             marks = false,
             gitsigns = false,
+            mini_diff = false,
             ale = false,
             coc = false,
         },
@@ -593,6 +594,46 @@ T["public refresh recollects displayed buffers through providers and schedules r
     expect.equality(result.marks, { { line = 1, type = "Misc" } })
     expect.equality(result.queued, result.source_windows)
     expect.equality(result.source_windows, 2)
+end
+
+T["root setup enables both diff providers and refresh clears disabled mini.diff data"] = function()
+    local child = new_child()
+    local result = child.lua_func(function(config)
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, { "one", "two", "three" })
+        local mini_data = { hunks = { { type = "change", buf_start = 2, buf_count = 1 } } }
+        rawset(package.preload, "mini.diff", function()
+            return {
+                get_buf_data = function()
+                    return mini_data
+                end,
+            }
+        end)
+        rawset(package.preload, "gitsigns", function()
+            return {
+                get_hunks = function()
+                    return { { type = "add", added = { start = 1, count = 1 } } }
+                end,
+            }
+        end)
+
+        require("scrollbar").setup(config)
+        local bufnr = vim.api.nvim_get_current_buf()
+        local before = require("scrollbar.store").get(bufnr)
+        mini_data = nil
+        vim.cmd("ScrollbarRefresh")
+        local after = require("scrollbar.store").get(bufnr)
+        return {
+            before = before,
+            after = after,
+            mini_registered = require("scrollbar.providers").get("mini_diff") ~= nil,
+        }
+    end, root_config({ providers = { gitsigns = true, mini_diff = true } }))
+
+    expect.equality(result.before.gitsigns, { { line = 0, type = "GitAdd" } })
+    expect.equality(result.before.mini_diff, { { line = 1, type = "MiniDiffChange" } })
+    expect.equality(result.after.gitsigns, { { line = 0, type = "GitAdd" } })
+    expect.equality(result.after.mini_diff, {})
+    expect.equality(result.mini_registered, true)
 end
 
 return T
