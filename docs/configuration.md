@@ -98,13 +98,13 @@ require("scrollbar").setup({
             highlight = "Normal",
         },
         GitAdd = {
-            text = { "┆" },
+            text = { "┃" },
             column = 1,
             priority = 7,
             highlight = "GitSignsAdd",
         },
         GitChange = {
-            text = { "┆" },
+            text = { "┃" },
             column = 1,
             priority = 7,
             highlight = "GitSignsChange",

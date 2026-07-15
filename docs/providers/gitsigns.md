@@ -82,7 +82,9 @@ require("scrollbar").setup({
 ```
 
 The normal mark options are available: `text`, `column`, `priority`, and
-`highlight`.
+`highlight`. The defaults are `┃` for `GitAdd` and `GitChange`, `▁` for
+`GitDelete`, column `1`, priority `7`, and the corresponding `GitSigns*`
+highlight groups.
 
 ## Limitations And Failure Behavior
 
@@ -91,7 +93,8 @@ The normal mark options are available: `text`, `column`, `priority`, and
 - Deletions have no surviving source range, so each deletion is represented by
   one mark.
 - Missing gitsigns at setup produces no marks and does not break scrollbar
-  setup.
+  setup. The provider still owns one `GitSignsUpdate` autocmd, but events remain
+  empty because dependency lookup is not retried.
 - If hunk collection fails, only this provider's marks for the affected buffer
   are cleared. Other providers continue to render.
 - Standard scrollbar eligibility rules still apply, including excluded buffer
@@ -99,8 +102,8 @@ The normal mark options are available: `text`, `column`, `priority`, and
 
 ## Troubleshooting
 
-- No marks and no `GitSignsUpdate` autocmd: verify gitsigns loaded before
-  scrollbar, then rerun scrollbar setup.
+- No marks after a late gitsigns load: rerun scrollbar setup. The owned
+  `GitSignsUpdate` autocmd does not dynamically reattach the missing module.
 - No marks in one buffer: check `:Gitsigns debug_messages` and confirm
   `require("gitsigns").get_hunks(0)` returns hunks.
 - Marks use unexpected colors: inspect `GitSignsAdd`, `GitSignsChange`, and

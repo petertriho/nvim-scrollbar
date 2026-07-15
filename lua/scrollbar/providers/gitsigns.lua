@@ -78,9 +78,6 @@ M.setup = function(context)
     state.context = context
     local ok, gitsigns = pcall(require, "gitsigns")
     state.module = ok and gitsigns or nil
-    if state.module == nil then
-        return
-    end
 
     local group = context.create_augroup("events")
     vim.api.nvim_create_autocmd("User", {
