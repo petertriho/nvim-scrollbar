@@ -151,6 +151,24 @@ require("scrollbar").setup({
             priority = 7,
             highlight = "SignifySignDelete",
         },
+        VGitAdd = {
+            text = { "┃" },
+            column = 1,
+            priority = 7,
+            highlight = "GitSignsAdd",
+        },
+        VGitChange = {
+            text = { "┃" },
+            column = 1,
+            priority = 7,
+            highlight = "GitSignsChange",
+        },
+        VGitDelete = {
+            text = { "▁" },
+            column = 1,
+            priority = 7,
+            highlight = "GitSignsDelete",
+        },
     },
     providers = {
         cursor = true,
@@ -160,6 +178,7 @@ require("scrollbar").setup({
         gitsigns = false,
         mini_diff = false,
         signify = false,
+        vgit = false,
         ale = false,
         coc = false,
     },
@@ -191,9 +210,9 @@ normalizes to
 
 ## Validation
 
-- The `providers` table accepts exactly nine built-in names. `cursor`,
-  `diagnostic`, `gitsigns`, `mini_diff`, `signify`, `ale`, and `coc` are strict
-  booleans.
+- The `providers` table accepts exactly ten built-in names. `cursor`,
+  `diagnostic`, `gitsigns`, `mini_diff`, `signify`, `vgit`, `ale`, and `coc` are
+  strict booleans.
 - `visibility` accepts only `"all"` or `"active"`.
 - `render.geometry` accepts only `"line"` or `"screen"`.
 - `float.placement.relative` accepts only `"window"` or `"editor"`.

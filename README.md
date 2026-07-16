@@ -18,6 +18,7 @@ screen-row-accurate geometry, and mouse navigation.
   [gitsigns.nvim](https://github.com/lewis6991/gitsigns.nvim),
   [mini.diff](https://github.com/nvim-mini/mini.diff),
   [vim-signify](https://github.com/mhinz/vim-signify),
+  [vgit.nvim](https://github.com/tanvirtin/vgit.nvim),
   [ALE](https://github.com/dense-analysis/ale), and
   [coc.nvim](https://github.com/neoclide/coc.nvim)
 
@@ -82,6 +83,7 @@ accepted value.
 | [`gitsigns`](docs/providers/gitsigns.md) | off | Git hunks | gitsigns.nvim |
 | [`mini_diff`](docs/providers/mini_diff.md) | off | mini.diff hunks | mini.diff |
 | [`signify`](docs/providers/signify.md) | off | vim-signify hunks | vim-signify |
+| [`vgit`](docs/providers/vgit.md) | off | vgit hunks | vgit.nvim |
 | [`ale`](docs/providers/ale.md) | off | ALE location list | ALE |
 | [`coc`](docs/providers/coc.md) | off | Coc diagnostic list | coc.nvim |
 
@@ -116,6 +118,7 @@ sources can be added through the [custom provider API](docs/providers/custom.md)
 - [Gitsigns](docs/providers/gitsigns.md)
 - [MiniDiff](docs/providers/mini_diff.md)
 - [Signify](docs/providers/signify.md)
+- [Vgit](docs/providers/vgit.md)
 - [ALE](docs/providers/ale.md)
 - [Coc](docs/providers/coc.md)
 - [Custom providers](docs/providers/custom.md)

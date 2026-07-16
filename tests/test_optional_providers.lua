@@ -23,6 +23,10 @@ local T = MiniTest.new_set({
             package.loaded["gitsigns"] = nil
             rawset(package.preload, "mini.diff", nil)
             package.loaded["mini.diff"] = nil
+            rawset(package.preload, "vgit.git.git_buffer_store", nil)
+            package.loaded["vgit.git.git_buffer_store"] = nil
+            rawset(package.preload, "vgit.settings.signs", nil)
+            package.loaded["vgit.settings.signs"] = nil
 
             for _, module in ipairs({
                 "scrollbar.config",
@@ -31,6 +35,7 @@ local T = MiniTest.new_set({
                 "scrollbar.providers.gitsigns",
                 "scrollbar.providers.mini_diff",
                 "scrollbar.providers.signify",
+                "scrollbar.providers.vgit",
                 "scrollbar.providers.ale",
                 "scrollbar.providers.coc",
             }) do
@@ -50,6 +55,10 @@ local T = MiniTest.new_set({
             package.loaded["gitsigns"] = nil
             rawset(package.preload, "mini.diff", nil)
             package.loaded["mini.diff"] = nil
+            rawset(package.preload, "vgit.git.git_buffer_store", nil)
+            package.loaded["vgit.git.git_buffer_store"] = nil
+            rawset(package.preload, "vgit.settings.signs", nil)
+            package.loaded["vgit.settings.signs"] = nil
         end,
     },
 })
@@ -102,6 +111,52 @@ local function with_signs(names)
         for _, name in ipairs(names) do
             pcall(vim.fn.sign_undefine, name)
         end
+    end)
+end
+
+local default_vgit_main = {
+    add = "GitSignsAdd",
+    remove = "GitSignsDelete",
+    change = "GitSignsChange",
+}
+
+local function install_vgit_store(data)
+    local event_handlers = {}
+    rawset(package.preload, "vgit.git.git_buffer_store", function()
+        return {
+            get = function(buffer)
+                return data[tostring(buffer.bufnr)]
+            end,
+            on = function(event_types, handler)
+                if type(event_types) == "string" then
+                    event_types = { event_types }
+                end
+                for _, event_type in ipairs(event_types) do
+                    event_handlers[event_type] = event_handlers[event_type] or {}
+                    table.insert(event_handlers[event_type], handler)
+                end
+            end,
+        }
+    end)
+    return event_handlers
+end
+
+local function dispatch_vgit_event(event_handlers, event_type, bufnr)
+    for _, handler in ipairs(event_handlers[event_type] or {}) do
+        handler({ bufnr = bufnr }, event_type)
+    end
+end
+
+local function install_vgit_signs(main)
+    rawset(package.preload, "vgit.settings.signs", function()
+        return {
+            get = function(_, key)
+                if key == "usage" then
+                    return { main = main }
+                end
+                return nil
+            end,
+        }
     end)
 end
 
@@ -525,6 +580,242 @@ T["late-loaded signify attaches marks after User Signify"] = function()
     })
 end
 
+T["vgit maps state.signs to VGitAdd/VGitChange/VGitDelete via usage.main"] = function()
+    local first = new_buffer({ "1", "2", "3", "4", "5" })
+    local second = new_buffer({ "1", "2", "3", "4", "5" })
+    local data = {
+        [tostring(first)] = {
+            state = {
+                signs = {
+                    { col = 1, name = "GitSignsAdd" },
+                    { col = 2, name = "GitSignsChange" },
+                    { col = 0, name = "GitSignsDelete" },
+                    { col = 3, name = "UnknownSign" },
+                    { col = -1, name = "GitSignsAdd" },
+                },
+            },
+        },
+        [tostring(second)] = {
+            state = {
+                signs = {
+                    { col = 4, name = "GitSignsAdd" },
+                },
+            },
+        },
+    }
+    install_vgit_store(data)
+    install_vgit_signs(default_vgit_main)
+
+    local providers = require("scrollbar.providers")
+    providers.register(require("scrollbar.providers.vgit"))
+    providers.setup({
+        is_buffer_eligible = function(bufnr)
+            return bufnr == first or bufnr == second
+        end,
+    })
+
+    expect.equality(require("scrollbar.store").get(first).vgit, {
+        { line = 1, type = "VGitAdd" },
+        { line = 2, type = "VGitChange" },
+        { line = 0, type = "VGitDelete" },
+    })
+    expect.equality(require("scrollbar.store").get(second).vgit, {
+        { line = 4, type = "VGitAdd" },
+    })
+end
+
+T["vgit sync event updates marks per buffer and clears on dispose"] = function()
+    local first = new_buffer({ "1", "2", "3", "4" })
+    local second = new_buffer({ "1", "2", "3", "4" })
+    local data = {
+        [tostring(first)] = { state = { signs = {} } },
+        [tostring(second)] = { state = { signs = {} } },
+    }
+    local handlers = install_vgit_store(data)
+    install_vgit_signs(default_vgit_main)
+
+    local vgit = require("scrollbar.providers.vgit")
+    vgit.update_delay_ms = 0
+
+    local providers = require("scrollbar.providers")
+    providers.register(vgit)
+    local invalidated = {}
+    providers.setup({
+        is_buffer_eligible = function(bufnr)
+            return bufnr == first or bufnr == second
+        end,
+        invalidate_buffer = function(bufnr)
+            table.insert(invalidated, bufnr)
+        end,
+    })
+
+    invalidated = {}
+    data[tostring(first)] = {
+        state = { signs = { { col = 1, name = "GitSignsAdd" } } },
+    }
+    data[tostring(second)] = {
+        state = { signs = { { col = 2, name = "GitSignsDelete" } } },
+    }
+    dispatch_vgit_event(handlers, "sync", first)
+    dispatch_vgit_event(handlers, "sync", second)
+    vim.wait(50)
+
+    expect.equality(require("scrollbar.store").get(first).vgit, {
+        { line = 1, type = "VGitAdd" },
+    })
+    expect.equality(require("scrollbar.store").get(second).vgit, {
+        { line = 2, type = "VGitDelete" },
+    })
+    expect.equality(sorted(invalidated), sorted({ first, second }))
+
+    invalidated = {}
+    data[tostring(first)] = { state = { signs = {} } }
+    data[tostring(second)] = { state = { signs = {} } }
+    dispatch_vgit_event(handlers, "sync", first)
+    dispatch_vgit_event(handlers, "sync", second)
+    vim.wait(50)
+    expect.equality(require("scrollbar.store").get(first).vgit, {})
+    expect.equality(require("scrollbar.store").get(second).vgit, {})
+    expect.equality(sorted(invalidated), sorted({ first, second }))
+
+    providers.dispose()
+    expect.equality(require("scrollbar.store").get(first), {})
+    expect.equality(require("scrollbar.store").get(second), {})
+end
+
+T["vgit change event refreshes only the event buffer"] = function()
+    local first = new_buffer({ "1", "2", "3" })
+    local second = new_buffer({ "1", "2", "3" })
+    local data = {
+        [tostring(first)] = {
+            state = { signs = { { col = 0, name = "GitSignsAdd" } } },
+        },
+        [tostring(second)] = {
+            state = { signs = { { col = 1, name = "GitSignsChange" } } },
+        },
+    }
+    local handlers = install_vgit_store(data)
+    install_vgit_signs(default_vgit_main)
+
+    local vgit = require("scrollbar.providers.vgit")
+    vgit.update_delay_ms = 0
+
+    local invalidated = {}
+    local providers = require("scrollbar.providers")
+    providers.register(vgit)
+    providers.setup({
+        is_buffer_eligible = function(bufnr)
+            return bufnr == first or bufnr == second
+        end,
+        invalidate_buffer = function(bufnr)
+            table.insert(invalidated, bufnr)
+        end,
+    })
+
+    expect.equality(require("scrollbar.store").get(first).vgit, {
+        { line = 0, type = "VGitAdd" },
+    })
+    expect.equality(require("scrollbar.store").get(second).vgit, {
+        { line = 1, type = "VGitChange" },
+    })
+
+    invalidated = {}
+    data[tostring(first)] = {
+        state = { signs = { { col = 2, name = "GitSignsDelete" } } },
+    }
+    dispatch_vgit_event(handlers, "change", first)
+    vim.wait(50)
+
+    expect.equality(require("scrollbar.store").get(first).vgit, {
+        { line = 2, type = "VGitDelete" },
+    })
+    expect.equality(require("scrollbar.store").get(second).vgit, {
+        { line = 1, type = "VGitChange" },
+    })
+    expect.equality(invalidated, { first })
+end
+
+T["missing vgit dependency leaves provider setup usable"] = function()
+    local target = new_buffer({ "one" })
+    rawset(package.preload, "vgit.git.git_buffer_store", function()
+        error("vgit store missing")
+    end)
+    rawset(package.preload, "vgit.settings.signs", function()
+        error("vgit signs missing")
+    end)
+
+    local providers = require("scrollbar.providers")
+    providers.register(require("scrollbar.providers.vgit"))
+    expect.equality(
+        pcall(providers.setup, {
+            is_buffer_eligible = function(bufnr)
+                return bufnr == target
+            end,
+        }),
+        true
+    )
+    expect.equality(require("scrollbar.store").get(target).vgit, {})
+
+    providers.dispose()
+    expect.equality(require("scrollbar.store").get(target), {})
+end
+
+T["vgit event failures clear only vgit marks"] = function()
+    local target = new_buffer({ "one", "two" })
+    local fail = false
+    local event_handlers = {}
+    rawset(package.preload, "vgit.git.git_buffer_store", function()
+        return {
+            get = function()
+                if fail then
+                    error("vgit store exploded")
+                end
+                return {
+                    state = { signs = { { col = 0, name = "GitSignsAdd" } } },
+                }
+            end,
+            on = function(event_types, handler)
+                if type(event_types) == "string" then
+                    event_types = { event_types }
+                end
+                for _, event_type in ipairs(event_types) do
+                    event_handlers[event_type] = event_handlers[event_type] or {}
+                    table.insert(event_handlers[event_type], handler)
+                end
+            end,
+        }
+    end)
+    install_vgit_signs(default_vgit_main)
+
+    local vgit = require("scrollbar.providers.vgit")
+    vgit.update_delay_ms = 0
+
+    local providers = require("scrollbar.providers")
+    providers.register(vgit)
+    providers.register({
+        name = "other",
+        refresh = function()
+            return { { line = 1, type = "Error" } }
+        end,
+    })
+    providers.setup({
+        is_buffer_eligible = function(bufnr)
+            return bufnr == target
+        end,
+    })
+
+    expect.equality(require("scrollbar.store").get(target).vgit, {
+        { line = 0, type = "VGitAdd" },
+    })
+
+    fail = true
+    dispatch_vgit_event(event_handlers, "sync", target)
+    vim.wait(50)
+    expect.equality(require("scrollbar.store").get(target), {
+        other = { { line = 1, type = "Error" } },
+    })
+end
+
 T["ALE converts one-based lines and updates only each event buffer"] = function()
     local first = new_buffer({ "1", "2", "3" })
     local second = new_buffer({ "1", "2", "3" })
@@ -715,6 +1006,7 @@ T["missing optional dependencies leave runtime and provider setup usable"] = fun
     local providers = require("scrollbar.providers")
     providers.register(require("scrollbar.providers.gitsigns"))
     providers.register(require("scrollbar.providers.mini_diff"))
+    providers.register(require("scrollbar.providers.vgit"))
     providers.register(require("scrollbar.providers.ale"))
     providers.register(require("scrollbar.providers.coc"))
 
@@ -731,6 +1023,7 @@ T["missing optional dependencies leave runtime and provider setup usable"] = fun
         coc = {},
         gitsigns = {},
         mini_diff = {},
+        vgit = {},
     })
     expect.equality(#vim.api.nvim_get_autocmds({ event = "User", pattern = "GitSignsUpdate" }), 1)
     expect.equality(#vim.api.nvim_get_autocmds({ event = "User", pattern = "MiniDiffUpdated" }), 1)

@@ -15,6 +15,7 @@ local BUILTINS = {
     { name = "gitsigns", module = "scrollbar.providers.gitsigns" },
     { name = "mini_diff", module = "scrollbar.providers.mini_diff" },
     { name = "signify", module = "scrollbar.providers.signify" },
+    { name = "vgit", module = "scrollbar.providers.vgit" },
     { name = "ale", module = "scrollbar.providers.ale" },
     { name = "coc", module = "scrollbar.providers.coc" },
 }
