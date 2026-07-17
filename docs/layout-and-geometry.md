@@ -1,115 +1,145 @@
 # Layout And Geometry
 
-The scrollbar is a floating window attached either to each source window or to
-the editor.
+The renderer derives float width, physical columns, thumb geometry, mark
+routing, stack order, and mouse ownership from `layout`.
+
+## Logical Columns
+
+Each entry in `layout.columns` is one logical display column. Layers inside a
+column are ordered bottom-to-top:
+
+```lua
+layout = {
+    direction = "auto",
+    columns = {
+        { "track", "thumb", "marks" },
+    },
+}
+```
+
+Track paints background only. Thumb paints its repeated text and background
+while the viewport span is active. Mark layers paint resolved glyphs. A later
+track can replace the background without replacing a lower content glyph.
+Marks above the thumb remain visible; marks below it are hidden by the thumb.
+
+Plain `"marks"` receives every type not claimed by an explicit descriptor:
+
+```lua
+layout = {
+    columns = {
+        { "track", "thumb" },
+        {
+            { kind = "marks", types = { "Error", "Warn", "Info", "Hint" } },
+            "marks",
+        },
+    },
+}
+```
+
+Repeat the same layer in adjacent columns to create a span. The thumb and each
+mark lane must be contiguous. Track may be repeated anywhere. Components are
+optional, so mark-only and thumb-only rulers are valid. Blank cells without a
+declared track, active thumb, or visible mark use the transparent float base.
+
+## Direction
+
+- `auto`: declarations are inner-to-outer. East anchors render left-to-right;
+  west anchors mirror them.
+- `ltr`: declarations always render in physical left-to-right order.
+- `rtl`: declarations always render in physical right-to-left order.
+
+Direction moves columns, not glyph internals. Multi-cell strings retain normal
+left-to-right character order.
+
+## Named-Mark Lanes
+
+Only a descriptor explicitly selecting `Mark` may set `max_width`:
+
+```lua
+layout = {
+    columns = {
+        { "track", "thumb" },
+        { { kind = "marks", types = { "Mark" }, max_width = 8 } },
+        { "marks" },
+    },
+}
+```
+
+When built-in named marks collide on a row, their lane grows only as needed.
+`max_width` caps that lane's total width, including its declared base span; it
+does not cap the whole float. Growth is limited by the active placement
+container. Dynamic cells contain named marks only and are inserted on the
+editor-facing inward side. Declared track, thumb, and ordinary mark screen cells
+remain pinned as the float grows or shrinks.
+
+Built-in names retain source-line/name order. If capacity is insufficient, the
+ordered prefix remains and the tail is omitted. Custom providers emitting
+`type = "Mark"` stay collapsed in the declared base lane.
 
 ## Placement
 
-`float.placement.relative` selects the placement container:
+`float.placement.relative = "window"` creates one float per eligible source
+window. `"editor"` uses editor coordinates and renders only the active source
+window. `anchor` selects `NW`, `NE`, `SW`, or `SE`; signed `row` and `col`
+offsets are applied literally.
 
-- `"window"` attaches one float to each eligible source window.
-- `"editor"` uses editor coordinates and renders only the active source window.
-  Horizontal anchors use the editor width; vertical anchors align with the
-  active source window's text area.
-
-`anchor` selects the float corner attached to the matching container corner.
-`row` and `col` are signed offsets: positive rows move down and positive columns
-move right.
-
-```lua
-require("scrollbar").setup({
-    float = {
-        placement = {
-            relative = "window",
-            anchor = "NW",
-            row = 1,
-            col = 2,
-        },
-    },
-})
-```
-
-Tracks cover source buffer-text rows only. They exclude the source winbar and
-remain inside window bounds that already exclude tabline, statusline, and
-command-line chrome. Explicit signed offsets are still applied literally and
-can intentionally move or clip the float outside those bounds.
-
-The renderer owns float height, scratch buffers, focusability, mouse flags,
-style, and source-window association. Supported float controls are `width`,
-`zindex`, `hide_on_cursor`, and the typed placement fields.
+The float covers source buffer-text rows, excluding the source winbar and bounds
+already reserved for tabline, statusline, and command-line chrome. The renderer
+owns derived width and height. Public float controls are `zindex`,
+`hide_on_cursor`, and `placement`.
 
 ## Geometry Modes
 
-`render.geometry = "line"` is the default. It maps logical source lines to the
-track and avoids fold scanning. Scroll-only frames reuse the cached static mark
-layer and recompute the viewport handle.
+`render.geometry = "line"` maps logical lines directly and preserves a static
+mark-layer cache. Scrolling recomputes viewport/thumb geometry without
+rebuilding mark placement. Mark revisions, dimensions, container width, mark
+text/priority, and normalized layout inputs invalidate that cache; visual-only
+highlight and unrelated runtime options do not.
 
-Line mode caches mark-row composition by source buffer, buffer- and window-mark
-revisions, line count, track and container dimensions, and layout-affecting
-configuration. Scrolling alone reuses that layer; changes to those cached inputs
-rebuild it.
+`render.geometry = "screen"` uses `nvim_win_text_height()` so wrapping, folds,
+diff filler, virtual lines, `topfill`, and wrapped offsets affect both marks and
+thumb geometry. It is more accurate and intentionally more expensive.
 
-`render.geometry = "screen"` uses `nvim_win_text_height()` so marks and the
-handle account for wrapping, closed folds, diff filler, virtual lines,
-`topfill`, and wrapped-line offsets. It is more accurate and intentionally more
-expensive; screen geometry is recomputed for each dirty render.
+`render.interval_ms` coalesces repeated invalidations into the latest frame.
 
-When the logical or rendered document height fits within the track, rows align
-directly and unused rows below the document stay blank. Taller documents are
-proportionally compressed across the track.
+## Examples
 
-`render.interval_ms` is the frame-coalescing interval. Repeated invalidations in
-one frame render only the latest state. Scrolling does not recollect provider
-marks, and a logical show operation joins the same latest-frame path.
-
-## Wide Scrollbars
-
-Handle and mark ranges can occupy separate columns:
+One-column default:
 
 ```lua
-require("scrollbar").setup({
-    float = { width = 4 },
-    handle = {
-        text = "██",
-        column = 3,
-        width = 2,
-    },
-    marks = {
-        Error = {
-            text = { "E", "!" },
-            column = 1,
-            priority = 0,
-            highlight = "DiagnosticError",
-        },
-        Search = {
-            text = { "s", "S" },
-            column = 2,
-            priority = 1,
-            highlight = "Search",
-        },
-    },
-})
+layout = { columns = { { "track", "thumb", "marks" } } }
 ```
 
-Mark text lists are density variants; see
-[Marks and columns](configuration.md#marks-and-columns) for selection and
-collision rules.
+Wide typed ruler:
 
-`float.width` is the fixed base width for ordinary rendering. Non-overlapping
-ranges on the same row coexist. Overlapping ranges use mark priority, where
-lower numbers win, and deterministic tie-breaking. Multi-cell glyphs are
-omitted rather than partially rendered.
+```lua
+layout = {
+    columns = {
+        { "track", { kind = "marks", types = { "GitAdd", "GitChange", "GitDelete" } } },
+        { "track", "thumb" },
+        { { kind = "marks", types = { "Error", "Warn", "Info", "Hint" } }, "marks" },
+    },
+}
+```
 
-The built-in marks provider can expand the effective float width with
-`providers.marks.max_width`. `NW` and `SW` floats grow right; `NE` and `SE`
-floats grow left. The base track and handle cells remain pinned, while the
-effective width can vary by source window and render. See
-[Marks provider](providers/marks.md) for ordering, caps, truncation, and click
-targets.
+Expanded named marks:
+
+```lua
+layout = {
+    columns = {
+        { "track", "thumb", { kind = "marks", types = { "Mark" }, max_width = 8 } },
+        { "marks" },
+    },
+}
+```
+
+Terminal cells, font width, and colorscheme highlights limit visual fidelity;
+presets and examples are structural contracts rather than pixel-perfect GUI
+reproductions.
 
 ## Related
 
-- [README](../README.md)
 - [Configuration](configuration.md)
-- [Visibility](visibility.md)
+- [Presets](presets.md)
+- [Marks provider](providers/marks.md)
 - [Mouse](mouse.md)

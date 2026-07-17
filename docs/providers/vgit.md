@@ -80,17 +80,17 @@ the provider replaces existing VGit marks with an empty list.
 ## Appearance
 
 The three default mark types use `┃` for additions and changes and `▁` for
-deletions, column `1`, priority `7`, and vgit's own sign highlights:
+deletions, priority `7`, and vgit's own sign highlights:
 
 ```lua
 marks = {
-    VGitAdd = { text = { "┃" }, column = 1, priority = 7, highlight = "GitSignsAdd" },
-    VGitChange = { text = { "┃" }, column = 1, priority = 7, highlight = "GitSignsChange" },
-    VGitDelete = { text = { "▁" }, column = 1, priority = 7, highlight = "GitSignsDelete" },
+    VGitAdd = { text = { "┃" }, priority = 7, highlight = "GitSignsAdd" },
+    VGitChange = { text = { "┃" }, priority = 7, highlight = "GitSignsChange" },
+    VGitDelete = { text = { "▁" }, priority = 7, highlight = "GitSignsDelete" },
 }
 ```
 
-Override `text`, `column`, `priority`, or `highlight` under the top-level
+Override `text`, `priority`, or `highlight` under the top-level
 `marks` table as usual.
 
 ## Limitations
@@ -109,7 +109,7 @@ Override `text`, `column`, `priority`, or `highlight` under the top-level
   `:ScrollbarRefresh`.
 - Enabling `vgit` alongside `gitsigns`, `mini_diff`, or `signify` is supported,
   but all describe diff data and their marks can overlap visually. Disable the
-  others or adjust mark columns and priorities if the duplication is not
+  others or adjust typed lanes and priorities if the duplication is not
   desired.
 
 ## Troubleshooting
@@ -122,7 +122,7 @@ Override `text`, `column`, `priority`, or `highlight` under the top-level
   confirm `require("vgit.git.git_buffer_store").get({ bufnr = 0 })` still
   returns a buffer with `state.signs`.
 - Duplicate diff marks: disable `gitsigns`, `mini_diff`, `signify`, or `vgit`,
-  or place their mark types in different columns.
+  or place their mark types in different lanes.
 - Unexpected colors: inspect `GitSignsAdd`, `GitSignsChange`, and
   `GitSignsDelete`, or override the mark highlights.
 

@@ -13,11 +13,11 @@ local function new_child()
 end
 
 local function root_config(overrides)
-    return vim.tbl_deep_extend("force", {
+    return require("scrollbar.presets").merge({
         set_highlights = false,
         render = { interval_ms = 1000, geometry = "line" },
         mouse = { enabled = true },
-        handle = { text = "H", hide_if_all_visible = false },
+        thumb = { text = "H", hide_if_all_visible = false },
         providers = {
             cursor = false,
             diagnostic = false,
@@ -214,7 +214,7 @@ T["registers both marks modes and fully removes the disabled builtin"] = functio
         local collapsed_marks = store.get(vim.api.nvim_get_current_buf()).marks
 
         local expanded = vim.deepcopy(config)
-        expanded.providers.marks = { max_width = 4 }
+        expanded.providers.marks = { numbers = true }
         scrollbar.setup(expanded)
         local repeated = providers.get("marks")
 

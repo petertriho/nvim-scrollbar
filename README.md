@@ -6,7 +6,7 @@
 ![diagnostics](./assets/diagnostics.gif)
 
 `nvim-scrollbar` renders one floating scrollbar per source window, with
-independent handles for split windows, typed mark providers, optional
+independent thumbs for split windows, declarative typed mark lanes, optional
 screen-row-accurate geometry, and mouse navigation.
 
 ## Requirements
@@ -55,12 +55,13 @@ every eligible source window. A small customized setup might look like:
 
 ```lua
 require("scrollbar").setup({
+    preset = "zed",
     autohide = {
         enabled = true,
     },
     providers = {
         search = { incsearch = true },
-        marks = { numbers = true, max_width = 8 },
+        marks = { numbers = true },
     },
 })
 ```
@@ -96,12 +97,14 @@ sources can be added through the [custom provider API](docs/providers/custom.md)
 ### Guides
 
 - [Configuration](docs/configuration.md): complete defaults, validation,
-  eligibility, mark text, columns, and priorities
+  eligibility, mark presentation, layout lanes, and priorities
+- [Presets](docs/presets.md): VS Code, Zed, IntelliJ, local inheritance, and
+  override precedence
 - [Visibility](docs/visibility.md): source-window visibility, autohide,
   hide-on-cursor behavior, commands, and Lua APIs
 - [Layout and geometry](docs/layout-and-geometry.md): placement, line and screen
   geometry, rendering cadence, and wide scrollbars
-- [Mouse](docs/mouse.md): clicks, mark navigation, handle dragging, and focus
+- [Mouse](docs/mouse.md): clicks, mark navigation, thumb dragging, and focus
   behavior
 - [Highlights](docs/highlights.md): generated groups, direct definitions,
   blending, and manual highlights

@@ -69,18 +69,18 @@ hunk list replace existing MiniDiff marks with an empty list.
 
 ## Appearance
 
-The three default mark types use `▒`, column `1`, priority `7`, and mini.diff's
+The three default mark types use `▒`, priority `7`, and mini.diff's
 sign highlights:
 
 ```lua
 marks = {
-    MiniDiffAdd = { text = { "▒" }, column = 1, priority = 7, highlight = "MiniDiffSignAdd" },
-    MiniDiffChange = { text = { "▒" }, column = 1, priority = 7, highlight = "MiniDiffSignChange" },
-    MiniDiffDelete = { text = { "▒" }, column = 1, priority = 7, highlight = "MiniDiffSignDelete" },
+    MiniDiffAdd = { text = { "▒" }, priority = 7, highlight = "MiniDiffSignAdd" },
+    MiniDiffChange = { text = { "▒" }, priority = 7, highlight = "MiniDiffSignChange" },
+    MiniDiffDelete = { text = { "▒" }, priority = 7, highlight = "MiniDiffSignDelete" },
 }
 ```
 
-Override `text`, `column`, `priority`, or `highlight` under the top-level
+Override `text`, `priority`, or `highlight` under the top-level
 `marks` table as usual.
 
 ## Limitations
@@ -91,7 +91,7 @@ Override `text`, `column`, `priority`, or `highlight` under the top-level
 - The provider does not poll, patch mini.diff lifecycle functions, or filter by
   source name.
 - Enabling both `mini_diff` and `gitsigns` is supported, but their marks can
-  overlap. Disable one or customize columns and priorities if needed.
+  overlap. Disable one or customize typed lanes and priorities if needed.
 - A dependency missing during setup remains safe and is adopted after it loads,
   but marks do not appear until the next provider event or manual refresh.
 
@@ -103,7 +103,7 @@ Override `text`, `column`, `priority`, or `highlight` under the top-level
   `:ScrollbarRefresh`, and confirm mini.diff itself was configured.
 - Marks remain after `MiniDiff.disable()`: run `:ScrollbarRefresh`.
 - Duplicate diff marks: disable either `gitsigns` or `mini_diff`, or place their
-  mark types in different columns.
+  mark types in different lanes.
 - Unexpected colors: inspect `MiniDiffSignAdd`, `MiniDiffSignChange`, and
   `MiniDiffSignDelete`, or override the mark highlights.
 

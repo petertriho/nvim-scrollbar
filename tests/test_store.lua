@@ -8,7 +8,7 @@ local T = MiniTest.new_set({
             package.loaded["scrollbar.store"] = nil
             require("scrollbar.config").set({
                 marks = {
-                    Custom = { text = "!", column = 1, priority = 1, highlight = "WarningMsg" },
+                    Custom = { text = "!", priority = 1, highlight = "WarningMsg" },
                 },
             })
         end,
@@ -389,7 +389,7 @@ T["validates complete lists against the current config and mark contract"] = fun
 
     require("scrollbar.config").set({
         marks = {
-            Runtime = { text = "r", column = 1, priority = 1, highlight = "Normal" },
+            Runtime = { text = "r", priority = 1, highlight = "Normal" },
         },
     })
     local ok, changed = store.set("alpha", bufnr, { { line = 1, type = "Runtime" } })

@@ -4,6 +4,7 @@
 ---@alias ScrollbarGeometryMode "line"|"screen"
 ---@alias ScrollbarPlacementRelative "window"|"editor"
 ---@alias ScrollbarFloatAnchor "NW"|"NE"|"SW"|"SE"
+---@alias ScrollbarLayoutDirection "auto"|"ltr"|"rtl"
 ---@alias ScrollbarSearchBackend "sync"|"worker"
 ---@alias ScrollbarText string|string[]
 ---@alias ScrollbarHighlightDefinition table<string, any> A table accepted by nvim_set_hl()
@@ -17,10 +18,20 @@
 ---@field col? integer
 
 ---@class ScrollbarUserFloatConfig
----@field width? integer
 ---@field zindex? integer
 ---@field hide_on_cursor? boolean
 ---@field placement? ScrollbarUserPlacement
+
+---@class ScrollbarUserMarkLayer
+---@field kind "marks"
+---@field types? string[] Mark types routed to this lane; omitted means catch-all
+---@field max_width? integer Total named-Mark lane width including declared columns
+
+---@alias ScrollbarUserLayoutLayer "track"|"thumb"|"marks"|ScrollbarUserMarkLayer
+
+---@class ScrollbarUserLayoutConfig
+---@field direction? ScrollbarLayoutDirection
+---@field columns? ScrollbarUserLayoutLayer[][] Logical columns whose layers are ordered bottom-to-top
 
 ---@class ScrollbarUserTrackConfig
 ---@field highlight? ScrollbarHighlight
@@ -36,17 +47,14 @@
 ---@class ScrollbarUserMouseConfig
 ---@field enabled? boolean
 
----@class ScrollbarUserHandleConfig
+---@class ScrollbarUserThumbConfig
 ---@field text? string
----@field column? integer
----@field width? integer
 ---@field blend? integer
 ---@field highlight? ScrollbarHighlight
 ---@field hide_if_all_visible? boolean
 
 ---@class ScrollbarUserMarkTypeConfig
 ---@field text? ScrollbarText
----@field column? integer
 ---@field priority? integer
 ---@field highlight? ScrollbarHighlight
 
@@ -59,14 +67,20 @@
 ---@field backend? ScrollbarSearchBackend
 
 ---@class ScrollbarMarksProviderConfig
----@field max_width false|integer
 ---@field letters boolean
 ---@field numbers boolean
 
 ---@class ScrollbarUserMarksProviderConfig
----@field max_width? integer
 ---@field letters? boolean
 ---@field numbers? boolean
+
+---@class ScrollbarUserPreset
+---@field extends? string
+---@field layout? ScrollbarUserLayoutConfig
+---@field track? ScrollbarUserTrackConfig
+---@field thumb? ScrollbarUserThumbConfig
+---@field marks? table<string, ScrollbarUserMarkTypeConfig>
+---@field float? { placement?: ScrollbarUserPlacement }
 
 ---@class ScrollbarUserProvidersConfig
 ---@field cursor? boolean
@@ -76,10 +90,13 @@
 ---@field gitsigns? boolean
 ---@field mini_diff? boolean
 ---@field signify? boolean
+---@field vgit? boolean
 ---@field ale? boolean
 ---@field coc? boolean
 
 ---@class ScrollbarUserConfig
+---@field preset? string Setup-local selected presentation preset
+---@field presets? table<string, ScrollbarUserPreset> Setup-local preset definitions
 ---@field show? boolean
 ---@field visibility? ScrollbarVisibility
 ---@field set_highlights? boolean
@@ -88,9 +105,10 @@
 ---@field autohide? ScrollbarUserAutohideConfig
 ---@field render? ScrollbarUserRenderConfig
 ---@field float? ScrollbarUserFloatConfig
+---@field layout? ScrollbarUserLayoutConfig
 ---@field track? ScrollbarUserTrackConfig
 ---@field mouse? ScrollbarUserMouseConfig
----@field handle? ScrollbarUserHandleConfig
+---@field thumb? ScrollbarUserThumbConfig
 ---@field marks? table<string, ScrollbarUserMarkTypeConfig>
 ---@field providers? ScrollbarUserProvidersConfig
 ---@field excluded_buftypes? string[]
@@ -103,10 +121,39 @@
 ---@field col integer
 
 ---@class ScrollbarFloatConfig
----@field width integer
 ---@field zindex integer
 ---@field hide_on_cursor boolean
 ---@field placement ScrollbarPlacement
+
+---@class ScrollbarNormalizedLayoutLayer
+---@field kind "track"|"thumb"|"marks"
+---@field priority integer Stable bottom-to-top stack position within one column
+---@field lane_id? integer
+
+---@class ScrollbarNormalizedMarkLane
+---@field id integer
+---@field catch_all boolean
+---@field types false|string[]
+---@field columns integer[] Physical base columns
+---@field first_column integer
+---@field last_column integer
+---@field max_width false|integer Total lane width including declared columns
+
+---@class ScrollbarNormalizedThumbSpan
+---@field first_column integer
+---@field last_column integer
+---@field width integer
+
+---@class ScrollbarLayoutConfig
+---@field direction ScrollbarLayoutDirection
+---@field width integer Derived declared width
+---@field inward "left"|"right" Dynamic named-mark growth side
+---@field columns ScrollbarNormalizedLayoutLayer[][] Physical columns with bottom-to-top layers
+---@field lanes ScrollbarNormalizedMarkLane[]
+---@field routes table<string, integer> Explicit type-to-lane routing
+---@field catchall_lane false|integer
+---@field thumb false|ScrollbarNormalizedThumbSpan
+---@field cache table Cache-relevant normalized layout snapshot
 
 ---@class ScrollbarTrackConfig
 ---@field highlight ScrollbarHighlight
@@ -122,17 +169,14 @@
 ---@class ScrollbarMouseConfig
 ---@field enabled boolean
 
----@class ScrollbarHandleConfig
+---@class ScrollbarThumbConfig
 ---@field text string
----@field column integer
----@field width integer
 ---@field blend integer
 ---@field highlight ScrollbarHighlight
 ---@field hide_if_all_visible boolean
 
 ---@class ScrollbarMarkTypeConfig
 ---@field text string[] Density variants ordered from least to most dense; an empty Mark list uses provider text
----@field column integer One-based display column
 ---@field priority integer
 ---@field highlight ScrollbarHighlight Source highlight group or direct definition
 
@@ -144,6 +188,7 @@
 ---@field gitsigns boolean
 ---@field mini_diff boolean
 ---@field signify boolean
+---@field vgit boolean
 ---@field ale boolean
 ---@field coc boolean
 
@@ -156,9 +201,10 @@
 ---@field autohide ScrollbarAutohideConfig
 ---@field render ScrollbarRenderConfig
 ---@field float ScrollbarFloatConfig
+---@field layout ScrollbarLayoutConfig
 ---@field track ScrollbarTrackConfig
 ---@field mouse ScrollbarMouseConfig
----@field handle ScrollbarHandleConfig
+---@field thumb ScrollbarThumbConfig
 ---@field marks table<string, ScrollbarMarkTypeConfig>
 ---@field providers ScrollbarProvidersConfig
 ---@field excluded_buftypes string[]
@@ -214,9 +260,11 @@
 ---@field start_col integer Zero-based byte column
 ---@field end_col integer Exclusive zero-based byte column
 ---@field highlight string
+---@field priority integer Stable compositor stack priority
 
 ---@class ScrollbarHitCell
----@field handle boolean Whether this display cell is inside the handle range
+---@field track boolean Whether this display cell declares a track layer
+---@field thumb boolean Whether this display cell is inside an active thumb layer
 ---@field provider? string
 ---@field type? string
 ---@field line? integer Exact zero-based source line
@@ -261,7 +309,7 @@
 ---@field config ScrollbarConfig
 ---@field height integer
 ---@field line_count? integer Logical line count required by compact line-mode search
----@field container_width? integer Placement container width; defaults to the configured base width
+---@field container_width? integer Placement container width; defaults to normalized layout width
 ---@field geometry ScrollbarGeometry
 ---@field marks ScrollbarLayoutMark[] Marks aligned with geometry.mark_rows
 ---@field mark_layer? ScrollbarResolvedMarkLayer Precomputed static placed mark cells and resolved width
@@ -271,7 +319,7 @@
 ---@field config ScrollbarConfig
 ---@field height integer
 ---@field line_count? integer Logical line count required by compact line-mode search
----@field container_width? integer Placement container width; defaults to the configured base width
+---@field container_width? integer Placement container width; defaults to normalized layout width
 ---@field geometry { mark_rows: integer[] }
 ---@field marks ScrollbarLayoutMark[]
 ---@field compact_search? ScrollbarCompactSearch Private built-in search matches
@@ -281,22 +329,24 @@
 ---@field width integer
 ---@field column integer
 ---@field last_column integer
+---@field lane_id integer
 ---@field type string
 ---@field provider string
 ---@field line integer
 ---@field lines integer[]
 
 ---@class ScrollbarResolvedMarkLayer
----@field rows ScrollbarPlacedMark[][] Placed mark cells by zero-based row
+---@field rows table<integer, table<integer, table<integer, ScrollbarPlacedMark>>> Placed cells by row, lane, and display column
 ---@field width integer Effective total layout width
 ---@field column_offset integer East-anchor translation applied to base content
+---@field expanded_lane_id false|integer
 
 ---@class ScrollbarLayoutOutput
 ---@field rows string[]
 ---@field width integer Effective total layout width
 ---@field highlights ScrollbarHighlightSpan[][]
 ---@field hitmap ScrollbarHitCell[][]
----@field handle ScrollbarHandleGeometry
+---@field handle false|ScrollbarHandleGeometry
 
 ---@class ScrollbarRendererGeometry
 ---@field mode ScrollbarGeometryMode
@@ -316,7 +366,7 @@
 ---@field highlights ScrollbarHighlightSpan[][]
 ---@field rendered_highlights ScrollbarHighlightSpan[][]
 ---@field hitmap ScrollbarHitCell[][]
----@field handle ScrollbarHandleGeometry
+---@field handle false|ScrollbarHandleGeometry
 ---@field handle_pressed boolean
 ---@field hidden_by_cursor boolean
 ---@field geometry ScrollbarRendererGeometry
@@ -386,11 +436,12 @@
 ---@field pressed_screen_row integer
 ---@field pressed_screen_col integer
 ---@field pressed_hit ScrollbarHitCell
----@field handle ScrollbarHandleGeometry
+---@field handle false|ScrollbarHandleGeometry
 ---@field handle_grab_offset? integer
 ---@field last_row integer
 ---@field last_col integer
 ---@field dragging boolean
+---@field held boolean Whether the scheduler deadline was paused for an interactive layer
 
 ---@class ScrollbarMouseRenderer
 ---@field get_state_by_float fun(float_win: integer): ScrollbarWindowState?

@@ -67,7 +67,7 @@ require("scrollbar").setup({
 })
 ```
 
-The normal `text`, `column`, `priority`, and `highlight` options apply. Changes
+The normal `text`, `priority`, and `highlight` options apply. Changes
 to these shared types also affect other diagnostic providers.
 
 ## Failure And Stale-Data Behavior

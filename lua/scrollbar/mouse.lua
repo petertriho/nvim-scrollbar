@@ -184,7 +184,7 @@ local function finish_interaction(current, resume_deadline)
     set_handle_pressed(current, false)
     interaction = nil
     restore_focus(current)
-    if resume_deadline and runtime ~= nil then
+    if resume_deadline and current.held and runtime ~= nil then
         pcall(runtime.scheduler.resume_window, current.source_win)
     end
 end
@@ -208,12 +208,9 @@ M.press = function(float_win)
         return
     end
 
-    local hit = state.hitmap[row + 1] and state.hitmap[row + 1][col] or { handle = false }
-    local handle_last_col = state.handle.column + state.handle.width - 1
-    local pressed_handle = row >= state.handle.first_row
-        and row <= state.handle.last_row
-        and col >= state.handle.column
-        and col <= handle_last_col
+    local hit = state.hitmap[row + 1] and state.hitmap[row + 1][col] or { track = false, thumb = false }
+    local interactive = hit.line ~= nil or hit.track or hit.thumb
+    local pressed_handle = hit.thumb == true and state.handle ~= false
     interaction = {
         source_win = state.source_win,
         source_buf = state.source_buf,
@@ -224,13 +221,16 @@ M.press = function(float_win)
         pressed_screen_row = screen_row,
         pressed_screen_col = screen_col,
         pressed_hit = vim.deepcopy(hit),
-        handle = vim.deepcopy(state.handle),
+        handle = state.handle and vim.deepcopy(state.handle) or false,
         handle_grab_offset = pressed_handle and row - state.handle.first_row or nil,
         last_row = row,
         last_col = col,
         dragging = false,
+        held = interactive,
     }
-    pcall(active.scheduler.hold_window, state.source_win)
+    if interactive then
+        pcall(active.scheduler.hold_window, state.source_win)
+    end
     if pressed_handle then
         set_handle_pressed(interaction, true)
     end
@@ -280,7 +280,7 @@ M.release = function()
             navigate(current, state, drag_line(current, state, row))
         elseif current.pressed_hit.line ~= nil then
             navigate(current, state, current.pressed_hit.line)
-        else
+        elseif current.pressed_hit.track and not current.pressed_hit.thumb then
             navigate(current, state, track_line(current, state, current.pressed_row))
         end
     end)
@@ -409,7 +409,7 @@ end
 
 ---@return ScrollbarInteractionState?
 M.get_interaction = function()
-    return interaction and vim.deepcopy(interaction) or nil
+    return interaction and interaction.held and vim.deepcopy(interaction) or nil
 end
 
 return M

@@ -13,14 +13,21 @@ local function new_child()
 end
 
 local function mouse_config(overrides)
-    return vim.tbl_deep_extend("force", {
+    return require("scrollbar.presets").merge({
         show = true,
         set_highlights = true,
         render = { interval_ms = 0, geometry = "line" },
-        float = { width = 2, placement = { relative = "window", anchor = "NW", row = 0, col = 5 } },
+        float = { placement = { relative = "window", anchor = "NW", row = 0, col = 5 } },
+        layout = {
+            direction = "ltr",
+            columns = {
+                { "track", "marks" },
+                { "track", "thumb" },
+            },
+        },
         mouse = { enabled = true },
-        handle = { text = "H", column = 2, width = 1, hide_if_all_visible = false },
-        marks = { Misc = { text = "M", column = 1 } },
+        thumb = { text = "H", hide_if_all_visible = false },
+        marks = { Misc = { text = "M" } },
         providers = {
             cursor = false,
             diagnostic = false,
@@ -213,24 +220,25 @@ T["keeps the handle pressed highlight through drag until release"] = function()
     local setup = setup_single(child, {
         config = mouse_config({
             marks = {
-                Custom = { text = "!", column = 2, priority = 10, highlight = "Special" },
+                Custom = { text = "!", priority = 10, highlight = "Special" },
             },
+            layout = { columns = { { "track" }, { "track", "thumb", "marks" } } },
         }),
         marks = { { line = 0, type = "Custom" } },
     })
     local screen_col = setup.position[2] + setup.handle.column - 1
-    expect.equality(highlight_groups(child, setup.float_buf).ScrollbarCustomHandle, true)
+    expect.equality(highlight_groups(child, setup.float_buf).ScrollbarCustomThumb, true)
 
     input_mouse(child, "press", setup.position[1] + setup.handle.first_row, screen_col)
-    expect.equality(highlight_groups(child, setup.float_buf).ScrollbarCustomHandlePressed, true)
+    expect.equality(highlight_groups(child, setup.float_buf).ScrollbarCustomThumbPressed, true)
 
     input_mouse(child, "drag", setup.position[1] + setup.height - 1, screen_col)
-    expect.equality(highlight_groups(child, setup.float_buf).ScrollbarHandlePressed, true)
+    expect.equality(highlight_groups(child, setup.float_buf).ScrollbarThumbPressed, true)
 
     input_mouse(child, "release", setup.position[1] + setup.height - 1, screen_col)
     local released = highlight_groups(child, setup.float_buf)
-    expect.equality(released.ScrollbarHandlePressed, nil)
-    expect.equality(released.ScrollbarHandle, true)
+    expect.equality(released.ScrollbarThumbPressed, nil)
+    expect.equality(released.ScrollbarThumb, true)
     expect.equality(child.api.nvim_get_current_win(), setup.source_win)
 end
 
@@ -304,7 +312,7 @@ T["clicks an empty track cell proportionally and restores source focus"] = funct
     input_mouse(child, "press", setup.row, setup.col)
     expect.equality(child.api.nvim_get_current_win(), setup.float_win)
     expect.no_equality(child.lua_get([[require("scrollbar.mouse").get_interaction()]]), vim.NIL)
-    expect.equality(highlight_groups(child, setup.float_buf).ScrollbarHandlePressed, nil)
+    expect.equality(highlight_groups(child, setup.float_buf).ScrollbarThumbPressed, nil)
     expect.equality(child.api.nvim_win_get_cursor(setup.source_win)[1], 1)
     input_mouse(child, "release", setup.row, setup.col)
 
@@ -344,6 +352,79 @@ T["clicks an empty track cell proportionally and restores source focus"] = funct
         return vim.api.nvim_buf_get_keymap(float_buf, "n")
     end, setup.float_buf)
     expect.equality(disposed_mappings, {})
+end
+
+T["leaves undeclared transparent cells inert and restores source focus"] = function()
+    local child = new_child()
+    local setup = setup_single(child, {
+        config = mouse_config({
+            layout = { direction = "ltr", columns = { { "marks" }, { "track", "thumb" } } },
+        }),
+    })
+
+    expect.equality(setup.hitmap[6][1], { track = false, thumb = false })
+    local screen_row = setup.position[1] + 5
+    local screen_col = setup.position[2]
+    input_mouse(child, "press", screen_row, screen_col)
+    expect.equality(child.lua_get([[require("scrollbar.mouse").get_interaction()]]), vim.NIL)
+    input_mouse(child, "release", screen_row, screen_col)
+    expect.equality(child.api.nvim_win_get_cursor(setup.source_win)[1], 1)
+    expect.equality(child.api.nvim_get_current_win(), setup.source_win)
+    expect.equality(child.lua_get([[require("scrollbar.mouse").get_interaction()]]), vim.NIL)
+end
+
+T["gives a thumb above a mark exclusive click ownership"] = function()
+    local child = new_child()
+    local setup = setup_single(child, {
+        config = mouse_config({
+            layout = { columns = { { "track", "marks", "thumb" } } },
+        }),
+        marks = { { line = 20, type = "Misc" } },
+    })
+
+    expect.equality(setup.hitmap[1][1], { track = true, thumb = true })
+    click(child, setup, 0, 1)
+    expect.equality(child.api.nvim_win_get_cursor(setup.source_win)[1], 1)
+end
+
+T["does not treat a stationary thumb press as a track click"] = function()
+    local child = new_child()
+    local setup = setup_single(child, {
+        line_count = 30,
+        config = mouse_config({
+            layout = { columns = { { "track", "thumb" } } },
+        }),
+    })
+
+    expect.equality(setup.handle.last_row > setup.handle.first_row, true)
+    click(child, setup, setup.handle.first_row + 1, 1)
+    expect.equality(child.api.nvim_win_get_cursor(setup.source_win)[1], 1)
+end
+
+T["drags one contiguous multi-column thumb from either declared column"] = function()
+    local child = new_child()
+    local setup = setup_single(child, {
+        line_count = 30,
+        config = mouse_config({
+            layout = {
+                direction = "ltr",
+                columns = {
+                    { "track", "thumb" },
+                    { "track", "thumb" },
+                },
+            },
+        }),
+    })
+
+    expect.equality(setup.handle.width, 2)
+    expect.equality(setup.hitmap[1][1].thumb, true)
+    expect.equality(setup.hitmap[1][2].thumb, true)
+    drag(child, setup, setup.handle.first_row, setup.height - 1, 1)
+    expect.equality(child.api.nvim_win_get_cursor(setup.source_win)[1], 30)
+
+    setup = reset_view(child, setup, 1)
+    drag(child, setup, setup.handle.first_row, setup.height - 1, 2)
+    expect.equality(child.api.nvim_win_get_cursor(setup.source_win)[1], 30)
 end
 
 T["uses direct rows and clamps trailing space when short content fits"] = function()
@@ -387,11 +468,16 @@ end
 T["jumps to the exact visible mark selected by display column"] = function()
     local child = new_child()
     local config = mouse_config({
-        float = { width = 3 },
-        handle = { column = 3, width = 1 },
+        layout = {
+            columns = {
+                { "track", { kind = "marks", types = { "Misc" } } },
+                { "track", { kind = "marks", types = { "Search" } } },
+                { "track", "thumb" },
+            },
+        },
         marks = {
-            Misc = { text = "A", column = 1 },
-            Search = { text = "B", column = 2 },
+            Misc = { text = "A" },
+            Search = { text = "B" },
         },
     })
     local setup = setup_single(child, {
@@ -427,7 +513,7 @@ T["compact search marks keep the ordinary exact click target"] = function()
     local child = new_child()
     local setup = setup_single(child, {
         config = mouse_config({
-            marks = { Search = { text = { "-", "=" }, column = 1 } },
+            marks = { Search = { text = { "-", "=" } } },
         }),
         compact_search = { 20, 20, 21 },
     })
@@ -448,9 +534,14 @@ T["expanded named marks navigate by letter and adjacent cells do not drag"] = fu
     local child = new_child()
     local setup = setup_single(child, {
         config = mouse_config({
-            float = { width = 4 },
-            handle = { column = 4, width = 1 },
-            providers = { marks = { max_width = 4 } },
+            layout = {
+                columns = {
+                    { { kind = "marks", types = { "Mark" }, max_width = 3 } },
+                    { { kind = "marks", types = { "Mark" } } },
+                    { { kind = "marks", types = { "Mark" } } },
+                    { "thumb" },
+                },
+            },
         }),
         mark_provider = "marks",
         marks = {
@@ -519,9 +610,12 @@ T["uses mark rest and pressed highlights on the translated east handle"] = funct
     local child = new_child()
     local setup = setup_single(child, {
         config = mouse_config({
-            float = { width = 1, placement = { anchor = "NE" } },
-            handle = { column = 1, width = 1 },
-            providers = { marks = { max_width = 4 } },
+            float = { placement = { anchor = "NE" } },
+            layout = {
+                columns = {
+                    { "track", "thumb", { kind = "marks", types = { "Mark" }, max_width = 4 } },
+                },
+            },
         }),
         mark_provider = "marks",
         marks = {
@@ -532,7 +626,8 @@ T["uses mark rest and pressed highlights on the translated east handle"] = funct
     })
     expect.equality(setup.handle.column, 3)
     expect.equality(setup.hitmap[1][3], {
-        handle = true,
+        track = true,
+        thumb = true,
         provider = "marks",
         type = "Mark",
         line = 2,
@@ -542,31 +637,34 @@ T["uses mark rest and pressed highlights on the translated east handle"] = funct
     })
     local resting = highlight_groups(child, setup.float_buf)
     expect.equality(resting.ScrollbarMark, true)
-    expect.equality(resting.ScrollbarMarkHandle, true)
+    expect.equality(resting.ScrollbarMarkThumb, true)
 
     local screen_row = setup.position[1]
     local screen_col = setup.position[2] + setup.handle.column - 1
     input_mouse(child, "press", screen_row, screen_col)
     local pressed = highlight_groups(child, setup.float_buf)
     expect.equality(pressed.ScrollbarMark, true)
-    expect.equality(pressed.ScrollbarMarkHandle, nil)
-    expect.equality(pressed.ScrollbarMarkHandlePressed, true)
+    expect.equality(pressed.ScrollbarMarkThumb, nil)
+    expect.equality(pressed.ScrollbarMarkThumbPressed, true)
     expect.equality(child.lua_get([[require("scrollbar.mouse").get_interaction().pressed_col]]), 3)
 
     input_mouse(child, "release", screen_row, screen_col)
     expect.equality(child.api.nvim_win_get_cursor(setup.source_win)[1], 3)
     local released = highlight_groups(child, setup.float_buf)
-    expect.equality(released.ScrollbarMarkHandle, true)
-    expect.equality(released.ScrollbarMarkHandlePressed, nil)
+    expect.equality(released.ScrollbarMarkThumb, true)
+    expect.equality(released.ScrollbarMarkThumbPressed, nil)
 end
 
 T["drags from the translated east handle column"] = function()
     local child = new_child()
     local setup = setup_single(child, {
         config = mouse_config({
-            float = { width = 1, placement = { anchor = "NE" } },
-            handle = { column = 1, width = 1 },
-            providers = { marks = { max_width = 4 } },
+            float = { placement = { anchor = "NE" } },
+            layout = {
+                columns = {
+                    { "track", "thumb", { kind = "marks", types = { "Mark" }, max_width = 4 } },
+                },
+            },
         }),
         mark_provider = "marks",
         marks = {
@@ -585,9 +683,8 @@ T["keeps a mark-over-handle press as an exact mark click without movement"] = fu
     local child = new_child()
     local setup = setup_single(child, {
         config = mouse_config({
-            float = { width = 1 },
-            handle = { column = 1, width = 1 },
-            marks = { Misc = { text = "M", column = 1 } },
+            layout = { columns = { { "track", "thumb", "marks" } } },
+            marks = { Misc = { text = "M" } },
         }),
         marks = { { line = 20, type = "Misc" } },
     })
@@ -599,7 +696,7 @@ T["keeps a mark-over-handle press as an exact mark click without movement"] = fu
         end
     end
     expect.equality(mark_row, 0)
-    expect.equality(setup.hitmap[mark_row + 1][1].handle, true)
+    expect.equality(setup.hitmap[mark_row + 1][1].thumb, true)
 
     click(child, setup, mark_row, 1)
     expect.equality(child.api.nvim_win_get_cursor(setup.source_win)[1], 21)
@@ -610,9 +707,8 @@ T["turns a mark-over-handle press into a handle drag after movement"] = function
     local child = new_child()
     local setup = setup_single(child, {
         config = mouse_config({
-            float = { width = 1 },
-            handle = { column = 1, width = 1 },
-            marks = { Misc = { text = "M", column = 1 } },
+            layout = { columns = { { "track", "thumb", "marks" } } },
+            marks = { Misc = { text = "M" } },
         }),
         marks = { { line = 20, type = "Misc" } },
     })
@@ -630,9 +726,12 @@ T["keeps an east handle press stationary when expansion changes relative columns
     local child = new_child()
     local setup = setup_single(child, {
         config = mouse_config({
-            float = { width = 1, placement = { anchor = "NE" } },
-            handle = { column = 1, width = 1 },
-            providers = { marks = { max_width = 4 } },
+            float = { placement = { anchor = "NE" } },
+            layout = {
+                columns = {
+                    { "track", "thumb", { kind = "marks", types = { "Mark" }, max_width = 4 } },
+                },
+            },
         }),
         mark_provider = "marks",
         marks = { { line = 2, type = "Mark", text = "c" } },
@@ -1132,11 +1231,11 @@ T["restores focus when release handling errors"] = function()
     local col = setup.position[2] + setup.handle.column - 1
     input_mouse(child, "press", row, col)
     expect.no_equality(child.lua_get([[require("scrollbar.mouse").get_interaction()]]), vim.NIL)
-    expect.equality(highlight_groups(child, setup.float_buf).ScrollbarHandlePressed, true)
+    expect.equality(highlight_groups(child, setup.float_buf).ScrollbarThumbPressed, true)
     child.lua([[require("scrollbar.layout").track_row_to_line = function() error("mouse test failure") end]])
     input_mouse(child, "release", row, col)
 
-    expect.equality(highlight_groups(child, setup.float_buf).ScrollbarHandlePressed, nil)
+    expect.equality(highlight_groups(child, setup.float_buf).ScrollbarThumbPressed, nil)
     expect.equality(child.api.nvim_get_current_win(), setup.source_win)
     expect.equality(child.api.nvim_win_get_cursor(setup.source_win)[1], 1)
     expect.equality(child.lua_get([[require("scrollbar.mouse").get_interaction()]]), vim.NIL)

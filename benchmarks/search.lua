@@ -435,7 +435,7 @@ local function configure_worker_fixture(kind, worker_test)
         set_highlights = false,
         max_lines = false,
         render = { interval_ms = 0, geometry = "line" },
-        handle = { text = "H", hide_if_all_visible = false },
+        thumb = { text = "H", hide_if_all_visible = false },
         providers = {
             cursor = false,
             diagnostic = false,

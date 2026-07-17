@@ -2,12 +2,22 @@ local const = require("scrollbar.const")
 
 local M = {}
 
-M.get_highlight_name = function(mark_type, handle, pressed)
+M.get_highlight_name = function(mark_type, thumb, pressed)
     return string.format(
         "%s%s%s%s",
         const.NAME_PREFIX,
         mark_type,
-        handle and const.NAME_SUFFIX or "",
+        thumb and const.NAME_SUFFIX or "",
+        pressed and const.NAME_PRESSED_SUFFIX or ""
+    )
+end
+
+M.get_legacy_highlight_name = function(mark_type, thumb, pressed)
+    return string.format(
+        "%s%s%s%s",
+        const.NAME_PREFIX,
+        mark_type,
+        thumb and const.LEGACY_NAME_SUFFIX or "",
         pressed and const.NAME_PRESSED_SUFFIX or ""
     )
 end
@@ -55,7 +65,7 @@ local function background_highlight(source, blend, fallback_hl, fallback_hex)
     return highlight
 end
 
-local function handle_highlight(properties)
+local function thumb_highlight(properties)
     return background_highlight(properties.highlight, properties.blend, "PmenuThumb", "#ffffff")
 end
 
@@ -72,21 +82,24 @@ end
 M.set_highlights = function()
     local active_config = require("scrollbar.config").get()
     local track = background_highlight(active_config.track.highlight, nil, "PmenuSbar", "#000000")
-    local handle = handle_highlight(active_config.handle)
-    local pressed = background_highlight("PmenuSel", active_config.handle.blend, "PmenuThumb", "#ffffff")
+    local thumb = thumb_highlight(active_config.thumb)
+    local pressed = background_highlight("PmenuSel", active_config.thumb.blend, "PmenuThumb", "#ffffff")
 
+    vim.api.nvim_set_hl(0, "ScrollbarBase", {})
     vim.api.nvim_set_hl(0, "ScrollbarTrack", track)
-    vim.api.nvim_set_hl(0, M.get_highlight_name("", true), handle)
+    vim.api.nvim_set_hl(0, M.get_highlight_name("", true), thumb)
     vim.api.nvim_set_hl(0, M.get_highlight_name("", true, true), pressed)
+    vim.api.nvim_set_hl(0, M.get_legacy_highlight_name("", true), thumb)
+    vim.api.nvim_set_hl(0, M.get_legacy_highlight_name("", true, true), pressed)
     for mark_type, properties in pairs(active_config.marks) do
         local mark = mark_highlight(properties)
+        local overlap = vim.tbl_deep_extend("force", {}, thumb, mark)
+        local pressed_overlap = vim.tbl_deep_extend("force", {}, pressed, mark)
         vim.api.nvim_set_hl(0, M.get_highlight_name(mark_type, false), mark)
-        vim.api.nvim_set_hl(0, M.get_highlight_name(mark_type, true), vim.tbl_deep_extend("force", {}, handle, mark))
-        vim.api.nvim_set_hl(
-            0,
-            M.get_highlight_name(mark_type, true, true),
-            vim.tbl_deep_extend("force", {}, pressed, mark)
-        )
+        vim.api.nvim_set_hl(0, M.get_highlight_name(mark_type, true), overlap)
+        vim.api.nvim_set_hl(0, M.get_highlight_name(mark_type, true, true), pressed_overlap)
+        vim.api.nvim_set_hl(0, M.get_legacy_highlight_name(mark_type, true), overlap)
+        vim.api.nvim_set_hl(0, M.get_legacy_highlight_name(mark_type, true, true), pressed_overlap)
     end
 end
 

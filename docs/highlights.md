@@ -1,79 +1,58 @@
 # Highlights
 
-With `set_highlights = true`, setup generates scrollbar highlight groups from
-the configured track, handle, and mark highlight sources. Groups are regenerated
-after `ColorScheme`.
+With `set_highlights = true`, setup generates scrollbar groups from the
+configured track, thumb, and mark sources and regenerates them after
+`ColorScheme`.
 
-## Highlight Sources
+## Sources
 
-A string names a source highlight group whose current color is copied into the
-generated scrollbar group:
-
-- `track.highlight` and `handle.highlight` contribute only their background.
-- Each `marks.<Type>.highlight` contributes only its foreground.
-
-A table is passed to `nvim_set_hl()` as a direct definition and may contain any
-attributes supported by the active Neovim version.
+- A string `track.highlight` or `thumb.highlight` contributes its resolved
+  background.
+- A string `marks.<Type>.highlight` contributes its resolved foreground.
+- A table is used as a direct `nvim_set_hl()` definition.
 
 ```lua
 require("scrollbar").setup({
-    track = {
-        highlight = "PmenuSbar",
-    },
-    handle = {
-        highlight = { bg = "#3b4261", blend = 20 },
-    },
+    track = { highlight = "PmenuSbar" },
+    thumb = { highlight = { bg = "#3b4261", blend = 20 } },
     marks = {
-        Search = {
-            highlight = { fg = "#ff9e64", bold = true },
-        },
+        Search = { highlight = { fg = "#ff9e64", bold = true } },
     },
 })
 ```
 
-Generated groups are not highlight links. With `set_highlights = true`, they are
-regenerated after `ColorScheme`, so string-source colors are sampled again.
-Direct tables define the generated group explicitly.
-
-## Handle Composition
-
-The resting handle defaults to `PmenuThumb`; its pressed background always
-comes from `PmenuSel`. Custom handle highlights change the resting handle, not
-the pressed source.
-
-For the resting handle, `handle.blend` is added only when the direct or resolved
-handle definition does not already contain `blend`; a direct table's own value
-wins. The uncovered pressed-handle group uses the `PmenuSel`-derived background
-with `handle.blend`. Overlap groups are deep-merged, so a direct mark definition
-can override `blend` as well as other attributes. Normal Neovim highlight
-semantics still apply to combinations such as `link` with other attributes.
+The resting thumb defaults to `PmenuThumb`. Pressed thumb backgrounds are
+derived from `PmenuSel`. `thumb.blend` is added when the resolved or direct
+definition does not already set `blend`. Mark-over-thumb groups deep-merge the
+thumb background and mark definition, with mark fields taking precedence.
 
 ## Generated Groups
 
-- `ScrollbarTrack` styles the track background.
-- `ScrollbarHandle` styles uncovered handle cells.
-- `ScrollbarHandlePressed` styles uncovered held-handle cells.
-- `Scrollbar<MarkType>` styles a mark outside the handle.
-- `Scrollbar<MarkType>Handle` styles a mark overlapping the resting handle.
-- `Scrollbar<MarkType>HandlePressed` styles a mark overlapping the held handle.
+- `ScrollbarBase`: transparent float-wide base for undeclared cells.
+- `ScrollbarTrack`: explicit declared track backgrounds.
+- `ScrollbarThumb` and `ScrollbarThumbPressed`.
+- `Scrollbar<MarkType>`.
+- `Scrollbar<MarkType>Thumb` and `Scrollbar<MarkType>ThumbPressed`.
 
-Examples include `ScrollbarSearch`, `ScrollbarSearchHandle`,
-`ScrollbarSearchHandlePressed`, `ScrollbarError`, and
-`ScrollbarErrorHandle`. Named marks use `ScrollbarMark`,
-`ScrollbarMarkHandle`, and `ScrollbarMarkHandlePressed`.
+Examples include `ScrollbarSearch`, `ScrollbarSearchThumb`,
+`ScrollbarSearchThumbPressed`, `ScrollbarMark`, and `ScrollbarErrorThumb`.
+Renderer extmarks use deterministic stack priorities with `hl_mode = "combine"`
+so track backgrounds and content layers compose in declared order.
 
-`ScrollbarFloat` is not generated; use `ScrollbarTrack` for manual track
-styling.
+Automatic mode also generates equivalent legacy `Handle` names:
+`ScrollbarHandle`, `ScrollbarHandlePressed`, `Scrollbar<MarkType>Handle`, and
+`Scrollbar<MarkType>HandlePressed`. These aliases exist only when the plugin
+owns highlight generation.
 
 ## Manual Groups
 
-Set `set_highlights = false` to define generated groups yourself. Direct
-highlight tables also follow this switch and are not applied when it is false.
-Setup and `ColorScheme` handling leave manual groups untouched.
+With `set_highlights = false`, setup and `ColorScheme` handling create or modify
+no canonical groups, base group, or legacy aliases. Manual configurations must
+define the canonical Thumb names used by renderer extmarks. Defining only old
+Handle names is insufficient in manual mode.
 
 ## Related
 
-- [README](../README.md)
 - [Configuration](configuration.md)
 - [Layout and geometry](layout-and-geometry.md)
-- [Providers](providers/README.md)
+- [Migration](migration.md)

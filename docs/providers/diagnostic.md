@@ -26,7 +26,7 @@ Diagnostics map to configured mark types as follows:
 | `HINT` | `Hint` | `{ "-", "=" }` | `5` | `DiagnosticVirtualTextHint` |
 | Unknown | `Misc` | `{ "-", "=" }` | `6` | `Normal` |
 
-All five types default to column `1`. The two text values are density variants:
+The two text values are density variants:
 multiple marks of the same type compressed into one rendered row use the second
 variant. Lower numeric priorities win overlaps.
 
@@ -60,17 +60,20 @@ Customize the severity mark types under `marks`:
 
 ```lua
 require("scrollbar").setup({
-    float = { width = 2 },
+    layout = {
+        columns = {
+            { { kind = "marks", types = { "Error" } } },
+            { { kind = "marks", types = { "Warn" } }, "marks" },
+        },
+    },
     marks = {
         Error = {
             text = { "E", "!" },
-            column = 1,
             priority = 1,
             highlight = "DiagnosticError",
         },
         Warn = {
             text = "W",
-            column = 2,
             priority = 2,
             highlight = "DiagnosticWarn",
         },
@@ -88,13 +91,13 @@ filtering or styling, disable this provider and publish distinct types from a
 - There are no built-in namespace, source, severity, or message filters. The
   provider mirrors the complete result of `vim.diagnostic.get(bufnr)`.
 - Rendering can combine marks that map to the same scrollbar row. Density,
-  columns, and priorities determine the visible cells; clicking a visible mark
+  lanes, stack order, and priorities determine visible cells; clicking a visible mark
   uses its exact stored source-line target.
 - To verify the source data, run
   `:lua print(vim.inspect(vim.diagnostic.get(0)))`. If it is empty, the issue is
   upstream of the scrollbar provider.
 - If source data exists but marks do not appear, check `providers.diagnostic`,
-  buffer exclusions, `max_lines`, mark columns and priorities, then run
+  buffer exclusions, `max_lines`, layout routing and priorities, then run
   `:ScrollbarRefresh`.
 
 ## Related
