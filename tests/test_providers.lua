@@ -9,7 +9,7 @@ local T = MiniTest.new_set({
             package.loaded["scrollbar.providers"] = nil
             require("scrollbar.config").set({
                 marks = {
-                    Custom = { text = "!", column = 1, priority = 1, highlight = "WarningMsg" },
+                    Custom = { text = "!", priority = 1, highlight = "WarningMsg" },
                 },
             })
         end,
@@ -518,7 +518,7 @@ T["provides isolated config, store, window, and invalidation context operations"
         name = "context",
         setup = function(context)
             context.config.show = false
-            context.config.float.width = 99
+            context.config.layout.columns[1][1].priority = 99
             expect.equality(rawget(context, "renderer"), nil)
 
             local windows = context.source_windows(target)
@@ -550,7 +550,11 @@ T["provides isolated config, store, window, and invalidation context operations"
     })
 
     expect.equality(root_config.show, true)
-    expect.equality(root_config.float.width, 1)
+    expect.equality(root_config.layout.width, 1)
+    expect.equality(root_config.layout.columns[1][1].kind, "track")
+    expect.equality(root_config.layout.columns[1][1].priority, 1)
+    expect.equality(rawget(root_config, "preset"), nil)
+    expect.equality(rawget(root_config, "presets"), nil)
     expect.equality(source_result, { 22, 11 })
     expect.equality(require("scrollbar.store").get(target), {})
     expect.equality(invalidated_buffers, { target, target, target })

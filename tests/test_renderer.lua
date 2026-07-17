@@ -13,14 +13,20 @@ local function new_child()
 end
 
 local function renderer_config(overrides)
-    return vim.tbl_deep_extend("force", {
+    return require("scrollbar.presets").merge({
         show = true,
         set_highlights = false,
         render = { interval_ms = 0, geometry = "line" },
-        float = { width = 2, placement = { relative = "window", anchor = "NE", row = 0, col = 0 } },
+        float = { placement = { relative = "window", anchor = "NE", row = 0, col = 0 } },
+        layout = {
+            columns = {
+                { "track", "marks" },
+                { "track", "thumb" },
+            },
+        },
         mouse = { enabled = false },
-        handle = { text = "H", column = 2, width = 1, hide_if_all_visible = false },
-        marks = { Misc = { text = "M", column = 1 } },
+        thumb = { text = "H", hide_if_all_visible = false },
+        marks = { Misc = { text = "M" } },
         providers = {
             cursor = false,
             diagnostic = false,
@@ -59,6 +65,20 @@ T["keeps same-buffer source windows independent and writes only float buffers"] 
         local store = require("scrollbar.store")
         assert(store.set("test", vim.api.nvim_win_get_buf(first), { { line = 199, type = "Misc" } }))
         assert(store.set_window("test", first, { { line = 0, type = "Misc" } }))
+        local set_extmark = vim.api.nvim_buf_set_extmark
+        local extmark_options = {}
+        rawset(vim.api, "nvim_buf_set_extmark", function(...)
+            local arguments = { ... }
+            local options = arguments[5]
+            if options.hl_group ~= nil then
+                extmark_options[#extmark_options + 1] = {
+                    hl_group = options.hl_group,
+                    hl_mode = options.hl_mode,
+                    priority = options.priority,
+                }
+            end
+            return set_extmark(...)
+        end)
         local renderer = require("scrollbar.renderer")
         renderer.setup()
         renderer.render(first)
@@ -72,6 +92,7 @@ T["keeps same-buffer source windows independent and writes only float buffers"] 
             vim.api.nvim_buf_get_extmarks(first_state.float_buf, namespace, 0, -1, { details = true })
         local source_extmarks =
             vim.api.nvim_buf_get_extmarks(first_state.source_buf, namespace, 0, -1, { details = true })
+        rawset(vim.api, "nvim_buf_set_extmark", set_extmark)
         return {
             first = first_state,
             second = second_state,
@@ -79,6 +100,7 @@ T["keeps same-buffer source windows independent and writes only float buffers"] 
             second_lines = vim.api.nvim_buf_get_lines(second_state.float_buf, 0, -1, false),
             float_extmarks = float_extmarks,
             source_extmarks = source_extmarks,
+            extmark_options = extmark_options,
             float_filetype = vim.bo[first_state.float_buf].filetype,
             float_buftype = vim.bo[first_state.float_buf].buftype,
             float_modifiable = vim.bo[first_state.float_buf].modifiable,
@@ -101,12 +123,121 @@ T["keeps same-buffer source windows independent and writes only float buffers"] 
     expect.equality(result.second_lines[#result.second_lines]:sub(1, 1), "M")
     expect.equality(#result.float_extmarks > 0, true)
     expect.equality(result.float_extmarks[1][4].virt_text, nil)
+    local extmark_groups = {}
+    for _, extmark in ipairs(result.float_extmarks) do
+        extmark_groups[extmark[4].hl_group] = {
+            priority = extmark[4].priority,
+        }
+    end
+    expect.equality(extmark_groups.ScrollbarTrack, { priority = 1 })
+    expect.equality(extmark_groups.ScrollbarMisc, { priority = 2 })
+    for _, options in ipairs(result.extmark_options) do
+        expect.equality(options.hl_mode, "combine")
+        expect.equality(type(options.priority), "number")
+    end
     expect.equality(result.source_extmarks, {})
     expect.equality(result.float_filetype, "scrollbar")
     expect.equality(result.float_buftype, "nofile")
     expect.equality(result.float_modifiable, false)
-    expect.equality(result.winhighlight, "Normal:ScrollbarTrack,NormalNC:ScrollbarTrack,EndOfBuffer:ScrollbarTrack")
+    expect.equality(result.winhighlight, "Normal:ScrollbarBase,NormalNC:ScrollbarBase,EndOfBuffer:ScrollbarBase")
     expect.equality(result.lookup, result.first.source_win)
+end
+
+T["switches canonical Thumb spans to pressed groups without losing priorities"] = function()
+    local child = new_child()
+    local result = child.lua_func(
+        function(config)
+            local lines = {}
+            for index = 1, 100 do
+                lines[index] = "line " .. index
+            end
+            vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+            local source_win = vim.api.nvim_get_current_win()
+            require("scrollbar.config").set(config)
+            assert(
+                require("scrollbar.store").set("test", vim.api.nvim_get_current_buf(), { { line = 0, type = "Misc" } })
+            )
+            local renderer = require("scrollbar.renderer")
+            renderer.setup()
+            local state = assert(renderer.render(source_win))
+            local namespace = vim.api.nvim_get_namespaces().ScrollbarRenderer
+            local function groups()
+                local found = {}
+                for _, extmark in
+                    ipairs(vim.api.nvim_buf_get_extmarks(state.float_buf, namespace, 0, -1, { details = true }))
+                do
+                    local details = extmark[4]
+                    found[details.hl_group] = details.priority
+                end
+                return found
+            end
+            local resting = groups()
+            assert(renderer.set_handle_pressed(state.float_win, true))
+            local pressed = groups()
+            assert(renderer.set_handle_pressed(state.float_win, false))
+            local restored = groups()
+            return { resting = resting, pressed = pressed, restored = restored }
+        end,
+        renderer_config({
+            layout = { columns = { { "track", "thumb", "marks" } } },
+        })
+    )
+
+    expect.equality(result.resting.ScrollbarThumb, 2)
+    expect.equality(result.resting.ScrollbarMiscThumb, 3)
+    expect.equality(result.pressed.ScrollbarThumbPressed, 2)
+    expect.equality(result.pressed.ScrollbarMiscThumbPressed, 3)
+    expect.equality(result.pressed.ScrollbarThumb, nil)
+    expect.equality(result.pressed.ScrollbarMiscThumb, nil)
+    expect.equality(result.restored, result.resting)
+end
+
+T["renders track only in declared columns over a transparent float base"] = function()
+    local child = new_child()
+    local result = child.lua_func(
+        function(config)
+            local lines = {}
+            for index = 1, 100 do
+                lines[index] = "line " .. index
+            end
+            vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+            local source_win = vim.api.nvim_get_current_win()
+            require("scrollbar.config").set(config)
+            assert(require("scrollbar.store").set("test", vim.api.nvim_get_current_buf(), {
+                { line = 0, type = "Misc" },
+            }))
+            local renderer = require("scrollbar.renderer")
+            renderer.setup()
+            local state = assert(renderer.render(source_win))
+            local namespace = vim.api.nvim_get_namespaces().ScrollbarRenderer
+            local groups = {}
+            for _, extmark in
+                ipairs(vim.api.nvim_buf_get_extmarks(state.float_buf, namespace, 0, { 0, -1 }, {
+                    details = true,
+                }))
+            do
+                groups[extmark[4].hl_group] = {
+                    start_col = extmark[3],
+                    end_col = extmark[4].end_col,
+                    priority = extmark[4].priority,
+                }
+            end
+            return {
+                groups = groups,
+                row = vim.api.nvim_buf_get_lines(state.float_buf, 0, 1, false)[1],
+                winhighlight = vim.api.nvim_get_option_value("winhighlight", { win = state.float_win }),
+            }
+        end,
+        renderer_config({
+            layout = { columns = { { "track" }, { "marks" }, { "thumb" } } },
+        })
+    )
+
+    expect.equality(result.row, " MH")
+    expect.equality(result.groups.ScrollbarTrack, { start_col = 0, end_col = 1, priority = 1 })
+    expect.equality(result.groups.ScrollbarMisc, { start_col = 1, end_col = 2, priority = 1 })
+    expect.equality(result.groups.ScrollbarThumb, { start_col = 2, end_col = 3, priority = 1 })
+    expect.equality(result.winhighlight, "Normal:ScrollbarBase,NormalNC:ScrollbarBase,EndOfBuffer:ScrollbarBase")
 end
 
 T["enforces visibility and editor-relative single ownership"] = function()
@@ -613,7 +744,7 @@ T["applies exclusions, limits, all-visible rules, and owned-window filtering"] =
 
         local handle_hidden = vim.deepcopy(base_config)
         handle_hidden.hide_if_all_visible = false
-        handle_hidden.handle.hide_if_all_visible = true
+        handle_hidden.thumb.hide_if_all_visible = true
         scrollbar_config.set(handle_hidden)
         renderer.setup()
         local state = assert(renderer.render(source_win))
@@ -621,7 +752,7 @@ T["applies exclusions, limits, all-visible rules, and owned-window filtering"] =
         local extmarks = vim.api.nvim_buf_get_extmarks(state.float_buf, namespace, 0, -1, { details = true })
         local has_handle_highlight = false
         for _, extmark in ipairs(extmarks) do
-            if extmark[4].hl_group == "ScrollbarHandle" then
+            if extmark[4].hl_group == "ScrollbarThumb" then
                 has_handle_highlight = true
             end
         end
@@ -767,8 +898,8 @@ T["renders compact built-in search exactly and invalidates it by revision"] = fu
         end,
         renderer_config({
             marks = {
-                Search = { text = { "-", "=", "#" }, column = 1 },
-                Misc = { text = "M", column = 1 },
+                Search = { text = { "-", "=", "#" } },
+                Misc = { text = "M" },
             },
         })
     )
@@ -891,7 +1022,10 @@ T["grows and shrinks expanded floats in place while pinning base cells for every
             local active = vim.deepcopy(base_config)
             active.float.hide_on_cursor = false
             active.float.placement.anchor = anchor
-            active.providers.marks = { max_width = 6 }
+            active.layout.columns = {
+                { "track", { kind = "marks", types = { "Mark" }, max_width = 6 } },
+                { "track", "marks", "thumb" },
+            }
             scrollbar_config.set(active)
             renderer.setup()
 
@@ -961,8 +1095,7 @@ T["grows and shrinks expanded floats in place while pinning base cells for every
 
     for _, anchor in ipairs({ "NW", "NE", "SW", "SE" }) do
         local case = result[anchor]
-        local expected_grown = anchor:sub(2, 2) == "E" and 5 or 4
-        expect.equality(case.widths, { 2, expected_grown, 2 })
+        expect.equality(case.widths, { 2, 5, 2 })
         expect.equality(case.float_widths, case.widths)
         expect.equality(case.same_resources, true)
         expect.equality(case.resources_valid, true)
@@ -999,7 +1132,10 @@ T["uses window and editor placement containers and resolves width per source win
         local active = vim.deepcopy(base_config)
         active.float.hide_on_cursor = false
         active.float.placement.anchor = "NW"
-        active.providers.marks = { max_width = 8 }
+        active.layout.columns = {
+            { "track", { kind = "marks", types = { "Mark" }, max_width = 8 } },
+            { "track", "marks", "thumb" },
+        }
         local scrollbar_config = require("scrollbar.config")
         scrollbar_config.set(active)
         local renderer = require("scrollbar.renderer")
@@ -1050,11 +1186,11 @@ T["uses window and editor placement containers and resolves width per source win
         }
     end, renderer_config())
 
-    expect.equality(result.per_height, { tall = 2, short = 3 })
+    expect.equality(result.per_height, { tall = 3, short = 4 })
     expect.equality(result.window.narrow, math.min(8, result.window.narrow_container))
     expect.equality(result.window.wider, math.min(8, result.window.wider_container))
     expect.equality(result.window.same_resources, true)
-    expect.equality(result.editor.width, math.min(8, result.editor.container))
+    expect.equality(result.editor.width, math.min(9, result.editor.container))
     expect.equality(result.editor.float_width, result.editor.width)
 end
 
@@ -1137,6 +1273,43 @@ T["caches line mark work while keeping handle geometry current and invalidating 
         local after_config = builds
         local config_reused_flattened = rawequal(mark_tables[after_config], mark_tables[after_resize])
 
+        local visual_config = vim.deepcopy(changed_config)
+        visual_config.track = { highlight = "Normal" }
+        visual_config.thumb.highlight = "Normal"
+        visual_config.marks.Misc.highlight = "WarningMsg"
+        visual_config.render.interval_ms = 99
+        visual_config.providers.marks = { numbers = true }
+        scrollbar_config.set(visual_config)
+        renderer.render(source_win)
+        local after_visual_config = builds
+
+        local changed_text = vim.deepcopy(visual_config)
+        changed_text.marks.Misc.text = "Z"
+        scrollbar_config.set(changed_text)
+        renderer.render(source_win)
+        local after_mark_text = builds
+
+        local changed_priority = vim.deepcopy(changed_text)
+        changed_priority.marks.Misc.priority = 9
+        scrollbar_config.set(changed_priority)
+        renderer.render(source_win)
+        local after_mark_priority = builds
+
+        local changed_layout = vim.deepcopy(changed_priority)
+        changed_layout.layout.columns = {
+            { "track", { kind = "marks", types = { "Mark" }, max_width = 4 } },
+            { "track", "marks", "thumb" },
+        }
+        scrollbar_config.set(changed_layout)
+        renderer.render(source_win)
+        local after_layout = builds
+
+        local changed_cap = vim.deepcopy(changed_layout)
+        changed_cap.layout.columns[1][2].max_width = 5
+        scrollbar_config.set(changed_cap)
+        renderer.render(source_win)
+        local after_expansion_cap = builds
+
         local replacement_buf = vim.api.nvim_create_buf(true, false)
         vim.api.nvim_buf_set_lines(replacement_buf, 0, -1, false, lines)
         assert(store.set("buffer", replacement_buf, { { line = 20, type = "Misc", text = "R" } }))
@@ -1159,6 +1332,11 @@ T["caches line mark work while keeping handle geometry current and invalidating 
             after_container = after_container,
             after_resize = after_resize,
             after_config = after_config,
+            after_visual_config = after_visual_config,
+            after_mark_text = after_mark_text,
+            after_mark_priority = after_mark_priority,
+            after_layout = after_layout,
+            after_expansion_cap = after_expansion_cap,
             after_replacement = after_replacement,
             after_dispose = after_dispose,
             handle_moved = scrolled.handle.first_row > initial_handle.first_row,
@@ -1178,8 +1356,13 @@ T["caches line mark work while keeping handle geometry current and invalidating 
         after_container = 5,
         after_resize = 6,
         after_config = 7,
-        after_replacement = 8,
-        after_dispose = 9,
+        after_visual_config = 7,
+        after_mark_text = 8,
+        after_mark_priority = 9,
+        after_layout = 10,
+        after_expansion_cap = 11,
+        after_replacement = 12,
+        after_dispose = 13,
         handle_moved = true,
         container_changed = true,
         resize_reused_flattened = true,
@@ -1311,7 +1494,11 @@ T["configures owned state once and reapplies only changed float configuration"] 
         local after_height = config_calls
 
         local changed = vim.deepcopy(base_config)
-        changed.float.width = 3
+        changed.layout.columns = {
+            { "track", "marks" },
+            { "track" },
+            { "track", "thumb" },
+        }
         changed.float.placement.row = 1
         changed.mouse.enabled = true
         scrollbar_config.set(changed)
@@ -1493,7 +1680,10 @@ T["uses the full expanded width for cursor hiding"] = function()
         local source_win = vim.api.nvim_get_current_win()
         local source_buf = vim.api.nvim_get_current_buf()
         base_config.float.placement.anchor = "NW"
-        base_config.providers.marks = { max_width = 6 }
+        base_config.layout.columns = {
+            { "track", { kind = "marks", types = { "Mark" }, max_width = 6 } },
+            { "track", "marks", "thumb" },
+        }
         require("scrollbar.config").set(base_config)
         assert(require("scrollbar.store").set("marks", source_buf, {
             { line = 0, type = "Mark", text = "a" },
@@ -1522,7 +1712,7 @@ T["uses the full expanded width for cursor hiding"] = function()
         local hidden_by_cursor = hidden.hidden_by_cursor
         local expanded_width = hidden.width
         local float_width = vim.api.nvim_win_get_config(hidden.float_win).width
-        cursor_col = 10
+        cursor_col = 11
         local restored = assert(renderer.render(source_win))
 
         rawset(vim.fn, "screenrow", screenrow)
@@ -1538,8 +1728,8 @@ T["uses the full expanded width for cursor hiding"] = function()
     end, renderer_config())
 
     expect.equality(result, {
-        width = 4,
-        float_width = 4,
+        width = 5,
+        float_width = 5,
         hidden = true,
         restored = true,
         same_resources = true,
@@ -1668,8 +1858,11 @@ T["uses reported float bounds across widths placements anchors and clipping"] = 
             },
         }) do
             local active = vim.deepcopy(base_config)
-            active.float.width = 3
-            active.handle.column = 3
+            active.layout.columns = {
+                { "track", "marks" },
+                { "track" },
+                { "track", "thumb" },
+            }
             active.float.placement = case.placement
             scrollbar_config.set(active)
             position = case.position

@@ -13,7 +13,6 @@ require("scrollbar").setup({
     marks = {
         Bookmark = {
             text = { ".", "*", "#" },
-            column = 1,
             priority = 1,
             highlight = "Special",
         },
@@ -26,13 +25,13 @@ accepts only the built-in keys and rejects unknown keys. Keep provider-specific
 configuration in your own module or closure, and register the provider through
 the manager API.
 
-For a new custom mark type, `text`, `column`, `priority`, and `highlight` are all
+For a new custom mark type, `text`, `priority`, and `highlight` are all
 required. Partial tables are valid only when overriding a built-in type whose
 missing fields are supplied by the defaults.
 
 Mark type names must match `^[%a_][%w_]*$`. `text` is a string or dense list of
-density variants, `column` is a positive one-based display column inside
-`float.width`, `priority` is a non-negative integer where lower values win, and
+density variants, `priority` is a non-negative integer where lower values win
+within one lane, and
 `highlight` is a non-empty group name or an `nvim_set_hl()` definition table.
 An emitted mark may supply its own non-empty `text` override. `Mark` is special:
 provider text is used only while `marks.Mark.text = {}`; a non-empty configured
@@ -59,7 +58,6 @@ require("scrollbar").setup({
     marks = {
         Bookmark = {
             text = { ".", "*", "#" },
-            column = 1,
             priority = 1,
             highlight = "Special",
         },
@@ -78,7 +76,7 @@ providers.unregister("bookmarks")
 - `get(name)` returns the registered provider table or `nil`.
 
 > **Avoid built-in names:** `cursor`, `diagnostic`, `search`, `marks`,
-> `gitsigns`, `mini_diff`, `signify`, `ale`, and `coc`. Registering one before root setup shadows that
+> `gitsigns`, `mini_diff`, `signify`, `vgit`, `ale`, and `coc`. Registering one before root setup shadows that
 > built-in. Registering afterward fails only when the name is currently
 > registered, which is normally true for default-on providers but not
 > necessarily for optional or explicitly disabled providers. Built-in
@@ -272,5 +270,5 @@ remove or invalidate them during cleanup.
 ## Related Links
 
 - [Provider index](README.md)
-- [Mark configuration](../configuration.md#marks-and-columns)
+- [Mark configuration](../configuration.md#marks)
 - [Highlights](../highlights.md)

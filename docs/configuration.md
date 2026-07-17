@@ -1,30 +1,23 @@
 # Configuration
 
-`require("scrollbar").setup()` strictly validates the plugin's option schema,
-including unknown keys, scalar types, enums, and dimensions. Direct highlight
-definitions are accepted structurally as tables; Neovim validates their fields
-when generated highlights are applied. With `set_highlights = false`, those
-tables are not applied.
+`require("scrollbar").setup()` validates unknown keys, scalar types, enums,
+dense lists, layout spans, and presentation values. Every call starts from fresh
+defaults; it does not merge with a previous setup call.
 
 ## Defaults
 
 ```lua
 require("scrollbar").setup({
+    preset = nil,
+    presets = nil,
     show = true,
     visibility = "all", -- "all" or "active"
     set_highlights = true,
-    max_lines = false, -- false or a positive line limit
+    max_lines = false,
     hide_if_all_visible = false,
-    autohide = {
-        enabled = false,
-        delay_ms = 1000,
-    },
-    render = {
-        interval_ms = 16,
-        geometry = "line", -- "line" or "screen"
-    },
+    autohide = { enabled = false, delay_ms = 1000 },
+    render = { interval_ms = 16, geometry = "line" },
     float = {
-        width = 1,
         zindex = 50,
         hide_on_cursor = true,
         placement = {
@@ -34,147 +27,47 @@ require("scrollbar").setup({
             col = 0,
         },
     },
-    track = {
-        highlight = "PmenuSbar",
+    layout = {
+        direction = "auto", -- "auto", "ltr", or "rtl"
+        columns = {
+            { "track", "thumb", "marks" },
+        },
     },
-    mouse = {
-        enabled = true,
-    },
-    handle = {
+    track = { highlight = "PmenuSbar" },
+    mouse = { enabled = true },
+    thumb = {
         text = " ",
-        column = 1,
-        width = 1,
         blend = 30,
         highlight = "PmenuThumb",
         hide_if_all_visible = true,
     },
     marks = {
-        Cursor = {
-            text = { "•" },
-            column = 1,
-            priority = 0,
-            highlight = "Normal",
-        },
-        Mark = {
-            text = {},
-            column = 1,
-            priority = 1,
-            highlight = "Special",
-        },
-        Search = {
-            text = { "-", "=" },
-            column = 1,
-            priority = 1,
-            highlight = "Search",
-        },
-        Error = {
-            text = { "-", "=" },
-            column = 1,
-            priority = 2,
-            highlight = "DiagnosticVirtualTextError",
-        },
-        Warn = {
-            text = { "-", "=" },
-            column = 1,
-            priority = 3,
-            highlight = "DiagnosticVirtualTextWarn",
-        },
-        Info = {
-            text = { "-", "=" },
-            column = 1,
-            priority = 4,
-            highlight = "DiagnosticVirtualTextInfo",
-        },
-        Hint = {
-            text = { "-", "=" },
-            column = 1,
-            priority = 5,
-            highlight = "DiagnosticVirtualTextHint",
-        },
-        Misc = {
-            text = { "-", "=" },
-            column = 1,
-            priority = 6,
-            highlight = "Normal",
-        },
-        GitAdd = {
-            text = { "┃" },
-            column = 1,
-            priority = 7,
-            highlight = "GitSignsAdd",
-        },
-        GitChange = {
-            text = { "┃" },
-            column = 1,
-            priority = 7,
-            highlight = "GitSignsChange",
-        },
-        GitDelete = {
-            text = { "▁" },
-            column = 1,
-            priority = 7,
-            highlight = "GitSignsDelete",
-        },
-        MiniDiffAdd = {
-            text = { "▒" },
-            column = 1,
-            priority = 7,
-            highlight = "MiniDiffSignAdd",
-        },
-        MiniDiffChange = {
-            text = { "▒" },
-            column = 1,
-            priority = 7,
-            highlight = "MiniDiffSignChange",
-        },
-        MiniDiffDelete = {
-            text = { "▒" },
-            column = 1,
-            priority = 7,
-            highlight = "MiniDiffSignDelete",
-        },
-        SignifyAdd = {
-            text = { "┃" },
-            column = 1,
-            priority = 7,
-            highlight = "SignifySignAdd",
-        },
-        SignifyChange = {
-            text = { "┃" },
-            column = 1,
-            priority = 7,
-            highlight = "SignifySignChange",
-        },
-        SignifyDelete = {
-            text = { "▁" },
-            column = 1,
-            priority = 7,
-            highlight = "SignifySignDelete",
-        },
-        VGitAdd = {
-            text = { "┃" },
-            column = 1,
-            priority = 7,
-            highlight = "GitSignsAdd",
-        },
-        VGitChange = {
-            text = { "┃" },
-            column = 1,
-            priority = 7,
-            highlight = "GitSignsChange",
-        },
-        VGitDelete = {
-            text = { "▁" },
-            column = 1,
-            priority = 7,
-            highlight = "GitSignsDelete",
-        },
+        Cursor = { text = { "•" }, priority = 0, highlight = "Normal" },
+        Mark = { text = {}, priority = 1, highlight = "Special" },
+        Search = { text = { "-", "=" }, priority = 1, highlight = "Search" },
+        Error = { text = { "-", "=" }, priority = 2, highlight = "DiagnosticVirtualTextError" },
+        Warn = { text = { "-", "=" }, priority = 3, highlight = "DiagnosticVirtualTextWarn" },
+        Info = { text = { "-", "=" }, priority = 4, highlight = "DiagnosticVirtualTextInfo" },
+        Hint = { text = { "-", "=" }, priority = 5, highlight = "DiagnosticVirtualTextHint" },
+        Misc = { text = { "-", "=" }, priority = 6, highlight = "Normal" },
+        GitAdd = { text = { "┃" }, priority = 7, highlight = "GitSignsAdd" },
+        GitChange = { text = { "┃" }, priority = 7, highlight = "GitSignsChange" },
+        GitDelete = { text = { "▁" }, priority = 7, highlight = "GitSignsDelete" },
+        MiniDiffAdd = { text = { "▒" }, priority = 7, highlight = "MiniDiffSignAdd" },
+        MiniDiffChange = { text = { "▒" }, priority = 7, highlight = "MiniDiffSignChange" },
+        MiniDiffDelete = { text = { "▒" }, priority = 7, highlight = "MiniDiffSignDelete" },
+        SignifyAdd = { text = { "┃" }, priority = 7, highlight = "SignifySignAdd" },
+        SignifyChange = { text = { "┃" }, priority = 7, highlight = "SignifySignChange" },
+        SignifyDelete = { text = { "▁" }, priority = 7, highlight = "SignifySignDelete" },
+        VGitAdd = { text = { "┃" }, priority = 7, highlight = "GitSignsAdd" },
+        VGitChange = { text = { "┃" }, priority = 7, highlight = "GitSignsChange" },
+        VGitDelete = { text = { "▁" }, priority = 7, highlight = "GitSignsDelete" },
     },
     providers = {
         cursor = true,
         diagnostic = true,
-        search = true, -- true or { incsearch = nil | boolean, backend = "worker" | "sync" }
-        marks = true, -- false, true, or { letters = boolean, numbers = boolean, max_width = integer }
+        search = true,
+        marks = true,
         gitsigns = false,
         mini_diff = false,
         signify = false,
@@ -182,9 +75,7 @@ require("scrollbar").setup({
         ale = false,
         coc = false,
     },
-    excluded_buftypes = {
-        "terminal",
-    },
+    excluded_buftypes = { "terminal" },
     excluded_filetypes = {
         "blink-cmp-menu",
         "dropbar_menu",
@@ -199,82 +90,107 @@ require("scrollbar").setup({
 })
 ```
 
-Each call starts from these defaults and applies the supplied overrides. It does
-not incrementally merge with the previous active setup.
+`search = true` normalizes to `{ backend = "worker" }`. Omitting
+`providers.search.incsearch` follows the current `vim.o.incsearch` value.
+`marks = true` normalizes to `{ letters = true, numbers = false }`.
 
-The defaults above use accepted user-facing shorthand. Internally,
-`search = true` normalizes to `{ backend = "worker" }`. The absent `incsearch`
-key dynamically follows Neovim's current `vim.o.incsearch` value. `marks = true`
-normalizes to
-`{ letters = true, numbers = false, max_width = false }`.
+## Layout
+
+`layout.columns` is a non-empty dense list of logical display columns. Every
+column is a non-empty bottom-to-top layer list:
+
+```lua
+layout = {
+    direction = "auto",
+    columns = {
+        { "track", "thumb" },
+        {
+            { kind = "marks", types = { "Error", "Warn", "Info", "Hint" } },
+            "marks",
+        },
+    },
+}
+```
+
+String layers are `"track"`, `"thumb"`, and `"marks"`. Plain `"marks"` is
+the catch-all for types not claimed by an explicit descriptor. Descriptor
+fields are:
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `kind` | `"marks"` | Required tag |
+| `types` | dense string list | Explicit mark types; unknown names are allowed |
+| `max_width` | positive integer | Total width of a lane explicitly selecting `Mark` |
+
+Adjacent occurrences with the same selector form one lane. A catch-all lane,
+an explicitly selected type, and the thumb may each occupy only one contiguous
+span. Track layers may appear in any columns. Track, thumb, and marks are all
+optional; cells with no interactive rendered layer are transparent and inert.
+
+`direction = "auto"` treats declarations as inner-to-outer: east anchors keep
+the declared order and west anchors mirror it. `"ltr"` and `"rtl"` force
+physical screen order. See [Layout and geometry](layout-and-geometry.md).
+
+## Marks
+
+Each `marks.<Type>` accepts only `text`, `priority`, and `highlight`. New custom
+types must provide all three. Type names match `^[%a_][%w_]*$`.
+
+- `text` is a string or dense list of positive-display-width strings without
+  control characters. Lists are density variants. Only `marks.Mark.text` may
+  be empty, which preserves literal names from the built-in marks provider.
+- `priority` is a non-negative integer. Lower numbers win collisions within one
+  mark lane. Separate mark layers use their declared stack order instead.
+- `highlight` is a non-empty group name or an `nvim_set_hl()` definition table.
+
+Ordinary text is clipped to its lane without splitting multi-cell glyphs.
+Multi-cell glyphs are omitted atomically if a collision would expose only part
+of the glyph.
+
+## Providers
+
+`cursor`, `diagnostic`, `gitsigns`, `mini_diff`, `signify`, `vgit`, `ale`, and
+`coc` are booleans. `search` is a boolean or a table containing `incsearch`
+(boolean) and `backend` (`"worker"` or `"sync"`). `marks` is a boolean or a
+table containing only `letters` and `numbers`, both booleans. Presentation
+width belongs to the layout, not the provider.
 
 ## Validation
 
-- The `providers` table accepts exactly ten built-in names. `cursor`,
-  `diagnostic`, `gitsigns`, `mini_diff`, `signify`, `vgit`, `ale`, and `coc` are
-  strict booleans.
-- `visibility` accepts only `"all"` or `"active"`.
-- `render.geometry` accepts only `"line"` or `"screen"`.
-- `float.placement.relative` accepts only `"window"` or `"editor"`.
-- `float.placement.anchor` accepts `"NW"`, `"NE"`, `"SW"`, or `"SE"`.
-- `float.placement.row` and `float.placement.col` are signed integers.
-- `max_lines` is `false` or a positive integer.
-- `autohide.delay_ms` is a positive integer; zero is not accepted.
-- Widths, columns, and `zindex` are positive integers. `render.interval_ms`,
-  `handle.blend`, and mark priorities may be zero.
-- `handle.blend` must be between `0` and `100`.
-- `handle.column + handle.width - 1` must fit within `float.width`.
-- Every mark column must fit within `float.width`.
-- `handle.text` is one string with positive display width and no control
-  characters. Mark text accepts a string or dense list of such strings; only
-  `marks.Mark.text` may be empty.
-- Mark type names must match `^[%a_][%w_]*$`.
-- `providers.search` is a boolean or a table containing only `incsearch` and
-  `backend`. When present, `incsearch` is a boolean; when omitted, it follows
-  the current `vim.o.incsearch` value. `backend` accepts `"worker"` or `"sync"`.
-- `providers.marks` is a boolean or a table containing only `letters`,
-  `numbers`, and `max_width`. When present, `max_width` is a positive integer at
-  least as large as `float.width`.
-- Highlight values are a non-empty highlight group name or a table accepted by
-  `nvim_set_hl()`.
-- `excluded_buftypes` and `excluded_filetypes` must be dense lists of strings.
+- `visibility`: `"all"` or `"active"`.
+- `render.geometry`: `"line"` or `"screen"`.
+- `render.interval_ms`, `thumb.blend`, and mark priorities: non-negative
+  integers. `thumb.blend` is at most `100`.
+- `autohide.delay_ms`, `float.zindex`, layout `max_width`, and a numeric
+  `max_lines`: positive integers.
+- `float.placement.relative`: `"window"` or `"editor"`.
+- `float.placement.anchor`: `"NW"`, `"NE"`, `"SW"`, or `"SE"`.
+- `float.placement.row` and `col`: signed integers.
+- `thumb.text`: one positive-display-width string without control characters.
+- Exclusion options: dense string lists.
+- Unknown keys at every schema level are errors.
 
-## Marks And Columns
+Dense lists replace atomically instead of merging by index. This includes
+`layout.columns`, descriptor `types`, mark `text`, and exclusion lists.
 
-`handle.column`, `handle.width`, and mark columns use one-based display-cell
-coordinates. Mark text is clipped at the right edge without splitting a
-multi-cell character.
+## Presets
 
-Mark text lists are density variants. Marks compressed into the same rendered
-row, type, and column use variant `min(mark_count, variant_count)`. For example,
-`{ "·", "•", "#" }` displays `·` for one mark, `•` for two, and `#` for three
-or more. A string is accepted as one variant.
-
-Overlapping display-cell ranges are resolved by priority; lower numbers win.
-Ties are deterministic. Multi-cell glyphs are atomic and are omitted rather
-than split when an overlap would cut through them.
-
-The empty default for `marks.Mark.text` is special: it allows the built-in
-[marks provider](providers/marks.md) to display literal mark names.
-
-See [Layout and geometry](layout-and-geometry.md) for wide scrollbar placement
-and composition, and [Highlights](highlights.md) for generated group behavior.
+`preset` and `presets` exist only during one setup call and are removed from the
+normalized runtime config. Built-ins are `vscode`, `zed`, and `intellij`.
+Preset definitions may set only `layout`, `track`, `thumb`, `marks`, and
+`float.placement`, plus one optional `extends` parent. Root setup values win over
+the selected preset. See [Presets](presets.md).
 
 ## Eligibility
 
-`max_lines` excludes buffers above the configured logical line count.
-`excluded_buftypes` and `excluded_filetypes` exclude matching buffers from
-rendering and manager-invoked provider refreshes. Custom provider-owned
-callbacks remain responsible for their own collection decisions; marks they
-publish remain non-rendered while a buffer is ineligible. Scrollbar-owned
-scratch buffers are always excluded.
-
-Visibility controls, autohide, and hide-if-all-visible behavior are documented
-in [Visibility](visibility.md).
+`max_lines`, `excluded_buftypes`, and `excluded_filetypes` control whether a
+source buffer receives a scrollbar and manager-driven provider refreshes.
+Scrollbar-owned scratch buffers are always excluded. Visibility and autohide
+are documented in [Visibility](visibility.md).
 
 ## Related
 
-- [README](../README.md)
-- [Providers](providers/README.md)
+- [Presets](presets.md)
 - [Layout and geometry](layout-and-geometry.md)
+- [Providers](providers/README.md)
 - [Highlights](highlights.md)

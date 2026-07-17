@@ -5,7 +5,7 @@ Visibility is controlled globally, per source window, and by buffer eligibility.
 ## Source Windows
 
 - `visibility = "all"` creates an independent scrollbar for every eligible
-  normal window. Two windows showing the same buffer retain different handles.
+  normal window. Two windows showing the same buffer retain different thumbs.
 - `visibility = "active"` keeps only the active source window's scrollbar.
 - `float.placement.relative = "editor"` also renders only the active source
   window, regardless of `visibility`, so editor-relative floats cannot overlap.
@@ -37,7 +37,7 @@ deadline; release or cancellation starts a fresh full delay.
 
 - `hide_if_all_visible = true` hides the entire scrollbar when the document
   fits in the source window.
-- `handle.hide_if_all_visible = true` hides only the handle when the document
+- `thumb.hide_if_all_visible = true` hides only the thumb when the document
   fits. The track and provider marks can remain visible.
 - `max_lines` is an eligibility limit, not a visibility toggle: buffers above
   the configured logical line count receive no scrollbar.

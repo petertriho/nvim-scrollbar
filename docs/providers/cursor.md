@@ -21,7 +21,6 @@ It emits the `Cursor` mark type, whose defaults are:
 | Option | Default |
 | --- | --- |
 | `marks.Cursor.text` | `{ "•" }` |
-| `marks.Cursor.column` | `1` |
 | `marks.Cursor.priority` | `0` |
 | `marks.Cursor.highlight` | `"Normal"` |
 
@@ -61,7 +60,6 @@ require("scrollbar").setup({
     marks = {
         Cursor = {
             text = "●",
-            column = 1,
             priority = 0,
             highlight = "CursorLineNr",
         },
@@ -69,8 +67,8 @@ require("scrollbar").setup({
 })
 ```
 
-For a separate cursor column, increase `float.width` and move
-`marks.Cursor.column`; the column must remain within the base float width.
+For a separate cursor lane, explicitly select `Cursor` in `layout.columns`; see
+[Layout and geometry](../layout-and-geometry.md).
 
 ## Limitations And Troubleshooting
 
@@ -83,8 +81,8 @@ For a separate cursor column, increase `float.width` and move
 - If no mark appears, confirm `providers.cursor = true`, check buffer exclusion
   and `max_lines` settings, and run `:ScrollbarRefresh` after entering the
   affected window.
-- If the mark is covered after customization, compare mark columns and
-  priorities. Lower priority numbers win overlapping cells.
+- If the mark is covered after customization, compare lane stack order and
+  priority. Lower priority numbers win within one mark lane.
 
 ## Related
 

@@ -8,7 +8,7 @@ local M = {}
 
 local NAMESPACE = vim.api.nvim_create_namespace("ScrollbarRenderer")
 local AUGROUP_NAME = "ScrollbarRendererLifecycle"
-local FLOAT_WINHIGHLIGHT = "Normal:ScrollbarTrack,NormalNC:ScrollbarTrack,EndOfBuffer:ScrollbarTrack"
+local FLOAT_WINHIGHLIGHT = "Normal:ScrollbarBase,NormalNC:ScrollbarBase,EndOfBuffer:ScrollbarBase"
 
 ---@type table<integer, ScrollbarWindowState>
 local states = {}
@@ -264,7 +264,6 @@ local function float_config(source_win, area, container_width, width, hidden)
         col = (west and 0 or container_width) + placement.col,
         width = width,
         height = area.height,
-        style = "minimal",
         focusable = active_config.mouse.enabled,
         mouse = active_config.mouse.enabled,
         zindex = active_config.float.zindex,
@@ -314,7 +313,10 @@ local function create_state(source_win, source_buf, active_float_config, configu
     configure_owned_buffer(float_buf)
     pcall(vim.api.nvim_buf_set_name, float_buf, string.format("scrollbar://source/%d/%d", source_win, float_buf))
 
+    -- Reapplying minimal style mutates winhighlight on Neovim 0.11.4.
+    active_float_config.style = "minimal"
     local float_win = vim.api.nvim_open_win(float_buf, false, active_float_config)
+    active_float_config.style = nil
     configure_owned_window(float_win)
 
     local state = {
@@ -329,7 +331,7 @@ local function create_state(source_win, source_buf, active_float_config, configu
         highlights = {},
         rendered_highlights = {},
         hitmap = {},
-        handle = { first_row = -1, last_row = -1, column = 1, width = 1 },
+        handle = false,
         handle_pressed = false,
         hidden_by_cursor = active_float_config.hide == true,
         geometry = { mode = "line", total_extent = 0, viewport_start = 0, viewport_end = 0 },
@@ -348,8 +350,7 @@ local function has_float_config(float_win, expected)
         return false
     end
     for key, value in pairs(expected) do
-        -- Neovim 0.11 applies float style but omits it from nvim_win_get_config().
-        if not (key == "style" and current[key] == nil) and not vim.deep_equal(current[key], value) then
+        if not vim.deep_equal(current[key], value) then
             return false
         end
     end
@@ -593,6 +594,7 @@ local function write_highlights(float_buf, row, spans)
             end_col = span.end_col,
             hl_group = span.highlight,
             hl_mode = "combine",
+            priority = span.priority,
             strict = false,
         })
     end
@@ -634,6 +636,7 @@ local function rendered_highlights(highlights, pressed)
                 start_col = span.start_col,
                 end_col = span.end_col,
                 highlight = replacements[span.highlight] or span.highlight,
+                priority = span.priority,
             }
         end
         result[row] = rendered
@@ -741,7 +744,7 @@ local function render_source(source_win)
         close_source(source_win)
         return nil
     end
-    if all_visible and active_config.handle.hide_if_all_visible then
+    if all_visible and active_config.thumb.hide_if_all_visible then
         geometry.handle = { first_row = -1, last_row = -1 }
     end
 
@@ -862,7 +865,7 @@ M.get_hitmap = function(source_win)
 end
 
 ---@param source_win integer
----@return ScrollbarHandleGeometry?
+---@return false|ScrollbarHandleGeometry?
 M.get_handle = function(source_win)
     local state = states[source_win]
     return state and state.handle or nil

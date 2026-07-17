@@ -73,17 +73,17 @@ publishes an empty list.
 ## Appearance
 
 The three default mark types use `┃` for additions and changes and `▁` for
-deletions, column `1`, priority `7`, and vim-signify's sign highlights:
+deletions, priority `7`, and vim-signify's sign highlights:
 
 ```lua
 marks = {
-    SignifyAdd = { text = { "┃" }, column = 1, priority = 7, highlight = "SignifySignAdd" },
-    SignifyChange = { text = { "┃" }, column = 1, priority = 7, highlight = "SignifySignChange" },
-    SignifyDelete = { text = { "▁" }, column = 1, priority = 7, highlight = "SignifySignDelete" },
+    SignifyAdd = { text = { "┃" }, priority = 7, highlight = "SignifySignAdd" },
+    SignifyChange = { text = { "┃" }, priority = 7, highlight = "SignifySignChange" },
+    SignifyDelete = { text = { "▁" }, priority = 7, highlight = "SignifySignDelete" },
 }
 ```
 
-Override `text`, `column`, `priority`, or `highlight` under the top-level
+Override `text`, `priority`, or `highlight` under the top-level
 `marks` table as usual.
 
 ## Limitations
@@ -98,7 +98,7 @@ Override `text`, `column`, `priority`, or `highlight` under the top-level
   three mark types above for parity with the `gitsigns` and `mini_diff` diff
   providers.
 - Enabling `signify` alongside `gitsigns` or `mini_diff` is supported, but their
-  diff marks can overlap. Disable one or customize columns and priorities if
+  diff marks can overlap. Disable one or customize typed lanes and priorities if
   needed.
 
 ## Troubleshooting
@@ -110,7 +110,7 @@ Override `text`, `column`, `priority`, or `highlight` under the top-level
 - Marks remain after `:SignifyDisable`: run `:SignifyRefresh` then
   `:ScrollbarRefresh`.
 - Duplicate diff marks: disable `gitsigns`, `mini_diff`, or `signify`, or place
-  their mark types in different columns.
+  their mark types in different lanes.
 - Unexpected colors: inspect `SignifySignAdd`, `SignifySignChange`, and
   `SignifySignDelete`, or override the mark highlights.
 

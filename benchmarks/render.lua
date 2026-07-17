@@ -54,7 +54,7 @@ local function configure(geometry)
         render = { interval_ms = 0, geometry = geometry },
         excluded_buftypes = {},
         excluded_filetypes = {},
-        handle = { text = "H", hide_if_all_visible = false },
+        thumb = { text = "H", hide_if_all_visible = false },
         providers = {
             cursor = false,
             diagnostic = false,

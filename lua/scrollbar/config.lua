@@ -1,3 +1,5 @@
+local presets = require("scrollbar.presets")
+
 local DEFAULTS = {
     show = true,
     visibility = "all",
@@ -13,7 +15,6 @@ local DEFAULTS = {
         geometry = "line",
     },
     float = {
-        width = 1,
         zindex = 50,
         hide_on_cursor = true,
         placement = {
@@ -23,16 +24,20 @@ local DEFAULTS = {
             col = 0,
         },
     },
+    layout = {
+        direction = "auto",
+        columns = {
+            { "track", "thumb", "marks" },
+        },
+    },
     track = {
         highlight = "PmenuSbar",
     },
     mouse = {
         enabled = true,
     },
-    handle = {
+    thumb = {
         text = " ",
-        column = 1,
-        width = 1,
         blend = 30,
         highlight = "PmenuThumb",
         hide_if_all_visible = true,
@@ -40,121 +45,101 @@ local DEFAULTS = {
     marks = {
         Cursor = {
             text = { "•" },
-            column = 1,
             priority = 0,
             highlight = "Normal",
         },
         Mark = {
             text = {},
-            column = 1,
             priority = 1,
             highlight = "Special",
         },
         Search = {
             text = { "-", "=" },
-            column = 1,
             priority = 1,
             highlight = "Search",
         },
         Error = {
             text = { "-", "=" },
-            column = 1,
             priority = 2,
             highlight = "DiagnosticVirtualTextError",
         },
         Warn = {
             text = { "-", "=" },
-            column = 1,
             priority = 3,
             highlight = "DiagnosticVirtualTextWarn",
         },
         Info = {
             text = { "-", "=" },
-            column = 1,
             priority = 4,
             highlight = "DiagnosticVirtualTextInfo",
         },
         Hint = {
             text = { "-", "=" },
-            column = 1,
             priority = 5,
             highlight = "DiagnosticVirtualTextHint",
         },
         Misc = {
             text = { "-", "=" },
-            column = 1,
             priority = 6,
             highlight = "Normal",
         },
         GitAdd = {
             text = { "┃" },
-            column = 1,
             priority = 7,
             highlight = "GitSignsAdd",
         },
         GitChange = {
             text = { "┃" },
-            column = 1,
             priority = 7,
             highlight = "GitSignsChange",
         },
         GitDelete = {
             text = { "▁" },
-            column = 1,
             priority = 7,
             highlight = "GitSignsDelete",
         },
         MiniDiffAdd = {
             text = { "▒" },
-            column = 1,
             priority = 7,
             highlight = "MiniDiffSignAdd",
         },
         MiniDiffChange = {
             text = { "▒" },
-            column = 1,
             priority = 7,
             highlight = "MiniDiffSignChange",
         },
         MiniDiffDelete = {
             text = { "▒" },
-            column = 1,
             priority = 7,
             highlight = "MiniDiffSignDelete",
         },
         SignifyAdd = {
             text = { "┃" },
-            column = 1,
             priority = 7,
             highlight = "SignifySignAdd",
         },
         SignifyChange = {
             text = { "┃" },
-            column = 1,
             priority = 7,
             highlight = "SignifySignChange",
         },
         SignifyDelete = {
             text = { "▁" },
-            column = 1,
             priority = 7,
             highlight = "SignifySignDelete",
         },
         VGitAdd = {
             text = { "┃" },
-            column = 1,
             priority = 7,
             highlight = "GitSignsAdd",
         },
         VGitChange = {
             text = { "┃" },
-            column = 1,
             priority = 7,
             highlight = "GitSignsChange",
         },
         VGitDelete = {
             text = { "▁" },
-            column = 1,
             priority = 7,
             highlight = "GitSignsDelete",
         },
@@ -196,9 +181,10 @@ local TOP_LEVEL_KEYS = {
     autohide = true,
     render = true,
     float = true,
+    layout = true,
     track = true,
     mouse = true,
-    handle = true,
+    thumb = true,
     marks = true,
     providers = true,
     excluded_buftypes = true,
@@ -208,19 +194,14 @@ local TOP_LEVEL_KEYS = {
 local NESTED_KEYS = {
     autohide = { enabled = true, delay_ms = true },
     render = { interval_ms = true, geometry = true },
-    float = { width = true, zindex = true, hide_on_cursor = true, placement = true },
+    float = { zindex = true, hide_on_cursor = true, placement = true },
     ["float.placement"] = { relative = true, anchor = true, row = true, col = true },
+    layout = { direction = true, columns = true },
     track = { highlight = true },
     mouse = { enabled = true },
-    handle = {
-        text = true,
-        column = true,
-        width = true,
-        blend = true,
-        highlight = true,
-        hide_if_all_visible = true,
-    },
-    mark = { text = true, column = true, priority = true, highlight = true },
+    thumb = { text = true, blend = true, highlight = true, hide_if_all_visible = true },
+    mark = { text = true, priority = true, highlight = true },
+    layer = { kind = true, types = true, max_width = true },
     providers = {
         cursor = true,
         diagnostic = true,
@@ -234,7 +215,7 @@ local NESTED_KEYS = {
         coc = true,
     },
     search = { incsearch = true, backend = true },
-    ["providers.marks"] = { max_width = true, letters = true, numbers = true },
+    ["providers.marks"] = { letters = true, numbers = true },
 }
 
 local ENUMS = {
@@ -242,31 +223,12 @@ local ENUMS = {
     geometry = { line = true, screen = true },
     relative = { window = true, editor = true },
     anchor = { NW = true, NE = true, SW = true, SE = true },
+    direction = { auto = true, ltr = true, rtl = true },
     search_backend = { sync = true, worker = true },
 }
 
-local active = vim.deepcopy(DEFAULTS)
+local active
 local layout_generation = 0
-
----@param value ScrollbarConfig
----@return table
-local function layout_config(value)
-    local marks = {}
-    for mark_type, mark in pairs(value.marks) do
-        marks[mark_type] = {
-            text = mark.text,
-            column = mark.column,
-            priority = mark.priority,
-        }
-    end
-    local marks_provider = value.providers.marks
-    return {
-        width = value.float.width,
-        marks = marks,
-        marks_max_width = type(marks_provider) == "table" and marks_provider.max_width or false,
-        horizontal_anchor = value.float.placement.anchor:sub(2, 2),
-    }
-end
 
 local function invalid(message)
     error("[scrollbar.nvim] " .. message, 3)
@@ -289,13 +251,6 @@ local function validate_unknown_keys(value, allowed, path)
 end
 
 local function validate_shape(overrides)
-    if overrides == nil then
-        return
-    end
-    if type(overrides) ~= "table" then
-        invalid("configuration must be a table")
-    end
-
     for key in pairs(overrides) do
         if not TOP_LEVEL_KEYS[key] then
             invalid(string.format("unknown option '%s'", tostring(key)))
@@ -308,9 +263,10 @@ local function validate_shape(overrides)
     if type(overrides.float) == "table" then
         validate_unknown_keys(overrides.float.placement, NESTED_KEYS["float.placement"], "float.placement")
     end
+    validate_unknown_keys(overrides.layout, NESTED_KEYS.layout, "layout")
     validate_unknown_keys(overrides.track, NESTED_KEYS.track, "track")
     validate_unknown_keys(overrides.mouse, NESTED_KEYS.mouse, "mouse")
-    validate_unknown_keys(overrides.handle, NESTED_KEYS.handle, "handle")
+    validate_unknown_keys(overrides.thumb, NESTED_KEYS.thumb, "thumb")
     validate_unknown_keys(overrides.providers, NESTED_KEYS.providers, "providers")
 
     if type(overrides.providers) == "table" and type(overrides.providers.search) == "table" then
@@ -350,6 +306,26 @@ local function validate_enum(value, path, values)
     end
 end
 
+local function dense_count(value, path)
+    if type(value) ~= "table" then
+        invalid(path .. " must be a dense list")
+    end
+
+    local count = 0
+    local maximum = 0
+    for key in pairs(value) do
+        count = count + 1
+        if not is_integer(key) or key < 1 then
+            invalid(path .. " must be a dense list")
+        end
+        maximum = math.max(maximum, key)
+    end
+    if count ~= maximum then
+        invalid(path .. " must be a dense list")
+    end
+    return count
+end
+
 local function validate_text(value, path)
     if type(value) ~= "string" then
         invalid(path .. " must be a string")
@@ -381,23 +357,10 @@ local function normalize_text(value, path, allow_empty)
         invalid(path .. " must be a string or dense list of strings")
     end
 
-    if #value == 0 and not allow_empty then
+    local count = dense_count(value, path)
+    if count == 0 and not allow_empty then
         invalid(path .. " must contain at least one variant")
     end
-
-    local count = 0
-    local maximum = 0
-    for key in pairs(value) do
-        count = count + 1
-        if not is_integer(key) or key < 1 then
-            invalid(path .. " must be a dense list")
-        end
-        maximum = math.max(maximum, key)
-    end
-    if count ~= maximum then
-        invalid(path .. " must be a dense list")
-    end
-
     for index = 1, count do
         validate_text(value[index], string.format("%s[%d]", path, index))
     end
@@ -405,32 +368,237 @@ local function normalize_text(value, path, allow_empty)
 end
 
 local function validate_string_list(value, path)
-    if type(value) ~= "table" then
-        invalid(path .. " must be a dense list of strings")
-    end
-
-    local count = 0
-    local maximum = 0
-    for key in pairs(value) do
-        count = count + 1
-        if not is_integer(key) or key < 1 then
-            invalid(path .. " must be a dense list of strings")
-        end
-        maximum = math.max(maximum, key)
-    end
-    if count ~= maximum then
-        invalid(path .. " must be a dense list of strings")
-    end
-
+    local count = dense_count(value, path)
     for index = 1, count do
-        local item = value[index]
-        if type(item) ~= "string" then
+        if type(value[index]) ~= "string" then
             invalid(string.format("%s[%d] must be a string", path, index))
         end
     end
 end
 
-local function normalize_providers(providers, float_width)
+local function normalize_selector_types(value, path)
+    local count = dense_count(value, path)
+    if count == 0 then
+        invalid(path .. " must contain at least one type")
+    end
+
+    local result = {}
+    local seen = {}
+    for index = 1, count do
+        local name = value[index]
+        if type(name) ~= "string" then
+            invalid(string.format("%s[%d] must be a string", path, index))
+        end
+        if not name:match("^[%a_][%w_]*$") then
+            invalid(string.format("%s[%d] must be a valid mark type", path, index))
+        end
+        if seen[name] then
+            invalid(string.format("%s contains duplicate type '%s'", path, name))
+        end
+        seen[name] = true
+        result[#result + 1] = name
+    end
+    table.sort(result)
+    return result
+end
+
+local function normalized_layer(value, path)
+    if type(value) == "string" then
+        if value == "track" or value == "thumb" then
+            return { kind = value }
+        end
+        if value == "marks" then
+            return { kind = "marks", catch_all = true, types = false, max_width = false }
+        end
+        invalid(path .. " must be 'track', 'thumb', 'marks', or a mark descriptor")
+    end
+    if type(value) ~= "table" then
+        invalid(path .. " must be 'track', 'thumb', 'marks', or a mark descriptor")
+    end
+
+    validate_unknown_keys(value, NESTED_KEYS.layer, path)
+    if value.kind ~= "marks" then
+        invalid(path .. ".kind must be 'marks'")
+    end
+
+    ---@type false|string[]
+    local types = false
+    local catch_all = value.types == nil
+    if value.types ~= nil then
+        types = normalize_selector_types(value.types, path .. ".types")
+    end
+
+    local max_width = false
+    if value.max_width ~= nil then
+        validate_integer(value.max_width, path .. ".max_width", false)
+        local selects_mark = false
+        for _, name in ipairs(types or {}) do
+            selects_mark = selects_mark or name == "Mark"
+        end
+        if not selects_mark then
+            invalid(path .. ".max_width is valid only for a lane explicitly selecting Mark")
+        end
+        max_width = value.max_width
+    end
+
+    return { kind = "marks", catch_all = catch_all, types = types, max_width = max_width }
+end
+
+local function layer_signature(layer)
+    if layer.catch_all then
+        return "*"
+    end
+    return table.concat(layer.types, "\0")
+end
+
+local function compile_layout(layout, anchor)
+    if type(layout) ~= "table" then
+        invalid("layout must be a table")
+    end
+    validate_enum(layout.direction, "layout.direction", ENUMS.direction)
+    local width = dense_count(layout.columns, "layout.columns")
+    if width == 0 then
+        invalid("layout.columns must contain at least one column")
+    end
+
+    local logical = {}
+    local lanes = {}
+    local lane_by_signature = {}
+    local type_owner = {}
+    local previous_signatures = {}
+    local thumb_columns = {}
+
+    for column_index = 1, width do
+        local column_path = string.format("layout.columns[%d]", column_index)
+        local layer_count = dense_count(layout.columns[column_index], column_path)
+        if layer_count == 0 then
+            invalid(column_path .. " must contain at least one layer")
+        end
+
+        local column = {}
+        local current_signatures = {}
+        local seen_layers = {}
+        for stack_index = 1, layer_count do
+            local path = string.format("%s[%d]", column_path, stack_index)
+            local layer = normalized_layer(layout.columns[column_index][stack_index], path)
+            if layer.kind ~= "marks" then
+                if seen_layers[layer.kind] then
+                    invalid(path .. " duplicates the " .. layer.kind .. " layer in one column")
+                end
+                seen_layers[layer.kind] = true
+                if layer.kind == "thumb" then
+                    thumb_columns[#thumb_columns + 1] = column_index
+                end
+                column[#column + 1] = { kind = layer.kind, priority = stack_index }
+            else
+                local signature = layer_signature(layer)
+                local duplicate_key = "marks:" .. signature
+                if seen_layers[duplicate_key] then
+                    invalid(path .. " duplicates the same mark selector in one column")
+                end
+                seen_layers[duplicate_key] = true
+
+                local lane_id = previous_signatures[signature]
+                if lane_id == nil then
+                    if lane_by_signature[signature] ~= nil then
+                        local label = layer.catch_all and "catch-all marks" or "mark type '" .. layer.types[1] .. "'"
+                        invalid(label .. " must occupy one contiguous lane")
+                    end
+                    lane_id = #lanes + 1
+                    lanes[lane_id] = {
+                        id = lane_id,
+                        catch_all = layer.catch_all,
+                        types = layer.types,
+                        columns = {},
+                        max_width = false,
+                    }
+                    lane_by_signature[signature] = lane_id
+                    if not layer.catch_all then
+                        for _, mark_type in ipairs(layer.types) do
+                            if type_owner[mark_type] ~= nil then
+                                invalid("mark type '" .. mark_type .. "' must occupy one contiguous lane")
+                            end
+                            type_owner[mark_type] = lane_id
+                        end
+                    end
+                end
+
+                local lane = lanes[lane_id]
+                if layer.max_width ~= false then
+                    if lane.max_width ~= false and lane.max_width ~= layer.max_width then
+                        invalid(path .. ".max_width conflicts with another value in the same lane")
+                    end
+                    lane.max_width = layer.max_width
+                end
+                lane.columns[#lane.columns + 1] = column_index
+                current_signatures[signature] = lane_id
+                column[#column + 1] = { kind = "marks", lane_id = lane_id, priority = stack_index }
+            end
+        end
+        logical[column_index] = column
+        previous_signatures = current_signatures
+    end
+
+    for index = 2, #thumb_columns do
+        if thumb_columns[index] ~= thumb_columns[index - 1] + 1 then
+            invalid("thumb must occupy one contiguous span")
+        end
+    end
+
+    local east = anchor:sub(2, 2) == "E"
+    local reverse = layout.direction == "rtl" or (layout.direction == "auto" and not east)
+    local physical = {}
+    for logical_column, column in ipairs(logical) do
+        local physical_column = reverse and width - logical_column + 1 or logical_column
+        physical[physical_column] = column
+    end
+
+    local routes = {}
+    local catchall_lane = false
+    for _, lane in ipairs(lanes) do
+        local physical_columns = {}
+        for _, logical_column in ipairs(lane.columns) do
+            physical_columns[#physical_columns + 1] = reverse and width - logical_column + 1 or logical_column
+        end
+        table.sort(physical_columns)
+        lane.columns = physical_columns
+        lane.first_column = physical_columns[1]
+        lane.last_column = physical_columns[#physical_columns]
+        if lane.max_width ~= false and lane.max_width < #physical_columns then
+            invalid("layout mark lane max_width must be greater than or equal to its base lane width")
+        end
+        if lane.catch_all then
+            catchall_lane = lane.id
+        else
+            for _, mark_type in ipairs(lane.types) do
+                routes[mark_type] = lane.id
+            end
+        end
+    end
+
+    ---@type false|ScrollbarNormalizedThumbSpan
+    local thumb = false
+    if #thumb_columns > 0 then
+        local first = reverse and width - thumb_columns[#thumb_columns] + 1 or thumb_columns[1]
+        local last = reverse and width - thumb_columns[1] + 1 or thumb_columns[#thumb_columns]
+        thumb = { first_column = first, last_column = last, width = last - first + 1 }
+    end
+
+    local result = {
+        direction = layout.direction,
+        width = width,
+        inward = east and "left" or "right",
+        columns = physical,
+        lanes = lanes,
+        routes = routes,
+        catchall_lane = catchall_lane,
+        thumb = thumb,
+    }
+    result.cache = vim.deepcopy(result)
+    return result
+end
+
+local function normalize_providers(providers)
     for _, name in ipairs({ "cursor", "diagnostic", "gitsigns", "mini_diff", "signify", "vgit", "ale", "coc" }) do
         validate_boolean(providers[name], "providers." .. name)
     end
@@ -452,16 +620,8 @@ local function normalize_providers(providers, float_width)
 
     local marks = providers.marks
     if marks == true then
-        providers.marks = { max_width = false, letters = true, numbers = false }
+        providers.marks = { letters = true, numbers = false }
     elseif type(marks) == "table" then
-        if marks.max_width == nil then
-            marks.max_width = false
-        else
-            validate_integer(marks.max_width, "providers.marks.max_width", false)
-            if marks.max_width < float_width then
-                invalid("providers.marks.max_width must be greater than or equal to float.width")
-            end
-        end
         if marks.letters == nil then
             marks.letters = true
         end
@@ -475,18 +635,28 @@ local function normalize_providers(providers, float_width)
     end
 end
 
+local function layout_config(value)
+    local marks = {}
+    for mark_type, mark in pairs(value.marks) do
+        marks[mark_type] = {
+            text = mark.text,
+            priority = mark.priority,
+        }
+    end
+    return { layout = value.layout.cache, marks = marks }
+end
+
 local function normalize(overrides)
-    validate_shape(overrides)
-    local result = vim.tbl_deep_extend("force", vim.deepcopy(DEFAULTS), overrides or {})
+    local resolved = presets.resolve(overrides)
+    validate_shape(resolved)
+    local result = presets.merge(DEFAULTS, resolved)
 
     validate_boolean(result.show, "show")
     validate_boolean(result.set_highlights, "set_highlights")
     validate_boolean(result.hide_if_all_visible, "hide_if_all_visible")
     validate_enum(result.visibility, "visibility", ENUMS.visibility)
-    if result.max_lines ~= false then
-        if not is_integer(result.max_lines) or result.max_lines < 1 then
-            invalid("max_lines must be false or a positive integer")
-        end
+    if result.max_lines ~= false and (not is_integer(result.max_lines) or result.max_lines < 1) then
+        invalid("max_lines must be false or a positive integer")
     end
 
     if type(result.autohide) ~= "table" then
@@ -504,7 +674,6 @@ local function normalize(overrides)
     if type(result.float) ~= "table" then
         invalid("float must be a table")
     end
-    validate_integer(result.float.width, "float.width", false)
     validate_integer(result.float.zindex, "float.zindex", false)
     validate_boolean(result.float.hide_on_cursor, "float.hide_on_cursor")
     if type(result.float.placement) ~= "table" then
@@ -519,6 +688,8 @@ local function normalize(overrides)
         invalid("float.placement.col must be an integer")
     end
 
+    result.layout = compile_layout(result.layout, result.float.placement.anchor)
+
     if type(result.track) ~= "table" then
         invalid("track must be a table")
     end
@@ -529,21 +700,16 @@ local function normalize(overrides)
     end
     validate_boolean(result.mouse.enabled, "mouse.enabled")
 
-    if type(result.handle) ~= "table" then
-        invalid("handle must be a table")
+    if type(result.thumb) ~= "table" then
+        invalid("thumb must be a table")
     end
-    validate_text(result.handle.text, "handle.text")
-    validate_integer(result.handle.column, "handle.column", false)
-    validate_integer(result.handle.width, "handle.width", false)
-    validate_integer(result.handle.blend, "handle.blend", true)
-    if result.handle.blend > 100 then
-        invalid("handle.blend must be between 0 and 100")
+    validate_text(result.thumb.text, "thumb.text")
+    validate_integer(result.thumb.blend, "thumb.blend", true)
+    if result.thumb.blend > 100 then
+        invalid("thumb.blend must be between 0 and 100")
     end
-    result.handle.highlight = normalize_highlight(result.handle.highlight, "handle.highlight")
-    validate_boolean(result.handle.hide_if_all_visible, "handle.hide_if_all_visible")
-    if result.handle.column + result.handle.width - 1 > result.float.width then
-        invalid("handle.column + handle.width - 1 must not exceed float.width")
-    end
+    result.thumb.highlight = normalize_highlight(result.thumb.highlight, "thumb.highlight")
+    validate_boolean(result.thumb.hide_if_all_visible, "thumb.hide_if_all_visible")
 
     if type(result.marks) ~= "table" then
         invalid("marks must be a table")
@@ -558,10 +724,6 @@ local function normalize(overrides)
 
         local path = "marks." .. mark_type
         mark.text = normalize_text(mark.text, path .. ".text", mark_type == "Mark")
-        validate_integer(mark.column, path .. ".column", false)
-        if mark.column > result.float.width then
-            invalid(path .. ".column must fit within float.width")
-        end
         validate_integer(mark.priority, path .. ".priority", true)
         mark.highlight = normalize_highlight(mark.highlight, path .. ".highlight")
     end
@@ -569,10 +731,9 @@ local function normalize(overrides)
     if type(result.providers) ~= "table" then
         invalid("providers must be a table")
     end
-    normalize_providers(result.providers, result.float.width)
+    normalize_providers(result.providers)
     validate_string_list(result.excluded_buftypes, "excluded_buftypes")
     validate_string_list(result.excluded_filetypes, "excluded_filetypes")
-
     return result
 end
 
@@ -582,7 +743,7 @@ local M = {}
 ---@return ScrollbarConfig
 M.set = function(overrides)
     local normalized = normalize(overrides)
-    if not vim.deep_equal(layout_config(active), layout_config(normalized)) then
+    if active ~= nil and not vim.deep_equal(layout_config(active), layout_config(normalized)) then
         layout_generation = layout_generation + 1
     end
     active = normalized
@@ -591,6 +752,9 @@ end
 
 ---@return ScrollbarConfig
 M.get = function()
+    if active == nil then
+        active = normalize()
+    end
     return active
 end
 

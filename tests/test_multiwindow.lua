@@ -33,7 +33,7 @@ T["root setup preserves independent floats for two views of one buffer"] = funct
             set_highlights = false,
             render = { interval_ms = 1000, geometry = "line" },
             mouse = { enabled = false },
-            handle = { text = "H", hide_if_all_visible = false },
+            thumb = { text = "H", hide_if_all_visible = false },
             providers = {
                 cursor = false,
                 diagnostic = false,
@@ -88,9 +88,9 @@ T["cursor marks stay local to each view of one buffer"] = function()
         require("scrollbar").setup({
             set_highlights = false,
             render = { interval_ms = 0, geometry = "line" },
-            float = { width = 2 },
+            layout = { direction = "ltr", columns = { { "marks" }, { "thumb" } } },
             mouse = { enabled = false },
-            handle = { text = "H", column = 2, width = 1, hide_if_all_visible = false },
+            thumb = { text = "H", hide_if_all_visible = false },
             providers = {
                 cursor = true,
                 diagnostic = false,
@@ -153,9 +153,9 @@ T["window-local mark revisions rebuild only the affected static layer"] = functi
         local active_config = require("scrollbar.config").set({
             set_highlights = false,
             render = { interval_ms = 0, geometry = "line" },
-            float = { width = 2 },
+            layout = { direction = "ltr", columns = { { "marks" }, { "thumb" } } },
             mouse = { enabled = false },
-            handle = { text = "H", column = 2, width = 1, hide_if_all_visible = false },
+            thumb = { text = "H", hide_if_all_visible = false },
             providers = {
                 cursor = false,
                 diagnostic = false,
@@ -245,17 +245,21 @@ T["real named marks stay with their source buffer and resolve width per window h
             set_highlights = false,
             render = { interval_ms = 0, geometry = "line" },
             float = {
-                width = 1,
                 hide_on_cursor = false,
                 placement = { relative = "window", anchor = "NW", row = 0, col = 0 },
             },
+            layout = {
+                columns = {
+                    { "track", "thumb", { kind = "marks", types = { "Mark" }, max_width = 6 } },
+                },
+            },
             mouse = { enabled = false },
-            handle = { text = "H", column = 1, width = 1, hide_if_all_visible = false },
+            thumb = { text = "H", hide_if_all_visible = false },
             providers = {
                 cursor = false,
                 diagnostic = false,
                 search = false,
-                marks = { max_width = 6 },
+                marks = true,
                 gitsigns = false,
                 ale = false,
                 coc = false,

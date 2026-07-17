@@ -199,13 +199,11 @@ local function display_glyphs(text)
     local glyphs = {}
     local join_next = false
     local character_count = vim.fn.strchars(text)
-
     for index = 0, character_count - 1 do
         local character = vim.fn.strcharpart(text, index, 1)
         local width = vim.fn.strdisplaywidth(character)
         local codepoint = vim.fn.char2nr(character)
         local previous = glyphs[#glyphs]
-
         if previous and (width == 0 or join_next) then
             previous.text = previous.text .. character
             previous.width = vim.fn.strdisplaywidth(previous.text)
@@ -244,6 +242,9 @@ local function candidate_less(left, right)
     if left.line ~= right.line then
         return left.line < right.line
     end
+    if left.lane_id ~= right.lane_id then
+        return left.lane_id < right.lane_id
+    end
     return left.column < right.column
 end
 
@@ -257,30 +258,40 @@ local function resolved_text(mark_type, variants, source_text, count)
     return source_text or variants[math.min(count, #variants)]
 end
 
-local function group_candidates(input, column_offset, expand_marks)
+local function lane_for_type(config, mark_type)
+    local lane_id = config.layout.routes[mark_type] or config.layout.catchall_lane
+    if lane_id == false or lane_id == nil then
+        return nil
+    end
+    return config.layout.lanes[lane_id]
+end
+
+local function translated_column(config, column, column_offset)
+    return config.layout.inward == "left" and column + column_offset or column
+end
+
+local function group_candidates(input, column_offset, expanded_lane_id)
     local groups = {}
     local by_row = {}
 
-    local function group_for(row, mark_type, mark_config)
-        local column = mark_config.column + column_offset
+    local function group_for(row, mark_type, mark_config, lane)
         by_row[row] = by_row[row] or {}
-        local by_type = by_row[row]
-        by_type[mark_type] = by_type[mark_type] or {}
-        local by_column = by_type[mark_type]
-        local group = by_column[column]
-        if not group then
+        local key = string.format("%d\0%s", lane.id, mark_type)
+        local group = by_row[row][key]
+        if group == nil then
             group = {
                 row = row,
+                lane_id = lane.id,
                 type = mark_type,
-                column = column,
-                max_column = input.config.float.width + column_offset,
+                column = translated_column(input.config, lane.first_column, column_offset),
+                max_column = translated_column(input.config, lane.last_column, column_offset),
                 priority = mark_config.priority,
                 sources = {},
                 lines = {},
                 count = 0,
                 ordinary_count = 0,
             }
-            by_column[column] = group
+            by_row[row][key] = group
             table.insert(groups, group)
         end
         return group
@@ -289,9 +300,13 @@ local function group_candidates(input, column_offset, expand_marks)
     for index, mark in ipairs(input.marks) do
         local row = input.geometry.mark_rows[index]
         local mark_config = input.config.marks[mark.type]
-        local expanded = expand_marks and mark.provider == "marks" and mark.type == "Mark"
-        if not expanded and row and row >= 0 and row < input.height and mark_config then
-            local group = group_for(row, mark.type, mark_config)
+        local lane = mark_config and lane_for_type(input.config, mark.type)
+        local expanded = lane ~= nil
+            and lane.id == expanded_lane_id
+            and mark.provider == "marks"
+            and mark.type == "Mark"
+        if not expanded and row and row >= 0 and row < input.height and mark_config and lane then
+            local group = group_for(row, mark.type, mark_config, lane)
             table.insert(group.sources, mark)
             table.insert(group.lines, mark.line)
             group.count = group.count + 1
@@ -301,7 +316,8 @@ local function group_candidates(input, column_offset, expand_marks)
 
     local compact = input.compact_search
     local search_config = input.config.marks.Search
-    if compact ~= nil and search_config ~= nil then
+    local search_lane = search_config and lane_for_type(input.config, "Search")
+    if compact ~= nil and search_config ~= nil and search_lane ~= nil then
         local total_extent = math.max(0, input.line_count)
         local maximum_position = math.max(0, total_extent - 1)
         local maximum_row = math.max(0, input.height - 1)
@@ -319,7 +335,7 @@ local function group_candidates(input, column_offset, expand_marks)
             end
             local group = compact_groups[row]
             if group == nil then
-                group = group_for(row, "Search", search_config)
+                group = group_for(row, "Search", search_config, search_lane)
                 group.compact_source = { provider = "search", line = line, type = "Search" }
                 compact_groups[row] = group
             end
@@ -342,33 +358,24 @@ local function group_candidates(input, column_offset, expand_marks)
         end
         group.text = resolved_text(group.type, variants, representative.text, group.count)
     end
-
     table.sort(groups, candidate_less)
-
     return groups
 end
 
-local function expanded_buckets(input, expand_marks)
-    if not expand_marks then
-        return {}
+local function expanded_buckets(input)
+    local lane = lane_for_type(input.config, "Mark")
+    if lane == nil or type(lane.max_width) ~= "number" then
+        return {}, nil
     end
 
     local buckets = {}
     for index, mark in ipairs(input.marks) do
         local row = input.geometry.mark_rows[index]
-        if
-            mark.provider == "marks"
-            and mark.type == "Mark"
-            and row
-            and row >= 0
-            and row < input.height
-            and input.config.marks.Mark
-        then
+        if mark.provider == "marks" and mark.type == "Mark" and row and row >= 0 and row < input.height then
             buckets[row] = buckets[row] or {}
             table.insert(buckets[row], mark)
         end
     end
-
     for _, sources in pairs(buckets) do
         table.sort(sources, function(left, right)
             if left.line ~= right.line then
@@ -377,55 +384,66 @@ local function expanded_buckets(input, expand_marks)
             return (left.text or "") < (right.text or "")
         end)
     end
-    return buckets
+    return buckets, lane
 end
 
-local function layer_dimensions(input, buckets, expand_marks)
-    local base_width = input.config.float.width
-    if not expand_marks then
+local function layer_dimensions(input, buckets, lane)
+    local base_width = input.config.layout.width
+    if lane == nil then
         return base_width, 0
     end
 
-    local mark_column = input.config.marks.Mark.column
-    local east = input.config.float.placement.anchor:sub(2, 2) == "E"
-    local demand = base_width
+    local demand = #lane.columns
     for _, sources in pairs(buckets) do
-        if east then
-            demand = math.max(demand, base_width + math.max(0, #sources - mark_column))
-        else
-            demand = math.max(demand, mark_column + #sources - 1)
-        end
+        demand = math.max(demand, #sources)
     end
-
+    local lane_growth = math.min(demand, lane.max_width) - #lane.columns
     local container_width = math.max(base_width, input.container_width or base_width)
-    local maximum_width = math.max(base_width, math.min(input.config.providers.marks.max_width, container_width))
-    local width = math.min(demand, maximum_width)
-    return width, east and width - base_width or 0
+    local growth = math.max(0, math.min(lane_growth, container_width - base_width))
+    local width = base_width + growth
+    local column_offset = input.config.layout.inward == "left" and growth or 0
+    return width, column_offset
 end
 
-local function add_expanded_candidates(input, candidates, buckets, width, column_offset)
+local function add_expanded_candidates(input, candidates, buckets, lane, width, column_offset)
+    if lane == nil then
+        return
+    end
+
+    local available = {}
+    local growth = width - input.config.layout.width
+    if input.config.layout.inward == "left" then
+        for column = 1, growth do
+            available[#available + 1] = column
+        end
+    end
+    for _, column in ipairs(lane.columns) do
+        available[#available + 1] = translated_column(input.config, column, column_offset)
+    end
+    if input.config.layout.inward == "right" then
+        for column = input.config.layout.width + 1, width do
+            available[#available + 1] = column
+        end
+    end
+    table.sort(available)
+
     local mark_config = input.config.marks.Mark
-    local east = input.config.float.placement.anchor:sub(2, 2) == "E"
-
     for row, sources in pairs(buckets) do
-        local last_column = mark_config.column + column_offset
-        local capacity = east and last_column or width - mark_config.column + 1
-        local visible_count = math.min(#sources, math.max(0, capacity))
-        local first_column = east and last_column - visible_count + 1 or mark_config.column
-
+        local visible_count = math.min(#sources, #available)
         for index = 1, visible_count do
             local source = sources[index]
-            table.insert(candidates, {
+            candidates[#candidates + 1] = {
                 row = row,
+                lane_id = lane.id,
                 type = "Mark",
-                column = first_column + index - 1,
+                column = available[index],
                 max_column = width,
                 priority = mark_config.priority,
                 provider = source.provider,
                 line = source.line,
                 lines = { source.line },
                 text = resolved_text("Mark", mark_config.text, source.text, 1),
-            })
+            }
         end
     end
 end
@@ -437,31 +455,33 @@ local function place_marks(input, groups)
     end
 
     for _, group in ipairs(groups) do
+        rows[group.row][group.lane_id] = rows[group.row][group.lane_id] or {}
+        local cells = rows[group.row][group.lane_id]
         local column = group.column
         for _, glyph in ipairs(display_glyphs(group.text)) do
             local last_column = column + glyph.width - 1
             if glyph.width > 0 and last_column <= group.max_column then
                 local available = true
                 for cell = column, last_column do
-                    if rows[group.row][cell] then
+                    if cells[cell] then
                         available = false
                         break
                     end
                 end
-
                 if available then
                     local placed = {
                         text = glyph.text,
                         width = glyph.width,
                         column = column,
                         last_column = last_column,
+                        lane_id = group.lane_id,
                         type = group.type,
                         provider = group.provider,
                         line = group.line,
                         lines = group.lines,
                     }
                     for cell = column, last_column do
-                        rows[group.row][cell] = placed
+                        cells[cell] = placed
                     end
                 end
             elseif last_column > group.max_column then
@@ -470,23 +490,20 @@ local function place_marks(input, groups)
             column = column + glyph.width
         end
     end
-
     return rows
 end
 
 local function resolve_mark_layer(input)
-    local marks_config = input.config.providers.marks
-    local expand_marks = marks_config ~= false and type(marks_config.max_width) == "number"
-    local buckets = expanded_buckets(input, expand_marks)
-    local width, column_offset = layer_dimensions(input, buckets, expand_marks)
-    local candidates = group_candidates(input, column_offset, expand_marks)
-    add_expanded_candidates(input, candidates, buckets, width, column_offset)
+    local buckets, expanded_lane = expanded_buckets(input)
+    local width, column_offset = layer_dimensions(input, buckets, expanded_lane)
+    local candidates = group_candidates(input, column_offset, expanded_lane and expanded_lane.id or nil)
+    add_expanded_candidates(input, candidates, buckets, expanded_lane, width, column_offset)
     table.sort(candidates, candidate_less)
-
     return {
         rows = place_marks(input, candidates),
         width = width,
         column_offset = column_offset,
+        expanded_lane_id = expanded_lane and expanded_lane.id or false,
     }
 end
 
@@ -496,66 +513,194 @@ M.mark_layer = function(input)
     return resolve_mark_layer(input)
 end
 
-local function handle_glyphs(config, column_offset)
-    local glyphs = display_glyphs(config.handle.text)
-    local placed = {}
-    local column = config.handle.column + column_offset
-    local last_column = column + config.handle.width - 1
-    local index = 1
+local function base_column_at(config, column, column_offset)
+    if config.layout.inward == "left" then
+        local base_column = column - column_offset
+        return base_column >= 1 and base_column <= config.layout.width and base_column or nil
+    end
+    return column <= config.layout.width and column or nil
+end
 
+local function layers_at(config, column, column_offset, expanded_lane_id)
+    local base_column = base_column_at(config, column, column_offset)
+    if base_column ~= nil then
+        return config.layout.columns[base_column]
+    end
+    if expanded_lane_id ~= false then
+        return { { kind = "marks", lane_id = expanded_lane_id, priority = 1 } }
+    end
+    return {}
+end
+
+local function layer_priority(config, column, column_offset, expanded_lane_id, kind, lane_id)
+    for _, layer in ipairs(layers_at(config, column, column_offset, expanded_lane_id)) do
+        if layer.kind == kind and (kind ~= "marks" or layer.lane_id == lane_id) then
+            return layer.priority
+        end
+    end
+    return nil
+end
+
+local function visual_layer_signature(config, column, column_offset, expanded_lane_id, in_thumb_row, lane_id)
+    local parts = {}
+    for _, layer in ipairs(layers_at(config, column, column_offset, expanded_lane_id)) do
+        if layer.kind == "track" then
+            parts[#parts + 1] = "track:" .. layer.priority
+        elseif layer.kind == "thumb" and in_thumb_row then
+            parts[#parts + 1] = "thumb:" .. layer.priority
+        elseif layer.kind == "marks" and lane_id ~= nil and layer.lane_id == lane_id then
+            parts[#parts + 1] = "marks:" .. layer.priority
+        end
+    end
+    return table.concat(parts, "|")
+end
+
+local function collect_row_marks(config, marks, width, column_offset, expanded_lane_id, in_thumb_row)
+    local placed = {}
+    for _, cells in pairs(marks) do
+        for column, mark in pairs(cells) do
+            if mark.column == column then
+                local minimum_priority = math.huge
+                for cell = mark.column, mark.last_column do
+                    local priority =
+                        layer_priority(config, cell, column_offset, expanded_lane_id, "marks", mark.lane_id)
+                    minimum_priority = math.min(minimum_priority, priority or -math.huge)
+                end
+                mark.stack_priority = minimum_priority
+                placed[#placed + 1] = mark
+            end
+        end
+    end
+    table.sort(placed, function(left, right)
+        if left.stack_priority ~= right.stack_priority then
+            return left.stack_priority > right.stack_priority
+        end
+        if left.lane_id ~= right.lane_id then
+            return left.lane_id > right.lane_id
+        end
+        return candidate_less(left, right)
+    end)
+
+    local reservations = {}
+    if in_thumb_row then
+        for column = 1, width do
+            local priority = layer_priority(config, column, column_offset, expanded_lane_id, "thumb")
+            if priority ~= nil then
+                reservations[column] = priority
+            end
+        end
+    end
+
+    local winners = {}
+    for _, mark in ipairs(placed) do
+        local visible = true
+        local signature =
+            visual_layer_signature(config, mark.column, column_offset, expanded_lane_id, in_thumb_row, mark.lane_id)
+        for cell = mark.column, mark.last_column do
+            local priority = layer_priority(config, cell, column_offset, expanded_lane_id, "marks", mark.lane_id)
+            if
+                priority == nil
+                or visual_layer_signature(config, cell, column_offset, expanded_lane_id, in_thumb_row, mark.lane_id) ~= signature
+                or (reservations[cell] ~= nil and reservations[cell] >= priority)
+            then
+                visible = false
+                break
+            end
+        end
+        if visible then
+            for cell = mark.column, mark.last_column do
+                winners[cell] = mark
+                reservations[cell] =
+                    layer_priority(config, cell, column_offset, expanded_lane_id, "marks", mark.lane_id)
+            end
+        end
+    end
+    return winners
+end
+
+local function thumb_glyphs(config, column_offset, winners, in_thumb_row)
+    local span = config.layout.thumb
+    if not in_thumb_row or span == false then
+        return {}
+    end
+
+    local glyphs = display_glyphs(config.thumb.text)
+    local first_column = translated_column(config, span.first_column, column_offset)
+    local last_column = translated_column(config, span.last_column, column_offset)
+    local placed = {}
+    local column = first_column
+    local index = 1
     while column <= last_column do
         local glyph = glyphs[index]
         local glyph_last_column = column + glyph.width - 1
         if glyph.width <= 0 or glyph_last_column > last_column then
             break
         end
-        table.insert(placed, {
-            text = glyph.text,
-            width = glyph.width,
-            column = column,
-            last_column = glyph_last_column,
-        })
+        local covered = false
+        local signature = visual_layer_signature(config, column, column_offset, false, true, nil)
+        for cell = column, glyph_last_column do
+            covered = covered
+                or winners[cell] ~= nil
+                or visual_layer_signature(config, cell, column_offset, false, true, nil) ~= signature
+        end
+        if not covered then
+            placed[column] = {
+                text = glyph.text,
+                width = glyph.width,
+                column = column,
+                last_column = glyph_last_column,
+            }
+        end
         column = glyph_last_column + 1
         index = index % #glyphs + 1
     end
-
     return placed
 end
 
-local function add_span(spans, start_col, end_col, highlight)
-    if not highlight then
-        return
-    end
-
+local function add_span(spans, start_col, end_col, highlight, priority)
     local previous = spans[#spans]
-    if previous and previous.end_col == start_col and previous.highlight == highlight then
+    if
+        previous
+        and previous.end_col == start_col
+        and previous.highlight == highlight
+        and previous.priority == priority
+    then
         previous.end_col = end_col
     else
-        table.insert(spans, { start_col = start_col, end_col = end_col, highlight = highlight })
+        spans[#spans + 1] = {
+            start_col = start_col,
+            end_col = end_col,
+            highlight = highlight,
+            priority = priority,
+        }
     end
 end
 
-local function render_row(input, row, marks, base_handle_glyphs, width, column_offset)
-    local handle = input.geometry.handle
-    local handle_first_column = input.config.handle.column + column_offset
-    local handle_last_column = handle_first_column + input.config.handle.width - 1
-    local in_handle_row = row >= handle.first_row and row <= handle.last_row
-    local handle_starts = {}
-    if in_handle_row then
-        for _, glyph in ipairs(base_handle_glyphs) do
-            local covered = false
-            for column = glyph.column, glyph.last_column do
-                if marks[column] then
-                    covered = true
-                    break
-                end
-            end
-            if not covered then
-                handle_starts[glyph.column] = glyph
+local function mark_highlight(config, column, column_offset, expanded_lane_id, mark, in_thumb_row)
+    if not in_thumb_row then
+        return "Scrollbar" .. mark.type
+    end
+
+    local mark_priority = layer_priority(config, column, column_offset, expanded_lane_id, "marks", mark.lane_id)
+    local background_kind
+    local background_priority = -math.huge
+    for _, layer in ipairs(layers_at(config, column, column_offset, expanded_lane_id)) do
+        if layer.priority < mark_priority and (layer.kind == "track" or layer.kind == "thumb") then
+            if layer.priority > background_priority then
+                background_kind = layer.kind
+                background_priority = layer.priority
             end
         end
     end
+    return "Scrollbar" .. mark.type .. (background_kind == "thumb" and "Thumb" or "")
+end
 
+local function render_row(input, row, marks, width, column_offset, expanded_lane_id)
+    local in_thumb_row = input.config.layout.thumb ~= false
+        and row >= input.geometry.handle.first_row
+        and row <= input.geometry.handle.last_row
+    local winners = collect_row_marks(input.config, marks, width, column_offset, expanded_lane_id, in_thumb_row)
+    local thumb_starts = thumb_glyphs(input.config, column_offset, winners, in_thumb_row)
     local parts = {}
     local spans = {}
     local hit_cells = {}
@@ -563,37 +708,51 @@ local function render_row(input, row, marks, base_handle_glyphs, width, column_o
     local column = 1
 
     while column <= width do
-        local mark = marks[column]
-        local handle_glyph = handle_starts[column]
+        local mark = winners[column]
+        local thumb = thumb_starts[column]
         local text = " "
         local cell_width = 1
-        local highlight
-
         if mark and mark.column == column then
             text = mark.text
             cell_width = mark.width
-            local overlaps_handle = in_handle_row
-                and mark.last_column >= handle_first_column
-                and mark.column <= handle_last_column
-            highlight = "Scrollbar" .. mark.type .. (overlaps_handle and "Handle" or "")
-        elseif handle_glyph then
-            text = handle_glyph.text
-            cell_width = handle_glyph.width
-            highlight = "ScrollbarHandle"
-        elseif in_handle_row and column >= handle_first_column and column <= handle_last_column then
-            highlight = "ScrollbarHandle"
+        elseif thumb then
+            text = thumb.text
+            cell_width = thumb.width
         end
 
-        table.insert(parts, text)
+        parts[#parts + 1] = text
         local next_byte_column = byte_column + #text
-        add_span(spans, byte_column, next_byte_column, highlight)
+        local layers = layers_at(input.config, column, column_offset, expanded_lane_id)
+        for _, layer in ipairs(layers) do
+            if layer.kind == "track" then
+                add_span(spans, byte_column, next_byte_column, "ScrollbarTrack", layer.priority)
+            elseif layer.kind == "thumb" and in_thumb_row then
+                add_span(spans, byte_column, next_byte_column, "ScrollbarThumb", layer.priority)
+            elseif
+                layer.kind == "marks"
+                and mark ~= nil
+                and mark.column == column
+                and layer.lane_id == mark.lane_id
+            then
+                add_span(
+                    spans,
+                    byte_column,
+                    next_byte_column,
+                    mark_highlight(input.config, column, column_offset, expanded_lane_id, mark, in_thumb_row),
+                    layer.priority
+                )
+            end
+        end
 
         for cell = column, column + cell_width - 1 do
-            local owner = marks[cell]
-            local is_handle = in_handle_row and cell >= handle_first_column and cell <= handle_last_column
+            local owner = winners[cell]
+            local track = layer_priority(input.config, cell, column_offset, expanded_lane_id, "track") ~= nil
+            local thumb_member = in_thumb_row
+                and layer_priority(input.config, cell, column_offset, expanded_lane_id, "thumb") ~= nil
             if owner then
                 hit_cells[cell] = {
-                    handle = is_handle,
+                    track = track,
+                    thumb = thumb_member,
                     provider = owner.provider,
                     type = owner.type,
                     line = owner.line,
@@ -602,14 +761,13 @@ local function render_row(input, row, marks, base_handle_glyphs, width, column_o
                     end_col = owner.last_column,
                 }
             else
-                hit_cells[cell] = { handle = is_handle }
+                hit_cells[cell] = { track = track, thumb = thumb_member }
             end
         end
 
         byte_column = next_byte_column
         column = column + cell_width
     end
-
     return table.concat(parts), spans, hit_cells
 end
 
@@ -617,30 +775,36 @@ end
 ---@return ScrollbarLayoutOutput
 M.compose = function(input)
     local mark_layer = input.mark_layer or resolve_mark_layer(input)
-    local placed_marks = mark_layer.rows
-    local width = mark_layer.width
-    local column_offset = mark_layer.column_offset
-    local base_handle_glyphs = handle_glyphs(input.config, column_offset)
     local rows = {}
     local highlights = {}
     local hitmap = {}
-
     for row = 0, input.height - 1 do
-        rows[row + 1], highlights[row + 1], hitmap[row + 1] =
-            render_row(input, row, placed_marks[row], base_handle_glyphs, width, column_offset)
+        rows[row + 1], highlights[row + 1], hitmap[row + 1] = render_row(
+            input,
+            row,
+            mark_layer.rows[row],
+            mark_layer.width,
+            mark_layer.column_offset,
+            mark_layer.expanded_lane_id
+        )
     end
 
-    return {
-        rows = rows,
-        width = width,
-        highlights = highlights,
-        hitmap = hitmap,
+    ---@type false|ScrollbarHandleGeometry
+    local handle = false
+    if input.config.layout.thumb ~= false then
         handle = {
             first_row = input.geometry.handle.first_row,
             last_row = input.geometry.handle.last_row,
-            column = input.config.handle.column + column_offset,
-            width = input.config.handle.width,
-        },
+            column = translated_column(input.config, input.config.layout.thumb.first_column, mark_layer.column_offset),
+            width = input.config.layout.thumb.width,
+        }
+    end
+    return {
+        rows = rows,
+        width = mark_layer.width,
+        highlights = highlights,
+        hitmap = hitmap,
+        handle = handle,
     }
 end
 

@@ -257,15 +257,14 @@ Interpret `state` in configuration context:
 
 ## Appearance
 
-Search marks use the `Search` mark type. Customize their glyphs, column,
-priority, or highlight through `marks.Search`:
+Search marks use the `Search` mark type. Customize glyphs, priority, or
+highlight through `marks.Search`, and route the type through `layout`:
 
 ```lua
 require("scrollbar").setup({
     marks = {
         Search = {
             text = { "s", "S" },
-            column = 1,
             priority = 1,
             highlight = { fg = "#ff9e64", bold = true },
         },
@@ -276,7 +275,7 @@ require("scrollbar").setup({
 The text list contains density variants: later entries are used when multiple
 matches compress into the same rendered row. See
 [Highlights](../highlights.md) and
-[Wide scrollbars](../layout-and-geometry.md#wide-scrollbars) for the complete appearance
+[Layout and geometry](../layout-and-geometry.md) for the complete appearance
 rules.
 
 ## Troubleshooting
@@ -332,4 +331,4 @@ finish before new marks publish.
 - [Provider setup and strict configuration](README.md#setup)
 - [Visibility and commands](../visibility.md)
 - [Highlights](../highlights.md)
-- [Wide scrollbars](../layout-and-geometry.md#wide-scrollbars)
+- [Layout and geometry](../layout-and-geometry.md)

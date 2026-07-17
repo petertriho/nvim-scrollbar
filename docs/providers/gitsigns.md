@@ -81,9 +81,9 @@ require("scrollbar").setup({
 })
 ```
 
-The normal mark options are available: `text`, `column`, `priority`, and
-`highlight`. The defaults are `┃` for `GitAdd` and `GitChange`, `▁` for
-`GitDelete`, column `1`, priority `7`, and the corresponding `GitSigns*`
+The normal mark options are available: `text`, `priority`, and `highlight`.
+The defaults are `┃` for `GitAdd` and `GitChange`, `▁` for `GitDelete`,
+priority `7`, and the corresponding `GitSigns*`
 highlight groups.
 
 ## Limitations And Failure Behavior
