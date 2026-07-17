@@ -1370,6 +1370,100 @@ T["caches line mark work while keeping handle geometry current and invalidating 
     })
 end
 
+T["profile switches compare explicit cache inputs and invalidate only their source window"] = function()
+    local child = new_child()
+    local result = child.lua_func(function(base_config)
+        local lines = {}
+        for index = 1, 200 do
+            lines[index] = "line " .. index
+        end
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        local first = vim.api.nvim_get_current_win()
+        vim.cmd("split")
+        local second = vim.api.nvim_get_current_win()
+        local mode = "root"
+
+        local function profile(name, config)
+            return {
+                match = {
+                    when = function(context)
+                        return context.winid == first and mode == name
+                    end,
+                },
+                config = config,
+            }
+        end
+        base_config.profiles = {
+            profile("highlight", { track = { highlight = "Normal" } }),
+            profile("equivalent", { mouse = { enabled = false } }),
+            profile("layout", { layout = { columns = { { "track" }, { "marks", "thumb" } } } }),
+            profile("text", { marks = { Misc = { text = "Z" } } }),
+            profile("priority", { marks = { Misc = { priority = 9 } } }),
+            profile("cap4", {
+                layout = {
+                    columns = {
+                        { { kind = "marks", types = { "Mark" }, max_width = 4 } },
+                        { "track", "marks", "thumb" },
+                    },
+                },
+            }),
+            profile("cap5", {
+                layout = {
+                    columns = {
+                        { { kind = "marks", types = { "Mark" }, max_width = 5 } },
+                        { "track", "marks", "thumb" },
+                    },
+                },
+            }),
+            profile("screen", { render = { geometry = "screen" } }),
+        }
+
+        require("scrollbar.config").set(base_config)
+        local source_buf = vim.api.nvim_win_get_buf(first)
+        require("scrollbar.store").set("test", source_buf, { { line = 100, type = "Misc" } })
+        local layout = require("scrollbar.layout")
+        local original_mark_layer = layout.mark_layer
+        local builds = 0
+        rawset(layout, "mark_layer", function(input)
+            builds = builds + 1
+            return original_mark_layer(input)
+        end)
+
+        local renderer = require("scrollbar.renderer")
+        renderer.setup()
+        renderer.render(first)
+        renderer.render(second)
+        local counts = { initial = builds }
+
+        for _, name in ipairs({ "highlight", "equivalent", "layout", "text", "priority", "cap4", "cap5", "screen" }) do
+            mode = name
+            renderer.render(first)
+            counts[name] = builds
+        end
+        mode = "highlight"
+        renderer.render(first)
+        counts.after_screen = builds
+        renderer.render(second)
+        counts.after_second = builds
+        rawset(layout, "mark_layer", original_mark_layer)
+        return counts
+    end, renderer_config())
+
+    expect.equality(result, {
+        initial = 2,
+        highlight = 2,
+        equivalent = 2,
+        layout = 3,
+        text = 4,
+        priority = 5,
+        cap4 = 6,
+        cap5 = 7,
+        screen = 7,
+        after_screen = 8,
+        after_second = 8,
+    })
+end
+
 T["screen renders reuse flattened marks but always repeat text-height measurements"] = function()
     local child = new_child()
     local result = child.lua_func(function(base_config)

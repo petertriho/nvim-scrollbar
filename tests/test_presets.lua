@@ -20,67 +20,197 @@ local function expect_invalid(options, pattern)
 end
 
 T["resolves exact isolated built-in presentation definitions"] = function()
-    local vscode = resolve({ preset = "vscode" })
-    local zed = resolve({ preset = "zed" })
-    local intellij = resolve({ preset = "intellij" })
-
-    expect.equality(vscode, {
-        layout = {
-            direction = "auto",
-            columns = {
-                {
-                    "track",
+    local builtins = {
+        vscode = {
+            layout = {
+                direction = "auto",
+                columns = {
                     {
-                        kind = "marks",
-                        types = {
-                            "GitAdd",
-                            "GitChange",
-                            "GitDelete",
-                            "MiniDiffAdd",
-                            "MiniDiffChange",
-                            "MiniDiffDelete",
-                            "SignifyAdd",
-                            "SignifyChange",
-                            "SignifyDelete",
-                            "VGitAdd",
-                            "VGitChange",
-                            "VGitDelete",
+                        "track",
+                        {
+                            kind = "marks",
+                            types = {
+                                "GitAdd",
+                                "GitChange",
+                                "GitDelete",
+                                "MiniDiffAdd",
+                                "MiniDiffChange",
+                                "MiniDiffDelete",
+                                "SignifyAdd",
+                                "SignifyChange",
+                                "SignifyDelete",
+                                "VGitAdd",
+                                "VGitChange",
+                                "VGitDelete",
+                            },
+                        },
+                        "thumb",
+                    },
+                    { "track", "marks", "thumb" },
+                    {
+                        "track",
+                        { kind = "marks", types = { "Error", "Warn", "Info", "Hint" } },
+                        "thumb",
+                    },
+                },
+            },
+            thumb = { blend = 20 },
+        },
+        zed = {
+            layout = { direction = "auto", columns = { { "track", "thumb", "marks" } } },
+            thumb = { blend = 20 },
+        },
+        intellij = {
+            layout = {
+                direction = "auto",
+                columns = {
+                    { "track", "thumb" },
+                    {
+                        { kind = "marks", types = { "Error", "Warn", "Info", "Hint" } },
+                        "marks",
+                    },
+                },
+            },
+            thumb = { blend = 25 },
+        },
+        minimal = {
+            layout = { direction = "auto", columns = { { "thumb" } } },
+            thumb = { blend = 20 },
+        },
+        review = {
+            layout = {
+                direction = "auto",
+                columns = {
+                    {
+                        {
+                            kind = "marks",
+                            types = {
+                                "GitAdd",
+                                "GitChange",
+                                "GitDelete",
+                                "MiniDiffAdd",
+                                "MiniDiffChange",
+                                "MiniDiffDelete",
+                                "SignifyAdd",
+                                "SignifyChange",
+                                "SignifyDelete",
+                                "VGitAdd",
+                                "VGitChange",
+                                "VGitDelete",
+                            },
                         },
                     },
-                    "thumb",
-                },
-                { "track", "marks", "thumb" },
-                {
-                    "track",
-                    { kind = "marks", types = { "Error", "Warn", "Info", "Hint" } },
-                    "thumb",
+                    { "track", "thumb" },
+                    { { kind = "marks", types = { "Error", "Warn", "Info", "Hint" } } },
                 },
             },
+            thumb = { blend = 20 },
         },
-        thumb = { blend = 20 },
-    })
-    expect.equality(zed, {
-        layout = { direction = "auto", columns = { { "track", "thumb", "marks" } } },
-        thumb = { blend = 20 },
-    })
-    expect.equality(intellij, {
-        layout = {
-            direction = "auto",
-            columns = {
-                { "track", "thumb" },
-                {
-                    { kind = "marks", types = { "Error", "Warn", "Info", "Hint" } },
-                    "marks",
+        search = {
+            layout = {
+                direction = "auto",
+                columns = {
+                    { "track", "thumb", { kind = "marks", types = { "Cursor", "Search" } } },
                 },
             },
+            thumb = { blend = 20 },
         },
-        thumb = { blend = 25 },
-    })
+        navigate = {
+            layout = {
+                direction = "auto",
+                columns = {
+                    { "track", "thumb", { kind = "marks", types = { "Cursor" } } },
+                    { { kind = "marks", types = { "Mark" }, max_width = 8 } },
+                },
+            },
+            thumb = { blend = 20 },
+        },
+        gvim = {
+            layout = {
+                direction = "auto",
+                columns = { { "track", "thumb" }, { "track", "thumb" } },
+            },
+            thumb = { blend = 0 },
+        },
+        eclipse = {
+            layout = {
+                direction = "auto",
+                columns = {
+                    { "track", "thumb" },
+                    { { kind = "marks", types = { "Error", "Warn", "Info", "Hint" } } },
+                    { { kind = "marks", types = { "Cursor", "Search", "Mark" } } },
+                    { "marks" },
+                },
+            },
+            thumb = { blend = 20 },
+        },
+        sublime = {
+            layout = { direction = "auto", columns = { { "thumb", "marks" } } },
+            thumb = { blend = 60 },
+        },
+        emacs = {
+            float = { placement = { anchor = "NW" } },
+            layout = {
+                direction = "auto",
+                columns = {
+                    { { kind = "marks", types = { "Error", "Warn", "Info", "Hint" } } },
+                    { "track", "thumb" },
+                },
+            },
+            thumb = { blend = 0 },
+        },
+        xcode = {
+            layout = {
+                direction = "auto",
+                columns = {
+                    { "track", "thumb" },
+                    { { kind = "marks", types = { "Cursor", "Search", "Mark" } } },
+                    { { kind = "marks", types = { "Error", "Warn", "Info", "Hint" } } },
+                },
+            },
+            thumb = { blend = 25 },
+        },
+    }
 
+    for name, expected in pairs(builtins) do
+        expect.equality(resolve({ preset = name }), expected)
+    end
+
+    local vscode = resolve({ preset = "vscode" })
     vscode.layout.columns[1][1] = "changed"
     vscode.thumb.blend = 99
     expect.equality(resolve({ preset = "vscode" }).layout.columns[1][1], "track")
     expect.equality(resolve({ preset = "vscode" }).thumb.blend, 20)
+
+    for name, expected in pairs(builtins) do
+        local first = resolve({ preset = name })
+        first.layout.columns[1][1] = "changed"
+        expect.equality(resolve({ preset = name }), expected)
+    end
+end
+
+T["supports overlays inheritance and atomic layout replacement for every new built-in"] = function()
+    local names = { "minimal", "review", "search", "navigate", "gvim", "eclipse", "sublime", "emacs", "xcode" }
+
+    for _, name in ipairs(names) do
+        local overlaid = resolve({
+            preset = name,
+            presets = { [name] = { thumb = { text = name } } },
+        })
+        expect.equality(overlaid.thumb.text, name)
+
+        local inherited = resolve({
+            preset = "child",
+            presets = {
+                child = {
+                    extends = name,
+                    layout = { columns = { { "marks" } } },
+                },
+            },
+        })
+        expect.equality(inherited.layout.columns, { { "marks" } })
+        expect.equality(inherited.layout.direction, "auto")
+    end
 end
 
 T["applies built-in overlays inheritance and root overrides deterministically"] = function()

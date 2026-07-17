@@ -2,7 +2,6 @@ local config = require("scrollbar.config")
 local layout = require("scrollbar.layout")
 local search_compact = require("scrollbar.providers.search_compact")
 local store = require("scrollbar.store")
-local utils = require("scrollbar.utils")
 
 local M = {}
 
@@ -101,8 +100,9 @@ local function normal_window(winid)
 end
 
 ---@param source_win integer
+---@param root_config ScrollbarConfig
 ---@return boolean
-local function basic_eligible(source_win)
+local function basic_eligible(source_win, root_config)
     if not normal_window(source_win) then
         return false
     end
@@ -112,16 +112,15 @@ local function basic_eligible(source_win)
         return false
     end
 
-    local active_config = config.get()
-    if contains(active_config.excluded_buftypes, vim.bo[source_buf].buftype) then
+    if contains(root_config.excluded_buftypes, vim.bo[source_buf].buftype) then
         return false
     end
-    if contains(active_config.excluded_filetypes, vim.bo[source_buf].filetype) then
+    if contains(root_config.excluded_filetypes, vim.bo[source_buf].filetype) then
         return false
     end
 
     local line_count = vim.api.nvim_buf_line_count(source_buf)
-    return active_config.max_lines == false or line_count <= active_config.max_lines
+    return root_config.max_lines == false or line_count <= root_config.max_lines
 end
 
 ---@return integer?
@@ -134,12 +133,6 @@ local function active_source_window()
     if normal_window(current) then
         return current
     end
-end
-
----@return boolean
-local function active_only()
-    local active_config = config.get()
-    return active_config.visibility == "active" or active_config.float.placement.relative == "editor"
 end
 
 ---@param state ScrollbarWindowState
@@ -240,13 +233,13 @@ local function source_text_area(source_win)
 end
 
 ---@param source_win integer
+---@param active_config ScrollbarConfig
 ---@param area table<string, integer>
 ---@param container_width integer
 ---@param width integer
 ---@param hidden boolean
 ---@return table<string, any>
-local function float_config(source_win, area, container_width, width, hidden)
-    local active_config = config.get()
+local function float_config(active_config, source_win, area, container_width, width, hidden)
     local placement = active_config.float.placement
     local north = placement.anchor == "NW" or placement.anchor == "NE"
     local west = placement.anchor == "NW" or placement.anchor == "SW"
@@ -304,11 +297,21 @@ end
 
 ---@param source_win integer
 ---@param source_buf integer
+---@param active_config ScrollbarConfig
+---@param variant_id integer
 ---@param active_float_config table<string, any>
 ---@param configure_owned_buffer fun(float_buf: integer)
 ---@param configure_owned_window fun(float_win: integer)
 ---@return ScrollbarWindowState
-local function create_state(source_win, source_buf, active_float_config, configure_owned_buffer, configure_owned_window)
+local function create_state(
+    source_win,
+    source_buf,
+    active_config,
+    variant_id,
+    active_float_config,
+    configure_owned_buffer,
+    configure_owned_window
+)
     local float_buf = vim.api.nvim_create_buf(false, true)
     configure_owned_buffer(float_buf)
     pcall(vim.api.nvim_buf_set_name, float_buf, string.format("scrollbar://source/%d/%d", source_win, float_buf))
@@ -322,6 +325,8 @@ local function create_state(source_win, source_buf, active_float_config, configu
     local state = {
         source_win = source_win,
         source_buf = source_buf,
+        config = active_config,
+        variant_id = variant_id,
         float_win = float_win,
         float_buf = float_buf,
         float_config = active_float_config,
@@ -358,10 +363,11 @@ local function has_float_config(float_win, expected)
 end
 
 ---@param source_win integer
+---@param active_config ScrollbarConfig
 ---@return integer? row
 ---@return integer? col
-local function cursor_screen_position(source_win)
-    if not config.get().float.hide_on_cursor or vim.api.nvim_get_current_win() ~= source_win then
+local function cursor_screen_position(source_win, active_config)
+    if not active_config.float.hide_on_cursor or vim.api.nvim_get_current_win() ~= source_win then
         return nil, nil
     end
 
@@ -495,13 +501,14 @@ end
 
 ---@param source_win integer
 ---@param source_buf integer
+---@param active_config ScrollbarConfig
 ---@param height integer
 ---@param marks ScrollbarLayoutMark[]
 ---@param line_count? integer
 ---@param mark_rows? integer[]
 ---@return ScrollbarGeometry
-local function geometry_for(source_win, source_buf, height, marks, line_count, mark_rows)
-    if config.get().render.geometry == "screen" then
+local function geometry_for(active_config, source_win, source_buf, height, marks, line_count, mark_rows)
+    if active_config.render.geometry == "screen" then
         return layout.screen({ source_win = source_win, height = height, marks = marks })
     end
 
@@ -525,6 +532,7 @@ end
 ---@param line_count integer
 ---@param container_width integer
 ---@param height integer
+---@param variant_id integer
 ---@param active_config ScrollbarConfig
 ---@param marks ScrollbarLayoutMark[]
 ---@param compact_search? ScrollbarCompactSearch
@@ -537,6 +545,7 @@ local function line_mark_layer(
     line_count,
     container_width,
     height,
+    variant_id,
     active_config,
     marks,
     compact_search
@@ -552,7 +561,10 @@ local function line_mark_layer(
         and cached.container_width == container_width
         and cached.height == height
         and cached.config_generation == config_generation
+        and (cached.variant_id == variant_id or vim.deep_equal(cached.config, active_config.layout_cache))
     then
+        cached.variant_id = variant_id
+        cached.config = active_config.layout_cache
         return cached
     end
 
@@ -568,6 +580,8 @@ local function line_mark_layer(
         line_count = line_count,
         container_width = container_width,
         height = height,
+        variant_id = variant_id,
+        config = active_config.layout_cache,
         config_generation = config_generation,
         mark_rows = mark_rows,
         layer = layout.mark_layer({
@@ -615,17 +629,19 @@ end
 
 ---@param highlights ScrollbarHighlightSpan[][]
 ---@param pressed boolean
+---@param active_config ScrollbarConfig
 ---@return ScrollbarHighlightSpan[][]
-local function rendered_highlights(highlights, pressed)
+local function rendered_highlights(highlights, pressed, active_config)
     if not pressed then
         return highlights
     end
 
+    local groups = active_config.highlights
     local replacements = {
-        [utils.get_highlight_name("", true)] = utils.get_highlight_name("", true, true),
+        [groups.thumb] = groups.thumb_pressed,
     }
-    for mark_type in pairs(config.get().marks) do
-        replacements[utils.get_highlight_name(mark_type, true)] = utils.get_highlight_name(mark_type, true, true)
+    for _, mark_groups in pairs(groups.marks) do
+        replacements[mark_groups.thumb] = mark_groups.thumb_pressed
     end
 
     local result = {}
@@ -661,7 +677,7 @@ end
 ---@param height integer
 ---@return ScrollbarHighlightSpan[][]
 local function update_buffer(state, output, width, height)
-    local highlights = rendered_highlights(output.highlights, state.handle_pressed)
+    local highlights = rendered_highlights(output.highlights, state.handle_pressed, state.config)
     local dimensions_changed = state.width ~= width or state.height ~= height
     if dimensions_changed then
         with_modifiable(state.float_buf, function()
@@ -693,18 +709,32 @@ end
 ---@param source_win integer
 ---@return ScrollbarWindowState?
 local function render_source(source_win)
-    if not visible or not basic_eligible(source_win) then
+    local root_config = config.get()
+    if not visible or not basic_eligible(source_win, root_config) then
+        close_source(source_win)
+        return nil
+    end
+
+    local selection = config.select(source_win)
+    local active_config = selection.config
+    if active_config.float.placement.relative == "editor" and active_source_window() ~= source_win then
         close_source(source_win)
         return nil
     end
 
     local source_buf = vim.api.nvim_win_get_buf(source_win)
     local existing_state = states[source_win]
+    if
+        existing_state ~= nil
+        and existing_state.variant_id ~= selection.variant_id
+        and not vim.deep_equal(existing_state.config.layout_cache, active_config.layout_cache)
+    then
+        line_layer_cache[source_win] = nil
+    end
     if existing_state ~= nil and existing_state.source_buf ~= source_buf then
         close_state(existing_state)
     end
-    local active_config = config.get()
-    if active_config.autohide.enabled and revealed[source_win] ~= source_buf then
+    if root_config.autohide.enabled and revealed[source_win] ~= source_buf then
         conceal_source(source_win)
         return nil
     end
@@ -730,14 +760,15 @@ local function render_source(source_win)
             line_count,
             container_width,
             area.height,
+            selection.variant_id,
             active_config,
             marks,
             compact_search
         )
-        geometry = geometry_for(source_win, source_buf, area.height, marks, line_count, cached.mark_rows)
+        geometry = geometry_for(active_config, source_win, source_buf, area.height, marks, line_count, cached.mark_rows)
         mark_layer = cached.layer
     else
-        geometry = geometry_for(source_win, source_buf, area.height, marks)
+        geometry = geometry_for(active_config, source_win, source_buf, area.height, marks)
     end
     local all_visible = geometry.total_extent <= area.height
     if all_visible and active_config.hide_if_all_visible then
@@ -758,7 +789,7 @@ local function render_source(source_win)
         mark_layer = mark_layer,
         compact_search = active_config.render.geometry == "line" and compact_search or nil,
     })
-    local cursor_row, cursor_col = cursor_screen_position(source_win)
+    local cursor_row, cursor_col = cursor_screen_position(source_win, active_config)
     local cursor_position_available = cursor_row ~= nil and cursor_col ~= nil
     ---@type ScrollbarWindowState?
     local state = states[source_win]
@@ -767,13 +798,22 @@ local function render_source(source_win)
             close_state(state)
         end
         local active_float_config =
-            float_config(source_win, area, container_width, output.width, cursor_position_available)
-        state = create_state(source_win, source_buf, active_float_config, configure_buffer, configure_window)
+            float_config(active_config, source_win, area, container_width, output.width, cursor_position_available)
+        state = create_state(
+            source_win,
+            source_buf,
+            active_config,
+            selection.variant_id,
+            active_float_config,
+            configure_buffer,
+            configure_window
+        )
         if cursor_position_available then
             resolve_float_position()
         end
     else
         local active_float_config = float_config(
+            active_config,
             source_win,
             area,
             container_width,
@@ -799,6 +839,8 @@ local function render_source(source_win)
 
     update_cursor_visibility(state, cursor_row, cursor_col)
 
+    state.config = active_config
+    state.variant_id = selection.variant_id
     local active_highlights = update_buffer(state, output, output.width, area.height)
     state.width = output.width
     state.height = area.height
@@ -823,7 +865,7 @@ end
 ---@return ScrollbarWindowState?
 M.render = function(source_win)
     source_win = source_win or vim.api.nvim_get_current_win()
-    if active_only() then
+    if config.get().visibility == "active" then
         local active_source = active_source_window()
         if active_source == nil or source_win ~= active_source then
             close_source(source_win)
@@ -874,14 +916,19 @@ end
 ---@param source_win integer
 ---@return boolean
 M.reveal = function(source_win)
-    if not visible or not basic_eligible(source_win) then
+    local root_config = config.get()
+    if not visible or not basic_eligible(source_win, root_config) then
         return false
     end
 
-    if active_only() and active_source_window() ~= source_win then
+    if root_config.visibility == "active" and active_source_window() ~= source_win then
         return false
     end
-    if config.get().autohide.enabled then
+    local selection = config.select(source_win)
+    if selection.config.float.placement.relative == "editor" and active_source_window() ~= source_win then
+        return false
+    end
+    if root_config.autohide.enabled then
         revealed[source_win] = vim.api.nvim_win_get_buf(source_win)
     end
     return true
@@ -912,7 +959,7 @@ M.set_handle_pressed = function(float_win, pressed)
         return true
     end
 
-    local highlights = rendered_highlights(state.highlights, pressed)
+    local highlights = rendered_highlights(state.highlights, pressed, state.config)
     local ok = pcall(update_highlight_extmarks, state, highlights)
     if ok then
         state.handle_pressed = pressed
@@ -952,18 +999,23 @@ end
 ---@return integer[]
 M.source_windows = function(bufnr)
     local result = {}
-    local only_active = active_only()
-    local active_source = only_active and active_source_window() or nil
-    if only_active and active_source == nil then
+    local root_config = config.get()
+    local active_source = active_source_window()
+    if root_config.visibility == "active" and active_source == nil then
         return result
     end
     for _, winid in ipairs(vim.api.nvim_list_wins()) do
-        if
-            basic_eligible(winid)
-            and (not only_active or winid == active_source)
-            and (bufnr == nil or vim.api.nvim_win_get_buf(winid) == bufnr)
-        then
-            table.insert(result, winid)
+        if basic_eligible(winid, root_config) and (bufnr == nil or vim.api.nvim_win_get_buf(winid) == bufnr) then
+            local selected = root_config.visibility ~= "active" or winid == active_source
+            if selected and root_config.visibility ~= "active" then
+                local selection = config.select(winid)
+                selected = selection.config.float.placement.relative ~= "editor" or winid == active_source
+            end
+            if selected then
+                table.insert(result, winid)
+            else
+                close_source(winid)
+            end
         end
     end
     table.sort(result)

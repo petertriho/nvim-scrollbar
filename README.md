@@ -69,6 +69,29 @@ require("scrollbar").setup({
 Because this example enables autohide, scrollbars begin concealed and are
 revealed by cursor movement or scrolling in the affected source window.
 
+The built-in catalog includes `vscode`, `zed`, `intellij`, `minimal`, `review`,
+`search`, `navigate`, `gvim`, `eclipse`, `sublime`, `emacs`, and `xcode`.
+Ordered contextual profiles can select a precompiled variant per source window:
+
+```lua
+require("scrollbar").setup({
+    preset = "zed",
+    profiles = {
+        {
+            match = { filetypes = { "markdown", "text" } },
+            preset = "minimal",
+        },
+        {
+            match = { filetypes = { "lua" } },
+            preset = "review",
+        },
+    },
+})
+```
+
+Profiles use first-match precedence. Providers, scheduling, exclusions,
+visibility, and autohide remain root-owned.
+
 Unknown keys and invalid values are rejected. See the
 [complete configuration reference](docs/configuration.md) for every default and
 accepted value.
@@ -98,8 +121,8 @@ sources can be added through the [custom provider API](docs/providers/custom.md)
 
 - [Configuration](docs/configuration.md): complete defaults, validation,
   eligibility, mark presentation, layout lanes, and priorities
-- [Presets](docs/presets.md): VS Code, Zed, IntelliJ, local inheritance, and
-  override precedence
+- [Presets](docs/presets.md): all twelve built-ins, focused filtering, local
+  inheritance, and override precedence
 - [Visibility](docs/visibility.md): source-window visibility, autohide,
   hide-on-cursor behavior, commands, and Lua APIs
 - [Layout and geometry](docs/layout-and-geometry.md): placement, line and screen

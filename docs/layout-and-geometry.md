@@ -83,6 +83,14 @@ window. `"editor"` uses editor coordinates and renders only the active source
 window. `anchor` selects `NW`, `NE`, `SW`, or `SE`; signed `row` and `col`
 offsets are applied literally.
 
+Contextual profiles resolve placement per source window. With root
+`visibility = "all"`, compatible window-relative variants can coexist while an
+editor-relative variant is shown only when its source is active. Root
+`visibility = "active"` always limits the entire renderer to the active source.
+Changing a match result updates the existing float's relative mode, anchor,
+offsets, width, z-index, cursor-hiding policy, and mouse flags without retaining
+stale rows or hit cells.
+
 The float covers source buffer-text rows, excluding the source winbar and bounds
 already reserved for tabline, statusline, and command-line chrome. The renderer
 owns derived width and height. Public float controls are `zindex`,
@@ -95,6 +103,13 @@ mark-layer cache. Scrolling recomputes viewport/thumb geometry without
 rebuilding mark placement. Mark revisions, dimensions, container width, mark
 text/priority, and normalized layout inputs invalidate that cache; visual-only
 highlight and unrelated runtime options do not.
+
+Each compiled profile carries normalized cache inputs. A runtime profile switch
+rebuilds only that source window's static layer when layout, geometry mode, mark
+text, priority, routing, direction, anchor-derived order, or named-mark expansion
+limits change. Structurally equivalent and highlight-only variants reuse the
+layer through explicit input equality; predicate evaluation does not clear mark
+snapshots or another window's cache.
 
 `render.geometry = "screen"` uses `nvim_win_text_height()` so wrapping, folds,
 diff filler, virtual lines, `topfill`, and wrapped offsets affect both marks and

@@ -10,6 +10,7 @@ defaults; it does not merge with a previous setup call.
 require("scrollbar").setup({
     preset = nil,
     presets = nil,
+    profiles = nil,
     show = true,
     visibility = "all", -- "all" or "active"
     set_highlights = true,
@@ -176,10 +177,102 @@ Dense lists replace atomically instead of merging by index. This includes
 ## Presets
 
 `preset` and `presets` exist only during one setup call and are removed from the
-normalized runtime config. Built-ins are `vscode`, `zed`, and `intellij`.
+normalized runtime config. Built-ins are `vscode`, `zed`, `intellij`, `minimal`,
+`review`, `search`, `navigate`, `gvim`, `eclipse`, `sublime`, `emacs`, and
+`xcode`.
 Preset definitions may set only `layout`, `track`, `thumb`, `marks`, and
 `float.placement`, plus one optional `extends` parent. Root setup values win over
 the selected preset. See [Presets](presets.md).
+
+## Contextual Profiles
+
+`profiles` is a setup-local dense ordered list. Each entry has a required
+`match`, an optional `preset`, and an optional render-safe `config`:
+
+```lua
+require("scrollbar").setup({
+    preset = "zed",
+    profiles = {
+        {
+            match = { filetypes = { "markdown", "text" } },
+            preset = "minimal",
+        },
+        {
+            match = { buftypes = { "quickfix" } },
+            preset = "search",
+        },
+        {
+            match = {
+                filetypes = { "lua" },
+                when = function(context)
+                    return vim.b[context.bufnr].scrollbar_review == true
+                end,
+            },
+            preset = "review",
+            config = {
+                thumb = { blend = 10 },
+                mouse = { enabled = false },
+            },
+        },
+    },
+})
+```
+
+`match` must contain at least one matcher:
+
+- `filetypes`: non-empty dense string list.
+- `buftypes`: non-empty dense string list.
+- `when`: predicate function.
+
+All supplied matchers are ANDed. Filetype and buftype checks run before `when`,
+so callbacks are skipped when a declarative check already fails. Profiles are
+tested in declaration order; the first match wins and profiles are never merged.
+No match selects the root normalized config with stable variant ID `0`.
+
+`when` receives exactly:
+
+```lua
+{
+    winid = source_win,
+    bufnr = source_buf,
+    filetype = vim.bo[source_buf].filetype,
+    buftype = vim.bo[source_buf].buftype,
+    bufname = vim.api.nvim_buf_get_name(source_buf),
+}
+```
+
+Selection is not cached. Predicates are reevaluated whenever a selection is
+needed, including before every source render, so keep them fast, side-effect
+free, and non-blocking. A callback error selects the root config for that render
+and notifies once per distinct profile-index/error-message pair. Later calls
+continue evaluating the callback, so recovery does not require another setup.
+
+Profile `config` accepts only:
+
+- `layout`, `track`, `thumb`, and `marks`.
+- `render.geometry`, but not `render.interval_ms`.
+- `float.zindex`, `float.hide_on_cursor`, and `float.placement`.
+- `mouse.enabled`.
+- `hide_if_all_visible`.
+
+Every other root field is rejected, including `show`, `visibility`,
+`set_highlights`, `max_lines`, `autohide`, providers, exclusions, and setup
+registries. `preset` belongs beside `match`, never inside `config`.
+
+Each variant is validated and compiled once during setup with this precedence:
+
+1. Plugin defaults.
+2. The profile preset, or the root preset when omitted.
+3. Root setup options, excluding `preset`, `presets`, and `profiles`.
+4. Profile `config`.
+
+Setup-local presets are available while all variants compile. The root and all
+variants are committed atomically only after every profile succeeds.
+
+Providers, provider options, exclusions, `show`, `visibility`, `max_lines`,
+autohide, render interval, scheduling, and automatic-highlight policy remain
+root-owned. Profiles control only the validated presentation, geometry,
+placement, fit-hiding, and mouse fields above.
 
 ## Eligibility
 

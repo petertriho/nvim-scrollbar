@@ -10,6 +10,12 @@ Visibility is controlled globally, per source window, and by buffer eligibility.
 - `float.placement.relative = "editor"` also renders only the active source
   window, regardless of `visibility`, so editor-relative floats cannot overlap.
 
+`visibility` is always root-owned. With contextual profiles and root
+`visibility = "all"`, placement is resolved per source: window-relative
+variants may remain visible together, while an editor-relative variant is
+eligible only when its own source is active. Switching a predicate reconciles
+or closes only the affected source state.
+
 ## Global Visibility
 
 `show = false` starts with master visibility disabled. Calling `show()`,
@@ -33,6 +39,9 @@ Provider updates, option changes, resizes, colorscheme changes, and
 concealed one. Pressing or dragging a scrollbar pauses that source window's
 deadline; release or cancellation starts a fresh full delay.
 
+Autohide, master visibility, exclusions, and `max_lines` are root-owned and
+cannot be changed by a profile.
+
 ## Documents That Fit
 
 - `hide_if_all_visible = true` hides the entire scrollbar when the document
@@ -41,6 +50,9 @@ deadline; release or cancellation starts a fresh full delay.
   fits. The track and provider marks can remain visible.
 - `max_lines` is an eligibility limit, not a visibility toggle: buffers above
   the configured logical line count receive no scrollbar.
+
+`hide_if_all_visible` and `thumb.hide_if_all_visible` may vary by profile;
+`max_lines` may not.
 
 ## Cursor Intersection
 

@@ -1,3 +1,19 @@
+local DIAGNOSTIC_TYPES = { "Error", "Warn", "Info", "Hint" }
+local GIT_TYPES = {
+    "GitAdd",
+    "GitChange",
+    "GitDelete",
+    "MiniDiffAdd",
+    "MiniDiffChange",
+    "MiniDiffDelete",
+    "SignifyAdd",
+    "SignifyChange",
+    "SignifyDelete",
+    "VGitAdd",
+    "VGitChange",
+    "VGitDelete",
+}
+
 local BUILTINS = {
     vscode = {
         layout = {
@@ -7,27 +23,14 @@ local BUILTINS = {
                     "track",
                     {
                         kind = "marks",
-                        types = {
-                            "GitAdd",
-                            "GitChange",
-                            "GitDelete",
-                            "MiniDiffAdd",
-                            "MiniDiffChange",
-                            "MiniDiffDelete",
-                            "SignifyAdd",
-                            "SignifyChange",
-                            "SignifyDelete",
-                            "VGitAdd",
-                            "VGitChange",
-                            "VGitDelete",
-                        },
+                        types = GIT_TYPES,
                     },
                     "thumb",
                 },
                 { "track", "marks", "thumb" },
                 {
                     "track",
-                    { kind = "marks", types = { "Error", "Warn", "Info", "Hint" } },
+                    { kind = "marks", types = DIAGNOSTIC_TYPES },
                     "thumb",
                 },
             },
@@ -44,9 +47,88 @@ local BUILTINS = {
             columns = {
                 { "track", "thumb" },
                 {
-                    { kind = "marks", types = { "Error", "Warn", "Info", "Hint" } },
+                    { kind = "marks", types = DIAGNOSTIC_TYPES },
                     "marks",
                 },
+            },
+        },
+        thumb = { blend = 25 },
+    },
+    minimal = {
+        layout = { direction = "auto", columns = { { "thumb" } } },
+        thumb = { blend = 20 },
+    },
+    review = {
+        layout = {
+            direction = "auto",
+            columns = {
+                { { kind = "marks", types = GIT_TYPES } },
+                { "track", "thumb" },
+                { { kind = "marks", types = DIAGNOSTIC_TYPES } },
+            },
+        },
+        thumb = { blend = 20 },
+    },
+    search = {
+        layout = {
+            direction = "auto",
+            columns = {
+                { "track", "thumb", { kind = "marks", types = { "Cursor", "Search" } } },
+            },
+        },
+        thumb = { blend = 20 },
+    },
+    navigate = {
+        layout = {
+            direction = "auto",
+            columns = {
+                { "track", "thumb", { kind = "marks", types = { "Cursor" } } },
+                { { kind = "marks", types = { "Mark" }, max_width = 8 } },
+            },
+        },
+        thumb = { blend = 20 },
+    },
+    gvim = {
+        layout = {
+            direction = "auto",
+            columns = { { "track", "thumb" }, { "track", "thumb" } },
+        },
+        thumb = { blend = 0 },
+    },
+    eclipse = {
+        layout = {
+            direction = "auto",
+            columns = {
+                { "track", "thumb" },
+                { { kind = "marks", types = DIAGNOSTIC_TYPES } },
+                { { kind = "marks", types = { "Cursor", "Search", "Mark" } } },
+                { "marks" },
+            },
+        },
+        thumb = { blend = 20 },
+    },
+    sublime = {
+        layout = { direction = "auto", columns = { { "thumb", "marks" } } },
+        thumb = { blend = 60 },
+    },
+    emacs = {
+        float = { placement = { anchor = "NW" } },
+        layout = {
+            direction = "auto",
+            columns = {
+                { { kind = "marks", types = DIAGNOSTIC_TYPES } },
+                { "track", "thumb" },
+            },
+        },
+        thumb = { blend = 0 },
+    },
+    xcode = {
+        layout = {
+            direction = "auto",
+            columns = {
+                { "track", "thumb" },
+                { { kind = "marks", types = { "Cursor", "Search", "Mark" } } },
+                { { kind = "marks", types = DIAGNOSTIC_TYPES } },
             },
         },
         thumb = { blend = 25 },

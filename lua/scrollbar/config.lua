@@ -1,4 +1,5 @@
 local presets = require("scrollbar.presets")
+local utils = require("scrollbar.utils")
 
 local DEFAULTS = {
     show = true,
@@ -218,6 +219,40 @@ local NESTED_KEYS = {
     ["providers.marks"] = { letters = true, numbers = true },
 }
 
+local PROFILE_KEYS = {
+    match = true,
+    preset = true,
+    config = true,
+}
+
+local PROFILE_MATCH_KEYS = {
+    filetypes = true,
+    buftypes = true,
+    when = true,
+}
+
+local PROFILE_CONFIG_KEYS = {
+    hide_if_all_visible = true,
+    render = true,
+    float = true,
+    layout = true,
+    track = true,
+    mouse = true,
+    thumb = true,
+    marks = true,
+}
+
+local PROFILE_NESTED_KEYS = {
+    render = { geometry = true },
+    float = NESTED_KEYS.float,
+    ["float.placement"] = NESTED_KEYS["float.placement"],
+    layout = NESTED_KEYS.layout,
+    track = NESTED_KEYS.track,
+    mouse = NESTED_KEYS.mouse,
+    thumb = NESTED_KEYS.thumb,
+    mark = NESTED_KEYS.mark,
+}
+
 local ENUMS = {
     visibility = { all = true, active = true },
     geometry = { line = true, screen = true },
@@ -227,8 +262,12 @@ local ENUMS = {
     search_backend = { sync = true, worker = true },
 }
 
+---@type ScrollbarConfig?
 local active
+---@type ScrollbarCompiledVariant[]?
+local variants
 local layout_generation = 0
+local profile_error_notifications = {}
 
 local function invalid(message)
     error("[scrollbar.nvim] " .. message, 3)
@@ -374,6 +413,25 @@ local function validate_string_list(value, path)
             invalid(string.format("%s[%d] must be a string", path, index))
         end
     end
+end
+
+local function normalize_matcher_list(value, path)
+    local count = dense_count(value, path)
+    if count == 0 then
+        invalid(path .. " must contain at least one value")
+    end
+
+    local values = {}
+    local lookup = {}
+    for index = 1, count do
+        local item = value[index]
+        if type(item) ~= "string" then
+            invalid(string.format("%s[%d] must be a string", path, index))
+        end
+        values[index] = item
+        lookup[item] = true
+    end
+    return values, lookup
 end
 
 local function normalize_selector_types(value, path)
@@ -643,7 +701,96 @@ local function layout_config(value)
             priority = mark.priority,
         }
     end
-    return { layout = value.layout.cache, marks = marks }
+    return { geometry = value.render.geometry, layout = value.layout.cache, marks = marks }
+end
+
+local function variants_layout_config(compiled)
+    local result = {}
+    for index, variant in ipairs(compiled) do
+        result[index] = variant.config.layout_cache
+    end
+    return result
+end
+
+local function validate_profile_config(value, path)
+    if type(value) ~= "table" then
+        invalid(path .. " must be a table")
+    end
+    validate_unknown_keys(value, PROFILE_CONFIG_KEYS, path)
+    validate_unknown_keys(value.render, PROFILE_NESTED_KEYS.render, path .. ".render")
+    validate_unknown_keys(value.float, PROFILE_NESTED_KEYS.float, path .. ".float")
+    if type(value.float) == "table" then
+        validate_unknown_keys(value.float.placement, PROFILE_NESTED_KEYS["float.placement"], path .. ".float.placement")
+    end
+    validate_unknown_keys(value.layout, PROFILE_NESTED_KEYS.layout, path .. ".layout")
+    validate_unknown_keys(value.track, PROFILE_NESTED_KEYS.track, path .. ".track")
+    validate_unknown_keys(value.mouse, PROFILE_NESTED_KEYS.mouse, path .. ".mouse")
+    validate_unknown_keys(value.thumb, PROFILE_NESTED_KEYS.thumb, path .. ".thumb")
+    if type(value.marks) == "table" then
+        for mark_type, mark in pairs(value.marks) do
+            validate_unknown_keys(mark, PROFILE_NESTED_KEYS.mark, path .. ".marks." .. tostring(mark_type))
+        end
+    end
+end
+
+local function compile_profiles(value)
+    if value == nil then
+        return {}
+    end
+
+    local count = dense_count(value, "profiles")
+    local result = {}
+    for index = 1, count do
+        local path = string.format("profiles[%d]", index)
+        local profile = value[index]
+        if type(profile) ~= "table" then
+            invalid(path .. " must be a table")
+        end
+        validate_unknown_keys(profile, PROFILE_KEYS, path)
+        if type(profile.match) ~= "table" then
+            invalid(path .. ".match must be a table")
+        end
+        validate_unknown_keys(profile.match, PROFILE_MATCH_KEYS, path .. ".match")
+        if profile.match.filetypes == nil and profile.match.buftypes == nil and profile.match.when == nil then
+            invalid(path .. ".match must contain at least one matcher")
+        end
+
+        ---@type ScrollbarCompiledMatcher
+        local matcher = {
+            filetypes = false,
+            filetype_lookup = false,
+            buftypes = false,
+            buftype_lookup = false,
+            when = false,
+        }
+        if profile.match.filetypes ~= nil then
+            matcher.filetypes, matcher.filetype_lookup =
+                normalize_matcher_list(profile.match.filetypes, path .. ".match.filetypes")
+        end
+        if profile.match.buftypes ~= nil then
+            matcher.buftypes, matcher.buftype_lookup =
+                normalize_matcher_list(profile.match.buftypes, path .. ".match.buftypes")
+        end
+        if profile.match.when ~= nil then
+            if type(profile.match.when) ~= "function" then
+                invalid(path .. ".match.when must be a function")
+            end
+            matcher.when = profile.match.when
+        end
+        if profile.preset ~= nil and type(profile.preset) ~= "string" then
+            invalid(path .. ".preset must be a string")
+        end
+        if profile.config ~= nil then
+            validate_profile_config(profile.config, path .. ".config")
+        end
+
+        result[index] = {
+            matcher = matcher,
+            preset = profile.preset,
+            overrides = vim.deepcopy(profile.config or {}),
+        }
+    end
+    return result
 end
 
 local function normalize(overrides)
@@ -737,25 +884,116 @@ local function normalize(overrides)
     return result
 end
 
+local function compile(overrides)
+    if overrides == nil then
+        overrides = {}
+    elseif type(overrides) ~= "table" then
+        invalid("configuration must be a table")
+    end
+
+    local setup = vim.deepcopy(overrides)
+    local compiled_profiles = compile_profiles(setup.profiles)
+    setup.profiles = nil
+    local root = normalize(setup)
+    local compiled = {
+        { id = 0, matcher = false, config = root },
+    }
+
+    for index, profile in ipairs(compiled_profiles) do
+        local variant_options = vim.deepcopy(setup)
+        variant_options.preset = profile.preset or setup.preset
+        variant_options = presets.merge(variant_options, profile.overrides)
+        compiled[#compiled + 1] = {
+            id = index,
+            matcher = profile.matcher,
+            config = normalize(variant_options),
+        }
+    end
+    for _, variant in ipairs(compiled) do
+        variant.config.highlights = utils.get_highlight_groups(variant.config, variant.id, root.set_highlights)
+        variant.config.layout_cache = layout_config(variant.config)
+    end
+    return root, compiled
+end
+
 local M = {}
 
 ---@param overrides? ScrollbarUserConfig
 ---@return ScrollbarConfig
 M.set = function(overrides)
-    local normalized = normalize(overrides)
-    if active ~= nil and not vim.deep_equal(layout_config(active), layout_config(normalized)) then
+    local normalized, compiled = compile(overrides)
+    if variants ~= nil and not vim.deep_equal(variants_layout_config(variants), variants_layout_config(compiled)) then
         layout_generation = layout_generation + 1
     end
     active = normalized
+    variants = compiled
+    profile_error_notifications = {}
     return active
 end
 
 ---@return ScrollbarConfig
 M.get = function()
     if active == nil then
-        active = normalize()
+        M.set()
     end
-    return active
+    return assert(active, "active scrollbar config unavailable")
+end
+
+---@return ScrollbarCompiledVariant[]
+M.get_variants = function()
+    M.get()
+    return assert(variants, "compiled scrollbar variants unavailable")
+end
+
+---@param source_win integer
+---@return ScrollbarConfigSelection
+M.select = function(source_win)
+    local root = M.get()
+    local compiled = assert(variants, "compiled scrollbar variants unavailable")
+    local source_buf = vim.api.nvim_win_get_buf(source_win)
+    local context = {
+        winid = source_win,
+        bufnr = source_buf,
+        filetype = vim.bo[source_buf].filetype,
+        buftype = vim.bo[source_buf].buftype,
+        bufname = vim.api.nvim_buf_get_name(source_buf),
+    }
+
+    for index = 2, #compiled do
+        local variant = compiled[index]
+        local matcher = variant.matcher
+        assert(matcher ~= false, "compiled scrollbar profile matcher unavailable")
+        ---@cast matcher ScrollbarCompiledMatcher
+        local filetype_lookup = matcher.filetype_lookup
+        local buftype_lookup = matcher.buftype_lookup
+        local when = matcher.when
+        if
+            (filetype_lookup == false or filetype_lookup[context.filetype])
+            and (buftype_lookup == false or buftype_lookup[context.buftype])
+        then
+            if when ~= false then
+                local ok, matched = pcall(when, context)
+                if not ok then
+                    local message = tostring(matched)
+                    local notification_key = variant.id .. "\0" .. message
+                    if not profile_error_notifications[notification_key] then
+                        profile_error_notifications[notification_key] = true
+                        vim.notify(
+                            string.format("[scrollbar.nvim] profile %d matcher failed: %s", variant.id, message),
+                            vim.log.levels.ERROR
+                        )
+                    end
+                    return { config = root, variant_id = 0 }
+                end
+                if matched then
+                    return { config = variant.config, variant_id = variant.id }
+                end
+            else
+                return { config = variant.config, variant_id = variant.id }
+            end
+        end
+    end
+    return { config = root, variant_id = 0 }
 end
 
 ---@return integer
