@@ -19,6 +19,18 @@ local runtime
 ---@type ScrollbarInteractionState?
 local interaction
 
+---@param active ScrollbarMouseRuntime
+---@param float_buf integer
+local function detach(active, float_buf)
+    if not active.attached[float_buf] then
+        return
+    end
+    for _, lhs in ipairs(MAPPINGS) do
+        pcall(vim.keymap.del, "n", lhs, { buffer = float_buf })
+    end
+    active.attached[float_buf] = nil
+end
+
 ---@param value integer
 ---@param minimum integer
 ---@param maximum integer
@@ -137,29 +149,27 @@ local function navigate(current, state, line)
 end
 
 ---@param current ScrollbarInteractionState
----@param state ScrollbarWindowState
 ---@param row integer
 ---@return integer
-local function track_line(current, state, row)
+local function track_line(current, row)
     return layout.track_row_to_line(
         current.source_win,
         row,
-        state.height,
-        state.geometry.mode,
-        state.geometry.total_extent
+        current.height,
+        current.geometry.mode,
+        current.geometry.total_extent
     )
 end
 
 ---@param current ScrollbarInteractionState
----@param state ScrollbarWindowState
 ---@param pointer_row integer
 ---@return integer
-local function drag_line(current, state, pointer_row)
+local function drag_line(current, pointer_row)
     local handle_height = current.handle.last_row - current.handle.first_row + 1
-    local travel = math.max(0, state.height - handle_height)
+    local travel = math.max(0, current.height - handle_height)
     local handle_row = clamp(pointer_row - (current.handle_grab_offset or 0), 0, travel)
-    local track_row = travel == 0 and 0 or math.floor(handle_row * (state.height - 1) / travel + 0.5)
-    return track_line(current, state, track_row)
+    local track_row = travel == 0 and 0 or math.floor(handle_row * (current.height - 1) / travel + 0.5)
+    return track_line(current, track_row)
 end
 
 ---@param callback fun()
@@ -187,12 +197,19 @@ local function finish_interaction(current, resume_deadline)
     if resume_deadline and current.held and runtime ~= nil then
         pcall(runtime.scheduler.resume_window, current.source_win)
     end
+    local active = runtime
+    if active ~= nil then
+        local state = active.renderer.get_state_by_float(current.float_win)
+        if state ~= nil then
+            M.attach(state)
+        end
+    end
 end
 
 ---@param float_win? integer
 M.press = function(float_win)
     local active = runtime
-    if active == nil or not active.config.mouse.enabled then
+    if active == nil then
         return
     end
     if interaction ~= nil then
@@ -200,7 +217,7 @@ M.press = function(float_win)
     end
 
     local state = active.renderer.get_state_by_float(float_win or vim.fn.getmousepos().winid)
-    if state == nil or not valid_state(state) then
+    if state == nil or not valid_state(state) or not state.config.mouse.enabled then
         return
     end
     local _, row, col, screen_row, screen_col = mouse_position(state.float_win)
@@ -222,6 +239,9 @@ M.press = function(float_win)
         pressed_screen_col = screen_col,
         pressed_hit = vim.deepcopy(hit),
         handle = state.handle and vim.deepcopy(state.handle) or false,
+        width = state.width,
+        height = state.height,
+        geometry = vim.deepcopy(state.geometry),
         handle_grab_offset = pressed_handle and row - state.handle.first_row or nil,
         last_row = row,
         last_col = col,
@@ -251,12 +271,12 @@ M.drag = function()
     end
 
     local _, row, col, screen_row, screen_col = mouse_position(current.float_win)
-    row = clamp(row, 0, state.height - 1)
+    row = clamp(row, 0, current.height - 1)
     col = clamp(col, 1, state.width)
     local moved = screen_row ~= current.pressed_screen_row or screen_col ~= current.pressed_screen_col
     if moved and current.handle_grab_offset ~= nil then
         current.dragging = true
-        navigate(current, state, drag_line(current, state, row))
+        navigate(current, state, drag_line(current, row))
     end
     current.last_row = row
     current.last_col = col
@@ -274,14 +294,14 @@ M.release = function()
     end
 
     local _, row = mouse_position(current.float_win)
-    row = clamp(row, 0, state.height - 1)
+    row = clamp(row, 0, current.height - 1)
     pcall(function()
         if current.dragging then
-            navigate(current, state, drag_line(current, state, row))
+            navigate(current, state, drag_line(current, row))
         elseif current.pressed_hit.line ~= nil then
             navigate(current, state, current.pressed_hit.line)
         elseif current.pressed_hit.track and not current.pressed_hit.thumb then
-            navigate(current, state, track_line(current, state, current.pressed_row))
+            navigate(current, state, track_line(current, current.pressed_row))
         end
     end)
     finish_interaction(current, true)
@@ -297,7 +317,12 @@ end
 ---@param state ScrollbarWindowState
 M.attach = function(state)
     local active = runtime
-    if active == nil or not active.config.mouse.enabled or not valid_state(state) then
+    if active == nil or not valid_state(state) then
+        return
+    end
+    local current = interaction
+    if not state.config.mouse.enabled and (current == nil or current.float_buf ~= state.float_buf) then
+        detach(active, state.float_buf)
         return
     end
     if active.attached[state.float_buf] then
@@ -398,11 +423,7 @@ M.dispose = function()
     runtime = nil
     active.renderer.set_state_callback(nil)
     for float_buf in pairs(active.attached) do
-        if vim.api.nvim_buf_is_valid(float_buf) then
-            for _, lhs in ipairs(MAPPINGS) do
-                pcall(vim.keymap.del, "n", lhs, { buffer = float_buf })
-            end
-        end
+        detach(active, float_buf)
     end
     pcall(vim.api.nvim_del_augroup_by_id, active.augroup)
 end

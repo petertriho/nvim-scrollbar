@@ -22,8 +22,15 @@ vim.o.mouse = "a"
 - If the thumb is above a mark layer, the hidden mark has no hit target.
 
 Navigation opens only folds containing the target with `zv`, centers with `zz`,
-and restores source focus after release or cancellation. Pressed canonical Thumb
-groups remain active throughout a drag.
+and restores source focus after release or cancellation. The rendered variant's
+pressed Thumb groups remain active throughout a drag.
+
+Mouse policy and hit ownership come from the rendered source-window state, not
+from a fresh profile lookup during input handling. Different simultaneous
+windows can therefore be interactive or inert independently. A press snapshots
+the visible hit, thumb rectangle, and vertical geometry; changing a predicate
+during a click or drag cannot redirect that interaction to a newly selected
+layout. A later interaction uses the newly rendered profile.
 
 With autohide enabled, interactive presses pause that source window's hide
 deadline. Release or cancellation starts a fresh full delay. Inert transparent
@@ -32,7 +39,9 @@ cells do not hold the scheduler.
 ## Disabling
 
 `mouse.enabled = false` makes floats non-focusable and installs no mappings. A
-float temporarily hidden by `float.hide_on_cursor` does not capture mouse input.
+profile switch updates focusability, the float `mouse` flag, and buffer-local
+mappings. A float temporarily hidden by `float.hide_on_cursor` does not capture
+mouse input.
 
 ## Related
 

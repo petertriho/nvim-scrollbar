@@ -2,14 +2,37 @@ local const = require("scrollbar.const")
 
 local M = {}
 
-M.get_highlight_name = function(mark_type, thumb, pressed)
+M.get_highlight_name = function(mark_type, thumb, pressed, prefix)
     return string.format(
         "%s%s%s%s",
-        const.NAME_PREFIX,
+        prefix or const.NAME_PREFIX,
         mark_type,
         thumb and const.NAME_SUFFIX or "",
         pressed and const.NAME_PRESSED_SUFFIX or ""
     )
+end
+
+---@param active_config ScrollbarConfig
+---@param variant_id integer
+---@param automatic boolean
+---@return ScrollbarHighlightGroups
+M.get_highlight_groups = function(active_config, variant_id, automatic)
+    local prefix = automatic and variant_id > 0 and (const.NAME_PREFIX .. "Profile" .. variant_id) or const.NAME_PREFIX
+    local marks = {}
+    for mark_type in pairs(active_config.marks) do
+        marks[mark_type] = {
+            mark = M.get_highlight_name(mark_type, false, false, prefix),
+            thumb = M.get_highlight_name(mark_type, true, false, prefix),
+            thumb_pressed = M.get_highlight_name(mark_type, true, true, prefix),
+        }
+    end
+    return {
+        base = "ScrollbarBase",
+        track = M.get_highlight_name("Track", false, false, prefix),
+        thumb = M.get_highlight_name("", true, false, prefix),
+        thumb_pressed = M.get_highlight_name("", true, true, prefix),
+        marks = marks,
+    }
 end
 
 M.get_legacy_highlight_name = function(mark_type, thumb, pressed)
@@ -79,27 +102,46 @@ local function mark_highlight(properties)
     }
 end
 
-M.set_highlights = function()
-    local active_config = require("scrollbar.config").get()
+---@param active_config ScrollbarConfig
+---@param legacy boolean
+local function set_variant_highlights(active_config, legacy)
+    local groups = active_config.highlights
     local track = background_highlight(active_config.track.highlight, nil, "PmenuSbar", "#000000")
     local thumb = thumb_highlight(active_config.thumb)
     local pressed = background_highlight("PmenuSel", active_config.thumb.blend, "PmenuThumb", "#ffffff")
 
-    vim.api.nvim_set_hl(0, "ScrollbarBase", {})
-    vim.api.nvim_set_hl(0, "ScrollbarTrack", track)
-    vim.api.nvim_set_hl(0, M.get_highlight_name("", true), thumb)
-    vim.api.nvim_set_hl(0, M.get_highlight_name("", true, true), pressed)
-    vim.api.nvim_set_hl(0, M.get_legacy_highlight_name("", true), thumb)
-    vim.api.nvim_set_hl(0, M.get_legacy_highlight_name("", true, true), pressed)
+    vim.api.nvim_set_hl(0, groups.track, track)
+    vim.api.nvim_set_hl(0, groups.thumb, thumb)
+    vim.api.nvim_set_hl(0, groups.thumb_pressed, pressed)
+    if legacy then
+        vim.api.nvim_set_hl(0, M.get_legacy_highlight_name("", true), thumb)
+        vim.api.nvim_set_hl(0, M.get_legacy_highlight_name("", true, true), pressed)
+    end
     for mark_type, properties in pairs(active_config.marks) do
+        local mark_groups = groups.marks[mark_type]
         local mark = mark_highlight(properties)
         local overlap = vim.tbl_deep_extend("force", {}, thumb, mark)
         local pressed_overlap = vim.tbl_deep_extend("force", {}, pressed, mark)
-        vim.api.nvim_set_hl(0, M.get_highlight_name(mark_type, false), mark)
-        vim.api.nvim_set_hl(0, M.get_highlight_name(mark_type, true), overlap)
-        vim.api.nvim_set_hl(0, M.get_highlight_name(mark_type, true, true), pressed_overlap)
-        vim.api.nvim_set_hl(0, M.get_legacy_highlight_name(mark_type, true), overlap)
-        vim.api.nvim_set_hl(0, M.get_legacy_highlight_name(mark_type, true, true), pressed_overlap)
+        vim.api.nvim_set_hl(0, mark_groups.mark, mark)
+        vim.api.nvim_set_hl(0, mark_groups.thumb, overlap)
+        vim.api.nvim_set_hl(0, mark_groups.thumb_pressed, pressed_overlap)
+        if legacy then
+            vim.api.nvim_set_hl(0, M.get_legacy_highlight_name(mark_type, true), overlap)
+            vim.api.nvim_set_hl(0, M.get_legacy_highlight_name(mark_type, true, true), pressed_overlap)
+        end
+    end
+end
+
+M.set_highlights = function()
+    local config = require("scrollbar.config")
+    local active_config = config.get()
+    if not active_config.set_highlights then
+        return
+    end
+
+    vim.api.nvim_set_hl(0, active_config.highlights.base, {})
+    for _, variant in ipairs(config.get_variants()) do
+        set_variant_highlights(variant.config, variant.id == 0)
     end
 end
 

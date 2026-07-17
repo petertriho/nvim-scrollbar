@@ -82,6 +82,26 @@
 ---@field marks? table<string, ScrollbarUserMarkTypeConfig>
 ---@field float? { placement?: ScrollbarUserPlacement }
 
+---@class ScrollbarUserProfileMatcher
+---@field filetypes? string[]
+---@field buftypes? string[]
+---@field when? fun(context: ScrollbarProfileContext): boolean
+
+---@class ScrollbarUserProfileConfig
+---@field hide_if_all_visible? boolean
+---@field render? { geometry?: ScrollbarGeometryMode }
+---@field float? ScrollbarUserFloatConfig
+---@field layout? ScrollbarUserLayoutConfig
+---@field track? ScrollbarUserTrackConfig
+---@field mouse? ScrollbarUserMouseConfig
+---@field thumb? ScrollbarUserThumbConfig
+---@field marks? table<string, ScrollbarUserMarkTypeConfig>
+
+---@class ScrollbarUserProfile
+---@field match ScrollbarUserProfileMatcher
+---@field preset? string
+---@field config? ScrollbarUserProfileConfig
+
 ---@class ScrollbarUserProvidersConfig
 ---@field cursor? boolean
 ---@field diagnostic? boolean
@@ -97,6 +117,7 @@
 ---@class ScrollbarUserConfig
 ---@field preset? string Setup-local selected presentation preset
 ---@field presets? table<string, ScrollbarUserPreset> Setup-local preset definitions
+---@field profiles? ScrollbarUserProfile[] Ordered setup-local contextual variants; first match wins
 ---@field show? boolean
 ---@field visibility? ScrollbarVisibility
 ---@field set_highlights? boolean
@@ -180,6 +201,18 @@
 ---@field priority integer
 ---@field highlight ScrollbarHighlight Source highlight group or direct definition
 
+---@class ScrollbarMarkHighlightGroups
+---@field mark string
+---@field thumb string
+---@field thumb_pressed string
+
+---@class ScrollbarHighlightGroups
+---@field base string
+---@field track string
+---@field thumb string
+---@field thumb_pressed string
+---@field marks table<string, ScrollbarMarkHighlightGroups>
+
 ---@class ScrollbarProvidersConfig
 ---@field cursor boolean
 ---@field diagnostic boolean
@@ -206,9 +239,34 @@
 ---@field mouse ScrollbarMouseConfig
 ---@field thumb ScrollbarThumbConfig
 ---@field marks table<string, ScrollbarMarkTypeConfig>
+---@field highlights ScrollbarHighlightGroups Compiled canonical or profile-internal group names
+---@field layout_cache table Precompiled static line-layer cache inputs
 ---@field providers ScrollbarProvidersConfig
 ---@field excluded_buftypes string[]
 ---@field excluded_filetypes string[]
+
+---@class ScrollbarProfileContext
+---@field winid integer
+---@field bufnr integer
+---@field filetype string
+---@field buftype string
+---@field bufname string
+
+---@class ScrollbarCompiledMatcher
+---@field filetypes false|string[]
+---@field filetype_lookup false|table<string, true>
+---@field buftypes false|string[]
+---@field buftype_lookup false|table<string, true>
+---@field when false|fun(context: ScrollbarProfileContext): boolean
+
+---@class ScrollbarCompiledVariant
+---@field id integer Root is 0; profile variants use their one-based declaration index
+---@field matcher false|ScrollbarCompiledMatcher
+---@field config ScrollbarConfig
+
+---@class ScrollbarConfigSelection
+---@field config ScrollbarConfig
+---@field variant_id integer
 
 ---@class ScrollbarMark
 ---@field line integer Zero-based source buffer line
@@ -357,6 +415,8 @@
 ---@class ScrollbarWindowState
 ---@field source_win integer
 ---@field source_buf integer
+---@field config ScrollbarConfig Effective config that produced this rendered state
+---@field variant_id integer Stable selected variant ID; root is 0
 ---@field float_win integer
 ---@field float_buf integer
 ---@field float_config table<string, any> Last applied floating-window configuration
@@ -386,6 +446,8 @@
 ---@field line_count integer
 ---@field container_width integer
 ---@field height integer
+---@field variant_id integer
+---@field config table Precompiled cache-relevant inputs for the selected variant
 ---@field config_generation integer
 ---@field mark_rows integer[]
 ---@field layer ScrollbarResolvedMarkLayer
@@ -437,6 +499,9 @@
 ---@field pressed_screen_col integer
 ---@field pressed_hit ScrollbarHitCell
 ---@field handle false|ScrollbarHandleGeometry
+---@field width integer Rendered width captured at press time
+---@field height integer Rendered height captured at press time
+---@field geometry ScrollbarRendererGeometry Geometry captured at press time
 ---@field handle_grab_offset? integer
 ---@field last_row integer
 ---@field last_col integer

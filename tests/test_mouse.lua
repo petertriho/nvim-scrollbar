@@ -1104,6 +1104,129 @@ T["does not attach mappings or mutate mouse behavior when disabled"] = function(
     expect.equality(child.api.nvim_get_current_win(), setup.source_win)
 end
 
+T["uses each rendered profile's mouse policy and updates switched floats"] = function()
+    local child = new_child()
+    local result = child.lua_func(function(config)
+        vim.o.mouse = "a"
+        local first_buf = vim.api.nvim_get_current_buf()
+        vim.bo[first_buf].filetype = "lua"
+        local first = vim.api.nvim_get_current_win()
+        vim.cmd("split")
+        local second = vim.api.nvim_get_current_win()
+        local second_buf = vim.api.nvim_create_buf(true, false)
+        vim.api.nvim_win_set_buf(second, second_buf)
+        vim.bo[second_buf].filetype = "text"
+        local disabled = true
+
+        config.profiles = {
+            {
+                match = {
+                    filetypes = { "lua" },
+                    when = function()
+                        return disabled
+                    end,
+                },
+                config = { mouse = { enabled = false } },
+            },
+        }
+        local active_config = require("scrollbar.config").set(config)
+        local renderer = require("scrollbar.renderer")
+        local scheduler = require("scrollbar.scheduler")
+        local mouse = require("scrollbar.mouse")
+        renderer.setup()
+        scheduler.setup({ config = active_config, renderer = renderer })
+        mouse.setup({ config = active_config, renderer = renderer, scheduler = scheduler })
+        local first_state = assert(renderer.render(first))
+        local second_state = assert(renderer.render(second))
+
+        local function mapping_count(state)
+            return #vim.api.nvim_buf_get_keymap(state.float_buf, "n")
+        end
+        local before = {
+            first_mouse = vim.api.nvim_win_get_config(first_state.float_win).mouse,
+            first_mappings = mapping_count(first_state),
+            second_mouse = vim.api.nvim_win_get_config(second_state.float_win).mouse,
+            second_mappings = mapping_count(second_state),
+        }
+
+        disabled = false
+        first_state = assert(renderer.render(first))
+        return {
+            before = before,
+            after = {
+                mouse = vim.api.nvim_win_get_config(first_state.float_win).mouse,
+                focusable = vim.api.nvim_win_get_config(first_state.float_win).focusable,
+                mappings = mapping_count(first_state),
+            },
+        }
+    end, mouse_config())
+
+    expect.equality(result.before.first_mouse, false)
+    expect.equality(result.before.first_mappings, 0)
+    expect.equality(result.before.second_mouse, true)
+    expect.equality(result.before.second_mappings > 0, true)
+    expect.equality(result.after.mouse, true)
+    expect.equality(result.after.focusable, true)
+    expect.equality(result.after.mappings > 0, true)
+end
+
+T["keeps track interaction geometry captured at press time across profile switches"] = function()
+    local child = new_child()
+    local setup = child.lua_func(function(config)
+        vim.o.mouse = "a"
+        local lines = {}
+        for index = 1, 100 do
+            lines[index] = "line " .. index
+        end
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        vim.cmd("split")
+        local source_win = vim.api.nvim_get_current_win()
+        vim.api.nvim_win_set_height(source_win, 10)
+        vim.api.nvim_win_call(source_win, function()
+            vim.cmd("1,80fold")
+        end)
+        local screen = false
+        config.profiles = {
+            {
+                match = {
+                    when = function()
+                        return screen
+                    end,
+                },
+                config = { render = { geometry = "screen" } },
+            },
+        }
+
+        local active_config = require("scrollbar.config").set(config)
+        local renderer = require("scrollbar.renderer")
+        local scheduler = require("scrollbar.scheduler")
+        local mouse = require("scrollbar.mouse")
+        renderer.setup()
+        scheduler.setup({ config = active_config, renderer = renderer })
+        mouse.setup({ config = active_config, renderer = renderer, scheduler = scheduler })
+        local state = assert(renderer.render(source_win))
+        vim.cmd("redraw")
+        local position = vim.fn.win_screenpos(state.float_win)
+        package.loaded["scrollbar.test.mouse_profile_switch"] = {
+            switch = function()
+                screen = true
+                return assert(renderer.render(source_win)).geometry.mode
+            end,
+        }
+        return {
+            source_win = source_win,
+            row = position[1] - 1 + 5,
+            col = position[2] - 1,
+        }
+    end, mouse_config())
+    vim.uv.sleep(30)
+
+    input_mouse(child, "press", setup.row, setup.col)
+    expect.equality(child.lua_get([[require("scrollbar.test.mouse_profile_switch").switch()]]), "screen")
+    input_mouse(child, "release", setup.row, setup.col)
+    expect.equality(child.api.nvim_win_get_cursor(setup.source_win)[1] < 80, true)
+end
+
 T["passes input to the source while cursor-hidden and restores interaction"] = function()
     local child = new_child()
     local setup = child.lua_func(function(config)

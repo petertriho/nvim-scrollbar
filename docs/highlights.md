@@ -44,12 +44,26 @@ Automatic mode also generates equivalent legacy `Handle` names:
 `Scrollbar<MarkType>HandlePressed`. These aliases exist only when the plugin
 owns highlight generation.
 
+The canonical names above belong to the root config. Each compiled profile gets
+a stable internal automatic namespace based on declaration index, for example
+`ScrollbarProfile1Track`, `ScrollbarProfile1Thumb`,
+`ScrollbarProfile1ThumbPressed`, `ScrollbarProfile1Error`, and
+`ScrollbarProfile1ErrorThumb`. Simultaneous windows can therefore use different
+track, thumb, blend, mark, overlap, and pressed definitions. Internal profile
+names are implementation details and receive no legacy `Handle` aliases. Setup
+and every `ColorScheme` event regenerate the root and all profile groups.
+
 ## Manual Groups
 
 With `set_highlights = false`, setup and `ColorScheme` handling create or modify
 no canonical groups, base group, or legacy aliases. Manual configurations must
 define the canonical Thumb names used by renderer extmarks. Defining only old
 Handle names is insufficient in manual mode.
+
+Manual mode intentionally uses the same canonical groups for every profile and
+creates no `ScrollbarProfile*` groups. Profile-specific highlight sources and
+blend values therefore require `set_highlights = true`; there is no public
+profile-specific manual highlight API.
 
 ## Related
 

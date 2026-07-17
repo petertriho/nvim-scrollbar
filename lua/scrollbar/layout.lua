@@ -677,8 +677,9 @@ local function add_span(spans, start_col, end_col, highlight, priority)
 end
 
 local function mark_highlight(config, column, column_offset, expanded_lane_id, mark, in_thumb_row)
+    local groups = config.highlights.marks[mark.type]
     if not in_thumb_row then
-        return "Scrollbar" .. mark.type
+        return groups.mark
     end
 
     local mark_priority = layer_priority(config, column, column_offset, expanded_lane_id, "marks", mark.lane_id)
@@ -692,7 +693,7 @@ local function mark_highlight(config, column, column_offset, expanded_lane_id, m
             end
         end
     end
-    return "Scrollbar" .. mark.type .. (background_kind == "thumb" and "Thumb" or "")
+    return background_kind == "thumb" and groups.thumb or groups.mark
 end
 
 local function render_row(input, row, marks, width, column_offset, expanded_lane_id)
@@ -725,9 +726,9 @@ local function render_row(input, row, marks, width, column_offset, expanded_lane
         local layers = layers_at(input.config, column, column_offset, expanded_lane_id)
         for _, layer in ipairs(layers) do
             if layer.kind == "track" then
-                add_span(spans, byte_column, next_byte_column, "ScrollbarTrack", layer.priority)
+                add_span(spans, byte_column, next_byte_column, input.config.highlights.track, layer.priority)
             elseif layer.kind == "thumb" and in_thumb_row then
-                add_span(spans, byte_column, next_byte_column, "ScrollbarThumb", layer.priority)
+                add_span(spans, byte_column, next_byte_column, input.config.highlights.thumb, layer.priority)
             elseif
                 layer.kind == "marks"
                 and mark ~= nil

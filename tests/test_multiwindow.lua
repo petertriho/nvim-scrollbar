@@ -310,4 +310,308 @@ T["real named marks stay with their source buffer and resolve width per window h
     expect.equality({ result.first.width, result.second.width }, { 2, 3 })
 end
 
+T["simultaneous windows render selected profile layouts geometry and filtering"] = function()
+    local child = helpers.new_child()
+    MiniTest.finally(function()
+        helpers.stop_child(child)
+    end)
+
+    local result = child.lua_func(function()
+        local function fill(bufnr)
+            local lines = {}
+            for index = 1, 100 do
+                lines[index] = "line " .. index
+            end
+            vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, lines)
+        end
+
+        local first_buf = vim.api.nvim_get_current_buf()
+        fill(first_buf)
+        vim.bo[first_buf].filetype = "lua"
+        local first = vim.api.nvim_get_current_win()
+        vim.cmd("split")
+        local second = vim.api.nvim_get_current_win()
+        local second_buf = vim.api.nvim_create_buf(true, false)
+        fill(second_buf)
+        vim.bo[second_buf].filetype = "markdown"
+        vim.api.nvim_win_set_buf(second, second_buf)
+        vim.api.nvim_win_set_height(second, 4)
+        vim.api.nvim_set_current_win(first)
+
+        local store = require("scrollbar.store")
+        store.set("test", first_buf, {
+            { line = 10, type = "Error" },
+            { line = 20, type = "Search" },
+        })
+        store.set("marks", second_buf, {
+            { line = 40, type = "Error" },
+            { line = 0, type = "Mark", text = "a" },
+            { line = 10, type = "Mark", text = "b" },
+            { line = 20, type = "Mark", text = "c" },
+        })
+
+        require("scrollbar").setup({
+            set_highlights = false,
+            render = { interval_ms = 0 },
+            float = { hide_on_cursor = false },
+            mouse = { enabled = false },
+            thumb = { text = "H", hide_if_all_visible = false },
+            providers = {
+                cursor = false,
+                diagnostic = false,
+                search = false,
+                marks = false,
+                gitsigns = false,
+                mini_diff = false,
+                signify = false,
+                vgit = false,
+                ale = false,
+                coc = false,
+            },
+            excluded_buftypes = {},
+            excluded_filetypes = {},
+            profiles = {
+                {
+                    match = { filetypes = { "lua" } },
+                    preset = "review",
+                    config = {
+                        render = { geometry = "screen" },
+                        float = { placement = { anchor = "NW" } },
+                    },
+                },
+                {
+                    match = { filetypes = { "markdown" } },
+                    preset = "navigate",
+                    config = {
+                        render = { geometry = "line" },
+                        float = { placement = { anchor = "SE" } },
+                    },
+                },
+            },
+        })
+        require("scrollbar.scheduler").flush()
+
+        local function rendered_types(state)
+            local types = {}
+            for _, row in ipairs(state.hitmap) do
+                for _, cell in ipairs(row) do
+                    if cell.type ~= nil then
+                        types[cell.type] = true
+                    end
+                end
+            end
+            return types
+        end
+
+        local renderer = require("scrollbar.renderer")
+        local first_state = assert(renderer.get_state(first))
+        local second_state = assert(renderer.get_state(second))
+        return {
+            first = {
+                variant_id = first_state.variant_id,
+                width = first_state.width,
+                mode = first_state.geometry.mode,
+                anchor = first_state.float_config.anchor,
+                types = rendered_types(first_state),
+            },
+            second = {
+                variant_id = second_state.variant_id,
+                width = second_state.width,
+                mode = second_state.geometry.mode,
+                anchor = second_state.float_config.anchor,
+                types = rendered_types(second_state),
+            },
+        }
+    end)
+
+    expect.equality(result.first, {
+        variant_id = 1,
+        width = 3,
+        mode = "screen",
+        anchor = "NW",
+        types = { Error = true },
+    })
+    expect.equality(result.second.variant_id, 2)
+    expect.equality(result.second.mode, "line")
+    expect.equality(result.second.anchor, "SE")
+    expect.equality(result.second.width > 2, true)
+    expect.equality(result.second.types, { Mark = true })
+end
+
+T["two views of one buffer select independently and profile switches replace rendered state"] = function()
+    local child = helpers.new_child()
+    MiniTest.finally(function()
+        helpers.stop_child(child)
+    end)
+
+    local result = child.lua_func(function()
+        local lines = {}
+        for index = 1, 100 do
+            lines[index] = "line " .. index
+        end
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        local first = vim.api.nvim_get_current_win()
+        vim.cmd("split")
+        local second = vim.api.nvim_get_current_win()
+        local wide = false
+
+        require("scrollbar").setup({
+            set_highlights = false,
+            render = { interval_ms = 0 },
+            float = { hide_on_cursor = false },
+            mouse = { enabled = false },
+            thumb = { text = "H", hide_if_all_visible = false },
+            providers = {
+                cursor = false,
+                diagnostic = false,
+                search = false,
+                marks = false,
+                gitsigns = false,
+                mini_diff = false,
+                signify = false,
+                vgit = false,
+                ale = false,
+                coc = false,
+            },
+            excluded_buftypes = {},
+            excluded_filetypes = {},
+            profiles = {
+                {
+                    match = {
+                        when = function(context)
+                            return context.winid == first and wide
+                        end,
+                    },
+                    preset = "review",
+                    config = { float = { placement = { anchor = "NW" } } },
+                },
+                {
+                    match = {
+                        when = function(context)
+                            return context.winid == first
+                        end,
+                    },
+                    preset = "minimal",
+                },
+                {
+                    match = {
+                        when = function(context)
+                            return context.winid == second
+                        end,
+                    },
+                    preset = "gvim",
+                },
+            },
+        })
+        local renderer = require("scrollbar.renderer")
+        renderer.render(first)
+        renderer.render(second)
+        local first_before = assert(renderer.get_state(first))
+        local second_state = assert(renderer.get_state(second))
+        local float_win = first_before.float_win
+        local before = {
+            first_id = first_before.variant_id,
+            first_width = first_before.width,
+            second_id = second_state.variant_id,
+            second_width = second_state.width,
+        }
+
+        wide = true
+        renderer.render(first)
+        local first_after = assert(renderer.get_state(first))
+        return {
+            before = before,
+            after = {
+                variant_id = first_after.variant_id,
+                width = first_after.width,
+                anchor = first_after.float_config.anchor,
+                same_float = first_after.float_win == float_win,
+                row_width = vim.fn.strdisplaywidth(first_after.rows[1]),
+                hit_width = #first_after.hitmap[1],
+            },
+        }
+    end)
+
+    expect.equality(result, {
+        before = { first_id = 2, first_width = 1, second_id = 3, second_width = 2 },
+        after = {
+            variant_id = 1,
+            width = 3,
+            anchor = "NW",
+            same_float = true,
+            row_width = 3,
+            hit_width = 3,
+        },
+    })
+end
+
+T["editor-relative profiles render only for the active source beside window-relative profiles"] = function()
+    local child = helpers.new_child()
+    MiniTest.finally(function()
+        helpers.stop_child(child)
+    end)
+
+    local result = child.lua_func(function()
+        local first = vim.api.nvim_get_current_win()
+        vim.bo.filetype = "lua"
+        vim.cmd("split")
+        local second = vim.api.nvim_get_current_win()
+        local second_buf = vim.api.nvim_create_buf(true, false)
+        vim.api.nvim_win_set_buf(second, second_buf)
+        vim.bo[second_buf].filetype = "text"
+        vim.api.nvim_set_current_win(first)
+
+        require("scrollbar").setup({
+            set_highlights = false,
+            render = { interval_ms = 0 },
+            float = { hide_on_cursor = false },
+            mouse = { enabled = false },
+            thumb = { hide_if_all_visible = false },
+            providers = {
+                cursor = false,
+                diagnostic = false,
+                search = false,
+                marks = false,
+                gitsigns = false,
+                mini_diff = false,
+                signify = false,
+                vgit = false,
+                ale = false,
+                coc = false,
+            },
+            excluded_buftypes = {},
+            excluded_filetypes = {},
+            profiles = {
+                {
+                    match = { filetypes = { "lua" } },
+                    config = { float = { placement = { relative = "editor" } } },
+                },
+            },
+        })
+        local renderer = require("scrollbar.renderer")
+        renderer.render(first)
+        renderer.render(second)
+        local active_first = {
+            first = renderer.get_state(first) ~= nil,
+            second = renderer.get_state(second) ~= nil,
+        }
+
+        vim.api.nvim_set_current_win(second)
+        renderer.render(first)
+        renderer.render(second)
+        return {
+            active_first = active_first,
+            active_second = {
+                first = renderer.get_state(first) ~= nil,
+                second = renderer.get_state(second) ~= nil,
+            },
+        }
+    end)
+
+    expect.equality(result, {
+        active_first = { first = true, second = true },
+        active_second = { first = false, second = true },
+    })
+end
+
 return T
