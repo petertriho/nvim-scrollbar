@@ -62,6 +62,10 @@ end
 ---@param context ScrollbarProviderContext
 ---@param bufnr integer
 local function update_buffer(context, bufnr)
+    if not context.is_buffer_eligible(bufnr) then
+        context.clear_marks(bufnr)
+        return
+    end
     local ok, marks = pcall(collect_marks, bufnr)
     if ok then
         context.set_marks(bufnr, marks)

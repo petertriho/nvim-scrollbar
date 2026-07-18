@@ -5,6 +5,7 @@ local T = MiniTest.new_set({
     hooks = {
         pre_case = function()
             package.loaded["scrollbar.config"] = nil
+            package.loaded["scrollbar.renderer"] = nil
             package.loaded["scrollbar.store"] = nil
             package.loaded["scrollbar.providers"] = nil
             require("scrollbar.config").set({
@@ -146,6 +147,9 @@ T["refreshes window providers initially, manually, and on disposal"] = function(
             end
             return {}
         end,
+        is_source_window = function(source_win)
+            return source_win == winid
+        end,
         invalidate_window = function(changed_win)
             table.insert(invalidated, changed_win)
         end,
@@ -267,6 +271,9 @@ T["isolates setup failures and releases partially created resources"] = function
         source_windows = function()
             return { winid }
         end,
+        is_source_window = function(source_win)
+            return source_win == winid
+        end,
     }
     providers.setup(options)
 
@@ -308,6 +315,9 @@ T["clears refresh-only window marks when the window becomes ineligible"] = funct
             end
             return {}
         end,
+        is_source_window = function(source_win)
+            return source_win == winid and vim.api.nvim_win_get_buf(source_win) == target
+        end,
         invalidate_window = function(changed_win)
             table.insert(invalidated, changed_win)
         end,
@@ -346,6 +356,9 @@ T["clears refresh-only marks before an eligible window changes buffers"] = funct
                 return { winid }
             end
             return {}
+        end,
+        is_source_window = function(source_win)
+            return source_win == winid
         end,
     })
     expect.equality(store.get_window(winid)["window-association"], { { line = 0, type = "Custom" } })
@@ -422,6 +435,9 @@ T["isolates failing window refreshes and resets warnings after recovery"] = func
         end,
         source_windows = function()
             return { winid }
+        end,
+        is_source_window = function(source_win)
+            return source_win == winid
         end,
     })
 
@@ -524,6 +540,9 @@ T["provides isolated config, store, window, and invalidation context operations"
             local windows = context.source_windows(target)
             expect.equality(windows, { 22, 11 })
             windows[1] = 99
+            expect.equality(context.is_buffer_eligible(target), true)
+            expect.equality(context.is_source_window(22), true)
+            expect.equality(context.is_source_window(11), false)
 
             expect.equality(context.set_marks(target, { { line = 0, type = "Custom" } }), true)
             expect.equality(context.set_marks(target, { { line = 0, type = "Custom" } }), true)
@@ -540,6 +559,9 @@ T["provides isolated config, store, window, and invalidation context operations"
         end,
         source_windows = function()
             return source_result
+        end,
+        is_source_window = function(winid)
+            return winid == 22
         end,
         invalidate_buffer = function(bufnr)
             table.insert(invalidated_buffers, bufnr)
@@ -585,6 +607,9 @@ T["provides window-scoped store operations through provider contexts"] = functio
         source_windows = function()
             return { winid }
         end,
+        is_source_window = function(source_win)
+            return source_win == winid
+        end,
         invalidate_window = function(changed_win)
             table.insert(invalidated, changed_win)
         end,
@@ -599,6 +624,177 @@ T["provides window-scoped store operations through provider contexts"] = functio
     providers.dispose()
     expect.equality(store.get_window(winid), {})
     expect.equality(invalidated, { winid })
+end
+
+T["silently clears valid ineligible direct publications before validation"] = function()
+    local notifications = capture_notifications()
+    local providers = require("scrollbar.providers")
+    local store = require("scrollbar.store")
+    local target = new_buffer({ "one" })
+    local winid = show_buffer(target)
+    local buffer_allowed = true
+    local window_allowed = true
+    local invalidated_buffers = {}
+    local invalidated_windows = {}
+    local context
+
+    providers.register({
+        name = "guarded",
+        setup = function(provider_context)
+            context = provider_context
+            assert(context.set_marks(target, { { line = 0, type = "Custom" } }))
+            assert(context.set_window_marks(winid, { { line = 0, type = "Custom" } }))
+        end,
+    })
+    providers.setup({
+        is_buffer_eligible = function(bufnr)
+            return bufnr == target and buffer_allowed
+        end,
+        is_source_window = function(source_win)
+            return source_win == winid and window_allowed
+        end,
+        source_windows = function()
+            return window_allowed and { winid } or {}
+        end,
+        invalidate_buffer = function(bufnr)
+            table.insert(invalidated_buffers, bufnr)
+        end,
+        invalidate_window = function(source_win)
+            table.insert(invalidated_windows, source_win)
+        end,
+    })
+    invalidated_buffers = {}
+    invalidated_windows = {}
+
+    buffer_allowed = false
+    window_allowed = false
+    expect.equality(context.set_marks(target, "malformed"), false)
+    expect.equality(context.set_window_marks(winid, "malformed"), false)
+    expect.equality(context.set_marks(target, "malformed"), false)
+    expect.equality(context.set_window_marks(winid, "malformed"), false)
+
+    expect.equality(store.get(target), {})
+    expect.equality(store.get_window(winid), {})
+    expect.equality(invalidated_buffers, { target })
+    expect.equality(invalidated_windows, { winid })
+    expect.equality(notifications, {})
+
+    expect.equality(context.set_marks(999999, {}), false)
+    expect.equality(context.set_window_marks(999999, {}), false)
+    expect.equality(#notifications, 2)
+
+    buffer_allowed = true
+    invalidated_buffers = {}
+    expect.equality(context.set_marks(target, { { line = 9, type = "Custom" } }), true)
+    expect.equality(store.get(target), { guarded = {} })
+    expect.equality(context.set_marks(target, { { line = 9, type = "Custom" } }), true)
+    expect.equality(invalidated_buffers, { target })
+    expect.equality(context.set_marks(target, "malformed"), false)
+    expect.equality(store.get(target), {})
+    expect.equality(invalidated_buffers, { target, target })
+    expect.equality(#notifications, 3)
+end
+
+T["skips pre-ineligible refreshes and rejects eligibility races"] = function()
+    local providers = require("scrollbar.providers")
+    local store = require("scrollbar.store")
+    local target = new_buffer({ "one" })
+    local winid = show_buffer(target)
+    local buffer_allowed = true
+    local window_allowed = true
+    local buffer_race = false
+    local window_race = false
+    local buffer_calls = 0
+    local window_calls = 0
+
+    providers.register({
+        name = "racing",
+        refresh = function()
+            buffer_calls = buffer_calls + 1
+            if buffer_race then
+                buffer_allowed = false
+            end
+            return { { line = 0, type = "Custom" } }
+        end,
+        refresh_window = function()
+            window_calls = window_calls + 1
+            if window_race then
+                window_allowed = false
+            end
+            return { { line = 0, type = "Custom" } }
+        end,
+    })
+    providers.setup({
+        is_buffer_eligible = function(bufnr)
+            return bufnr == target and buffer_allowed
+        end,
+        is_source_window = function(source_win)
+            return source_win == winid and window_allowed
+        end,
+        source_windows = function()
+            return window_allowed and { winid } or {}
+        end,
+    })
+    expect.equality(buffer_calls, 1)
+    expect.equality(window_calls, 1)
+
+    buffer_allowed = false
+    window_allowed = false
+    expect.equality(providers.refresh(target), false)
+    expect.equality(providers.refresh_window(winid), false)
+    expect.equality(buffer_calls, 1)
+    expect.equality(window_calls, 1)
+    expect.equality(store.get(target), {})
+    expect.equality(store.get_window(winid), {})
+
+    buffer_allowed = true
+    window_allowed = true
+    buffer_race = true
+    window_race = true
+    expect.equality(providers.refresh(target), false)
+    expect.equality(providers.refresh_window(winid), false)
+    expect.equality(buffer_calls, 2)
+    expect.equality(window_calls, 2)
+    expect.equality(store.get(target), {})
+    expect.equality(store.get_window(winid), {})
+end
+
+T["guards private compact search publication with buffer policy"] = function()
+    local providers = require("scrollbar.providers")
+    local store = require("scrollbar.store")
+    local compact = require("scrollbar.providers.search_compact")
+    local target = new_buffer({ "one", "two" })
+    local allowed = true
+    local invalidated = {}
+    local context
+
+    providers.register({
+        name = "search",
+        setup = function(provider_context)
+            context = provider_context
+        end,
+    })
+    providers.setup({
+        is_buffer_eligible = function(bufnr)
+            return bufnr == target and allowed
+        end,
+        invalidate_buffer = function(bufnr)
+            table.insert(invalidated, bufnr)
+        end,
+    })
+
+    local encoded = compact.encode({ 0, 1 })
+    expect.equality(context._set_search_compact(target, encoded), true)
+    expect.equality(context._set_search_compact(target, encoded), true)
+    expect.equality(invalidated, { target })
+    expect.equality(store._get_snapshot(target).compact_search, encoded)
+
+    allowed = false
+    expect.equality(context._set_search_compact(target, encoded), false)
+    expect.equality(context._set_search_compact(target, encoded), false)
+    expect.equality(invalidated, { target, target })
+    expect.equality(store.get(target), {})
+    expect.equality(store._get_snapshot(target).compact_search, nil)
 end
 
 return T

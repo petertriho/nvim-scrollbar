@@ -35,13 +35,14 @@ local OPTION_PATTERNS = {
 local runtime
 local timer_closed = false
 
+---@param current ScrollbarSchedulerRuntime
 ---@param bufnr integer
 ---@return boolean
-local function owned_buffer(bufnr)
-    if type(bufnr) ~= "number" or not vim.api.nvim_buf_is_valid(bufnr) then
+local function owned_buffer(current, bufnr)
+    if type(current.renderer.is_owned_buffer) ~= "function" then
         return false
     end
-    local ok, owned = pcall(vim.api.nvim_buf_get_var, bufnr, "scrollbar_owned")
+    local ok, owned = pcall(current.renderer.is_owned_buffer, bufnr)
     return ok and owned == true
 end
 
@@ -71,12 +72,7 @@ local function source_windows(current, bufnr)
     local result = {}
     local seen = {}
     for _, winid in ipairs(windows) do
-        if
-            type(winid) == "number"
-            and not seen[winid]
-            and vim.api.nvim_win_is_valid(winid)
-            and not owned_window(current, winid)
-        then
+        if type(winid) == "number" and not seen[winid] then
             seen[winid] = true
             table.insert(result, winid)
         end
@@ -89,15 +85,11 @@ end
 ---@param winid integer
 ---@return boolean
 local function is_source_window(current, winid)
-    if type(winid) ~= "number" or not vim.api.nvim_win_is_valid(winid) or owned_window(current, winid) then
+    if type(current.renderer.is_source_window) ~= "function" then
         return false
     end
-    for _, source_win in ipairs(source_windows(current)) do
-        if source_win == winid then
-            return true
-        end
-    end
-    return false
+    local ok, selected = pcall(current.renderer.is_source_window, winid)
+    return ok and selected == true
 end
 
 ---@param current ScrollbarSchedulerRuntime
@@ -237,10 +229,17 @@ local function event_is_owned(args)
     if current == nil then
         return true
     end
-    if owned_buffer(args.buf) then
+    local current_win = vim.api.nvim_get_current_win()
+    if owned_buffer(current, args.buf) then
+        local ok, current_buf = pcall(vim.api.nvim_win_get_buf, current_win)
+        if ok and current_buf == args.buf and not owned_window(current, current_win) then
+            local config_ok, window_config = pcall(vim.api.nvim_win_get_config, current_win)
+            if config_ok and window_config.relative == "" then
+                return false
+            end
+        end
         return true
     end
-    local current_win = vim.api.nvim_get_current_win()
     return owned_window(current, current_win)
 end
 

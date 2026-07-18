@@ -140,7 +140,11 @@ require("scrollbar.providers").register({
             pattern = "BookmarksChanged",
             callback = function(args)
                 local bufnr = args.buf ~= 0 and args.buf or vim.api.nvim_get_current_buf()
-                context.set_marks(bufnr, collect(bufnr))
+                if context.is_buffer_eligible(bufnr) then
+                    context.set_marks(bufnr, collect(bufnr))
+                else
+                    context.clear_marks(bufnr)
+                end
             end,
         })
     end,
@@ -164,12 +168,30 @@ patches.
 - Returning `{}` explicitly replaces it with an empty list and clears visible
   marks.
 - Returning `nil` from `refresh` or `refresh_window` means "do not publish" and
-  leaves the current list unchanged. The exception is a refresh-only window
-  provider on `BufWinEnter`, where the manager has already cleared the old
-  window association before calling `refresh_window`.
+  normally leaves the current list unchanged. Policy is checked again after the
+  callback, so a target that becomes ineligible during collection is cleared
+  instead. A refresh-only window provider on `BufWinEnter` is also called after
+  the manager has cleared the old window association.
 - Passing `nil` to `context.set_marks` or `context.set_window_marks` is not the
   same as returning `nil`; it is an invalid mark list, so use the clear methods
   instead.
+
+A buffer is eligible when its ID is valid, it is loaded, it is not owned by the
+scrollbar renderer, its `buftype` and `filetype` are not excluded, and its line
+count does not exceed `max_lines`. Buffer-scoped publication does not require
+the buffer to be displayed or currently selected.
+
+A window is a current source window only when it is a valid normal non-renderer
+window displaying an eligible buffer and is selected by root `visibility` plus
+the effective profile's editor-relative placement rule. Window-scoped marks
+cannot be prepublished to inactive or editor-unselected windows.
+
+Policy is enforced before payload validation for valid targets. Publishing to a
+valid ineligible buffer, or to a valid window outside the current source set,
+silently clears only this provider's stored list for that target and returns
+`false`. Repeating the rejection does not invalidate rendering when nothing was
+stored. Invalid IDs still use the normal validation path and warning behavior.
+Clear operations are unconditional and remain available regardless of policy.
 
 Each complete list is validated before publication. It must be a dense array,
 and every mark must contain only:
@@ -201,19 +223,29 @@ marks.
 | Context member | Behavior |
 | --- | --- |
 | `config` | Deep-copied normalized setup snapshot; mutations do not change root configuration |
-| `set_marks(bufnr, marks)` | Validate and replace buffer-scoped marks; invalidate affected source windows when changed |
-| `clear_marks(bufnr?)` | Clear one buffer, or all buffer marks owned by this provider when omitted |
-| `set_window_marks(winid, marks)` | Validate and replace marks local to one source window |
-| `clear_window_marks(winid?)` | Clear one window, or all window marks owned by this provider when omitted |
+| `set_marks(bufnr, marks)` | Policy-check, validate, and replace buffer-scoped marks; return whether publication was accepted |
+| `clear_marks(bufnr?)` | Unconditionally clear one buffer, or all buffer marks owned by this provider when omitted |
+| `set_window_marks(winid, marks)` | Policy-check, validate, and replace marks local to one current source window; return whether publication was accepted |
+| `clear_window_marks(winid?)` | Unconditionally clear one window, or all window marks owned by this provider when omitted |
 | `create_augroup(name)` | Create a provider-owned, namespaced augroup removed during cleanup |
 | `add_cleanup(fn)` | Register a provider-owned cleanup callback |
-| `source_windows(bufnr?)` | Return a copied list of eligible source windows, optionally filtered by buffer |
+| `is_buffer_eligible(bufnr)` | Query live renderer-backed buffer eligibility |
+| `is_source_window(winid)` | Query exact live membership in the current selected source-window set |
+| `source_windows(bufnr?)` | Return a copied current source-window list, optionally filtered by buffer |
 | `invalidate_buffer(bufnr)` | Queue rendering for windows displaying the buffer without changing marks |
 | `invalidate_window(winid)` | Queue rendering for one source window without changing marks |
 
-Setters return whether validation succeeded. Clear methods return whether any
-stored list changed. Publishing an identical valid list succeeds without a
-render invalidation.
+Setters return whether publication was accepted. `false` can mean policy
+rejection or validation failure; preflight with the policy queries when the
+distinction matters. Clear methods return whether any stored list changed.
+Publishing an identical accepted list returns `true` without a render
+invalidation.
+
+For asynchronous work, use the policy queries to avoid unnecessary collection,
+but always treat the setter as the final authority because eligibility can
+change between collection and publication. A window provider must republish
+when its window becomes a source again; providers without `setup` can rely on
+the manager's `refresh_window` activation events.
 
 ## Lifecycle And Cleanup
 
@@ -266,6 +298,10 @@ remove or invalidate them during cleanup.
   callbacks from the old provider generation.
 - Window-specific state appears in every split: publish it through
   `refresh_window` or `set_window_marks`, not the buffer-scoped operations.
+- A setter returns `false` without a warning: the valid target was rejected by
+  current renderer policy; query `is_buffer_eligible` or `is_source_window`.
+- Inactive window marks do not appear later: window publication is accepted only
+  for current source windows, so republish when the window becomes selected.
 
 ## Related Links
 

@@ -29,6 +29,15 @@ T["coalesces repeated invalidations and renders the latest state"] = function()
                 source_windows = function()
                     return { winid }
                 end,
+                is_source_window = function(source_win)
+                    return source_win == winid
+                end,
+                is_buffer_eligible = function()
+                    return true
+                end,
+                is_owned_buffer = function()
+                    return false
+                end,
                 render = function()
                     table.insert(rendered, latest)
                 end,
@@ -72,6 +81,15 @@ T["requeues work arriving during a flush without losing the final state"] = func
             renderer = {
                 source_windows = function()
                     return { winid }
+                end,
+                is_source_window = function(source_win)
+                    return source_win == winid
+                end,
+                is_buffer_eligible = function()
+                    return true
+                end,
+                is_owned_buffer = function()
+                    return false
                 end,
                 render = function()
                     table.insert(rendered, latest)
@@ -121,6 +139,15 @@ T["uses one source-window snapshot to validate every pending window in a flush"]
                     enumerations = enumerations + 1
                     return sources
                 end,
+                is_source_window = function(winid)
+                    return vim.tbl_contains(sources, winid)
+                end,
+                is_buffer_eligible = function()
+                    return true
+                end,
+                is_owned_buffer = function()
+                    return false
+                end,
                 render = function(winid)
                     table.insert(rendered, winid)
                 end,
@@ -144,6 +171,73 @@ T["uses one source-window snapshot to validate every pending window in a flush"]
     table.sort(result.sources)
     expect.equality(result.enumerations, 1)
     expect.equality(result.rendered, result.sources)
+end
+
+T["delegates targeted membership and owned-buffer events to renderer policy"] = function()
+    local child = new_child()
+    local result = child.lua_func(function()
+        local source = vim.api.nvim_get_current_win()
+        vim.cmd("split")
+        local other = vim.api.nvim_get_current_win()
+        local membership_calls = {}
+        local enumerations = 0
+        local owned_buffer_calls = {}
+        local scheduler = require("scrollbar.scheduler")
+        scheduler.setup({
+            config = require("scrollbar.config").set({
+                set_highlights = false,
+                render = { interval_ms = 1000 },
+            }),
+            renderer = {
+                source_windows = function()
+                    enumerations = enumerations + 1
+                    return { source }
+                end,
+                is_source_window = function(winid)
+                    table.insert(membership_calls, winid)
+                    return winid == source
+                end,
+                is_buffer_eligible = function()
+                    return true
+                end,
+                is_owned_buffer = function(bufnr)
+                    table.insert(owned_buffer_calls, bufnr)
+                    return bufnr == vim.api.nvim_get_current_buf()
+                end,
+                is_owned_window = function()
+                    return false
+                end,
+                render = function() end,
+            },
+        })
+
+        local source_accepted = scheduler.invalidate_window(source)
+        local other_accepted = scheduler.invalidate_window(other)
+        local enumerations_before_flush = enumerations
+        vim.api.nvim_exec_autocmds("TextChanged", { buffer = vim.api.nvim_get_current_buf() })
+        local dirty_after_owned_event = vim.deepcopy(scheduler.status().dirty_windows)
+        scheduler.flush()
+        scheduler.dispose()
+        return {
+            source = source,
+            other = other,
+            source_accepted = source_accepted,
+            other_accepted = other_accepted,
+            membership_calls = membership_calls,
+            enumerations_before_flush = enumerations_before_flush,
+            enumerations = enumerations,
+            owned_buffer_calls = owned_buffer_calls,
+            dirty_after_owned_event = dirty_after_owned_event,
+        }
+    end)
+
+    expect.equality(result.source_accepted, true)
+    expect.equality(result.other_accepted, false)
+    expect.equality(result.membership_calls, { result.source, result.other })
+    expect.equality(result.enumerations_before_flush, 0)
+    expect.equality(result.enumerations, 2)
+    expect.equality(#result.owned_buffer_calls > 0, true)
+    expect.equality(result.dirty_after_owned_event, { result.source })
 end
 
 T["ignores closed and floating windows and scopes buffer invalidation"] = function()
@@ -189,6 +283,9 @@ T["ignores closed and floating windows and scopes buffer invalidation"] = functi
             config = active_config,
             renderer = {
                 source_windows = renderer.source_windows,
+                is_source_window = renderer.is_source_window,
+                is_buffer_eligible = renderer.is_buffer_eligible,
+                is_owned_buffer = renderer.is_owned_buffer,
                 is_owned_window = renderer.is_owned_window,
                 render = function(winid)
                     table.insert(rendered, winid)
@@ -261,10 +358,16 @@ T["reveals only navigation sources and keeps other invalidations render-only"] =
                     if bufnr == second_buf then
                         return { second }
                     end
-                    if bufnr == float_buf then
-                        return { float_win }
-                    end
-                    return { first, second, float_win }
+                    return bufnr == nil and { first, second } or {}
+                end,
+                is_source_window = function(winid)
+                    return winid == first or winid == second
+                end,
+                is_buffer_eligible = function(bufnr)
+                    return bufnr == first_buf or bufnr == second_buf
+                end,
+                is_owned_buffer = function(bufnr)
+                    return bufnr == float_buf
                 end,
                 reveal = function(winid)
                     table.insert(revealed, winid)
@@ -394,6 +497,15 @@ T["keeps independent deadlines and rejects stale callbacks"] = function()
                 source_windows = function()
                     return { first, second }
                 end,
+                is_source_window = function(winid)
+                    return winid == first or winid == second
+                end,
+                is_buffer_eligible = function()
+                    return true
+                end,
+                is_owned_buffer = function()
+                    return false
+                end,
                 reveal = function()
                     return true
                 end,
@@ -502,6 +614,15 @@ T["holds deadlines and closes source timers with their lifecycle"] = function()
                     end
                     return windows
                 end,
+                is_source_window = function(winid)
+                    return winid == first or winid == second
+                end,
+                is_buffer_eligible = function()
+                    return true
+                end,
+                is_owned_buffer = function()
+                    return false
+                end,
                 reveal = function()
                     return true
                 end,
@@ -595,6 +716,15 @@ T["wires provider context invalidations directly and never refreshes providers o
                 end
                 return {}
             end,
+            is_source_window = function(source_win)
+                return source_win == winid
+            end,
+            is_buffer_eligible = function(target_buf)
+                return target_buf == bufnr
+            end,
+            is_owned_buffer = function()
+                return false
+            end,
             render = function(source_win)
                 table.insert(rendered, source_win)
             end,
@@ -620,6 +750,7 @@ T["wires provider context invalidations directly and never refreshes providers o
             invalidate_buffer = scheduler.invalidate_buffer,
             invalidate_window = scheduler.invalidate_window,
             source_windows = renderer.source_windows,
+            is_source_window = renderer.is_source_window,
             is_buffer_eligible = function(target_buf)
                 return target_buf == bufnr
             end,
@@ -689,6 +820,9 @@ T["honors editor-relative active ownership through renderer source windows"] = f
             config = active_config,
             renderer = {
                 source_windows = real_renderer.source_windows,
+                is_source_window = real_renderer.is_source_window,
+                is_buffer_eligible = real_renderer.is_buffer_eligible,
+                is_owned_buffer = real_renderer.is_owned_buffer,
                 is_owned_window = real_renderer.is_owned_window,
                 render = function(winid)
                     table.insert(rendered, winid)
@@ -745,6 +879,9 @@ T["does not requeue from renderer-owned float autocmds"] = function()
             config = active_config,
             renderer = {
                 source_windows = renderer.source_windows,
+                is_source_window = renderer.is_source_window,
+                is_buffer_eligible = renderer.is_buffer_eligible,
+                is_owned_buffer = renderer.is_owned_buffer,
                 is_owned_window = renderer.is_owned_window,
                 render = function(winid)
                     renders = renders + 1
@@ -775,6 +912,111 @@ T["does not requeue from renderer-owned float autocmds"] = function()
     })
 end
 
+T["reconciles dynamic source-policy transitions through scheduler enumeration"] = function()
+    local child = new_child()
+    local result = child.lua_func(function()
+        local presets = require("scrollbar.presets")
+        local config = require("scrollbar.config")
+        local renderer = require("scrollbar.renderer")
+        local scheduler = require("scrollbar.scheduler")
+        local source_win = vim.api.nvim_get_current_win()
+        local source_buf = vim.api.nvim_get_current_buf()
+        vim.api.nvim_buf_set_lines(source_buf, 0, -1, false, { "one", "two", "three" })
+
+        local function start(overrides)
+            scheduler.dispose()
+            renderer.dispose()
+            local active = config.set(presets.merge({
+                show = true,
+                set_highlights = false,
+                render = { interval_ms = 1000 },
+                mouse = { enabled = false },
+                thumb = { hide_if_all_visible = false },
+                excluded_buftypes = {},
+                excluded_filetypes = {},
+            }, overrides or {}))
+            renderer.setup()
+            scheduler.setup({ config = active, renderer = renderer })
+            scheduler.invalidate_all()
+            scheduler.flush()
+        end
+
+        local function closed(state)
+            return renderer.get_state(state.source_win) == nil
+                and not vim.api.nvim_win_is_valid(state.float_win)
+                and not vim.api.nvim_buf_is_valid(state.float_buf)
+        end
+
+        vim.api.nvim_set_current_win(source_win)
+        start({ excluded_filetypes = { "blocked" } })
+        local filetype_state = assert(renderer.get_state(source_win))
+        vim.bo[source_buf].filetype = "blocked"
+        vim.api.nvim_exec_autocmds("TextChanged", { buffer = source_buf })
+        local filetype_closed = closed(filetype_state)
+        vim.bo[source_buf].filetype = ""
+
+        start({ max_lines = 3 })
+        local max_lines_state = assert(renderer.get_state(source_win))
+        vim.api.nvim_buf_set_lines(source_buf, -1, -1, false, { "four" })
+        vim.api.nvim_exec_autocmds("TextChanged", { buffer = source_buf })
+        local max_lines_closed = closed(max_lines_state)
+        vim.api.nvim_buf_set_lines(source_buf, 3, -1, false, {})
+
+        start()
+        local owned_state = assert(renderer.get_state(source_win))
+        local owned_buf = vim.api.nvim_create_buf(false, true)
+        vim.api.nvim_buf_set_var(owned_buf, "scrollbar_owned", true)
+        vim.api.nvim_win_set_buf(source_win, owned_buf)
+        vim.api.nvim_exec_autocmds("BufWinEnter", { buffer = owned_buf })
+        local owned_closed = closed(owned_state)
+        vim.api.nvim_win_set_buf(source_win, source_buf)
+        vim.api.nvim_set_current_win(source_win)
+
+        vim.cmd("split")
+        local second = vim.api.nvim_get_current_win()
+        start({ float = { placement = { relative = "editor" } } })
+        local editor_state = assert(renderer.get_state(second))
+        vim.api.nvim_set_current_win(source_win)
+        vim.api.nvim_exec_autocmds("WinEnter", { buffer = source_buf })
+        local editor_closed = closed(editor_state)
+        vim.api.nvim_win_close(second, true)
+
+        vim.api.nvim_set_current_win(source_win)
+        start({ visibility = "active" })
+        local active_state = assert(renderer.get_state(source_win))
+        local user_buf = vim.api.nvim_create_buf(false, true)
+        local user_float = vim.api.nvim_open_win(user_buf, true, {
+            relative = "editor",
+            row = 1,
+            col = 1,
+            width = 1,
+            height = 1,
+            style = "minimal",
+        })
+        vim.api.nvim_exec_autocmds("WinEnter", { buffer = user_buf })
+        local user_float_closed = closed(active_state)
+
+        scheduler.dispose()
+        renderer.dispose()
+        vim.api.nvim_win_close(user_float, true)
+        return {
+            filetype = filetype_closed,
+            max_lines = max_lines_closed,
+            owned = owned_closed,
+            editor = editor_closed,
+            user_float = user_float_closed,
+        }
+    end)
+
+    expect.equality(result, {
+        filetype = true,
+        max_lines = true,
+        owned = true,
+        editor = true,
+        user_float = true,
+    })
+end
+
 T["rerenders every source when editor chrome options change"] = function()
     local child = new_child()
     local result = child.lua_func(function()
@@ -792,6 +1034,16 @@ T["rerenders every source when editor chrome options change"] = function()
             renderer = {
                 source_windows = function()
                     return { first, second }
+                end,
+                is_source_window = function(winid)
+                    return winid == first or winid == second
+                end,
+                is_buffer_eligible = function()
+                    return true
+                end,
+                is_owned_buffer = function(bufnr)
+                    local ok, value = pcall(vim.api.nvim_buf_get_var, bufnr, "scrollbar_owned")
+                    return ok and value == true
                 end,
                 render = function(winid)
                     table.insert(rendered, winid)
@@ -878,6 +1130,15 @@ T["refreshes colorscheme state and fully disposes timer and autocmd ownership"] 
             renderer = {
                 source_windows = function()
                     return { winid }
+                end,
+                is_source_window = function(source_win)
+                    return source_win == winid
+                end,
+                is_buffer_eligible = function()
+                    return true
+                end,
+                is_owned_buffer = function()
+                    return false
                 end,
                 render = function()
                     rendered = rendered + 1

@@ -210,6 +210,39 @@ T["rapid replacements retain one scan and publish only the newest request"] = fu
     expect.equality(result.ordinary_search, nil)
 end
 
+T["delayed worker results clear prior search data after eligibility changes"] = function()
+    local child = new_worker_child(false, { scan_delay_ms = 150 })
+    child.lua([[
+        local test = package.loaded["scrollbar.test.search_worker"]
+        local state = { reject = false }
+        test.on_timing = function(event)
+            if event == "result_callback_started" and state.reject then
+                state.reject = false
+                vim.api.nvim_buf_set_var(0, "scrollbar_owned", true)
+            end
+        end
+        package.loaded["scrollbar.test.search_policy_race"] = state
+        require("scrollbar.providers").setup({ config = require("scrollbar.config").get() })
+    ]])
+    helpers.set_lines(child, { "start", "accepted", "racing" })
+    helpers.accept_search(child, "/", "accepted")
+    expect.equality(helpers.wait_for_mark_lines(child, { 1 }), true)
+
+    child.lua([[package.loaded["scrollbar.test.search_policy_race"].reject = true]])
+    helpers.accept_search(child, "/", "racing")
+    expect.equality(
+        child.lua_get([[vim.wait(3000, function()
+            return require("scrollbar.store").get(vim.api.nvim_get_current_buf()).search == nil
+        end)]]),
+        true
+    )
+
+    child.api.nvim_buf_del_var(0, "scrollbar_owned")
+    child.api.nvim_win_set_cursor(0, { 1, 0 })
+    helpers.accept_search(child, "/", "accepted")
+    expect.equality(helpers.wait_for_mark_lines(child, { 1 }), true)
+end
+
 T["obsolete worker callbacks cannot publish into a new session"] = function()
     local child = new_worker_child(false)
     expect.equality(helpers.wait_for_worker_status(child, "ready"), true)

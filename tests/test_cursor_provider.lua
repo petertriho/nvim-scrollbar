@@ -5,6 +5,7 @@ local T = MiniTest.new_set({
     hooks = {
         pre_case = function()
             package.loaded["scrollbar.config"] = nil
+            package.loaded["scrollbar.renderer"] = nil
             package.loaded["scrollbar.store"] = nil
             package.loaded["scrollbar.providers"] = nil
             package.loaded["scrollbar.providers.cursor"] = nil
@@ -164,6 +165,33 @@ T["entering a same-buffer split initializes its window cursor mark"] = function(
     end)
 
     expect.equality(store.get_window(second).cursor, { { line = 1, type = "Cursor" } })
+end
+
+T["delegates exact source membership to provider context"] = function()
+    local providers = require("scrollbar.providers")
+    local target = new_buffer({ "one", "two" })
+    local winid = show_buffer(target)
+    local source_lookups = 0
+
+    vim.api.nvim_set_current_win(winid)
+    providers.register(require("scrollbar.providers.cursor"))
+    providers.setup({
+        is_buffer_eligible = function()
+            return true
+        end,
+        is_source_window = function()
+            return false
+        end,
+        source_windows = function()
+            source_lookups = source_lookups + 1
+            return { winid }
+        end,
+    })
+    source_lookups = 0
+    vim.api.nvim_exec_autocmds("CursorMoved", { buffer = target })
+
+    expect.equality(source_lookups, 0)
+    expect.equality(require("scrollbar.store").get_window(winid), {})
 end
 
 return T

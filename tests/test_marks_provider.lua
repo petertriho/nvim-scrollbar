@@ -5,6 +5,7 @@ local T = MiniTest.new_set({
     hooks = {
         pre_case = function()
             package.loaded["scrollbar.config"] = nil
+            package.loaded["scrollbar.renderer"] = nil
             package.loaded["scrollbar.store"] = nil
             package.loaded["scrollbar.providers"] = nil
             package.loaded["scrollbar.providers.marks"] = nil
@@ -336,6 +337,30 @@ T["numbered mark tracking retains SafeState reconciliation for ShaDa changes"] =
         expect.equality(events.MarkSet, nil)
     end
     expect.equality(events.SafeState ~= nil, true)
+end
+
+T["delegates buffer eligibility before collecting marks"] = function()
+    local target = new_buffer({ "one" })
+    local calls = 0
+    local get_mark = vim.api.nvim_buf_get_mark
+    rawset(vim.api, "nvim_buf_get_mark", function(...)
+        calls = calls + 1
+        return get_mark(...)
+    end)
+    MiniTest.finally(function()
+        rawset(vim.api, "nvim_buf_get_mark", get_mark)
+    end)
+
+    setup_provider({
+        is_buffer_eligible = function()
+            return false
+        end,
+    })
+    calls = 0
+    vim.api.nvim_exec_autocmds("TextChanged", { buffer = target })
+
+    expect.equality(calls, 0)
+    expect.equality(require("scrollbar.store").get(target), {})
 end
 
 return T

@@ -30,6 +30,7 @@ local T = MiniTest.new_set({
 
             for _, module in ipairs({
                 "scrollbar.config",
+                "scrollbar.renderer",
                 "scrollbar.store",
                 "scrollbar.providers",
                 "scrollbar.providers.gitsigns",
@@ -996,6 +997,146 @@ T["Coc ignores diagnostic responses older than the latest request"] = function()
     expect.equality(require("scrollbar.store").get(target).coc, {
         { line = 1, type = "Warn" },
     })
+end
+
+T["optional event routes preflight ineligible buffers before collection"] = function()
+    local target = new_buffer({ "one", "two" })
+    local windows = show_in_two_windows(target, target)
+    local calls = { gitsigns = 0, mini_diff = 0, signify = 0 }
+    package.preload["gitsigns"] = function()
+        return {
+            get_hunks = function()
+                calls.gitsigns = calls.gitsigns + 1
+                return { { type = "add", added = { start = 1, count = 1 } } }
+            end,
+        }
+    end
+    rawset(package.preload, "mini.diff", function()
+        return {
+            get_buf_data = function()
+                calls.mini_diff = calls.mini_diff + 1
+                return { hunks = { { type = "add", buf_start = 1, buf_count = 1 } } }
+            end,
+        }
+    end)
+    vim.g.loaded_signify = 1
+    local sign_getplaced = vim.fn.sign_getplaced
+    rawset(vim.fn, "sign_getplaced", function(...)
+        calls.signify = calls.signify + 1
+        return sign_getplaced(...)
+    end)
+    MiniTest.finally(function()
+        rawset(vim.fn, "sign_getplaced", sign_getplaced)
+    end)
+    vim.g.ale_buffer_info = {
+        [tostring(target)] = { loclist = { { lnum = 1, type = "E" } } },
+    }
+
+    local providers = require("scrollbar.providers")
+    providers.register(require("scrollbar.providers.gitsigns"))
+    providers.register(require("scrollbar.providers.mini_diff"))
+    providers.register(require("scrollbar.providers.signify"))
+    providers.register(require("scrollbar.providers.ale"))
+    providers.setup({
+        is_buffer_eligible = function()
+            return false
+        end,
+        source_windows = function()
+            return windows
+        end,
+    })
+
+    local store = require("scrollbar.store")
+    for _, name in ipairs({ "gitsigns", "mini_diff", "signify", "ale" }) do
+        assert(store.set(name, target, { { line = 0, type = "Error" } }))
+    end
+    calls = { gitsigns = 0, mini_diff = 0, signify = 0 }
+    vim.api.nvim_set_current_buf(target)
+    vim.api.nvim_exec_autocmds("User", { pattern = "GitSignsUpdate", data = { buffer = target } })
+    vim.api.nvim_exec_autocmds("User", { pattern = "MiniDiffUpdated" })
+    vim.api.nvim_exec_autocmds("User", { pattern = "Signify" })
+    vim.api.nvim_exec_autocmds("User", { pattern = "ALELintPost" })
+
+    expect.equality(calls, { gitsigns = 0, mini_diff = 0, signify = 0 })
+    expect.equality(store.get(target), {})
+end
+
+T["vgit deferred callbacks recheck policy before collection"] = function()
+    local target = new_buffer({ "one", "two" })
+    local allowed = true
+    local calls = 0
+    local handlers = install_vgit_store({
+        [tostring(target)] = {
+            state = { signs = { { col = 0, name = "GitSignsAdd" } } },
+        },
+    })
+    install_vgit_signs(default_vgit_main)
+    package.loaded["vgit.git.git_buffer_store"] = nil
+    local preload = package.preload["vgit.git.git_buffer_store"]
+    rawset(package.preload, "vgit.git.git_buffer_store", function()
+        local store = preload()
+        local get = store.get
+        store.get = function(...)
+            calls = calls + 1
+            return get(...)
+        end
+        return store
+    end)
+
+    local vgit = require("scrollbar.providers.vgit")
+    vgit.update_delay_ms = 20
+    local providers = require("scrollbar.providers")
+    providers.register(vgit)
+    providers.setup({
+        is_buffer_eligible = function(bufnr)
+            return bufnr == target and allowed
+        end,
+    })
+    expect.equality(require("scrollbar.store").get(target).vgit, {
+        { line = 0, type = "VGitAdd" },
+    })
+
+    calls = 0
+    dispatch_vgit_event(handlers, "sync", target)
+    allowed = false
+    vim.wait(100)
+
+    expect.equality(calls, 0)
+    expect.equality(require("scrollbar.store").get(target), {})
+end
+
+T["Coc does not retain diagnostics collected for ineligible URI buffers"] = function()
+    local target = new_buffer({ "one", "two" })
+    local allowed = true
+    local callbacks = {}
+    rawset(vim.fn, "CocActionAsync", function(_, callback)
+        table.insert(callbacks, callback)
+    end)
+
+    local providers = require("scrollbar.providers")
+    providers.register(require("scrollbar.providers.coc"))
+    providers.setup({
+        is_buffer_eligible = function(bufnr)
+            return bufnr == target and allowed
+        end,
+    })
+    local diagnostics = {
+        {
+            severity = "Error",
+            location = { uri = vim.uri_from_bufnr(target), range = { start = { line = 0 } } },
+        },
+    }
+    callbacks[1](vim.NIL, diagnostics)
+    expect.equality(require("scrollbar.store").get(target).coc, { { line = 0, type = "Error" } })
+
+    vim.api.nvim_exec_autocmds("User", { pattern = "CocDiagnosticChange" })
+    allowed = false
+    callbacks[2](vim.NIL, diagnostics)
+    expect.equality(require("scrollbar.store").get(target), {})
+
+    allowed = true
+    providers.refresh(target)
+    expect.equality(require("scrollbar.store").get(target).coc, { { line = 0, type = "Error" } })
 end
 
 T["missing optional dependencies leave runtime and provider setup usable"] = function()

@@ -71,6 +71,35 @@ layout = {
 The numerical meaning changed: the old value capped total float width; the new
 value caps only the `Mark` lane, including its declared base cells.
 
+## Custom Provider Publication Policy
+
+The v2 provider context now exposes live renderer-backed policy queries:
+
+```lua
+context.is_buffer_eligible(bufnr)
+context.is_source_window(winid)
+context.source_windows(bufnr)
+```
+
+`set_marks` and `set_window_marks` now return whether publication was accepted,
+not only whether mark validation succeeded. A valid target rejected by current
+policy is cleared silently and returns `false`; malformed data for an eligible
+target and invalid IDs retain validation warnings. Clear operations remain
+unconditional.
+
+Buffer publication requires an eligible valid, loaded, non-renderer-owned
+buffer within the configured exclusion and `max_lines` rules. It does not
+require a currently displayed source window. Window publication requires exact
+current membership in `source_windows()`, including active-visibility and
+editor-relative profile selection.
+
+Custom window providers can no longer prepublish marks for inactive or
+editor-unselected windows. Republish when the window becomes a source, or omit
+`setup` and let the manager call `refresh_window` on source activation. For
+asynchronous providers, preflight before expensive work but still handle a
+setter returning `false`, because eligibility can change before publication.
+There is no compatibility shim or feature flag on the v2 line.
+
 ## Highlight Names
 
 Renderer extmarks now use canonical `ScrollbarThumb`,

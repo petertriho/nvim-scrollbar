@@ -1,43 +1,8 @@
----@param bufnr integer
----@param context ScrollbarProviderContext
----@return boolean
-local function is_buffer_eligible(bufnr, context)
-    if not vim.api.nvim_buf_is_valid(bufnr) or not vim.api.nvim_buf_is_loaded(bufnr) then
-        return false
-    end
-    if vim.tbl_contains(context.config.excluded_buftypes, vim.bo[bufnr].buftype) then
-        return false
-    end
-    if vim.tbl_contains(context.config.excluded_filetypes, vim.bo[bufnr].filetype) then
-        return false
-    end
-    if context.config.max_lines and vim.api.nvim_buf_line_count(bufnr) > context.config.max_lines then
-        return false
-    end
-    return true
-end
-
 ---@param winid integer
 ---@param context ScrollbarProviderContext
 ---@return ScrollbarMark[]?
 local function collect(winid, context)
-    if not vim.api.nvim_win_is_valid(winid) then
-        return nil
-    end
-
-    local bufnr = vim.api.nvim_win_get_buf(winid)
-    if not is_buffer_eligible(bufnr, context) then
-        return nil
-    end
-
-    local is_source = false
-    for _, source_win in ipairs(context.source_windows(bufnr)) do
-        if source_win == winid then
-            is_source = true
-            break
-        end
-    end
-    if not is_source then
+    if not context.is_source_window(winid) then
         return nil
     end
     return { { line = vim.api.nvim_win_get_cursor(winid)[1] - 1, type = "Cursor" } }

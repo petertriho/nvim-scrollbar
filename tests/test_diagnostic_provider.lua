@@ -5,6 +5,7 @@ local T = MiniTest.new_set({
     hooks = {
         pre_case = function()
             package.loaded["scrollbar.config"] = nil
+            package.loaded["scrollbar.renderer"] = nil
             package.loaded["scrollbar.store"] = nil
             package.loaded["scrollbar.providers"] = nil
             package.loaded["scrollbar.providers.diagnostic"] = nil
@@ -250,6 +251,32 @@ T["diagnostic setup is idempotent and disposal removes events and marks"] = func
 
     expect.equality(store.get(target), {})
     expect.equality(pcall(vim.api.nvim_get_autocmds, { group = "ScrollbarProvider_diagnostic_events" }), false)
+end
+
+T["delegates buffer eligibility before collecting diagnostics"] = function()
+    local providers = require("scrollbar.providers")
+    local target = new_buffer({ "one" })
+    local calls = 0
+    local get = vim.diagnostic.get
+    rawset(vim.diagnostic, "get", function(...)
+        calls = calls + 1
+        return get(...)
+    end)
+    MiniTest.finally(function()
+        rawset(vim.diagnostic, "get", get)
+    end)
+
+    providers.register(require("scrollbar.providers.diagnostic"))
+    providers.setup({
+        is_buffer_eligible = function()
+            return false
+        end,
+    })
+    calls = 0
+    vim.api.nvim_exec_autocmds("DiagnosticChanged", { buffer = target })
+
+    expect.equality(calls, 0)
+    expect.equality(require("scrollbar.store").get(target), {})
 end
 
 return T

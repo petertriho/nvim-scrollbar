@@ -66,26 +66,6 @@ local function reconcile_builtins(active_config)
     end
 end
 
----@param bufnr integer
----@param active_config ScrollbarConfig
----@return boolean
-local function is_buffer_eligible(bufnr, active_config)
-    if
-        not vim.api.nvim_buf_is_valid(bufnr)
-        or not vim.api.nvim_buf_is_loaded(bufnr)
-        or renderer.is_owned_buffer(bufnr)
-    then
-        return false
-    end
-    if vim.tbl_contains(active_config.excluded_buftypes, vim.bo[bufnr].buftype) then
-        return false
-    end
-    if vim.tbl_contains(active_config.excluded_filetypes, vim.bo[bufnr].filetype) then
-        return false
-    end
-    return active_config.max_lines == false or vim.api.nvim_buf_line_count(bufnr) <= active_config.max_lines
-end
-
 local function create_commands()
     vim.api.nvim_create_user_command("ScrollbarShow", M.show, { force = true })
     vim.api.nvim_create_user_command("ScrollbarHide", M.hide, { force = true })
@@ -112,9 +92,8 @@ M.setup = function(overrides)
         invalidate_buffer = scheduler.invalidate_buffer,
         invalidate_window = scheduler.invalidate_window,
         source_windows = renderer.source_windows,
-        is_buffer_eligible = function(bufnr)
-            return is_buffer_eligible(bufnr, active_config)
-        end,
+        is_buffer_eligible = renderer.is_buffer_eligible,
+        is_source_window = renderer.is_source_window,
     })
     scheduler.invalidate_all()
 end

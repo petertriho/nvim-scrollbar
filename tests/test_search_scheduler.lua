@@ -87,6 +87,38 @@ T["a newer generation queued during a scan rejects the stale result"] = function
     })
 end
 
+T["synchronous results clear prior search data when eligibility changes during scanning"] = function()
+    local child = new_child()
+    helpers.set_lines(child, { "start", "accepted", "racing" })
+    helpers.accept_search(child, "/", "accepted")
+    expect.equality(helpers.wait_for_mark_lines(child, { 1 }), true)
+
+    child.lua([[
+        local searchpos = vim.fn.searchpos
+        local changed = false
+        vim.fn.searchpos = function(pattern, flags, ...)
+            if pattern == "racing" and not changed then
+                changed = true
+                vim.api.nvim_buf_set_var(0, "scrollbar_owned", true)
+            end
+            return searchpos(pattern, flags, ...)
+        end
+    ]])
+    helpers.accept_search(child, "/", "racing")
+
+    expect.equality(
+        child.lua_get([[vim.wait(1000, function()
+            return require("scrollbar.store").get(vim.api.nvim_get_current_buf()).search == nil
+        end)]]),
+        true
+    )
+
+    child.api.nvim_buf_del_var(0, "scrollbar_owned")
+    child.api.nvim_win_set_cursor(0, { 1, 0 })
+    helpers.accept_search(child, "/", "accepted")
+    expect.equality(helpers.wait_for_mark_lines(child, { 1 }), true)
+end
+
 T["repeated edits debounce to one scan and retain previous marks"] = function()
     local child = new_child()
     helpers.set_lines(child, { "start", "match", "none" })

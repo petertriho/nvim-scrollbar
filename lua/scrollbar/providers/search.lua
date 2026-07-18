@@ -1,6 +1,5 @@
 local M = { name = "search" }
 local compact_search = require("scrollbar.providers.search_compact")
-local store = require("scrollbar.store")
 local worker = require("scrollbar.providers.search_worker")
 
 local INCSEARCH_DEBOUNCE_MS = 30
@@ -11,6 +10,9 @@ local EDIT_DEBOUNCE_MS = 50
 ---@field pattern string
 ---@field incsearch_pattern string
 ---@field visible boolean
+
+---@class ScrollbarSearchProviderContext: ScrollbarProviderContext
+---@field _set_search_compact fun(bufnr: integer, compact: ScrollbarCompactSearch): boolean
 
 ---@type ScrollbarProviderContext?
 local active_context
@@ -90,11 +92,7 @@ end
 ---@return integer?
 local function source_window(context, bufnr)
     local current = vim.api.nvim_get_current_win()
-    if
-        vim.api.nvim_win_is_valid(current)
-        and vim.api.nvim_win_get_config(current).relative == ""
-        and vim.api.nvim_win_get_buf(current) == bufnr
-    then
+    if context.is_source_window(current) and vim.api.nvim_win_get_buf(current) == bufnr then
         return current
     end
 
@@ -159,10 +157,8 @@ end
 ---@return boolean
 local function publish_compact(context, bufnr, compact)
     local publication_started = timing_hook and vim.uv.hrtime() or nil
-    local published, changed = store._set_search_compact(bufnr, compact)
-    for changed_bufnr in pairs(changed) do
-        context.invalidate_buffer(changed_bufnr)
-    end
+    ---@cast context ScrollbarSearchProviderContext
+    local published = context._set_search_compact(bufnr, compact)
     if publication_started ~= nil then
         emit_timing("set_marks", {
             duration_ms = (vim.uv.hrtime() - publication_started) / 1000000,
@@ -301,6 +297,9 @@ local function execute_request(context, bufnr, generation)
     if publish_compact(context, bufnr, compact) then
         state.completed_signature = request.signature
         state.completed_changedtick = request.changedtick
+    else
+        state.completed_signature = nil
+        state.completed_changedtick = nil
     end
 end
 
@@ -335,6 +334,9 @@ local function handle_worker_result(result)
     if published then
         state.completed_signature = request.signature
         state.completed_changedtick = request.changedtick
+    else
+        state.completed_signature = nil
+        state.completed_changedtick = nil
     end
 end
 
