@@ -40,6 +40,305 @@ local function renderer_config(overrides)
     }, overrides or {})
 end
 
+T["classifies buffers through renderer-owned eligibility"] = function()
+    local child = new_child()
+    local result = child.lua_func(function(config)
+        config.max_lines = 2
+        config.excluded_buftypes = { "nofile" }
+        config.excluded_filetypes = { "renderer-test" }
+        require("scrollbar.config").set(config)
+        local renderer = require("scrollbar.renderer")
+
+        local function buffer(lines)
+            local bufnr = vim.api.nvim_create_buf(false, false)
+            vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, lines)
+            return bufnr
+        end
+
+        local eligible = buffer({ "one" })
+        local at_limit = buffer({ "one", "two" })
+        local oversized = buffer({ "one", "two", "three" })
+        local owned = buffer({ "one" })
+        vim.api.nvim_buf_set_var(owned, "scrollbar_owned", true)
+        local excluded_buftype = buffer({ "one" })
+        vim.bo[excluded_buftype].buftype = "nofile"
+        local excluded_filetype = buffer({ "one" })
+        vim.bo[excluded_filetype].filetype = "renderer-test"
+        local unloaded = buffer({ "one" })
+        vim.api.nvim_buf_delete(unloaded, { unload = true, force = true })
+
+        return {
+            eligible = renderer.is_buffer_eligible(eligible),
+            at_limit = renderer.is_buffer_eligible(at_limit),
+            oversized = renderer.is_buffer_eligible(oversized),
+            owned = renderer.is_buffer_eligible(owned),
+            excluded_buftype = renderer.is_buffer_eligible(excluded_buftype),
+            excluded_filetype = renderer.is_buffer_eligible(excluded_filetype),
+            unloaded = renderer.is_buffer_eligible(unloaded),
+            invalid = renderer.is_buffer_eligible(999999),
+        }
+    end, renderer_config())
+
+    expect.equality(result, {
+        eligible = true,
+        at_limit = true,
+        oversized = false,
+        owned = false,
+        excluded_buftype = false,
+        excluded_filetype = false,
+        unloaded = false,
+        invalid = false,
+    })
+end
+
+T["keeps source predicates in parity with full enumeration"] = function()
+    local child = new_child()
+    local result = child.lua_func(function(config)
+        local lines = {}
+        for index = 1, 100 do
+            lines[index] = "line " .. index
+        end
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        local source_win = vim.api.nvim_get_current_win()
+        require("scrollbar.config").set(config)
+        local renderer = require("scrollbar.renderer")
+        renderer.setup()
+        local state = assert(renderer.render(source_win))
+
+        local user_buf = vim.api.nvim_create_buf(false, true)
+        local user_float = vim.api.nvim_open_win(user_buf, false, {
+            relative = "editor",
+            row = 1,
+            col = 1,
+            width = 1,
+            height = 1,
+            style = "minimal",
+        })
+        local owned_buf = vim.api.nvim_create_buf(false, false)
+        vim.api.nvim_buf_set_var(owned_buf, "scrollbar_owned", true)
+        vim.cmd("split")
+        local owned_win = vim.api.nvim_get_current_win()
+        vim.api.nvim_win_set_buf(owned_win, owned_buf)
+        vim.api.nvim_set_current_win(source_win)
+
+        local sources = renderer.source_windows()
+        local selected = {}
+        for _, winid in ipairs(sources) do
+            selected[winid] = true
+        end
+        local parity = true
+        for _, winid in ipairs(vim.api.nvim_list_wins()) do
+            parity = parity and renderer.is_source_window(winid) == (selected[winid] == true)
+        end
+
+        return {
+            source = renderer.is_source_window(source_win),
+            user_float = renderer.is_source_window(user_float),
+            renderer_float = renderer.is_source_window(state.float_win),
+            owned_buffer_window = renderer.is_source_window(owned_win),
+            owned_buffer_reveal = renderer.reveal(owned_win),
+            owned_buffer_rendered = renderer.render(owned_win) ~= nil,
+            invalid = renderer.is_source_window(999999),
+            parity = parity,
+        }
+    end, renderer_config())
+
+    expect.equality(result, {
+        source = true,
+        user_float = false,
+        renderer_float = false,
+        owned_buffer_window = false,
+        owned_buffer_reveal = false,
+        owned_buffer_rendered = false,
+        invalid = false,
+        parity = true,
+    })
+end
+
+T["maps focused renderer floats to sources and reconciles no active source"] = function()
+    local child = new_child()
+    local result = child.lua_func(function(config)
+        local lines = {}
+        for index = 1, 100 do
+            lines[index] = "line " .. index
+        end
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        local source_win = vim.api.nvim_get_current_win()
+        config.visibility = "active"
+        config.mouse.enabled = true
+        require("scrollbar.config").set(config)
+        local renderer = require("scrollbar.renderer")
+        renderer.setup()
+        local state = assert(renderer.render(source_win))
+
+        vim.api.nvim_set_current_win(state.float_win)
+        local renderer_float_selected = renderer.is_source_window(source_win)
+        local renderer_float_sources = renderer.source_windows()
+
+        local user_buf = vim.api.nvim_create_buf(false, true)
+        vim.api.nvim_open_win(user_buf, true, {
+            relative = "editor",
+            row = 1,
+            col = 1,
+            width = 1,
+            height = 1,
+            style = "minimal",
+        })
+        local pure_rejection = not renderer.is_source_window(source_win)
+        local state_survives_predicate = renderer.get_state(source_win) ~= nil
+        local no_sources = renderer.source_windows()
+
+        return {
+            renderer_float_selected = renderer_float_selected,
+            renderer_float_sources = renderer_float_sources,
+            pure_rejection = pure_rejection,
+            state_survives_predicate = state_survives_predicate,
+            no_sources = no_sources,
+            state_closed = renderer.get_state(source_win) == nil,
+            float_closed = not vim.api.nvim_win_is_valid(state.float_win),
+            buffer_closed = not vim.api.nvim_buf_is_valid(state.float_buf),
+        }
+    end, renderer_config())
+
+    expect.equality(result.renderer_float_selected, true)
+    expect.equality(#result.renderer_float_sources, 1)
+    expect.equality(result.pure_rejection, true)
+    expect.equality(result.state_survives_predicate, true)
+    expect.equality(result.no_sources, {})
+    expect.equality(result.state_closed, true)
+    expect.equality(result.float_closed, true)
+    expect.equality(result.buffer_closed, true)
+end
+
+T["reconciles reveal-only autohide state outside the selected source set"] = function()
+    local child = new_child()
+    local result = child.lua_func(function(config)
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, { "one", "two" })
+        local first = vim.api.nvim_get_current_win()
+        vim.cmd("split")
+        local second = vim.api.nvim_get_current_win()
+        config.visibility = "active"
+        config.autohide = { enabled = true, delay_ms = 500 }
+        require("scrollbar.config").set(config)
+        local renderer = require("scrollbar.renderer")
+        renderer.setup()
+
+        local revealed = renderer.reveal(second)
+        vim.api.nvim_set_current_win(first)
+        renderer.source_windows()
+        vim.api.nvim_set_current_win(second)
+        local stale_rendered = renderer.render(second) ~= nil
+        local revealed_again = renderer.reveal(second)
+        local fresh_rendered = renderer.render(second) ~= nil
+        return {
+            revealed = revealed,
+            stale_rendered = stale_rendered,
+            revealed_again = revealed_again,
+            fresh_rendered = fresh_rendered,
+        }
+    end, renderer_config())
+
+    expect.equality(result, {
+        revealed = true,
+        stale_rendered = false,
+        revealed_again = true,
+        fresh_rendered = true,
+    })
+end
+
+T["reconciles the full selected set before filtering by buffer"] = function()
+    local child = new_child()
+    local result = child.lua_func(function(config)
+        local lines = {}
+        for index = 1, 100 do
+            lines[index] = "line " .. index
+        end
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        local first = vim.api.nvim_get_current_win()
+        local first_buf = vim.api.nvim_get_current_buf()
+        vim.cmd("vnew")
+        local second = vim.api.nvim_get_current_win()
+        local second_buf = vim.api.nvim_get_current_buf()
+        vim.api.nvim_buf_set_lines(second_buf, 0, -1, false, lines)
+
+        local scrollbar_config = require("scrollbar.config")
+        scrollbar_config.set(config)
+        local renderer = require("scrollbar.renderer")
+        renderer.setup()
+        local first_state = assert(renderer.render(first))
+        local second_state = assert(renderer.render(second))
+        local filtered_control = renderer.source_windows(first_buf)
+        local unrelated_retained = renderer.get_state(second) ~= nil
+
+        vim.bo[second_buf].filetype = "renderer-test"
+        config.excluded_filetypes = { "renderer-test" }
+        scrollbar_config.set(config)
+        local filtered_after_exclusion = renderer.source_windows(first_buf)
+
+        return {
+            filtered_control = filtered_control,
+            unrelated_retained = unrelated_retained,
+            filtered_after_exclusion = filtered_after_exclusion,
+            first_retained = renderer.get_state(first) ~= nil and vim.api.nvim_win_is_valid(first_state.float_win),
+            second_closed = renderer.get_state(second) == nil
+                and not vim.api.nvim_win_is_valid(second_state.float_win)
+                and not vim.api.nvim_buf_is_valid(second_state.float_buf),
+        }
+    end, renderer_config())
+
+    expect.equality(#result.filtered_control, 1)
+    expect.equality(result.unrelated_retained, true)
+    expect.equality(#result.filtered_after_exclusion, 1)
+    expect.equality(result.first_retained, true)
+    expect.equality(result.second_closed, true)
+end
+
+T["selects editor-relative profiles per source window"] = function()
+    local child = new_child()
+    local result = child.lua_func(function(config)
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, { "first" })
+        local first = vim.api.nvim_get_current_win()
+        vim.bo.filetype = "editor-source"
+        vim.cmd("vnew")
+        local second = vim.api.nvim_get_current_win()
+        vim.bo.filetype = "window-source"
+        vim.api.nvim_set_current_win(first)
+
+        config.profiles = {
+            {
+                match = { filetypes = { "editor-source" } },
+                config = { float = { placement = { relative = "editor" } } },
+            },
+        }
+        require("scrollbar.config").set(config)
+        local renderer = require("scrollbar.renderer")
+        renderer.setup()
+        local first_sources = renderer.source_windows()
+        local first_selected = renderer.is_source_window(first)
+        local second_selected = renderer.is_source_window(second)
+
+        vim.api.nvim_set_current_win(second)
+        local second_sources = renderer.source_windows()
+        return {
+            first_count = #first_sources,
+            first_selected = first_selected,
+            second_selected = second_selected,
+            second_count = #second_sources,
+            editor_unselected = not renderer.is_source_window(first),
+            window_selected = renderer.is_source_window(second),
+        }
+    end, renderer_config())
+
+    expect.equality(result, {
+        first_count = 2,
+        first_selected = true,
+        second_selected = true,
+        second_count = 1,
+        editor_unselected = true,
+        window_selected = true,
+    })
+end
+
 T["keeps same-buffer source windows independent and writes only float buffers"] = function()
     local child = new_child()
     local result = child.lua_func(function(config)

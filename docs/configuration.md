@@ -277,9 +277,19 @@ placement, fit-hiding, and mouse fields above.
 ## Eligibility
 
 `max_lines`, `excluded_buftypes`, and `excluded_filetypes` control whether a
-source buffer receives a scrollbar and manager-driven provider refreshes.
-Scrollbar-owned scratch buffers are always excluded. Visibility and autohide
-are documented in [Visibility](visibility.md).
+source buffer receives a scrollbar or accepts provider publication.
+Scrollbar-owned scratch buffers are always excluded, as are invalid or unloaded
+buffers. The same renderer-backed buffer policy is enforced for direct context
+setters, provider refresh results, and built-in publication paths.
+
+Buffer-scoped publication depends only on buffer eligibility; the buffer does
+not need a currently selected window. Window-scoped publication requires exact
+membership in the current source-window set: a normal non-renderer window with
+an eligible buffer, selected by root `visibility` and the effective profile's
+editor-relative placement. Policy changes alone do not continuously purge
+provider stores; rejection and clearing occur at the next publication or
+refresh attempt. Visibility and autohide are documented in
+[Visibility](visibility.md).
 
 ## Related
 

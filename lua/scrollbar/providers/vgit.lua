@@ -89,6 +89,10 @@ end
 ---@param context ScrollbarProviderContext
 ---@param bufnr integer
 local function update_buffer(context, bufnr)
+    if not context.is_buffer_eligible(bufnr) then
+        context.clear_marks(bufnr)
+        return
+    end
     local ok, marks = pcall(collect_marks, bufnr)
     if ok then
         context.set_marks(bufnr, marks)
@@ -100,6 +104,10 @@ end
 ---@param context ScrollbarProviderContext
 ---@param bufnr integer
 local function schedule_update(context, bufnr)
+    if not context.is_buffer_eligible(bufnr) then
+        context.clear_marks(bufnr)
+        return
+    end
     pending_generation[bufnr] = (pending_generation[bufnr] or 0) + 1
     local generation = pending_generation[bufnr]
     vim.defer_fn(function()

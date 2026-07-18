@@ -16,6 +16,7 @@ local M = {}
 ---@field invalidate_window? fun(winid: integer)
 ---@field source_windows? fun(bufnr?: integer): integer[]
 ---@field is_buffer_eligible? fun(bufnr: integer): boolean
+---@field is_source_window? fun(winid: integer): boolean
 
 ---@class ScrollbarProviderManagerState
 ---@field config ScrollbarConfig
@@ -23,6 +24,7 @@ local M = {}
 ---@field invalidate_window fun(winid: integer)
 ---@field source_windows fun(bufnr?: integer): integer[]
 ---@field is_buffer_eligible fun(bufnr: integer): boolean
+---@field is_source_window fun(winid: integer): boolean
 
 ---@type table<string, ScrollbarManagedProvider>
 local registry = {}
@@ -40,42 +42,6 @@ local manager_group
 local warned = {}
 
 local function noop() end
-
----@param bufnr integer
----@param active_config ScrollbarConfig
----@return boolean
-local function default_is_buffer_eligible(bufnr, active_config)
-    if not vim.api.nvim_buf_is_valid(bufnr) or not vim.api.nvim_buf_is_loaded(bufnr) then
-        return false
-    end
-
-    local buftype = vim.bo[bufnr].buftype
-    local filetype = vim.bo[bufnr].filetype
-    if vim.tbl_contains(active_config.excluded_buftypes, buftype) then
-        return false
-    end
-    if vim.tbl_contains(active_config.excluded_filetypes, filetype) then
-        return false
-    end
-    if active_config.max_lines and vim.api.nvim_buf_line_count(bufnr) > active_config.max_lines then
-        return false
-    end
-    return true
-end
-
----@param bufnr? integer
----@return integer[]
-local function default_source_windows(bufnr)
-    local windows = {}
-    for _, winid in ipairs(vim.api.nvim_list_wins()) do
-        local window_config = vim.api.nvim_win_get_config(winid)
-        if window_config.relative == "" and (bufnr == nil or vim.api.nvim_win_get_buf(winid) == bufnr) then
-            table.insert(windows, winid)
-        end
-    end
-    table.sort(windows)
-    return windows
-end
 
 ---@param provider string
 ---@param operation string
@@ -137,6 +103,93 @@ local function invalidate_changed_windows(changed)
     end
 end
 
+---@param bufnr integer
+---@return boolean
+local function is_buffer_eligible(bufnr)
+    assert(manager ~= nil, "provider manager is not set up")
+    local ok, eligible = pcall(manager.is_buffer_eligible, bufnr)
+    if not ok then
+        vim.notify(
+            "[scrollbar.nvim] provider manager buffer eligibility lookup failed: " .. tostring(eligible),
+            vim.log.levels.WARN
+        )
+    end
+    return ok and eligible == true
+end
+
+---@param winid integer
+---@return boolean
+local function is_source_window(winid)
+    assert(manager ~= nil, "provider manager is not set up")
+    local ok, selected = pcall(manager.is_source_window, winid)
+    if not ok then
+        vim.notify(
+            "[scrollbar.nvim] provider manager source window lookup failed: " .. tostring(selected),
+            vim.log.levels.WARN
+        )
+    end
+    return ok and selected == true
+end
+
+---@param bufnr? integer
+---@return integer[]
+local function source_windows(bufnr)
+    assert(manager ~= nil, "provider manager is not set up")
+    local ok, windows = pcall(manager.source_windows, bufnr)
+    if not ok or type(windows) ~= "table" then
+        vim.notify(
+            "[scrollbar.nvim] provider manager source window lookup failed: " .. tostring(windows),
+            vim.log.levels.WARN
+        )
+        return {}
+    end
+    return vim.deepcopy(windows)
+end
+
+---@param provider string
+---@param bufnr integer
+---@param marks any
+---@return boolean
+local function publish_buffer(provider, bufnr, marks)
+    if type(bufnr) == "number" and vim.api.nvim_buf_is_valid(bufnr) and not is_buffer_eligible(bufnr) then
+        invalidate_changed(store.clear(provider, bufnr))
+        return false
+    end
+
+    local success, changed = store.set(provider, bufnr, marks)
+    invalidate_changed(changed)
+    return success
+end
+
+---@param bufnr integer
+---@param compact ScrollbarCompactSearch
+---@return boolean
+local function publish_search_compact(bufnr, compact)
+    if type(bufnr) == "number" and vim.api.nvim_buf_is_valid(bufnr) and not is_buffer_eligible(bufnr) then
+        invalidate_changed(store.clear("search", bufnr))
+        return false
+    end
+
+    local success, changed = store._set_search_compact(bufnr, compact)
+    invalidate_changed(changed)
+    return success
+end
+
+---@param provider string
+---@param winid integer
+---@param marks any
+---@return boolean
+local function publish_window(provider, winid, marks)
+    if type(winid) == "number" and vim.api.nvim_win_is_valid(winid) and not is_source_window(winid) then
+        invalidate_changed_windows(store.clear_window(provider, winid))
+        return false
+    end
+
+    local success, changed = store.set_window(provider, winid, marks)
+    invalidate_changed_windows(changed)
+    return success
+end
+
 ---@param name string
 ---@return string
 local function augroup_component(name)
@@ -152,10 +205,9 @@ local function make_context(entry)
     return {
         config = vim.deepcopy(manager.config),
         set_marks = function(bufnr, marks)
-            local success, changed = store.set(provider_name, bufnr, marks)
-            invalidate_changed(changed)
-            return success
+            return publish_buffer(provider_name, bufnr, marks)
         end,
+        _set_search_compact = publish_search_compact,
         clear_marks = function(bufnr)
             local changed
             if bufnr == nil then
@@ -167,9 +219,7 @@ local function make_context(entry)
             return next(changed) ~= nil
         end,
         set_window_marks = function(winid, marks)
-            local success, changed = store.set_window(provider_name, winid, marks)
-            invalidate_changed_windows(changed)
-            return success
+            return publish_window(provider_name, winid, marks)
         end,
         clear_window_marks = function(winid)
             local changed
@@ -199,16 +249,13 @@ local function make_context(entry)
             table.insert(entry.cleanups, cleanup)
         end,
         source_windows = function(bufnr)
-            assert(manager ~= nil, "provider manager is not set up")
-            local ok, windows = pcall(manager.source_windows, bufnr)
-            if not ok then
-                vim.notify(
-                    "[scrollbar.nvim] provider manager source window lookup failed: " .. tostring(windows),
-                    vim.log.levels.WARN
-                )
-                return {}
-            end
-            return vim.deepcopy(windows)
+            return source_windows(bufnr)
+        end,
+        is_buffer_eligible = function(bufnr)
+            return is_buffer_eligible(bufnr)
+        end,
+        is_source_window = function(winid)
+            return is_source_window(winid)
         end,
         invalidate_buffer = function(bufnr)
             assert(manager ~= nil, "provider manager is not set up")
@@ -226,7 +273,7 @@ local function eligible_buffers()
     assert(manager ~= nil, "provider manager is not set up")
     local buffers = {}
     for _, bufnr in ipairs(vim.api.nvim_list_bufs()) do
-        if manager.is_buffer_eligible(bufnr) then
+        if is_buffer_eligible(bufnr) then
             table.insert(buffers, bufnr)
         end
     end
@@ -237,22 +284,14 @@ end
 ---@param winid integer
 ---@return boolean
 local function is_eligible_window(winid)
-    assert(manager ~= nil, "provider manager is not set up")
-    if not vim.api.nvim_win_is_valid(winid) then
-        return false
-    end
-    local bufnr = vim.api.nvim_win_get_buf(winid)
-    if not manager.is_buffer_eligible(bufnr) then
-        return false
-    end
-    return vim.tbl_contains(manager.source_windows(bufnr), winid)
+    return is_source_window(winid)
 end
 
 ---@return integer[]
 local function eligible_windows()
     assert(manager ~= nil, "provider manager is not set up")
     local windows = {}
-    for _, winid in ipairs(manager.source_windows()) do
+    for _, winid in ipairs(source_windows()) do
         if is_eligible_window(winid) then
             table.insert(windows, winid)
         end
@@ -268,7 +307,8 @@ local function refresh_entry(entry, bufnr)
     if manager == nil or not entry.setup_ok or entry.provider.refresh == nil then
         return false
     end
-    if not manager.is_buffer_eligible(bufnr) then
+    if not is_buffer_eligible(bufnr) then
+        invalidate_changed(store.clear(entry.provider.name, bufnr))
         return false
     end
 
@@ -281,13 +321,15 @@ local function refresh_entry(entry, bufnr)
     end
 
     reset_warnings(entry.provider.name, operation)
+    if not is_buffer_eligible(bufnr) then
+        invalidate_changed(store.clear(entry.provider.name, bufnr))
+        return false
+    end
     if marks == nil then
         return true
     end
 
-    local success, changed = store.set(entry.provider.name, bufnr, marks)
-    invalidate_changed(changed)
-    return success
+    return publish_buffer(entry.provider.name, bufnr, marks)
 end
 
 ---@param entry ScrollbarManagedProvider
@@ -298,6 +340,7 @@ local function refresh_window_entry(entry, winid)
         return false
     end
     if not is_eligible_window(winid) then
+        invalidate_changed_windows(store.clear_window(entry.provider.name, winid))
         return false
     end
 
@@ -310,13 +353,15 @@ local function refresh_window_entry(entry, winid)
     end
 
     reset_warnings(entry.provider.name, operation)
+    if not is_eligible_window(winid) then
+        invalidate_changed_windows(store.clear_window(entry.provider.name, winid))
+        return false
+    end
     if marks == nil then
         return true
     end
 
-    local success, changed = store.set_window(entry.provider.name, winid, marks)
-    invalidate_changed_windows(changed)
-    return success
+    return publish_window(entry.provider.name, winid, marks)
 end
 
 ---@type fun(entry: ScrollbarManagedProvider)
@@ -447,7 +492,7 @@ end
 ---@param bufnr integer
 ---@return boolean
 M.refresh = function(bufnr)
-    if manager == nil or not manager.is_buffer_eligible(bufnr) then
+    if manager == nil then
         return false
     end
 
@@ -461,7 +506,7 @@ end
 ---@param winid integer
 ---@return boolean
 M.refresh_window = function(winid)
-    if manager == nil or not is_eligible_window(winid) then
+    if manager == nil then
         return false
     end
 
@@ -478,21 +523,21 @@ M.setup = function(options)
     M.dispose()
 
     local active_config = vim.deepcopy(options.config or config.get())
+    local renderer = require("scrollbar.renderer")
     manager = {
         config = active_config,
         invalidate_buffer = options.invalidate_buffer or noop,
         invalidate_window = options.invalidate_window or noop,
-        source_windows = options.source_windows or default_source_windows,
-        is_buffer_eligible = options.is_buffer_eligible or function(bufnr)
-            return default_is_buffer_eligible(bufnr, active_config)
-        end,
+        source_windows = options.source_windows or renderer.source_windows,
+        is_buffer_eligible = options.is_buffer_eligible or renderer.is_buffer_eligible,
+        is_source_window = options.is_source_window or renderer.is_source_window,
     }
 
     manager_group = vim.api.nvim_create_augroup("ScrollbarProviderManager", { clear = true })
     vim.api.nvim_create_autocmd({ "BufEnter", "TextChanged", "TextChangedI", "TextChangedP" }, {
         group = manager_group,
         callback = function(args)
-            if manager == nil or not manager.is_buffer_eligible(args.buf) then
+            if manager == nil then
                 return
             end
             for _, name in ipairs(order) do

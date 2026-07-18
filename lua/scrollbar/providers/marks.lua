@@ -5,25 +5,6 @@ local UPPERCASE_END = string.byte("Z")
 local NUMBERED_START = string.byte("0")
 local NUMBERED_END = string.byte("9")
 
----@param bufnr integer
----@param context ScrollbarProviderContext
----@return boolean
-local function is_buffer_eligible(bufnr, context)
-    if not vim.api.nvim_buf_is_valid(bufnr) or not vim.api.nvim_buf_is_loaded(bufnr) then
-        return false
-    end
-    if vim.tbl_contains(context.config.excluded_buftypes, vim.bo[bufnr].buftype) then
-        return false
-    end
-    if vim.tbl_contains(context.config.excluded_filetypes, vim.bo[bufnr].filetype) then
-        return false
-    end
-    if context.config.max_lines and vim.api.nvim_buf_line_count(bufnr) > context.config.max_lines then
-        return false
-    end
-    return true
-end
-
 ---@param marks ScrollbarMark[]
 ---@param line_count integer
 ---@param row integer
@@ -38,7 +19,7 @@ end
 ---@param context ScrollbarProviderContext
 ---@return ScrollbarMark[]?
 local function collect(bufnr, context)
-    if not is_buffer_eligible(bufnr, context) then
+    if not context.is_buffer_eligible(bufnr) then
         return nil
     end
 

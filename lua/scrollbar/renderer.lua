@@ -88,6 +88,16 @@ local function owned_window(winid)
     return ok and owned == true
 end
 
+---@param bufnr integer
+---@return boolean
+local function owned_buffer(bufnr)
+    if type(bufnr) ~= "number" or not vim.api.nvim_buf_is_valid(bufnr) then
+        return false
+    end
+    local ok, owned = pcall(vim.api.nvim_buf_get_var, bufnr, "scrollbar_owned")
+    return ok and owned == true
+end
+
 ---@param winid integer
 ---@return boolean
 local function normal_window(winid)
@@ -99,28 +109,35 @@ local function normal_window(winid)
     return ok and window_config.relative == ""
 end
 
+---@param bufnr integer
+---@param root_config ScrollbarConfig
+---@return boolean
+local function buffer_eligible(bufnr, root_config)
+    if
+        type(bufnr) ~= "number"
+        or not vim.api.nvim_buf_is_valid(bufnr)
+        or not vim.api.nvim_buf_is_loaded(bufnr)
+        or owned_buffer(bufnr)
+    then
+        return false
+    end
+
+    if contains(root_config.excluded_buftypes, vim.bo[bufnr].buftype) then
+        return false
+    end
+    if contains(root_config.excluded_filetypes, vim.bo[bufnr].filetype) then
+        return false
+    end
+
+    local line_count = vim.api.nvim_buf_line_count(bufnr)
+    return root_config.max_lines == false or line_count <= root_config.max_lines
+end
+
 ---@param source_win integer
 ---@param root_config ScrollbarConfig
 ---@return boolean
 local function basic_eligible(source_win, root_config)
-    if not normal_window(source_win) then
-        return false
-    end
-
-    local source_buf = vim.api.nvim_win_get_buf(source_win)
-    if not vim.api.nvim_buf_is_valid(source_buf) or not vim.api.nvim_buf_is_loaded(source_buf) then
-        return false
-    end
-
-    if contains(root_config.excluded_buftypes, vim.bo[source_buf].buftype) then
-        return false
-    end
-    if contains(root_config.excluded_filetypes, vim.bo[source_buf].filetype) then
-        return false
-    end
-
-    local line_count = vim.api.nvim_buf_line_count(source_buf)
-    return root_config.max_lines == false or line_count <= root_config.max_lines
+    return normal_window(source_win) and buffer_eligible(vim.api.nvim_win_get_buf(source_win), root_config)
 end
 
 ---@return integer?
@@ -133,6 +150,25 @@ local function active_source_window()
     if normal_window(current) then
         return current
     end
+end
+
+---@param source_win integer
+---@param root_config ScrollbarConfig
+---@param active_source? integer
+---@return ScrollbarConfigSelection?
+local function source_selection(source_win, root_config, active_source)
+    if not basic_eligible(source_win, root_config) then
+        return nil
+    end
+    if root_config.visibility == "active" and source_win ~= active_source then
+        return nil
+    end
+
+    local selection = config.select(source_win)
+    if selection.config.float.placement.relative == "editor" and source_win ~= active_source then
+        return nil
+    end
+    return selection
 end
 
 ---@param state ScrollbarWindowState
@@ -707,21 +743,11 @@ local function update_buffer(state, output, width, height)
 end
 
 ---@param source_win integer
+---@param selection ScrollbarConfigSelection
+---@param root_config ScrollbarConfig
 ---@return ScrollbarWindowState?
-local function render_source(source_win)
-    local root_config = config.get()
-    if not visible or not basic_eligible(source_win, root_config) then
-        close_source(source_win)
-        return nil
-    end
-
-    local selection = config.select(source_win)
+local function render_source(source_win, selection, root_config)
     local active_config = selection.config
-    if active_config.float.placement.relative == "editor" and active_source_window() ~= source_win then
-        close_source(source_win)
-        return nil
-    end
-
     local source_buf = vim.api.nvim_win_get_buf(source_win)
     local existing_state = states[source_win]
     if
@@ -865,9 +891,16 @@ end
 ---@return ScrollbarWindowState?
 M.render = function(source_win)
     source_win = source_win or vim.api.nvim_get_current_win()
-    if config.get().visibility == "active" then
-        local active_source = active_source_window()
-        if active_source == nil or source_win ~= active_source then
+    if not visible then
+        close_source(source_win)
+        return nil
+    end
+
+    local root_config = config.get()
+    local active_source = active_source_window()
+    local selection = source_selection(source_win, root_config, active_source)
+    if root_config.visibility == "active" then
+        if selection == nil then
             close_source(source_win)
             if active_source ~= nil then
                 close_other_states(active_source)
@@ -876,10 +909,13 @@ M.render = function(source_win)
             end
             return nil
         end
-        close_other_states(active_source)
+        close_other_states(assert(active_source, "active source unavailable"))
+    elseif selection == nil then
+        close_source(source_win)
+        return nil
     end
 
-    local ok, state = pcall(render_source, source_win)
+    local ok, state = pcall(render_source, source_win, selection, root_config)
     if not ok then
         close_source(source_win)
         return nil
@@ -917,17 +953,10 @@ end
 ---@return boolean
 M.reveal = function(source_win)
     local root_config = config.get()
-    if not visible or not basic_eligible(source_win, root_config) then
+    if not visible or source_selection(source_win, root_config, active_source_window()) == nil then
         return false
     end
 
-    if root_config.visibility == "active" and active_source_window() ~= source_win then
-        return false
-    end
-    local selection = config.select(source_win)
-    if selection.config.float.placement.relative == "editor" and active_source_window() ~= source_win then
-        return false
-    end
     if root_config.autohide.enabled then
         revealed[source_win] = vim.api.nvim_win_get_buf(source_win)
     end
@@ -988,38 +1017,62 @@ end
 ---@param bufnr integer
 ---@return boolean
 M.is_owned_buffer = function(bufnr)
-    if type(bufnr) ~= "number" or not vim.api.nvim_buf_is_valid(bufnr) then
-        return false
-    end
-    local ok, owned = pcall(vim.api.nvim_buf_get_var, bufnr, "scrollbar_owned")
-    return ok and owned == true
+    return owned_buffer(bufnr)
+end
+
+---@param bufnr integer
+---@return boolean
+M.is_buffer_eligible = function(bufnr)
+    return buffer_eligible(bufnr, config.get())
+end
+
+---@param winid integer
+---@return boolean
+M.is_source_window = function(winid)
+    return source_selection(winid, config.get(), active_source_window()) ~= nil
 end
 
 ---@param bufnr? integer
 ---@return integer[]
 M.source_windows = function(bufnr)
-    local result = {}
     local root_config = config.get()
     local active_source = active_source_window()
-    if root_config.visibility == "active" and active_source == nil then
-        return result
-    end
+    local selected = {}
+    local all_sources = {}
     for _, winid in ipairs(vim.api.nvim_list_wins()) do
-        if basic_eligible(winid, root_config) and (bufnr == nil or vim.api.nvim_win_get_buf(winid) == bufnr) then
-            local selected = root_config.visibility ~= "active" or winid == active_source
-            if selected and root_config.visibility ~= "active" then
-                local selection = config.select(winid)
-                selected = selection.config.float.placement.relative ~= "editor" or winid == active_source
-            end
-            if selected then
-                table.insert(result, winid)
-            else
-                close_source(winid)
-            end
+        if source_selection(winid, root_config, active_source) ~= nil then
+            selected[winid] = true
+            table.insert(all_sources, winid)
         end
     end
-    table.sort(result)
-    return result
+    table.sort(all_sources)
+
+    local stale = {}
+    for source_win in pairs(states) do
+        if not selected[source_win] then
+            stale[source_win] = true
+        end
+    end
+    for source_win in pairs(revealed) do
+        if not selected[source_win] then
+            stale[source_win] = true
+        end
+    end
+    for source_win in pairs(stale) do
+        close_source(source_win)
+    end
+
+    if bufnr == nil then
+        return all_sources
+    end
+
+    local filtered = {}
+    for _, winid in ipairs(all_sources) do
+        if vim.api.nvim_win_get_buf(winid) == bufnr then
+            table.insert(filtered, winid)
+        end
+    end
+    return filtered
 end
 
 M.hide = function()

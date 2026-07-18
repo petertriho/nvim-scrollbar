@@ -282,12 +282,14 @@
 
 ---@class ScrollbarProviderContext
 ---@field config ScrollbarConfig Provider-local snapshot; mutations cannot change root configuration
----@field set_marks fun(bufnr: integer, marks: ScrollbarMark[]): boolean
+---@field set_marks fun(bufnr: integer, marks: ScrollbarMark[]): boolean Whether publication was accepted
 ---@field clear_marks fun(bufnr?: integer): boolean
----@field set_window_marks fun(winid: integer, marks: ScrollbarMark[]): boolean
+---@field set_window_marks fun(winid: integer, marks: ScrollbarMark[]): boolean Whether publication was accepted
 ---@field clear_window_marks fun(winid?: integer): boolean
 ---@field create_augroup fun(name: string): integer
 ---@field add_cleanup fun(cleanup: fun())
+---@field is_buffer_eligible fun(bufnr: integer): boolean
+---@field is_source_window fun(winid: integer): boolean
 ---@field source_windows fun(bufnr?: integer): integer[]
 ---@field invalidate_buffer fun(bufnr: integer)
 ---@field invalidate_window fun(winid: integer)
@@ -452,12 +454,17 @@
 ---@field mark_rows integer[]
 ---@field layer ScrollbarResolvedMarkLayer
 
----@class ScrollbarSchedulerRenderer
+---@class ScrollbarRendererPolicy
+---@field is_buffer_eligible fun(bufnr: integer): boolean
+---@field is_source_window fun(winid: integer): boolean
+---@field source_windows fun(bufnr?: integer): integer[]
+
+---@class ScrollbarSchedulerRenderer: ScrollbarRendererPolicy
 ---@field render fun(source_win: integer): ScrollbarWindowState?
 ---@field reveal? fun(source_win: integer): boolean
 ---@field conceal? fun(source_win: integer): boolean
----@field source_windows fun(bufnr?: integer): integer[]
 ---@field is_visible? fun(): boolean
+---@field is_owned_buffer? fun(bufnr: integer): boolean
 ---@field is_owned_window? fun(winid: integer): boolean
 
 ---@class ScrollbarSchedulerOptions
