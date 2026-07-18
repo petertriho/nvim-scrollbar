@@ -568,7 +568,6 @@ end
 ---@param line_count integer
 ---@param container_width integer
 ---@param height integer
----@param variant_id integer
 ---@param active_config ScrollbarConfig
 ---@param marks ScrollbarLayoutMark[]
 ---@param compact_search? ScrollbarCompactSearch
@@ -581,12 +580,11 @@ local function line_mark_layer(
     line_count,
     container_width,
     height,
-    variant_id,
     active_config,
     marks,
     compact_search
 )
-    local config_generation = config.get_layout_generation()
+    local layout_cache = active_config.layout_cache
     local cached = line_layer_cache[source_win]
     if
         cached ~= nil
@@ -596,11 +594,9 @@ local function line_mark_layer(
         and cached.line_count == line_count
         and cached.container_width == container_width
         and cached.height == height
-        and cached.config_generation == config_generation
-        and (cached.variant_id == variant_id or vim.deep_equal(cached.config, active_config.layout_cache))
+        and (cached.config == layout_cache or vim.deep_equal(cached.config, layout_cache))
     then
-        cached.variant_id = variant_id
-        cached.config = active_config.layout_cache
+        cached.config = layout_cache
         return cached
     end
 
@@ -616,9 +612,7 @@ local function line_mark_layer(
         line_count = line_count,
         container_width = container_width,
         height = height,
-        variant_id = variant_id,
-        config = active_config.layout_cache,
-        config_generation = config_generation,
+        config = layout_cache,
         mark_rows = mark_rows,
         layer = layout.mark_layer({
             config = active_config,
@@ -750,13 +744,6 @@ local function render_source(source_win, selection, root_config)
     local active_config = selection.config
     local source_buf = vim.api.nvim_win_get_buf(source_win)
     local existing_state = states[source_win]
-    if
-        existing_state ~= nil
-        and existing_state.variant_id ~= selection.variant_id
-        and not vim.deep_equal(existing_state.config.layout_cache, active_config.layout_cache)
-    then
-        line_layer_cache[source_win] = nil
-    end
     if existing_state ~= nil and existing_state.source_buf ~= source_buf then
         close_state(existing_state)
     end
@@ -786,7 +773,6 @@ local function render_source(source_win, selection, root_config)
             line_count,
             container_width,
             area.height,
-            selection.variant_id,
             active_config,
             marks,
             compact_search

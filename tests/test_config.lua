@@ -166,65 +166,6 @@ T["normalizes named-mark lane width and stack priorities"] = function()
     expect.equality(result.layout.columns[1][3].priority, 3)
 end
 
-T["advances layout generation only for cache-relevant normalized inputs"] = function()
-    local config = require("scrollbar.config")
-    local initial = config.get_layout_generation()
-
-    set({ visibility = "active", thumb = { text = "H" }, track = { highlight = "Pmenu" } })
-    local unrelated = config.get_layout_generation()
-    set({ layout = { columns = { { "track" }, { "marks", "thumb" } } } })
-    local layout = config.get_layout_generation()
-    set({
-        layout = { columns = { { "track" }, { "marks", "thumb" } } },
-        marks = { Search = { text = "S" } },
-    })
-    local mark_text = config.get_layout_generation()
-    set({
-        layout = { columns = { { "track" }, { "marks", "thumb" } } },
-        marks = { Search = { text = "S", highlight = "IncSearch" } },
-    })
-    local highlight = config.get_layout_generation()
-    set({
-        layout = {
-            columns = {
-                { "track" },
-                { { kind = "marks", types = { "Mark" }, max_width = 4 }, "thumb" },
-            },
-        },
-        marks = { Search = { text = "S", highlight = "IncSearch" } },
-    })
-    local expansion = config.get_layout_generation()
-    set({
-        layout = {
-            columns = {
-                { "track" },
-                { { kind = "marks", types = { "Mark" }, max_width = 5 }, "thumb" },
-            },
-        },
-        marks = { Search = { text = "S", highlight = "IncSearch" } },
-    })
-    local cap = config.get_layout_generation()
-    set({
-        float = { placement = { anchor = "NW" } },
-        layout = {
-            columns = {
-                { "track" },
-                { { kind = "marks", types = { "Mark" }, max_width = 5 }, "thumb" },
-            },
-        },
-        marks = { Search = { text = "S", highlight = "IncSearch" } },
-    })
-    local anchor = config.get_layout_generation()
-
-    expect.equality(unrelated, initial)
-    expect.equality(layout, initial + 1)
-    expect.equality(mark_text, initial + 2)
-    expect.equality(highlight, mark_text)
-    expect.equality(expansion, highlight + 1)
-    expect.equality(cap, expansion + 1)
-    expect.equality(anchor, cap + 1)
-end
-
 T["accepts the complete typed runtime schema"] = function()
     local track_highlight = { bg = "#010203", bold = true }
     local thumb_highlight = { bg = "#112233", blend = 10 }
@@ -383,14 +324,12 @@ T["rejects invalid scalar provider mark and text options"] = function()
     expect_invalid({ providers = { marks = { letters = "yes" } } }, "providers.marks.letters must be a boolean")
 end
 
-T["failed setup preserves active config and generation"] = function()
+T["failed setup preserves active config"] = function()
     local config = require("scrollbar.config")
     local before = set({ visibility = "active", layout = { columns = { { "track" }, { "marks" } } } })
-    local generation = config.get_layout_generation()
 
     expect_invalid({ excluded_filetypes = { "lua", false } }, "excluded_filetypes%[2%] must be a string")
     expect.equality(config.get(), before)
-    expect.equality(config.get_layout_generation(), generation)
 end
 
 return T

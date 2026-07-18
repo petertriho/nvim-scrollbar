@@ -102,7 +102,7 @@ T["validates profile schema and the nested render-safe boundary"] = function()
     end
 end
 
-T["commits root variants and layout generation atomically"] = function()
+T["commits root and variants atomically"] = function()
     local module = config()
     local before = module.set({
         visibility = "active",
@@ -111,7 +111,6 @@ T["commits root variants and layout generation atomically"] = function()
         },
     })
     local before_variants = module.get_variants()
-    local generation = module.get_layout_generation()
 
     expect_invalid({
         profiles = {
@@ -121,15 +120,6 @@ T["commits root variants and layout generation atomically"] = function()
     }, "profile")
     expect.equality(module.get(), before)
     expect.equality(module.get_variants(), before_variants)
-    expect.equality(module.get_layout_generation(), generation)
-
-    module.set({
-        visibility = "active",
-        profiles = {
-            { match = { filetypes = { "lua" } }, preset = "review" },
-        },
-    })
-    expect.equality(module.get_layout_generation(), generation + 1)
 end
 
 T["selects the first profile with AND semantics and stable IDs"] = function()
