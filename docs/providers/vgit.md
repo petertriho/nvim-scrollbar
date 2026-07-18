@@ -37,8 +37,10 @@ With lazy.nvim:
 }
 ```
 
-If vgit loads after scrollbar, the provider picks up its modules on the next
-internal event or `:ScrollbarRefresh`. Scrollbar does not configure vgit itself.
+If vgit loads after scrollbar, run `:ScrollbarRefresh` after vgit has attached
+to the buffer. That refresh discovers the store, collects the current marks,
+and subscribes to future vgit events. Only subsequent vgit events update marks
+automatically. Scrollbar does not configure vgit itself.
 
 ## Data And Marks
 
@@ -73,9 +75,14 @@ the provider replaces existing VGit marks with an empty list.
   Rapid events for the same buffer are coalesced — only the last one runs.
 - `:ScrollbarRefresh` rereads vgit data for buffers in current source windows.
 - Collection errors clear only `vgit` marks for the affected buffer.
-- Disabling or reconfiguring the provider clears its stored marks. The internal
-  event handler is registered once and guarded by a context check, so it
-  becomes a no-op after disposal and reactivates on the next setup.
+- Each subscription belongs to one vgit store identity and one scrollbar
+  provider setup generation. Repeated refreshes against that store do not add
+  handlers, while discovering a replacement store establishes a new
+  subscription.
+- Disabling or reconfiguring the provider clears its stored marks and
+  invalidates subscription ownership. Vgit's internal event bus has no
+  unsubscribe API, so callbacks retained from earlier setups or stores remain
+  registered upstream but are guarded no-ops.
 
 ## Appearance
 
@@ -99,6 +106,10 @@ Override `text`, `priority`, or `highlight` under the top-level
   (`git_buffer_store`, `GitBuffer.state.signs`, and `settings.signs`). Every
   access is defensive: unexpected shapes yield zero marks instead of errors,
   but an upstream refactor can silently stop producing marks until retested.
+- Vgit's internal event bus does not expose subscription cleanup. Repeated
+  scrollbar setup or replacement of the loaded vgit store can leave old
+  callbacks retained by vgit; scrollbar validates store and setup ownership so
+  those callbacks remain inert.
 - Marks appear only once vgit's live gutter has fetched the buffer. Disabling
   vgit's live gutter leaves `state.signs` empty, so the scrollbar emits no
   VGit marks either. The provider never forces a fetch or shells out to git
@@ -117,7 +128,8 @@ Override `text`, `priority`, or `highlight` under the top-level
 - No marks after enabling: confirm vgit's live gutter is enabled and shows
   signs in the sign column, then run `:ScrollbarRefresh`.
 - vgit loaded late: run `:ScrollbarRefresh` after vgit has attached to the
-  buffer, or trigger any edit to fire the internal `change` event.
+  buffer. This first refresh is required to discover the store and subscribe;
+  later vgit edits and sync events update automatically.
 - Marks vanish after a vgit upgrade: an internal module shape may have changed;
   confirm `require("vgit.git.git_buffer_store").get({ bufnr = 0 })` still
   returns a buffer with `state.signs`.
