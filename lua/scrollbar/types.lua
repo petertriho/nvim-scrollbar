@@ -294,8 +294,15 @@
 ---@field invalidate_buffer fun(bufnr: integer)
 ---@field invalidate_window fun(winid: integer)
 
+---@alias ScrollbarProviderRefreshOwner "manager"|"provider"
+
+---@class ScrollbarProviderRefreshOwnership
+---@field buffer? ScrollbarProviderRefreshOwner
+---@field window? ScrollbarProviderRefreshOwner
+
 ---@class ScrollbarProvider
 ---@field name string
+---@field refresh_owner? ScrollbarProviderRefreshOwnership
 ---@field setup? fun(context: ScrollbarProviderContext)
 ---@field refresh? fun(bufnr: integer, context: ScrollbarProviderContext): ScrollbarMark[]?
 ---@field refresh_window? fun(winid: integer, context: ScrollbarProviderContext): ScrollbarMark[]?

@@ -1,4 +1,4 @@
-local M = { name = "gitsigns" }
+local M = { name = "gitsigns", refresh_owner = { buffer = "provider" } }
 
 ---@class ScrollbarGitsignsModule
 ---@field get_hunks fun(bufnr: integer): table[]?

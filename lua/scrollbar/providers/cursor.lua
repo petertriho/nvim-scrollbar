@@ -22,6 +22,7 @@ end
 ---@type ScrollbarProvider
 return {
     name = "cursor",
+    refresh_owner = { window = "provider" },
     setup = function(context)
         local group = context.create_augroup("events")
         vim.api.nvim_create_autocmd({ "CursorMoved", "CursorMovedI", "BufWinEnter", "WinEnter" }, {

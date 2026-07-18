@@ -1,7 +1,7 @@
 # Migrating From Earlier Releases
 
-This release intentionally rejects the old coordinate schema. There is no
-compatibility normalization.
+This release intentionally rejects the old coordinate schema and implicit
+provider refresh ownership. There is no compatibility normalization.
 
 ## Declarative Layout Migration
 
@@ -71,6 +71,44 @@ layout = {
 The numerical meaning changed: the old value capped total float width; the new
 value caps only the `Mark` lane, including its declared base cells.
 
+## Custom Provider Refresh Ownership
+
+Every custom provider with `refresh` or `refresh_window` must now declare who
+owns automatic refresh for each implemented scope:
+
+```lua
+refresh_owner = {
+    buffer = "manager",  -- required when refresh is present
+    window = "provider", -- required when refresh_window is present
+}
+```
+
+Use this direct mapping to retain earlier behavior:
+
+| Earlier provider shape | Required migration |
+| --- | --- |
+| `refresh` without `setup` | Add `refresh_owner = { buffer = "manager" }` |
+| `refresh_window` without `setup` | Add `refresh_owner = { window = "manager" }` |
+| Refresh callbacks with `setup` | Add `"provider"` for every implemented scope |
+| Both refresh callbacks | Declare both keys; the owners may differ |
+
+The earlier `setup` rule is removed. `setup` and `dispose` now describe resource
+lifecycle only and never select scheduling. A provider that used `setup` only
+to acquire resources may deliberately choose `"manager"` and remove duplicate
+provider-owned event subscriptions. A `"provider"` owner receives no manager
+automatic events for that scope and must publish from its own subscriptions.
+
+Initial activation, `:ScrollbarRefresh`, `providers.refresh(bufnr)`, and
+`providers.refresh_window(winid)` continue to call applicable callbacks for
+both owner values. Manager-owned window refresh keeps the existing
+clear-before-refresh behavior on `BufWinEnter` and clears marks when the window
+becomes ineligible.
+
+The ownership table must match the callbacks exactly. Missing owners, extra
+scope keys without callbacks, unknown keys, invalid owner values, and non-table
+`refresh_owner` fields fail during registration. Omission is an intentional
+breaking error; there is no compatibility shim or deprecation period.
+
 ## Custom Provider Publication Policy
 
 The v2 provider context now exposes live renderer-backed policy queries:
@@ -94,9 +132,10 @@ current membership in `source_windows()`, including active-visibility and
 editor-relative profile selection.
 
 Custom window providers can no longer prepublish marks for inactive or
-editor-unselected windows. Republish when the window becomes a source, or omit
-`setup` and let the manager call `refresh_window` on source activation. For
-asynchronous providers, preflight before expensive work but still handle a
+editor-unselected windows. Republish when the window becomes a source, or use
+`refresh_owner = { window = "manager" }` to let the manager call
+`refresh_window` on source activation. For asynchronous providers, preflight
+before expensive work but still handle a
 setter returning `false`, because eligibility can change before publication.
 There is no compatibility shim or feature flag on the v2 line.
 

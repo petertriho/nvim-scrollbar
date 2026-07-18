@@ -1,4 +1,4 @@
-local M = { name = "coc" }
+local M = { name = "coc", refresh_owner = { buffer = "provider" } }
 
 local SEVERITY_TYPES = {
     Error = "Error",

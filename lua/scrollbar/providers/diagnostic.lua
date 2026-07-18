@@ -43,6 +43,7 @@ end
 ---@type ScrollbarProvider
 return {
     name = "diagnostic",
+    refresh_owner = { buffer = "provider" },
     setup = function(context)
         local group = context.create_augroup("events")
         vim.api.nvim_create_autocmd("DiagnosticChanged", {

@@ -1,4 +1,4 @@
-local M = { name = "mini_diff" }
+local M = { name = "mini_diff", refresh_owner = { buffer = "provider" } }
 
 ---@class ScrollbarMiniDiffHunk
 ---@field type string
