@@ -266,7 +266,6 @@ local ENUMS = {
 local active
 ---@type ScrollbarCompiledVariant[]?
 local variants
-local layout_generation = 0
 local profile_error_notifications = {}
 
 local function invalid(message)
@@ -704,14 +703,6 @@ local function layout_config(value)
     return { geometry = value.render.geometry, layout = value.layout.cache, marks = marks }
 end
 
-local function variants_layout_config(compiled)
-    local result = {}
-    for index, variant in ipairs(compiled) do
-        result[index] = variant.config.layout_cache
-    end
-    return result
-end
-
 local function validate_profile_config(value, path)
     if type(value) ~= "table" then
         invalid(path .. " must be a table")
@@ -922,9 +913,6 @@ local M = {}
 ---@return ScrollbarConfig
 M.set = function(overrides)
     local normalized, compiled = compile(overrides)
-    if variants ~= nil and not vim.deep_equal(variants_layout_config(variants), variants_layout_config(compiled)) then
-        layout_generation = layout_generation + 1
-    end
     active = normalized
     variants = compiled
     profile_error_notifications = {}
@@ -994,11 +982,6 @@ M.select = function(source_win)
         end
     end
     return { config = root, variant_id = 0 }
-end
-
----@return integer
-M.get_layout_generation = function()
-    return layout_generation
 end
 
 return M

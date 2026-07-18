@@ -1763,6 +1763,92 @@ T["profile switches compare explicit cache inputs and invalidate only their sour
     })
 end
 
+T["direct config sets validate retained line caches by selected input"] = function()
+    local child = new_child()
+    local result = child.lua_func(function(base_config)
+        local lines = {}
+        for index = 1, 200 do
+            lines[index] = "line " .. index
+        end
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        local first = vim.api.nvim_get_current_win()
+        vim.cmd("split")
+        local second = vim.api.nvim_get_current_win()
+
+        base_config.profiles = {
+            {
+                match = {
+                    when = function(context)
+                        return context.winid == first
+                    end,
+                },
+                config = { marks = { Misc = { text = "A" } } },
+            },
+            {
+                match = { filetypes = { "never-selected" } },
+                config = { marks = { Misc = { text = "I" } } },
+            },
+        }
+
+        local scrollbar_config = require("scrollbar.config")
+        scrollbar_config.set(base_config)
+        local layout = require("scrollbar.layout")
+        local original_mark_layer = layout.mark_layer
+        local builds = 0
+        rawset(layout, "mark_layer", function(input)
+            builds = builds + 1
+            return original_mark_layer(input)
+        end)
+
+        local renderer = require("scrollbar.renderer")
+        renderer.setup()
+        renderer.render(first)
+        renderer.render(second)
+        local counts = { initial = builds }
+
+        local equivalent = vim.deepcopy(base_config)
+        scrollbar_config.set(equivalent)
+        renderer.render(first)
+        renderer.render(second)
+        counts.equivalent = builds
+
+        local selected_changed = vim.deepcopy(equivalent)
+        selected_changed.profiles[1].config.marks.Misc.text = "B"
+        scrollbar_config.set(selected_changed)
+        renderer.render(first)
+        counts.selected_changed = builds
+        renderer.render(second)
+        counts.root_after_selected_change = builds
+
+        local inactive_changed = vim.deepcopy(selected_changed)
+        inactive_changed.profiles[2].config.marks.Misc.text = "J"
+        scrollbar_config.set(inactive_changed)
+        renderer.render(first)
+        renderer.render(second)
+        counts.inactive_changed = builds
+
+        local invalid = vim.deepcopy(inactive_changed)
+        invalid.excluded_filetypes = { false }
+        counts.failed = not pcall(scrollbar_config.set, invalid)
+        renderer.render(first)
+        renderer.render(second)
+        counts.after_failed = builds
+
+        rawset(layout, "mark_layer", original_mark_layer)
+        return counts
+    end, renderer_config())
+
+    expect.equality(result, {
+        initial = 2,
+        equivalent = 2,
+        selected_changed = 3,
+        root_after_selected_change = 3,
+        inactive_changed = 3,
+        failed = true,
+        after_failed = 3,
+    })
+end
+
 T["screen renders reuse flattened marks but always repeat text-height measurements"] = function()
     local child = new_child()
     local result = child.lua_func(function(base_config)

@@ -455,9 +455,7 @@
 ---@field line_count integer
 ---@field container_width integer
 ---@field height integer
----@field variant_id integer
 ---@field config table Precompiled cache-relevant inputs for the selected variant
----@field config_generation integer
 ---@field mark_rows integer[]
 ---@field layer ScrollbarResolvedMarkLayer
 
