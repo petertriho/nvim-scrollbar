@@ -123,23 +123,26 @@ local default_vgit_main = {
 
 local function install_vgit_store(data)
     local event_handlers = {}
+    local stats = { get_calls = 0 }
+    local store = {
+        get = function(buffer)
+            stats.get_calls = stats.get_calls + 1
+            return data[tostring(buffer.bufnr)]
+        end,
+        on = function(event_types, handler)
+            if type(event_types) == "string" then
+                event_types = { event_types }
+            end
+            for _, event_type in ipairs(event_types) do
+                event_handlers[event_type] = event_handlers[event_type] or {}
+                table.insert(event_handlers[event_type], handler)
+            end
+        end,
+    }
     rawset(package.preload, "vgit.git.git_buffer_store", function()
-        return {
-            get = function(buffer)
-                return data[tostring(buffer.bufnr)]
-            end,
-            on = function(event_types, handler)
-                if type(event_types) == "string" then
-                    event_types = { event_types }
-                end
-                for _, event_type in ipairs(event_types) do
-                    event_handlers[event_type] = event_handlers[event_type] or {}
-                    table.insert(event_handlers[event_type], handler)
-                end
-            end,
-        }
+        return store
     end)
-    return event_handlers
+    return event_handlers, store, stats
 end
 
 local function dispatch_vgit_event(event_handlers, event_type, bufnr)
@@ -734,6 +737,211 @@ T["vgit change event refreshes only the event buffer"] = function()
         { line = 1, type = "VGitChange" },
     })
     expect.equality(invalidated, { first })
+end
+
+T["late-loaded vgit subscribes on manual refresh"] = function()
+    local target = new_buffer({ "one", "two", "three" })
+    local invalidated = {}
+    local providers = require("scrollbar.providers")
+    local vgit = require("scrollbar.providers.vgit")
+    vgit.update_delay_ms = 0
+    providers.register(vgit)
+    providers.setup({
+        is_buffer_eligible = function(bufnr)
+            return bufnr == target
+        end,
+        invalidate_buffer = function(bufnr)
+            table.insert(invalidated, bufnr)
+        end,
+    })
+    expect.equality(require("scrollbar.store").get(target).vgit, {})
+
+    local data = {
+        [tostring(target)] = {
+            state = { signs = { { col = 0, name = "GitSignsAdd" } } },
+        },
+    }
+    local handlers, _, stats = install_vgit_store(data)
+    install_vgit_signs(default_vgit_main)
+
+    providers.refresh(target)
+    expect.equality(stats.get_calls, 1)
+    expect.equality(require("scrollbar.store").get(target).vgit, {
+        { line = 0, type = "VGitAdd" },
+    })
+    for _, event_type in ipairs({ "attach", "reload", "change", "sync" }) do
+        expect.equality(#(handlers[event_type] or {}), 1)
+    end
+
+    providers.refresh(target)
+    expect.equality(stats.get_calls, 2)
+    for _, event_type in ipairs({ "attach", "reload", "change", "sync" }) do
+        expect.equality(#(handlers[event_type] or {}), 1)
+    end
+
+    invalidated = {}
+    data[tostring(target)] = {
+        state = { signs = { { col = 1, name = "GitSignsChange" } } },
+    }
+    dispatch_vgit_event(handlers, "change", target)
+    vim.wait(50)
+    expect.equality(stats.get_calls, 3)
+    expect.equality(invalidated, { target })
+    expect.equality(require("scrollbar.store").get(target).vgit, {
+        { line = 1, type = "VGitChange" },
+    })
+end
+
+T["vgit retained callbacks are generation-aware"] = function()
+    local target = new_buffer({ "one", "two", "three" })
+    local data = {
+        [tostring(target)] = {
+            state = { signs = { { col = 0, name = "GitSignsAdd" } } },
+        },
+    }
+    local handlers, _, stats = install_vgit_store(data)
+    install_vgit_signs(default_vgit_main)
+
+    local vgit = require("scrollbar.providers.vgit")
+    vgit.update_delay_ms = 0
+    local providers = require("scrollbar.providers")
+    providers.register(vgit)
+    local invalidated = {}
+    local options = {
+        is_buffer_eligible = function(bufnr)
+            return bufnr == target
+        end,
+        invalidate_buffer = function(bufnr)
+            table.insert(invalidated, bufnr)
+        end,
+    }
+    providers.setup(options)
+    providers.setup(options)
+    for _, event_type in ipairs({ "attach", "reload", "change", "sync" }) do
+        expect.equality(#(handlers[event_type] or {}), 2)
+    end
+
+    stats.get_calls = 0
+    invalidated = {}
+    data[tostring(target)] = {
+        state = { signs = { { col = 1, name = "GitSignsChange" } } },
+    }
+    handlers.sync[1]({ bufnr = target }, "sync")
+    vim.wait(50)
+    expect.equality(stats.get_calls, 0)
+    expect.equality(invalidated, {})
+    expect.equality(require("scrollbar.store").get(target).vgit, {
+        { line = 0, type = "VGitAdd" },
+    })
+
+    dispatch_vgit_event(handlers, "sync", target)
+    vim.wait(50)
+    expect.equality(stats.get_calls, 1)
+    expect.equality(invalidated, { target })
+    expect.equality(require("scrollbar.store").get(target).vgit, {
+        { line = 1, type = "VGitChange" },
+    })
+
+    providers.dispose()
+    stats.get_calls = 0
+    invalidated = {}
+    dispatch_vgit_event(handlers, "sync", target)
+    vim.wait(50)
+    expect.equality(stats.get_calls, 0)
+    expect.equality(invalidated, {})
+    expect.equality(require("scrollbar.store").get(target), {})
+end
+
+T["vgit subscriptions follow the active store identity"] = function()
+    local target = new_buffer({ "one", "two", "three" })
+    local data_a = {
+        [tostring(target)] = {
+            state = { signs = { { col = 0, name = "GitSignsAdd" } } },
+        },
+    }
+    local handlers_a = install_vgit_store(data_a)
+    install_vgit_signs(default_vgit_main)
+
+    local vgit = require("scrollbar.providers.vgit")
+    vgit.update_delay_ms = 0
+    local providers = require("scrollbar.providers")
+    providers.register(vgit)
+    local invalidated = {}
+    providers.setup({
+        is_buffer_eligible = function(bufnr)
+            return bufnr == target
+        end,
+        invalidate_buffer = function(bufnr)
+            table.insert(invalidated, bufnr)
+        end,
+    })
+
+    local data_b = {
+        [tostring(target)] = {
+            state = { signs = { { col = 1, name = "GitSignsChange" } } },
+        },
+    }
+    local handlers_b, store_b, stats_b = install_vgit_store(data_b)
+    package.loaded["vgit.git.git_buffer_store"] = store_b
+    providers.refresh(target)
+    expect.equality(require("scrollbar.store").get(target).vgit, {
+        { line = 1, type = "VGitChange" },
+    })
+    expect.equality(#handlers_a.sync, 1)
+    expect.equality(#handlers_b.sync, 1)
+
+    stats_b.get_calls = 0
+    invalidated = {}
+    data_b[tostring(target)] = {
+        state = { signs = { { col = 2, name = "GitSignsDelete" } } },
+    }
+    dispatch_vgit_event(handlers_a, "sync", target)
+    vim.wait(50)
+    expect.equality(stats_b.get_calls, 0)
+    expect.equality(invalidated, {})
+    expect.equality(require("scrollbar.store").get(target).vgit, {
+        { line = 1, type = "VGitChange" },
+    })
+
+    dispatch_vgit_event(handlers_b, "sync", target)
+    vim.wait(50)
+    expect.equality(stats_b.get_calls, 1)
+    expect.equality(invalidated, { target })
+    expect.equality(require("scrollbar.store").get(target).vgit, {
+        { line = 2, type = "VGitDelete" },
+    })
+end
+
+T["vgit collection survives unavailable subscriptions"] = function()
+    local target = new_buffer({ "one", "two" })
+    local data = {
+        [tostring(target)] = {
+            state = { signs = { { col = 0, name = "GitSignsAdd" } } },
+        },
+    }
+    local _, store = install_vgit_store(data)
+    install_vgit_signs(default_vgit_main)
+    store.on = nil
+
+    local providers = require("scrollbar.providers")
+    providers.register(require("scrollbar.providers.vgit"))
+    local options = {
+        is_buffer_eligible = function(bufnr)
+            return bufnr == target
+        end,
+    }
+    providers.setup(options)
+    expect.equality(require("scrollbar.store").get(target).vgit, {
+        { line = 0, type = "VGitAdd" },
+    })
+
+    store.on = function()
+        error("vgit subscription failed")
+    end
+    providers.setup(options)
+    expect.equality(require("scrollbar.store").get(target).vgit, {
+        { line = 0, type = "VGitAdd" },
+    })
 end
 
 T["missing vgit dependency leaves provider setup usable"] = function()

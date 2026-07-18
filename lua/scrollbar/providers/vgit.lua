@@ -10,14 +10,18 @@ local M = { name = "vgit", update_delay_ms = 50 }
 
 ---@class ScrollbarVgitBufferStore
 ---@field get fun(buffer: { bufnr: integer }): ScrollbarVgitGitBuffer?
----@field on fun(event_types: string|string[], handler: fun(git_buffer: ScrollbarVgitGitBuffer, event_type: string))
+---@field on? fun(event_types: string|string[], handler: fun(git_buffer: ScrollbarVgitGitBuffer, event_type: string))
 
----@type { context: ScrollbarProviderContext? }
+---@class ScrollbarVgitSubscription
+---@field store ScrollbarVgitBufferStore
+---@field generation integer
+
+---@type { context: ScrollbarProviderContext?, generation: integer, subscription: ScrollbarVgitSubscription? }
 local state = {
     context = nil,
+    generation = 0,
+    subscription = nil,
 }
-
-local events_registered = false
 
 ---@type table<integer, integer>
 local pending_generation = {}
@@ -57,6 +61,9 @@ local function name_to_type_map()
     }
 end
 
+---@type fun(store: ScrollbarVgitBufferStore)
+local ensure_subscription
+
 ---@param bufnr integer
 ---@return ScrollbarMark[]
 local function collect_marks(bufnr)
@@ -64,6 +71,8 @@ local function collect_marks(bufnr)
     if store == nil then
         return {}
     end
+
+    ensure_subscription(store)
 
     local git_buffer = store.get({ bufnr = bufnr })
     if type(git_buffer) ~= "table" then
@@ -124,31 +133,55 @@ local function schedule_update(context, bufnr)
     end, M.update_delay_ms)
 end
 
----@param context ScrollbarProviderContext
-M.setup = function(context)
-    state.context = context
-
-    local store = get_store()
-    if store == nil or type(store.on) ~= "function" then
+---@param store ScrollbarVgitBufferStore
+ensure_subscription = function(store)
+    local generation = state.generation
+    local subscription = state.subscription
+    if subscription ~= nil and subscription.store == store and subscription.generation == generation then
         return
     end
 
-    if not events_registered then
-        events_registered = true
-        store.on({ "attach", "reload", "change", "sync" }, function(git_buffer)
-            local ctx = state.context
-            if ctx == nil then
-                return
-            end
-            if type(git_buffer) ~= "table" then
-                return
-            end
-            local bufnr = git_buffer.bufnr
-            if type(bufnr) ~= "number" then
-                return
-            end
-            schedule_update(ctx, bufnr)
-        end)
+    state.subscription = nil
+    if state.context == nil or type(store.on) ~= "function" then
+        return
+    end
+
+    ---@type ScrollbarVgitSubscription
+    local token = {
+        store = store,
+        generation = generation,
+    }
+    local ok = pcall(store.on, { "attach", "reload", "change", "sync" }, function(git_buffer)
+        if state.subscription ~= token or state.generation ~= token.generation then
+            return
+        end
+        local context = state.context
+        if context == nil then
+            return
+        end
+        if type(git_buffer) ~= "table" then
+            return
+        end
+        local bufnr = git_buffer.bufnr
+        if type(bufnr) ~= "number" then
+            return
+        end
+        schedule_update(context, bufnr)
+    end)
+    if ok and state.context ~= nil and state.generation == generation and state.subscription == nil then
+        state.subscription = token
+    end
+end
+
+---@param context ScrollbarProviderContext
+M.setup = function(context)
+    state.subscription = nil
+    state.generation = state.generation + 1
+    state.context = context
+
+    local store = get_store()
+    if store ~= nil then
+        ensure_subscription(store)
     end
 end
 
@@ -159,6 +192,7 @@ M.refresh = function(bufnr)
 end
 
 M.dispose = function()
+    state.subscription = nil
     state.context = nil
     pending_generation = {}
 end
