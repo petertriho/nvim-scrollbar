@@ -737,6 +737,7 @@ T["wires provider context invalidations directly and never refreshes providers o
         local providers = require("scrollbar.providers")
         providers.register({
             name = "scheduler-test",
+            refresh_owner = { buffer = "provider" },
             setup = function(provider_context)
                 context = provider_context
             end,

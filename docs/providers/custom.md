@@ -46,6 +46,7 @@ local providers = require("scrollbar.providers")
 
 providers.register({
     name = "bookmarks",
+    refresh_owner = { buffer = "manager" },
     refresh = function(bufnr)
         return {
             { line = 0, type = "Bookmark" },
@@ -86,8 +87,15 @@ providers.unregister("bookmarks")
 ## Provider Interface
 
 ```lua
+---@alias ScrollbarProviderRefreshOwner "manager"|"provider"
+
+---@class ScrollbarProviderRefreshOwnership
+---@field buffer? ScrollbarProviderRefreshOwner
+---@field window? ScrollbarProviderRefreshOwner
+
 ---@class ScrollbarProvider
 ---@field name string
+---@field refresh_owner? ScrollbarProviderRefreshOwnership
 ---@field setup? fun(context: ScrollbarProviderContext)
 ---@field refresh? fun(bufnr: integer, context: ScrollbarProviderContext): ScrollbarMark[]?
 ---@field refresh_window? fun(winid: integer, context: ScrollbarProviderContext): ScrollbarMark[]?
@@ -98,29 +106,45 @@ providers.unregister("bookmarks")
 `refresh_window` publishes marks owned by one source window. If both methods are
 present, both lists participate in rendering and collision resolution.
 
+Ownership scopes must correspond exactly to callbacks:
+
+| Provider callbacks | Required `refresh_owner` keys |
+| --- | --- |
+| Neither callback | Omit `refresh_owner` |
+| `refresh` only | `buffer` only |
+| `refresh_window` only | `window` only |
+| Both callbacks | Both `buffer` and `window` |
+
+Each owner must be exactly `"manager"` or `"provider"`. Missing owners, owner
+keys without matching callbacks, unknown scope keys, and non-table
+`refresh_owner` values are registration errors. Provider tables may still use
+private top-level fields for their own configuration.
+
 ## Automatic Refresh Rules
 
 Every activated provider receives one initial refresh for each eligible loaded
-buffer and eligible source window, including providers that define `setup`.
+buffer and eligible source window after successful activation, regardless of owner.
+Ownership controls only subsequent automatic dispatch:
 
-After that initial pass, manager-owned automatic events apply only when the
-provider has **no `setup` method at all**:
-
-| Scope | Manager events for providers without `setup` |
+| Scope and owner | Automatic behavior |
 | --- | --- |
-| Buffer `refresh` | `BufEnter`, `TextChanged`, `TextChangedI`, `TextChangedP` |
-| Window `refresh_window` | `BufWinEnter`, `WinEnter` |
+| Buffer `"manager"` | The manager calls `refresh` on `BufEnter`, `TextChanged`, `TextChangedI`, and `TextChangedP` |
+| Buffer `"provider"` | The manager sends no automatic buffer refresh; the provider owns subscriptions and publication |
+| Window `"manager"` | The manager calls `refresh_window` on `BufWinEnter` and `WinEnter` |
+| Window `"provider"` | The manager sends no automatic window refresh; the provider owns subscriptions and publication |
 
-On `BufWinEnter`, refresh-only window marks are cleared before the new window
+On `BufWinEnter`, manager-owned window marks are cleared before the new window
 association is refreshed. They are also cleared when the window is no longer
-eligible.
+eligible. Provider-owned window refresh must manage its own event-time clearing.
 
-Defining even an empty `setup = function() end` opts the provider out of those
-manager event refreshes. Such a provider must create its own subscriptions and
-publish updates through its context. `:ScrollbarRefresh` still calls both
-refresh methods for current source buffers and windows, regardless of whether
-`setup` exists. The Lua manager also exposes `refresh(bufnr)` and
-`refresh_window(winid)`.
+`setup` and `dispose` describe resource lifecycle only. A provider may acquire
+resources in `setup` while retaining manager scheduling by choosing
+`"manager"`, or choose `"provider"` and subscribe to its own events. An empty,
+present, or omitted `setup` has no scheduling meaning.
+
+`:ScrollbarRefresh` calls both refresh methods for current source buffers and
+windows regardless of owner. The Lua manager's `refresh(bufnr)` and
+`refresh_window(winid)` APIs are also ownership-independent.
 
 ## Event-Driven Example
 
@@ -132,6 +156,7 @@ end
 
 require("scrollbar.providers").register({
     name = "bookmark_events",
+    refresh_owner = { buffer = "provider" },
 
     setup = function(context)
         local group = context.create_augroup("updates")
@@ -156,8 +181,7 @@ require("scrollbar.providers").register({
 ```
 
 The `refresh` method supplies the initial and manual-refresh path. The provider's
-own event supplies automatic updates because defining `setup` disables the
-manager's buffer-change event path.
+own event supplies automatic updates because the buffer scope is provider-owned.
 
 ## Publishing Semantics
 
@@ -170,7 +194,7 @@ patches.
 - Returning `nil` from `refresh` or `refresh_window` means "do not publish" and
   normally leaves the current list unchanged. Policy is checked again after the
   callback, so a target that becomes ineligible during collection is cleared
-  instead. A refresh-only window provider on `BufWinEnter` is also called after
+  instead. A manager-owned window provider on `BufWinEnter` is also called after
   the manager has cleared the old window association.
 - Passing `nil` to `context.set_marks` or `context.set_window_marks` is not the
   same as returning `nil`; it is an invalid mark list, so use the clear methods
@@ -244,7 +268,7 @@ invalidation.
 For asynchronous work, use the policy queries to avoid unnecessary collection,
 but always treat the setter as the final authority because eligibility can
 change between collection and publication. A window provider must republish
-when its window becomes a source again; providers without `setup` can rely on
+when its window becomes a source again; a manager-owned window scope can rely on
 the manager's `refresh_window` activation events.
 
 ## Lifecycle And Cleanup
@@ -261,6 +285,9 @@ the manager's `refresh_window` activation events.
   subscriptions, or other resources. Stop asynchronous work during cleanup and
   guard late callbacks with your own active flag or generation; a retained
   context is not a cancellation token.
+- Resource acquisition in `setup` does not require provider-owned refresh. Use a
+  `"manager"` owner when the standard manager events are sufficient, and avoid
+  installing duplicate provider subscriptions for the same scope.
 
 ## Failure Isolation
 
@@ -288,10 +315,13 @@ remove or invalidate them during cleanup.
 
 - Unknown option under `providers`: remove the custom key and register the
   provider through `require("scrollbar.providers").register()`.
+- Registration reports a missing `refresh_owner` scope: declare one owner for
+  every implemented refresh callback; omission has no compatibility fallback.
 - `mark.type is not configured`: add the type under top-level `marks` before
   the provider first publishes.
-- No updates after adding `setup`: subscribe to the required events yourself;
-  the manager's `BufEnter` and text-change refresh path is intentionally off.
+- No automatic updates with a `"provider"` owner: subscribe to the required
+  events and publish through the context, or choose `"manager"` when the fixed
+  manager event list fits the provider.
 - Marks disappear after one invalid item: validation replaces atomically and
   clears the rejected target list; inspect the warning for the exact field.
 - Marks leak back after unregistering: cancel asynchronous work and ignore late

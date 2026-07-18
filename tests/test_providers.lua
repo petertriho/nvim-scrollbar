@@ -62,6 +62,114 @@ local function capture_notifications()
     return notifications
 end
 
+local function expect_registration_error(provider, message)
+    local ok, err = pcall(require("scrollbar.providers").register, provider)
+    expect.equality(ok, false)
+    expect.no_equality(tostring(err):find(message, 1, true), nil)
+end
+
+T["validates refresh ownership registration shapes"] = function()
+    local providers = require("scrollbar.providers")
+    local refresh = function()
+        return {}
+    end
+
+    local valid = {
+        { name = "no-refresh", private_option = true },
+        { name = "buffer-manager", refresh_owner = { buffer = "manager" }, refresh = refresh },
+        { name = "buffer-provider", refresh_owner = { buffer = "provider" }, refresh = refresh },
+        { name = "window-manager", refresh_owner = { window = "manager" }, refresh_window = refresh },
+        { name = "window-provider", refresh_owner = { window = "provider" }, refresh_window = refresh },
+        {
+            name = "dual-manager",
+            refresh_owner = { buffer = "manager", window = "manager" },
+            refresh = refresh,
+            refresh_window = refresh,
+        },
+        {
+            name = "dual-mixed",
+            refresh_owner = { buffer = "manager", window = "provider" },
+            refresh = refresh,
+            refresh_window = refresh,
+        },
+        {
+            name = "dual-mixed-reverse",
+            refresh_owner = { buffer = "provider", window = "manager" },
+            refresh = refresh,
+            refresh_window = refresh,
+        },
+        {
+            name = "dual-provider",
+            refresh_owner = { buffer = "provider", window = "provider" },
+            refresh = refresh,
+            refresh_window = refresh,
+        },
+    }
+    for _, provider in ipairs(valid) do
+        providers.register(provider)
+        expect.equality(providers.get(provider.name), provider)
+    end
+
+    expect_registration_error(
+        { name = "non-table", refresh_owner = "manager", refresh = refresh },
+        "provider 'non-table' refresh_owner must be a table"
+    )
+    expect_registration_error(
+        { name = "unknown-scope", refresh_owner = { buffers = "manager" }, refresh = refresh },
+        "provider 'unknown-scope' refresh_owner has unknown scope 'buffers'"
+    )
+    local table_scope = {}
+    expect_registration_error(
+        { name = "non-string-scope", refresh_owner = { [table_scope] = "manager" }, refresh = refresh },
+        "provider 'non-string-scope' refresh_owner has unknown scope '<table>'"
+    )
+    expect_registration_error(
+        { name = "multiple-scopes", refresh_owner = { z = "manager", a = "manager" }, refresh = refresh },
+        "provider 'multiple-scopes' refresh_owner has unknown scope 'a'"
+    )
+    expect_registration_error(
+        { name = "invalid-owner", refresh_owner = { buffer = "plugin" }, refresh = refresh },
+        "provider 'invalid-owner' refresh_owner.buffer must be 'manager' or 'provider'"
+    )
+    expect_registration_error(
+        { name = "invalid-window-owner", refresh_owner = { window = false }, refresh_window = refresh },
+        "provider 'invalid-window-owner' refresh_owner.window must be 'manager' or 'provider'"
+    )
+    expect_registration_error(
+        { name = "missing-buffer", refresh = refresh },
+        "provider 'missing-buffer' refresh requires refresh_owner.buffer"
+    )
+    expect_registration_error(
+        { name = "missing-window", refresh_window = refresh },
+        "provider 'missing-window' refresh_window requires refresh_owner.window"
+    )
+    expect_registration_error({
+        name = "partial-dual",
+        refresh_owner = { buffer = "manager" },
+        refresh = refresh,
+        refresh_window = refresh,
+    }, "provider 'partial-dual' refresh_window requires refresh_owner.window")
+    expect_registration_error({
+        name = "partial-dual-reverse",
+        refresh_owner = { window = "provider" },
+        refresh = refresh,
+        refresh_window = refresh,
+    }, "provider 'partial-dual-reverse' refresh requires refresh_owner.buffer")
+    expect_registration_error(
+        { name = "extra-buffer", refresh_owner = { buffer = "manager" } },
+        "provider 'extra-buffer' refresh_owner.buffer requires refresh"
+    )
+    expect_registration_error(
+        { name = "extra-window", refresh_owner = { window = "provider" } },
+        "provider 'extra-window' refresh_owner.window requires refresh_window"
+    )
+
+    for _, field in ipairs({ "setup", "refresh", "refresh_window", "dispose" }) do
+        local provider = { name = "invalid-" .. field, [field] = true }
+        expect_registration_error(provider, "provider 'invalid-" .. field .. "' " .. field .. " must be a function")
+    end
+end
+
 T["registers before setup and initially refreshes eligible loaded buffers"] = function()
     local providers = require("scrollbar.providers")
     local target = new_buffer({ "one", "two" })
@@ -70,6 +178,7 @@ T["registers before setup and initially refreshes eligible loaded buffers"] = fu
 
     providers.register({
         name = "custom",
+        refresh_owner = { buffer = "provider" },
         setup = function()
             calls.setup = calls.setup + 1
         end,
@@ -106,6 +215,7 @@ T["registers after setup and immediately sets up and refreshes"] = function()
     })
     providers.register({
         name = "late",
+        refresh_owner = { buffer = "provider" },
         setup = function()
             table.insert(calls, "setup")
         end,
@@ -132,6 +242,7 @@ T["refreshes window providers initially, manually, and on disposal"] = function(
 
     providers.register({
         name = "window",
+        refresh_owner = { window = "manager" },
         refresh_window = function(refreshed_win)
             table.insert(calls, refreshed_win)
             return { { line = line, type = "Custom" } }
@@ -202,6 +313,7 @@ T["unregister disposes resources, clears marks, and invalidates changed buffers"
 
     providers.register({
         name = "owned",
+        refresh_owner = { buffer = "manager" },
         setup = function(context)
             group = context.create_augroup("events")
             vim.api.nvim_create_autocmd(
@@ -244,18 +356,31 @@ T["isolates setup failures and releases partially created resources"] = function
     local target = new_buffer({ "one" })
     local winid = show_buffer(target)
     local failed_group
+    local failed_refreshes = { buffer = 0, window = 0 }
     local good_setup = 0
 
     providers.register({
         name = "bad-setup",
+        refresh_owner = { buffer = "manager", window = "manager" },
         setup = function(context)
             failed_group = context.create_augroup("partial")
             context.set_window_marks(winid, { { line = 0, type = "Custom" } })
+            vim.api.nvim_exec_autocmds("BufEnter", { buffer = target })
+            vim.api.nvim_exec_autocmds("WinEnter", { buffer = target })
             error("setup exploded")
+        end,
+        refresh = function()
+            failed_refreshes.buffer = failed_refreshes.buffer + 1
+            return {}
+        end,
+        refresh_window = function()
+            failed_refreshes.window = failed_refreshes.window + 1
+            return {}
         end,
     })
     providers.register({
         name = "good-setup",
+        refresh_owner = { buffer = "provider" },
         setup = function()
             good_setup = good_setup + 1
         end,
@@ -282,6 +407,7 @@ T["isolates setup failures and releases partially created resources"] = function
         ["good-setup"] = { { line = 0, type = "Custom" } },
     })
     expect.equality(require("scrollbar.store").get_window(winid), {})
+    expect.equality(failed_refreshes, { buffer = 0, window = 0 })
     expect.equality(pcall(vim.api.nvim_get_autocmds, { group = failed_group }), false)
     expect.equality(#notifications, 1)
     expect.no_equality(notifications[1].message:match("provider 'bad%-setup' setup failed.*setup exploded"), nil)
@@ -301,6 +427,8 @@ T["clears refresh-only window marks when the window becomes ineligible"] = funct
 
     providers.register({
         name = "window-lifecycle",
+        refresh_owner = { window = "manager" },
+        setup = function() end,
         refresh_window = function()
             return { { line = 0, type = "Custom" } }
         end,
@@ -341,6 +469,7 @@ T["clears refresh-only marks before an eligible window changes buffers"] = funct
 
     providers.register({
         name = "window-association",
+        refresh_owner = { window = "manager" },
         refresh_window = function(refreshed_win)
             if vim.api.nvim_win_get_buf(refreshed_win) == first then
                 return { { line = 0, type = "Custom" } }
@@ -377,6 +506,7 @@ T["clears only a failing refresher and resets warning suppression after recovery
 
     providers.register({
         name = "bad-refresh",
+        refresh_owner = { buffer = "manager" },
         refresh = function()
             if should_fail then
                 error("refresh exploded")
@@ -386,6 +516,7 @@ T["clears only a failing refresher and resets warning suppression after recovery
     })
     providers.register({
         name = "good-refresh",
+        refresh_owner = { buffer = "manager" },
         refresh = function()
             return { { line = 0, type = "Custom", text = "g" } }
         end,
@@ -422,6 +553,7 @@ T["isolates failing window refreshes and resets warnings after recovery"] = func
 
     providers.register({
         name = "bad-window-refresh",
+        refresh_owner = { window = "manager" },
         refresh_window = function()
             if should_fail then
                 error("window refresh exploded")
@@ -463,6 +595,7 @@ T["isolates dispose failures while still releasing resources and marks"] = funct
 
     providers.register({
         name = "bad-dispose",
+        refresh_owner = { buffer = "provider" },
         setup = function(context)
             context.add_cleanup(function()
                 cleaned = cleaned + 1
@@ -488,27 +621,35 @@ T["isolates dispose failures while still releasing resources and marks"] = funct
     expect.no_equality(notifications[1].message:match("provider 'bad%-dispose' dispose failed.*dispose exploded"), nil)
 end
 
-T["refreshes refresh-only providers on buffer entry and content changes"] = function()
+T["dispatches automatic buffer refreshes by owner regardless of setup"] = function()
     local providers = require("scrollbar.providers")
     local target = new_buffer({ "one" })
-    local simple_refreshes = 0
-    local managed_refreshes = 0
+    local calls = {
+        ["manager-no-setup"] = 0,
+        ["manager-setup"] = 0,
+        ["provider-no-setup"] = 0,
+        ["provider-setup"] = 0,
+    }
 
-    providers.register({
-        name = "simple",
-        refresh = function()
-            simple_refreshes = simple_refreshes + 1
-            return {}
-        end,
-    })
-    providers.register({
-        name = "managed",
-        setup = function() end,
-        refresh = function()
-            managed_refreshes = managed_refreshes + 1
-            return {}
-        end,
-    })
+    local function register(name, owner, with_setup)
+        local provider = {
+            name = name,
+            refresh_owner = { buffer = owner },
+            refresh = function()
+                calls[name] = calls[name] + 1
+                return {}
+            end,
+        }
+        if with_setup then
+            provider.setup = function() end
+        end
+        providers.register(provider)
+    end
+    register("manager-no-setup", "manager", false)
+    register("manager-setup", "manager", true)
+    register("provider-no-setup", "provider", false)
+    register("provider-setup", "provider", true)
+
     providers.setup({
         is_buffer_eligible = function(bufnr)
             return bufnr == target
@@ -518,8 +659,118 @@ T["refreshes refresh-only providers on buffer entry and content changes"] = func
     vim.api.nvim_exec_autocmds("BufEnter", { buffer = target })
     vim.api.nvim_exec_autocmds("TextChanged", { buffer = target })
 
-    expect.equality(simple_refreshes, 3)
-    expect.equality(managed_refreshes, 1)
+    expect.equality(calls, {
+        ["manager-no-setup"] = 3,
+        ["manager-setup"] = 3,
+        ["provider-no-setup"] = 1,
+        ["provider-setup"] = 1,
+    })
+
+    providers.refresh(target)
+    expect.equality(calls, {
+        ["manager-no-setup"] = 4,
+        ["manager-setup"] = 4,
+        ["provider-no-setup"] = 2,
+        ["provider-setup"] = 2,
+    })
+end
+
+T["dispatches automatic window refreshes by owner regardless of setup"] = function()
+    local providers = require("scrollbar.providers")
+    local target = new_buffer({ "one" })
+    local winid = show_buffer(target)
+    local calls = {
+        ["manager-no-setup"] = 0,
+        ["manager-setup"] = 0,
+        ["provider-no-setup"] = 0,
+        ["provider-setup"] = 0,
+    }
+
+    local function register(name, owner, with_setup)
+        local provider = {
+            name = name,
+            refresh_owner = { window = owner },
+            refresh_window = function()
+                calls[name] = calls[name] + 1
+                return {}
+            end,
+        }
+        if with_setup then
+            provider.setup = function() end
+        end
+        providers.register(provider)
+    end
+    register("manager-no-setup", "manager", false)
+    register("manager-setup", "manager", true)
+    register("provider-no-setup", "provider", false)
+    register("provider-setup", "provider", true)
+
+    providers.setup({
+        source_windows = function()
+            return { winid }
+        end,
+        is_source_window = function(source_win)
+            return source_win == winid
+        end,
+    })
+    vim.api.nvim_exec_autocmds("BufWinEnter", { buffer = target })
+    vim.api.nvim_exec_autocmds("WinEnter", { buffer = target })
+
+    expect.equality(calls, {
+        ["manager-no-setup"] = 3,
+        ["manager-setup"] = 3,
+        ["provider-no-setup"] = 1,
+        ["provider-setup"] = 1,
+    })
+
+    providers.refresh_window(winid)
+    expect.equality(calls, {
+        ["manager-no-setup"] = 4,
+        ["manager-setup"] = 4,
+        ["provider-no-setup"] = 2,
+        ["provider-setup"] = 2,
+    })
+end
+
+T["keeps mixed dual-scope refresh ownership independent"] = function()
+    local providers = require("scrollbar.providers")
+    local target = new_buffer({ "one" })
+    local winid = show_buffer(target)
+    local calls = { buffer = 0, window = 0 }
+
+    providers.register({
+        name = "mixed",
+        refresh_owner = { buffer = "manager", window = "provider" },
+        setup = function() end,
+        refresh = function()
+            calls.buffer = calls.buffer + 1
+            return {}
+        end,
+        refresh_window = function()
+            calls.window = calls.window + 1
+            return {}
+        end,
+    })
+    providers.setup({
+        is_buffer_eligible = function(bufnr)
+            return bufnr == target
+        end,
+        source_windows = function()
+            return { winid }
+        end,
+        is_source_window = function(source_win)
+            return source_win == winid
+        end,
+    })
+
+    expect.equality(calls, { buffer = 1, window = 1 })
+    vim.api.nvim_exec_autocmds("TextChanged", { buffer = target })
+    vim.api.nvim_exec_autocmds("WinEnter", { buffer = target })
+    expect.equality(calls, { buffer = 2, window = 1 })
+
+    providers.refresh(target)
+    providers.refresh_window(winid)
+    expect.equality(calls, { buffer = 3, window = 2 })
 end
 
 T["provides isolated config, store, window, and invalidation context operations"] = function()
@@ -709,6 +960,7 @@ T["skips pre-ineligible refreshes and rejects eligibility races"] = function()
 
     providers.register({
         name = "racing",
+        refresh_owner = { buffer = "manager", window = "manager" },
         refresh = function()
             buffer_calls = buffer_calls + 1
             if buffer_race then

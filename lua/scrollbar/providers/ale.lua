@@ -1,4 +1,4 @@
-local M = { name = "ale" }
+local M = { name = "ale", refresh_owner = { buffer = "provider" } }
 
 local state = {
     context = nil,

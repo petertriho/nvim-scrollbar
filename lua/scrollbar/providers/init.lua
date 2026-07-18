@@ -370,11 +370,10 @@ local release_resources
 ---@param entry ScrollbarManagedProvider
 local function activate_entry(entry)
     entry.context = make_context(entry)
-    entry.setup_ok = true
+    entry.setup_ok = false
     if entry.provider.setup ~= nil then
         local ok, err = pcall(entry.provider.setup, entry.context)
         if not ok then
-            entry.setup_ok = false
             release_resources(entry)
             invalidate_changed(store.clear_provider(entry.provider.name))
             invalidate_changed_windows(store.clear_window_provider(entry.provider.name))
@@ -383,6 +382,7 @@ local function activate_entry(entry)
         end
         reset_warnings(entry.provider.name, "setup")
     end
+    entry.setup_ok = true
 
     for _, bufnr in ipairs(eligible_buffers()) do
         refresh_entry(entry, bufnr)
@@ -438,6 +438,62 @@ M.register = function(provider)
         if provider[field] ~= nil and type(provider[field]) ~= "function" then
             error(string.format("[scrollbar.nvim] provider '%s' %s must be a function", provider.name, field), 2)
         end
+    end
+    if provider.refresh_owner ~= nil and type(provider.refresh_owner) ~= "table" then
+        error(string.format("[scrollbar.nvim] provider '%s' refresh_owner must be a table", provider.name), 2)
+    end
+    local refresh_owner = provider.refresh_owner or {}
+    local unknown_scope
+    for scope in pairs(refresh_owner) do
+        if scope ~= "buffer" and scope ~= "window" then
+            local scope_name = type(scope) == "string" and scope or "<" .. type(scope) .. ">"
+            if unknown_scope == nil or scope_name < unknown_scope then
+                unknown_scope = scope_name
+            end
+        end
+    end
+    if unknown_scope ~= nil then
+        error(
+            string.format(
+                "[scrollbar.nvim] provider '%s' refresh_owner has unknown scope '%s'",
+                provider.name,
+                unknown_scope
+            ),
+            2
+        )
+    end
+    for _, scope in ipairs({ "buffer", "window" }) do
+        local owner = refresh_owner[scope]
+        if owner ~= "manager" and owner ~= "provider" then
+            if owner ~= nil then
+                error(
+                    string.format(
+                        "[scrollbar.nvim] provider '%s' refresh_owner.%s must be 'manager' or 'provider'",
+                        provider.name,
+                        scope
+                    ),
+                    2
+                )
+            end
+        end
+    end
+    if provider.refresh ~= nil and refresh_owner.buffer == nil then
+        error(string.format("[scrollbar.nvim] provider '%s' refresh requires refresh_owner.buffer", provider.name), 2)
+    end
+    if provider.refresh_window ~= nil and refresh_owner.window == nil then
+        error(
+            string.format("[scrollbar.nvim] provider '%s' refresh_window requires refresh_owner.window", provider.name),
+            2
+        )
+    end
+    if refresh_owner.buffer ~= nil and provider.refresh == nil then
+        error(string.format("[scrollbar.nvim] provider '%s' refresh_owner.buffer requires refresh", provider.name), 2)
+    end
+    if refresh_owner.window ~= nil and provider.refresh_window == nil then
+        error(
+            string.format("[scrollbar.nvim] provider '%s' refresh_owner.window requires refresh_window", provider.name),
+            2
+        )
     end
     if registry[provider.name] ~= nil then
         error(string.format("[scrollbar.nvim] provider '%s' is already registered", provider.name), 2)
@@ -542,7 +598,8 @@ M.setup = function(options)
             end
             for _, name in ipairs(order) do
                 local entry = registry[name]
-                if entry.provider.setup == nil then
+                local ownership = entry.provider.refresh_owner
+                if ownership ~= nil and ownership.buffer == "manager" then
                     refresh_entry(entry, args.buf)
                 end
             end
@@ -558,7 +615,8 @@ M.setup = function(options)
             local eligible = is_eligible_window(winid)
             for _, name in ipairs(order) do
                 local entry = registry[name]
-                if entry.provider.setup == nil and entry.provider.refresh_window ~= nil then
+                local ownership = entry.provider.refresh_owner
+                if ownership ~= nil and ownership.window == "manager" then
                     if args.event == "BufWinEnter" then
                         invalidate_changed_windows(store.clear_window(entry.provider.name, winid))
                     end

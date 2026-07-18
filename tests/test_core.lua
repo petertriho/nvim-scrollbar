@@ -96,6 +96,7 @@ T["preserves custom providers while reconciling only root-owned built-ins"] = fu
         local calls = { before = 0, after = 0, cursor = 0 }
         local before = {
             name = "before",
+            refresh_owner = { buffer = "provider" },
             setup = function()
                 calls.before = calls.before + 1
             end,
@@ -105,6 +106,7 @@ T["preserves custom providers while reconciling only root-owned built-ins"] = fu
         }
         local custom_cursor = {
             name = "cursor",
+            refresh_owner = { buffer = "provider" },
             setup = function()
                 calls.cursor = calls.cursor + 1
             end,
@@ -119,6 +121,7 @@ T["preserves custom providers while reconciling only root-owned built-ins"] = fu
         scrollbar.setup(config)
         local after = {
             name = "after",
+            refresh_owner = { buffer = "provider" },
             setup = function()
                 calls.after = calls.after + 1
             end,
@@ -559,8 +562,11 @@ T["public refresh recollects displayed buffers through providers and schedules r
         local providers = require("scrollbar.providers")
         local refreshes = 0
         local window_refreshes = 0
+        local manager_refreshes = 0
+        local manager_window_refreshes = 0
         providers.register({
             name = "custom",
+            refresh_owner = { buffer = "provider", window = "provider" },
             refresh = function()
                 refreshes = refreshes + 1
                 return { { line = refreshes, type = "Misc" } }
@@ -570,12 +576,26 @@ T["public refresh recollects displayed buffers through providers and schedules r
                 return { { line = window_refreshes, type = "Misc" } }
             end,
         })
+        providers.register({
+            name = "manager-custom",
+            refresh_owner = { buffer = "manager", window = "manager" },
+            refresh = function()
+                manager_refreshes = manager_refreshes + 1
+                return { { line = manager_refreshes, type = "Misc" } }
+            end,
+            refresh_window = function()
+                manager_window_refreshes = manager_window_refreshes + 1
+                return { { line = manager_window_refreshes, type = "Misc" } }
+            end,
+        })
 
         local scrollbar = require("scrollbar")
         scrollbar.setup(config)
         require("scrollbar.scheduler").flush()
         refreshes = 0
         window_refreshes = 0
+        manager_refreshes = 0
+        manager_window_refreshes = 0
         vim.cmd("ScrollbarRefresh")
         local queued = require("scrollbar.scheduler").status().dirty_windows
         require("scrollbar.scheduler").flush()
@@ -583,7 +603,10 @@ T["public refresh recollects displayed buffers through providers and schedules r
         return {
             refreshes = refreshes,
             window_refreshes = window_refreshes,
+            manager_refreshes = manager_refreshes,
+            manager_window_refreshes = manager_window_refreshes,
             marks = require("scrollbar.store").get(bufnr).custom,
+            manager_marks = require("scrollbar.store").get(bufnr)["manager-custom"],
             queued = #queued,
             source_windows = #require("scrollbar.renderer").source_windows(bufnr),
         }
@@ -591,7 +614,10 @@ T["public refresh recollects displayed buffers through providers and schedules r
 
     expect.equality(result.refreshes, 1)
     expect.equality(result.window_refreshes, 2)
+    expect.equality(result.manager_refreshes, 1)
+    expect.equality(result.manager_window_refreshes, 2)
     expect.equality(result.marks, { { line = 1, type = "Misc" } })
+    expect.equality(result.manager_marks, { { line = 1, type = "Misc" } })
     expect.equality(result.queued, result.source_windows)
     expect.equality(result.source_windows, 2)
 end

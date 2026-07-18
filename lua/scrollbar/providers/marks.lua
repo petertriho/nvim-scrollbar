@@ -115,6 +115,7 @@ end
 ---@type ScrollbarProvider
 return {
     name = "marks",
+    refresh_owner = { buffer = "provider" },
     setup = function(context)
         local group = context.create_augroup("events")
         vim.api.nvim_create_autocmd(

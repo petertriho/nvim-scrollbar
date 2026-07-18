@@ -355,6 +355,7 @@ T["mini.diff event failures clear only its marks"] = function()
     providers.register(require("scrollbar.providers.mini_diff"))
     providers.register({
         name = "other",
+        refresh_owner = { buffer = "manager" },
         refresh = function()
             return { { line = 1, type = "Error" } }
         end,
@@ -1003,6 +1004,7 @@ T["vgit event failures clear only vgit marks"] = function()
     providers.register(vgit)
     providers.register({
         name = "other",
+        refresh_owner = { buffer = "manager" },
         refresh = function()
             return { { line = 1, type = "Error" } }
         end,
@@ -1404,6 +1406,7 @@ T["manager clears only gitsigns marks when its refresh fails"] = function()
     providers.register(require("scrollbar.providers.gitsigns"))
     providers.register({
         name = "other",
+        refresh_owner = { buffer = "manager" },
         refresh = function()
             return { { line = 1, type = "Error" } }
         end,
