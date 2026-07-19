@@ -54,6 +54,7 @@ T["normalizes a fresh one-column default without setup-only state"] = function()
 
     local second = set()
     expect.equality(second.visibility, "all")
+    expect.equality(second.float.placement.gutter, "avoid")
     expect.equality(second.layout.direction, "auto")
     expect.equality(second.layout.width, 1)
     expect.equality(layer_kinds(second.layout.columns[1]), { "track", "thumb", "marks" })
@@ -181,7 +182,7 @@ T["accepts the complete typed runtime schema"] = function()
         float = {
             zindex = 60,
             hide_on_cursor = false,
-            placement = { relative = "editor", anchor = "SW", row = -2, col = 3 },
+            placement = { relative = "editor", anchor = "SW", row = -2, col = 3, gutter = "overlap" },
         },
         layout = {
             direction = "rtl",
@@ -220,6 +221,7 @@ T["accepts the complete typed runtime schema"] = function()
 
     expect.equality(result.max_lines, 1000)
     expect.equality(result.float.placement.row, -2)
+    expect.equality(result.float.placement.gutter, "overlap")
     expect.equality(result.layout.direction, "rtl")
     expect.equality(result.layout.width, 2)
     expect.equality(result.track.highlight, track_highlight)
@@ -326,8 +328,17 @@ end
 
 T["failed setup preserves active config"] = function()
     local config = require("scrollbar.config")
-    local before = set({ visibility = "active", layout = { columns = { { "track" }, { "marks" } } } })
+    local before = set({
+        visibility = "active",
+        float = { placement = { gutter = "overlap" } },
+        layout = { columns = { { "track" }, { "marks" } } },
+    })
 
+    expect_invalid(
+        { float = { placement = { gutter = "inside" } } },
+        "float.placement.gutter must be one of: avoid, overlap"
+    )
+    expect.equality(config.get(), before)
     expect_invalid({ excluded_filetypes = { "lua", false } }, "excluded_filetypes%[2%] must be a string")
     expect.equality(config.get(), before)
 end

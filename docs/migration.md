@@ -71,6 +71,27 @@ layout = {
 The numerical meaning changed: the old value capped total float width; the new
 value caps only the `Mark` lane, including its declared base cells.
 
+## West Gutter Placement
+
+Window-relative `NW` and `SW` placements now default to `gutter = "avoid"`, so
+the renderer reserves blank `statuscolumn` cells for the scrollbar instead of
+covering existing gutter or buffer-text cells. East anchors and editor-relative
+placements are unchanged.
+
+To preserve the earlier window-edge origin for west placements, use:
+
+```lua
+require("scrollbar").setup({
+    float = {
+        placement = {
+            gutter = "overlap",
+        },
+    },
+})
+```
+
+Other placement fields continue to use their defaults unless overridden.
+
 ## Custom Provider Refresh Ownership
 
 Every custom provider with `refresh` or `refresh_window` must now declare who

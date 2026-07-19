@@ -29,7 +29,8 @@ require("scrollbar").setup({ preset = "review" })
 - `gvim`: a solid two-column conventional scrollbar without annotations.
 - `eclipse`: a bar plus diagnostic, navigation, and catch-all annotation lanes.
 - `sublime`: a trackless translucent thumb with all marks above it.
-- `emacs`: a west-anchored bar with an inward diagnostic fringe.
+- `emacs`: a west-anchored bar in a dedicated gutter reservation, with an
+  inward diagnostic fringe.
 - `xcode`: a compact bar with navigation and diagnostic stripes.
 
 Editor-named presets approximate scrollbar and annotation structure in terminal
@@ -128,7 +129,7 @@ layout = {
 layout = { direction = "auto", columns = { { "thumb", "marks" } } }
 
 -- emacs
-float = { placement = { anchor = "NW" } }
+float = { placement = { anchor = "NW", gutter = "avoid" } }
 layout = {
     direction = "auto",
     columns = {

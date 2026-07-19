@@ -81,7 +81,44 @@ ordered prefix remains and the tail is omitted. Custom providers emitting
 `float.placement.relative = "window"` creates one float per eligible source
 window. `"editor"` uses editor coordinates and renders only the active source
 window. `anchor` selects `NW`, `NE`, `SW`, or `SE`; signed `row` and `col`
-offsets are applied literally.
+offsets are applied literally. `gutter` selects `"avoid"` (the default) or
+`"overlap"`.
+
+Gutter placement applies as follows:
+
+| Relative mode | Anchor | `gutter = "avoid"` behavior | `gutter = "overlap"` origin |
+| --- | --- | --- | --- |
+| `"window"` | `NW` or `SW` | Reserve blank gutter cells and place the float inside them | Source window edge |
+| `"window"` | `NE` or `SE` | Existing east edge | Existing east edge |
+| `"editor"` | Any | Existing editor coordinate | Existing editor coordinate |
+
+For a window-relative west anchor, let `G` be the source's gutter width before
+the scrollbar reservation, `W` the rendered float width, and `C` the configured
+`col`. In `avoid` mode the renderer reserves `max(0, W + C)` blank cells at the
+text edge and places the float at `G + C`. With the default `col = 0`, the float
+occupies only those new cells and its right edge meets the shifted buffer-text
+edge. A positive offset leaves a gap before the float. A negative offset remains
+literal and may deliberately overlap existing gutter cells.
+
+The reservation temporarily wraps the window-local `statuscolumn` and expands
+its available width. Existing fold, sign, number, custom-format, and `%!`
+content remains before the reserved blank cells. The original `statuscolumn`
+and `numberwidth` are restored when the scrollbar is hidden, disposed, becomes
+ineligible, or switches to an unaffected placement. An external edit made while
+the reservation is active is preserved instead of overwritten. Each split owns
+and restores its reservation independently, including splits created from an
+already reserved window.
+
+Neovim limits the maximum statuscolumn width. If a declared west layout is too
+wide to reserve completely, the renderer omits that scrollbar instead of
+partially reserving it and covering buffer text. Dynamic named-mark growth is
+constrained to the reservation capacity when the declared base layout fits.
+
+The renderer measures the live gutter on every normal render. Covered option
+changes, including `number`, `relativenumber`, `numberwidth`, `foldcolumn`,
+`signcolumn`, and `statuscolumn`, queue that path. Unrelated automatic sign
+changes are reconciled on the next normal render rather than through polling or
+immediate sign-API interception.
 
 Contextual profiles resolve placement per source window. With root
 `visibility = "all"`, compatible window-relative variants can coexist while an

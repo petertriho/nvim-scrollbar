@@ -4,6 +4,7 @@
 ---@alias ScrollbarGeometryMode "line"|"screen"
 ---@alias ScrollbarPlacementRelative "window"|"editor"
 ---@alias ScrollbarFloatAnchor "NW"|"NE"|"SW"|"SE"
+---@alias ScrollbarGutterMode "avoid"|"overlap"
 ---@alias ScrollbarLayoutDirection "auto"|"ltr"|"rtl"
 ---@alias ScrollbarSearchBackend "sync"|"worker"
 ---@alias ScrollbarText string|string[]
@@ -16,6 +17,7 @@
 ---@field anchor? ScrollbarFloatAnchor
 ---@field row? integer
 ---@field col? integer
+---@field gutter? ScrollbarGutterMode
 
 ---@class ScrollbarUserFloatConfig
 ---@field zindex? integer
@@ -140,6 +142,7 @@
 ---@field anchor ScrollbarFloatAnchor
 ---@field row integer
 ---@field col integer
+---@field gutter ScrollbarGutterMode
 
 ---@class ScrollbarFloatConfig
 ---@field zindex integer

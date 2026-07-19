@@ -67,6 +67,121 @@ T["root setup preserves independent floats for two views of one buffer"] = funct
     })
 end
 
+T["same-buffer vertical splits avoid and update their own live gutters"] = function()
+    local child = helpers.new_child()
+    MiniTest.finally(function()
+        helpers.stop_child(child)
+    end)
+
+    local result = child.lua_func(function()
+        local lines = {}
+        for index = 1, 200 do
+            lines[index] = "line " .. index
+        end
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        local source_buf = vim.api.nvim_get_current_buf()
+        local first = vim.api.nvim_get_current_win()
+        vim.cmd("vsplit")
+        local second = vim.api.nvim_get_current_win()
+
+        local function set_gutter(winid, signcolumn)
+            vim.api.nvim_set_option_value("number", false, { win = winid })
+            vim.api.nvim_set_option_value("relativenumber", false, { win = winid })
+            vim.api.nvim_set_option_value("numberwidth", 4, { win = winid })
+            vim.api.nvim_set_option_value("foldcolumn", "0", { win = winid })
+            vim.api.nvim_set_option_value("signcolumn", signcolumn, { win = winid })
+            vim.api.nvim_set_option_value("statuscolumn", "", { win = winid })
+        end
+        set_gutter(first, "yes:1")
+        set_gutter(second, "yes:2")
+        local first_base_textoff = vim.fn.getwininfo(first)[1].textoff
+        local second_base_textoff = vim.fn.getwininfo(second)[1].textoff
+
+        require("scrollbar.config").set({
+            set_highlights = false,
+            render = { interval_ms = 0, geometry = "line" },
+            float = {
+                hide_on_cursor = false,
+                placement = { relative = "window", anchor = "NW", row = 0, col = 0, gutter = "avoid" },
+            },
+            mouse = { enabled = false },
+            thumb = { text = "H", hide_if_all_visible = false },
+            providers = {
+                cursor = false,
+                diagnostic = false,
+                search = false,
+                marks = false,
+                gitsigns = false,
+                mini_diff = false,
+                signify = false,
+                vgit = false,
+                ale = false,
+                coc = false,
+            },
+            excluded_buftypes = {},
+            excluded_filetypes = {},
+        })
+        local renderer = require("scrollbar.renderer")
+        renderer.setup()
+        local first_state = assert(renderer.render(first))
+        local second_state = assert(renderer.render(second))
+        local first_textoff = vim.fn.getwininfo(first)[1].textoff
+        local second_textoff = vim.fn.getwininfo(second)[1].textoff
+        local first_before = vim.api.nvim_win_get_config(first_state.float_win)
+        local second_before = vim.api.nvim_win_get_config(second_state.float_win)
+
+        vim.api.nvim_set_option_value("signcolumn", "yes:3", { win = first })
+        local first_moved_base_textoff = vim.fn.getwininfo(first)[1].textoff - first_state.width
+        local first_moved = assert(renderer.render(first))
+        local second_unchanged = assert(renderer.render(second))
+        local first_moved_textoff = vim.fn.getwininfo(first)[1].textoff
+        local first_after = vim.api.nvim_win_get_config(first_moved.float_win)
+        local second_after = vim.api.nvim_win_get_config(second_unchanged.float_win)
+
+        return {
+            source_buf = source_buf,
+            buffers = {
+                vim.api.nvim_win_get_buf(first),
+                vim.api.nvim_win_get_buf(second),
+            },
+            base_textoff = { first_base_textoff, second_base_textoff, first_moved_base_textoff },
+            textoff = { first_textoff, second_textoff, first_moved_textoff },
+            widths = { first_state.width, second_state.width, first_moved.width, second_unchanged.width },
+            columns = { first_before.col, second_before.col, first_after.col, second_after.col },
+            distinct_resources = first_state.float_win ~= second_state.float_win
+                and first_state.float_buf ~= second_state.float_buf,
+            same_resources = first_moved.float_win == first_state.float_win
+                and first_moved.float_buf == first_state.float_buf
+                and second_unchanged.float_win == second_state.float_win
+                and second_unchanged.float_buf == second_state.float_buf,
+            ownership = {
+                assert(renderer.get_state_by_float(first_state.float_win)).source_win,
+                assert(renderer.get_state_by_float(second_state.float_win)).source_win,
+            },
+            windows = { first, second },
+        }
+    end)
+
+    expect.equality(result.buffers, { result.source_buf, result.source_buf })
+    expect.equality(result.base_textoff[1] > 0, true)
+    expect.equality(result.base_textoff[2] > result.base_textoff[1], true)
+    expect.equality(result.base_textoff[3] > result.base_textoff[2], true)
+    expect.equality(result.textoff, {
+        result.base_textoff[1] + result.widths[1],
+        result.base_textoff[2] + result.widths[2],
+        result.base_textoff[3] + result.widths[3],
+    })
+    expect.equality(result.columns, {
+        result.base_textoff[1],
+        result.base_textoff[2],
+        result.base_textoff[3],
+        result.base_textoff[2],
+    })
+    expect.equality(result.distinct_resources, true)
+    expect.equality(result.same_resources, true)
+    expect.equality(result.ownership, result.windows)
+end
+
 T["cursor marks stay local to each view of one buffer"] = function()
     local child = helpers.new_child()
     MiniTest.finally(function()

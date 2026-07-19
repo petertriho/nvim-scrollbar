@@ -868,6 +868,7 @@ T["does not requeue from renderer-owned float autocmds"] = function()
         local active_config = require("scrollbar.config").set({
             set_highlights = false,
             render = { interval_ms = 5 },
+            float = { placement = { anchor = "NW" } },
             mouse = { enabled = false },
             excluded_buftypes = {},
             excluded_filetypes = {},
@@ -1069,8 +1070,16 @@ T["rerenders every source when editor chrome options change"] = function()
             cmdheight = function()
                 vim.o.cmdheight = vim.o.cmdheight == 0 and 1 or 0
             end,
+            numberwidth = function()
+                local value = vim.api.nvim_get_option_value("numberwidth", { win = second })
+                vim.api.nvim_set_option_value("numberwidth", value == 4 and 5 or 4, { win = second })
+            end,
+            statuscolumn = function()
+                local value = vim.api.nvim_get_option_value("statuscolumn", { win = second })
+                vim.api.nvim_set_option_value("statuscolumn", value == "%l " and "%l  " or "%l ", { win = second })
+            end,
         }
-        for _, name in ipairs({ "winbar", "showtabline", "laststatus", "cmdheight" }) do
+        for _, name in ipairs({ "winbar", "showtabline", "laststatus", "cmdheight", "numberwidth", "statuscolumn" }) do
             rendered = {}
             changes[name]()
             scheduler.flush()
@@ -1112,6 +1121,8 @@ T["rerenders every source when editor chrome options change"] = function()
     expect.equality(result.captures.showtabline, expected)
     expect.equality(result.captures.laststatus, expected)
     expect.equality(result.captures.cmdheight, expected)
+    expect.equality(result.captures.numberwidth, expected)
+    expect.equality(result.captures.statuscolumn, expected)
     expect.equality(result.owned_flushed, false)
     expect.equality(result.owned_renders, {})
 end
@@ -1201,8 +1212,14 @@ T["refreshes colorscheme state and fully disposes timer and autocmd ownership"] 
     expect.equality(result.events.ColorScheme, true)
     expect.equality(result.events.WinClosed, true)
     expect.equality(result.events.BufWipeout, true)
-    expect.equality(result.option_patterns.wrap, true)
+    expect.equality(result.option_patterns.foldcolumn, true)
     expect.equality(result.option_patterns.foldmethod, true)
+    expect.equality(result.option_patterns.number, true)
+    expect.equality(result.option_patterns.numberwidth, true)
+    expect.equality(result.option_patterns.relativenumber, true)
+    expect.equality(result.option_patterns.signcolumn, true)
+    expect.equality(result.option_patterns.statuscolumn, true)
+    expect.equality(result.option_patterns.wrap, true)
     expect.equality(result.rendered, 1)
     expect.equality(result.colors, 1)
     expect.equality(result.disposed.setup, false)
