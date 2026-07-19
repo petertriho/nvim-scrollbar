@@ -1230,4 +1230,58 @@ T["refreshes colorscheme state and fully disposes timer and autocmd ownership"] 
     expect.equality(result.group_exists, false)
 end
 
+T["OPTION_PATTERNS list matches the mirrored copy in layout.lua"] = function()
+    local child = new_child()
+    local result = child.lua_func(function()
+        -- OPTION_PATTERNS is a module-local in both scheduler.lua and
+        -- layout.lua (mirrored deliberately to avoid scheduler -> layout
+        -- requiring layout from scheduler; see comment at layout.lua:76-79).
+        -- The local is not directly reachable from any exported function, so
+        -- walk the upvalue graph of every exported closure until we find it.
+        local function find_upvalue_named(module, target)
+            local seen = {}
+            local queue = {}
+            for _, value in pairs(module) do
+                if type(value) == "function" and not seen[value] then
+                    seen[value] = true
+                    table.insert(queue, value)
+                end
+            end
+
+            while #queue > 0 do
+                local fn = table.remove(queue, 1)
+                local index = 1
+                while true do
+                    local ok, name, value = pcall(debug.getupvalue, fn, index)
+                    if not ok or name == nil then
+                        break
+                    end
+                    if name == target then
+                        return value
+                    end
+                    if type(value) == "function" and not seen[value] then
+                        seen[value] = true
+                        table.insert(queue, value)
+                    end
+                    index = index + 1
+                end
+            end
+            return nil
+        end
+
+        local scheduler_patterns = find_upvalue_named(require("scrollbar.scheduler"), "OPTION_PATTERNS")
+        local layout_patterns = find_upvalue_named(require("scrollbar.layout"), "OPTION_PATTERNS")
+
+        return {
+            scheduler = scheduler_patterns,
+            layout = layout_patterns,
+            equal = vim.deep_equal(scheduler_patterns, layout_patterns),
+        }
+    end)
+
+    expect.equality(#result.scheduler, #result.layout)
+    expect.equality(result.equal, true)
+    expect.equality(result.scheduler, result.layout)
+end
+
 return T

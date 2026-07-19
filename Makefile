@@ -6,7 +6,7 @@ MINI_VERSION := v0.18.0
 MINI_DIR := deps/mini.nvim
 LUA_PATHS := lua tests scripts benchmarks
 
-.PHONY: test-deps test test-file benchmark benchmark-render benchmark-search format format-check lint typecheck ci
+.PHONY: test-deps test test-file benchmark benchmark-render benchmark-search benchmark-marks format format-check lint typecheck ci
 
 test-deps:
 	@if [ ! -d "$(MINI_DIR)/.git" ]; then \
@@ -34,6 +34,9 @@ benchmark-render:
 
 benchmark-search:
 	$(NVIM) --headless --noplugin -u NONE -l benchmarks/search.lua
+
+benchmark-marks:
+	$(NVIM) --headless --noplugin -u NONE -l benchmarks/marks_reconcile.lua
 
 format:
 	$(STYLUA) $(LUA_PATHS)

@@ -24,7 +24,9 @@ make ci
 `make test-deps` prepares test-only `mini.nvim v0.18.0` under the ignored
 `deps/` directory. It runs automatically before `make test` and `make test-file`.
 `make test-file` runs one MiniTest file. `make benchmark` is an alias for
-`make benchmark-render`; `make benchmark-search` runs the search benchmark.
+`make benchmark-render`; `make benchmark-search` runs the search benchmark;
+`make benchmark-marks` measures the per-call cost of the marks-provider
+`SafeState` reconcile path across a range of unique-buffer counts.
 
 `make ci` runs formatting checks, Selene, LuaLS type checking, and the full test
 suite.
