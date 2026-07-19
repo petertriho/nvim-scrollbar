@@ -73,16 +73,23 @@ local function render_pass(windows)
     end
 end
 
-local function measure(geometry, name, windows)
+local function measure(geometry, name, windows, options)
+    options = options or {}
     configure(geometry)
 
     for _ = 1, warmup_count do
+        if options.mutate then
+            options.mutate()
+        end
         render_pass(windows)
     end
 
     collectgarbage("collect")
     local samples = {}
     for index = 1, iteration_count do
+        if options.mutate then
+            options.mutate()
+        end
         local started = vim.uv.hrtime()
         render_pass(windows)
         samples[index] = (vim.uv.hrtime() - started) / 1000000
@@ -167,6 +174,22 @@ local function instrument_renderer()
         rawset(layout, "compose", original_compose)
     end)
 
+    local original_screen = layout.screen
+    rawset(layout, "screen", function(...)
+        return timed("screen geometry", original_screen, ...)
+    end)
+    table.insert(restores, function()
+        rawset(layout, "screen", original_screen)
+    end)
+
+    local original_track = layout.track_row_to_line
+    rawset(layout, "track_row_to_line", function(...)
+        return timed("screen reverse mapping", original_track, ...)
+    end)
+    table.insert(restores, function()
+        rawset(layout, "track_row_to_line", original_track)
+    end)
+
     local original_win_set_config = vim.api.nvim_win_set_config
     vim.api.nvim_win_set_config = function(...)
         return timed("float configuration", original_win_set_config, ...)
@@ -203,13 +226,16 @@ local phases = {
     "source-window discovery",
     "store snapshot/flattening",
     "geometry",
+    "screen geometry",
+    "screen reverse mapping",
     "mark grouping/placement",
     "row composition",
     "float configuration",
     "buffer/extmark updates",
 }
 
-local function measure_phases(geometry, name, windows)
+local function measure_phases(geometry, name, windows, options)
+    options = options or {}
     local renderer = require("scrollbar.renderer")
     local instrumentation = instrument_renderer()
     local samples = {}
@@ -226,11 +252,17 @@ local function measure_phases(geometry, name, windows)
     end
 
     for _ = 1, warmup_count do
+        if options.mutate then
+            options.mutate()
+        end
         profiled_pass()
     end
 
     collectgarbage("collect")
     for _ = 1, iteration_count do
+        if options.mutate then
+            options.mutate()
+        end
         local sample = profiled_pass()
         for _, phase in ipairs(phases) do
             samples[phase] = samples[phase] or {}
@@ -249,9 +281,9 @@ end
 local end_to_end = {}
 local phase_results = {}
 
-local function measure_case(geometry, name, windows)
-    table.insert(end_to_end, measure(geometry, name, windows))
-    table.insert(phase_results, measure_phases(geometry, name, windows))
+local function measure_case(geometry, name, windows, options)
+    table.insert(end_to_end, measure(geometry, name, windows, options))
+    table.insert(phase_results, measure_phases(geometry, name, windows, options))
 end
 
 local first_win = vim.api.nvim_get_current_win()
@@ -259,6 +291,12 @@ vim.api.nvim_win_set_cursor(first_win, { 1, 0 })
 vim.cmd("normal! zt")
 measure_case("line", "1 window", { first_win })
 measure_case("screen", "1 window", { first_win })
+measure_case("screen", "1 window steady", { first_win })
+measure_case("screen", "1 window invalidated", { first_win }, {
+    mutate = function()
+        vim.wo.number = not vim.wo.number
+    end,
+})
 
 vim.cmd("vsplit")
 local second_win = vim.api.nvim_get_current_win()

@@ -347,4 +347,457 @@ T["screen geometry subtracts visible diff topfill from the viewport offset"] = f
     expect.equality(result.geometry.viewport_start, result.prefix - result.view.topfill)
 end
 
+T["screen geometry cache hits issue zero nvim_win_text_height calls beyond the canary"] = function()
+    local child = new_child()
+    local result = child.lua_func(function()
+        local function wrap_win_text_height_counter()
+            local calls = 0
+            local original = vim.api.nvim_win_text_height
+            ---@diagnostic disable-next-line: duplicate-set-field
+            vim.api.nvim_win_text_height = function(...)
+                calls = calls + 1
+                return original(...)
+            end
+            return {
+                count = function()
+                    return calls
+                end,
+                restore = function()
+                    vim.api.nvim_win_text_height = original
+                end,
+            }
+        end
+
+        local lines = {}
+        for index = 1, 200 do
+            if index % 25 == 0 then
+                lines[index] = string.rep("x", 200)
+            else
+                lines[index] = "line " .. index
+            end
+        end
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        vim.wo.foldmethod = "manual"
+        vim.cmd("normal! 30,80fold")
+
+        local layout_module = require("scrollbar.layout")
+        local source_win = vim.api.nvim_get_current_win()
+        local marks = {}
+        for index = 0, 199, 13 do
+            marks[#marks + 1] = { line = index, type = "Search" }
+        end
+
+        local counter = wrap_win_text_height_counter()
+        local function call_screen()
+            local before = counter.count()
+            local geometry = layout_module.screen({
+                source_win = source_win,
+                height = vim.api.nvim_win_get_height(source_win),
+                marks = marks,
+            })
+            return {
+                during = counter.count() - before,
+                total_extent = geometry.total_extent,
+            }
+        end
+
+        local first = call_screen()
+        local second = call_screen()
+        counter.restore()
+        return { first = first, second = second }
+    end)
+
+    expect.equality(result.first.during > 1, true)
+    expect.equality(result.second.during, 1)
+end
+
+T["renderer clear_source_cache clears the screen-geometry cache"] = function()
+    local child = new_child()
+    local result = child.lua_func(function()
+        local function wrap_win_text_height_counter()
+            local calls = 0
+            local original = vim.api.nvim_win_text_height
+            ---@diagnostic disable-next-line: duplicate-set-field
+            vim.api.nvim_win_text_height = function(...)
+                calls = calls + 1
+                return original(...)
+            end
+            return {
+                count = function()
+                    return calls
+                end,
+                restore = function()
+                    vim.api.nvim_win_text_height = original
+                end,
+            }
+        end
+
+        local lines = {}
+        for index = 1, 200 do
+            lines[index] = "line " .. index
+        end
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+
+        local layout_module = require("scrollbar.layout")
+        local renderer = require("scrollbar.renderer")
+        local source_win = vim.api.nvim_get_current_win()
+        local marks = {
+            { line = 0, type = "Search" },
+            { line = 199, type = "Search" },
+        }
+
+        local function call_screen()
+            return layout_module.screen({
+                source_win = source_win,
+                height = vim.api.nvim_win_get_height(source_win),
+                marks = marks,
+            })
+        end
+
+        local counter = wrap_win_text_height_counter()
+        call_screen()
+        local after_first = counter.count()
+        call_screen()
+        local after_warm = counter.count()
+        renderer.dispose()
+        local before_post_clear = counter.count()
+        call_screen()
+        local after_post_clear = counter.count()
+        counter.restore()
+        return {
+            warm_calls = after_warm - after_first,
+            cleared_calls = after_post_clear - before_post_clear,
+        }
+    end)
+
+    expect.equality(result.warm_calls, 1)
+    expect.equality(result.cleared_calls > 1, true)
+end
+
+T["track_row_to_line reuses cached prefixes within a stable viewport"] = function()
+    local child = new_child()
+    local result = child.lua_func(function()
+        local function wrap_win_text_height_counter()
+            local calls = 0
+            local original = vim.api.nvim_win_text_height
+            ---@diagnostic disable-next-line: duplicate-set-field
+            vim.api.nvim_win_text_height = function(...)
+                calls = calls + 1
+                return original(...)
+            end
+            return {
+                count = function()
+                    return calls
+                end,
+                restore = function()
+                    vim.api.nvim_win_text_height = original
+                end,
+            }
+        end
+
+        local lines = {}
+        for index = 1, 400 do
+            lines[index] = "line " .. index
+        end
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+
+        local layout_module = require("scrollbar.layout")
+        local source_win = vim.api.nvim_get_current_win()
+        local height = vim.api.nvim_win_get_height(source_win)
+        local total_extent = vim.api.nvim_win_text_height(source_win, {}).all
+
+        local counter = wrap_win_text_height_counter()
+        local function call_track(row)
+            local before = counter.count()
+            layout_module.track_row_to_line(source_win, row, height, "screen", total_extent)
+            return counter.count() - before
+        end
+
+        for row = 0, height - 1 do
+            call_track(row)
+        end
+        local baseline = counter.count()
+        local repeat_delta = call_track(0)
+        local another_delta = call_track(math.floor(height / 2))
+        local final_delta = call_track(height - 1)
+        counter.restore()
+        return {
+            baseline = baseline,
+            repeat_delta = repeat_delta,
+            another_delta = another_delta,
+            final_delta = final_delta,
+        }
+    end)
+
+    expect.equality(result.baseline > 0, true)
+    expect.equality(result.repeat_delta, 1)
+    expect.equality(result.another_delta, 1)
+    expect.equality(result.final_delta, 1)
+end
+
+local COUNTER_FACTORY_CODE = [=[
+    local calls = 0
+    local original = vim.api.nvim_win_text_height
+    ---@diagnostic disable-next-line: duplicate-set-field
+    vim.api.nvim_win_text_height = function(...)
+        calls = calls + 1
+        return original(...)
+    end
+    return {
+        count = function()
+            return calls
+        end,
+        delta = function(since)
+            return calls - since
+        end,
+        restore = function()
+            vim.api.nvim_win_text_height = original
+        end,
+    }
+]=]
+
+T["screen geometry cache invalidates on fold close without an autocmd"] = function()
+    local child = new_child()
+    local result = child.lua_func(function(factory_code)
+        local counter = loadstring(factory_code)()
+        local lines = {}
+        for index = 1, 200 do
+            lines[index] = "line " .. index
+        end
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        vim.wo.foldmethod = "manual"
+        vim.cmd("30,80fold")
+        vim.cmd("30,80foldopen")
+
+        local layout_module = require("scrollbar.layout")
+        local source_win = vim.api.nvim_get_current_win()
+        local marks = { { line = 0, type = "Search" }, { line = 199, type = "Search" } }
+        local function call_screen()
+            return layout_module.screen({
+                source_win = source_win,
+                height = vim.api.nvim_win_get_height(source_win),
+                marks = marks,
+            })
+        end
+
+        local g1 = call_screen()
+        local warm_calls = counter.count()
+        vim.cmd("30,80foldclose")
+        local g2 = call_screen()
+        local g2_calls = counter.delta(warm_calls)
+        counter.restore()
+        return {
+            g1_extent = g1.total_extent,
+            g2_extent = g2.total_extent,
+            g2_calls = g2_calls,
+        }
+    end, COUNTER_FACTORY_CODE)
+
+    expect.equality(result.g2_extent < result.g1_extent, true)
+    expect.equality(result.g2_calls > 1, true)
+end
+
+T["screen geometry cache invalidates on window option change"] = function()
+    local child = new_child()
+    local result = child.lua_func(function(factory_code)
+        local counter = loadstring(factory_code)()
+        vim.o.columns = 30
+        local lines = {}
+        for index = 1, 100 do
+            lines[index] = "line " .. index
+        end
+        lines[50] = string.rep("x", 200)
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        vim.wo.wrap = false
+
+        local layout_module = require("scrollbar.layout")
+        local source_win = vim.api.nvim_get_current_win()
+        local marks = { { line = 0, type = "Search" }, { line = 99, type = "Search" } }
+        local function call_screen()
+            return layout_module.screen({
+                source_win = source_win,
+                height = vim.api.nvim_win_get_height(source_win),
+                marks = marks,
+            })
+        end
+
+        local g1 = call_screen()
+        local warm_calls = counter.count()
+        vim.wo.wrap = true
+        local g2 = call_screen()
+        local wrap_calls = counter.delta(warm_calls)
+        counter.restore()
+        return {
+            g1_extent = g1.total_extent,
+            g2_extent = g2.total_extent,
+            wrap_calls = wrap_calls,
+        }
+    end, COUNTER_FACTORY_CODE)
+
+    expect.equality(result.g2_extent > result.g1_extent, true)
+    expect.equality(result.wrap_calls > 1, true)
+end
+
+T["screen geometry cache invalidates on option-only change that leaves extent unchanged"] = function()
+    local child = new_child()
+    local result = child.lua_func(function(factory_code)
+        local counter = loadstring(factory_code)()
+        local lines = {}
+        for index = 1, 50 do
+            lines[index] = "line " .. index
+        end
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        vim.wo.number = false
+
+        local layout_module = require("scrollbar.layout")
+        local source_win = vim.api.nvim_get_current_win()
+        local marks = { { line = 0, type = "Search" }, { line = 49, type = "Search" } }
+        local function call_screen()
+            return layout_module.screen({
+                source_win = source_win,
+                height = vim.api.nvim_win_get_height(source_win),
+                marks = marks,
+            })
+        end
+
+        local g1 = call_screen()
+        local warm_calls = counter.count()
+        vim.wo.number = true
+        local g2 = call_screen()
+        local number_calls = counter.delta(warm_calls)
+        counter.restore()
+        return {
+            g1_extent = g1.total_extent,
+            g2_extent = g2.total_extent,
+            number_calls = number_calls,
+        }
+    end, COUNTER_FACTORY_CODE)
+
+    expect.equality(result.g2_extent == result.g1_extent, true)
+    expect.equality(result.number_calls > 1, true)
+end
+
+T["screen geometry cache invalidates on viewport scroll"] = function()
+    local child = new_child()
+    local result = child.lua_func(function(factory_code)
+        local counter = loadstring(factory_code)()
+        local lines = {}
+        for index = 1, 400 do
+            lines[index] = "line " .. index
+        end
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+
+        local layout_module = require("scrollbar.layout")
+        local source_win = vim.api.nvim_get_current_win()
+        local marks = { { line = 0, type = "Search" }, { line = 399, type = "Search" } }
+        local function call_screen()
+            return layout_module.screen({
+                source_win = source_win,
+                height = vim.api.nvim_win_get_height(source_win),
+                marks = marks,
+            })
+        end
+
+        vim.api.nvim_win_set_cursor(source_win, { 1, 0 })
+        vim.cmd("normal! zt")
+        local g1 = call_screen()
+        local warm_calls = counter.count()
+        vim.api.nvim_win_set_cursor(source_win, { 200, 0 })
+        vim.cmd("normal! zt")
+        local g2 = call_screen()
+        local g2_calls = counter.delta(warm_calls)
+        counter.restore()
+        return {
+            g1_viewport_start = g1.viewport_start,
+            g2_viewport_start = g2.viewport_start,
+            g2_calls = g2_calls,
+        }
+    end, COUNTER_FACTORY_CODE)
+
+    expect.equality(result.g2_viewport_start ~= result.g1_viewport_start, true)
+    expect.equality(result.g2_calls > 1, true)
+end
+
+T["screen geometry cache invalidates on buffer text change"] = function()
+    local child = new_child()
+    local result = child.lua_func(function(factory_code)
+        local counter = loadstring(factory_code)()
+        local lines = {}
+        for index = 1, 200 do
+            lines[index] = "line " .. index
+        end
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+
+        local layout_module = require("scrollbar.layout")
+        local source_buf = vim.api.nvim_get_current_buf()
+        local source_win = vim.api.nvim_get_current_win()
+        local marks = { { line = 0, type = "Search" }, { line = 199, type = "Search" } }
+        local function call_screen()
+            return layout_module.screen({
+                source_win = source_win,
+                height = vim.api.nvim_win_get_height(source_win),
+                marks = marks,
+            })
+        end
+
+        local g1 = call_screen()
+        local warm_calls = counter.count()
+        local appended = {}
+        for index = 1, 100 do
+            appended[index] = "appended " .. index
+        end
+        vim.api.nvim_buf_set_lines(source_buf, 200, -1, false, appended)
+        local g2 = call_screen()
+        local g2_calls = counter.delta(warm_calls)
+        counter.restore()
+        return {
+            g1_extent = g1.total_extent,
+            g2_extent = g2.total_extent,
+            g2_calls = g2_calls,
+        }
+    end, COUNTER_FACTORY_CODE)
+
+    expect.equality(result.g2_extent > result.g1_extent, true)
+    expect.equality(result.g2_calls > 1, true)
+end
+
+T["screen geometry cache invalidates on window resize"] = function()
+    local child = new_child()
+    local result = child.lua_func(function(factory_code)
+        local counter = loadstring(factory_code)()
+        local lines = {}
+        for index = 1, 400 do
+            lines[index] = "line " .. index
+        end
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+
+        local layout_module = require("scrollbar.layout")
+        local source_win = vim.api.nvim_get_current_win()
+        local marks = { { line = 0, type = "Search" }, { line = 399, type = "Search" } }
+        local original_height = vim.api.nvim_win_get_height(source_win)
+        local function call_screen()
+            return layout_module.screen({
+                source_win = source_win,
+                height = vim.api.nvim_win_get_height(source_win),
+                marks = marks,
+            })
+        end
+
+        local g1 = call_screen()
+        local warm_calls = counter.count()
+        vim.api.nvim_win_set_height(source_win, original_height - 4)
+        local g2 = call_screen()
+        local g2_calls = counter.delta(warm_calls)
+        counter.restore()
+        return {
+            g1_last_row = g1.handle.last_row,
+            g2_last_row = g2.handle.last_row,
+            g2_calls = g2_calls,
+        }
+    end, COUNTER_FACTORY_CODE)
+
+    expect.equality(result.g2_last_row < result.g1_last_row, true)
+    expect.equality(result.g2_calls > 1, true)
+end
+
 return T
