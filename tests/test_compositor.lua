@@ -28,6 +28,7 @@ local function compose(options)
             viewport_start = 0,
             viewport_end = 10,
             mark_rows = options.mark_rows or {},
+            compact_mark_rows = options.compact_mark_rows,
             handle = options.handle or { first_row = 1, last_row = 1 },
         },
         marks = options.marks or {},
@@ -240,6 +241,37 @@ T["keeps compact search exactly equivalent to ordinary search marks"] = function
         height = 2,
         line_count = 100,
         compact_search = require("scrollbar.providers.search_compact").encode({ 10, 10, 11, 99 }),
+        marks = { { provider = "alpha", line = 20, type = "Search", text = "A" } },
+        mark_rows = { 0 },
+    })
+
+    expect.equality(compact, ordinary)
+    expect.equality(compact.rows, { "A ", "- " })
+    expect.equality(compact.hitmap[1][1].lines, { 10, 10, 11, 20 })
+end
+
+T["screen compact search via compact_mark_rows stays equivalent to ordinary marks"] = function()
+    local active_config = config({
+        layout = { columns = { { "marks" }, { "track" } } },
+        marks = { Search = { text = { "-", "=", "#" } } },
+    })
+    local ordinary = compose({
+        config = active_config,
+        height = 2,
+        marks = {
+            { provider = "search", line = 10, type = "Search" },
+            { provider = "search", line = 10, type = "Search" },
+            { provider = "search", line = 11, type = "Search" },
+            { provider = "alpha", line = 20, type = "Search", text = "A" },
+            { provider = "search", line = 99, type = "Search" },
+        },
+        mark_rows = { 0, 0, 0, 0, 1 },
+    })
+    local compact = compose({
+        config = active_config,
+        height = 2,
+        compact_search = require("scrollbar.providers.search_compact").encode({ 10, 10, 11, 99 }),
+        compact_mark_rows = { 0, 0, 0, 1 },
         marks = { { provider = "alpha", line = 20, type = "Search", text = "A" } },
         mark_rows = { 0 },
     })

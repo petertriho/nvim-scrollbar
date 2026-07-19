@@ -1,6 +1,7 @@
 local M = {}
 
 local store = require("scrollbar.store")
+local search_compact = require("scrollbar.providers.search_compact")
 
 local function clamp(value, minimum, maximum)
     return math.max(minimum, math.min(value, maximum))
@@ -267,6 +268,16 @@ M.screen = function(input)
             table.insert(unique_lines, line)
         end
     end
+    local compact_search = input.compact_search
+    if compact_search ~= nil then
+        search_compact.each(compact_search, function(line)
+            local clamped = clamp(line, 0, maximum_line)
+            if not seen_lines[clamped] then
+                seen_lines[clamped] = true
+                table.insert(unique_lines, clamped)
+            end
+        end)
+    end
     table.sort(unique_lines)
 
     local prefixes = {}
@@ -292,11 +303,21 @@ M.screen = function(input)
         mark_rows[index] = M.map_position(prefixes[line], total_extent, height)
     end
 
+    local compact_mark_rows
+    if compact_search ~= nil then
+        compact_mark_rows = {}
+        search_compact.each(compact_search, function(line)
+            local clamped = clamp(line, 0, maximum_line)
+            compact_mark_rows[#compact_mark_rows + 1] = M.map_position(prefixes[clamped], total_extent, height)
+        end)
+    end
+
     return {
         total_extent = total_extent,
         viewport_start = viewport_start,
         viewport_end = viewport_end,
         mark_rows = mark_rows,
+        compact_mark_rows = compact_mark_rows,
         handle = M.handle_geometry(viewport_start, viewport_end, total_extent, height),
     }
 end
@@ -471,29 +492,44 @@ local function group_candidates(input, column_offset, expanded_lane_id)
     local search_config = input.config.marks.Search
     local search_lane = search_config and lane_for_type(input.config, "Search")
     if compact ~= nil and search_config ~= nil and search_lane ~= nil then
-        local total_extent = math.max(0, input.line_count)
-        local maximum_position = math.max(0, total_extent - 1)
-        local maximum_row = math.max(0, input.height - 1)
+        local precomputed = input.geometry.compact_mark_rows
         local compact_groups = {}
-        for offset = 1, #compact.data, 4 do
-            local first, second, third, fourth = compact.data:byte(offset, offset + 3)
-            local line = first * 0x1000000 + second * 0x10000 + third * 0x100 + fourth
-            local row
-            if total_extent <= 1 or input.height <= 1 then
-                row = 0
-            elseif total_extent <= input.height then
-                row = math.min(line, maximum_position)
-            else
-                row = math.floor(math.min(line, maximum_position) * maximum_row / maximum_position)
+        if precomputed ~= nil then
+            search_compact.each(compact, function(line, index)
+                local row = precomputed[index]
+                local group = compact_groups[row]
+                if group == nil then
+                    group = group_for(row, "Search", search_config, search_lane)
+                    group.compact_source = { provider = "search", line = line, type = "Search" }
+                    compact_groups[row] = group
+                end
+                group.count = group.count + 1
+                group.lines[#group.lines + 1] = line
+            end)
+        else
+            local total_extent = math.max(0, input.line_count)
+            local maximum_position = math.max(0, total_extent - 1)
+            local maximum_row = math.max(0, input.height - 1)
+            for offset = 1, #compact.data, 4 do
+                local first, second, third, fourth = compact.data:byte(offset, offset + 3)
+                local line = first * 0x1000000 + second * 0x10000 + third * 0x100 + fourth
+                local row
+                if total_extent <= 1 or input.height <= 1 then
+                    row = 0
+                elseif total_extent <= input.height then
+                    row = math.min(line, maximum_position)
+                else
+                    row = math.floor(math.min(line, maximum_position) * maximum_row / maximum_position)
+                end
+                local group = compact_groups[row]
+                if group == nil then
+                    group = group_for(row, "Search", search_config, search_lane)
+                    group.compact_source = { provider = "search", line = line, type = "Search" }
+                    compact_groups[row] = group
+                end
+                group.count = group.count + 1
+                group.lines[#group.lines + 1] = line
             end
-            local group = compact_groups[row]
-            if group == nil then
-                group = group_for(row, "Search", search_config, search_lane)
-                group.compact_source = { provider = "search", line = line, type = "Search" }
-                compact_groups[row] = group
-            end
-            group.count = group.count + 1
-            group.lines[#group.lines + 1] = line
         end
     end
 
