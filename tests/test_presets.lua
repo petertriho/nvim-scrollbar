@@ -149,7 +149,7 @@ T["resolves exact isolated built-in presentation definitions"] = function()
             thumb = { blend = 60 },
         },
         emacs = {
-            float = { placement = { anchor = "NW" } },
+            float = { placement = { anchor = "NW", gutter = "avoid" } },
             layout = {
                 direction = "auto",
                 columns = {
@@ -219,6 +219,7 @@ T["applies built-in overlays inheritance and root overrides deterministically"] 
         presets = {
             child = {
                 extends = "vscode",
+                float = { placement = { gutter = "overlap" } },
                 thumb = { blend = 30 },
                 marks = { Search = { text = { "C" } } },
             },
@@ -232,6 +233,7 @@ T["applies built-in overlays inheritance and root overrides deterministically"] 
     })
 
     expect.equality(result.layout.columns[1][1], "track")
+    expect.equality(result.float.placement.gutter, "overlap")
     expect.equality(result.thumb, { text = "V", blend = 40 })
     expect.equality(result.marks.Search.text, { "R" })
     expect.equality(result.preset, nil)

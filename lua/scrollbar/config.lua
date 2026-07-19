@@ -23,6 +23,7 @@ local DEFAULTS = {
             anchor = "NE",
             row = 0,
             col = 0,
+            gutter = "avoid",
         },
     },
     layout = {
@@ -196,7 +197,7 @@ local NESTED_KEYS = {
     autohide = { enabled = true, delay_ms = true },
     render = { interval_ms = true, geometry = true },
     float = { zindex = true, hide_on_cursor = true, placement = true },
-    ["float.placement"] = { relative = true, anchor = true, row = true, col = true },
+    ["float.placement"] = { relative = true, anchor = true, row = true, col = true, gutter = true },
     layout = { direction = true, columns = true },
     track = { highlight = true },
     mouse = { enabled = true },
@@ -258,6 +259,7 @@ local ENUMS = {
     geometry = { line = true, screen = true },
     relative = { window = true, editor = true },
     anchor = { NW = true, NE = true, SW = true, SE = true },
+    gutter = { avoid = true, overlap = true },
     direction = { auto = true, ltr = true, rtl = true },
     search_backend = { sync = true, worker = true },
 }
@@ -819,6 +821,7 @@ local function normalize(overrides)
     end
     validate_enum(result.float.placement.relative, "float.placement.relative", ENUMS.relative)
     validate_enum(result.float.placement.anchor, "float.placement.anchor", ENUMS.anchor)
+    validate_enum(result.float.placement.gutter, "float.placement.gutter", ENUMS.gutter)
     if not is_integer(result.float.placement.row) then
         invalid("float.placement.row must be an integer")
     end

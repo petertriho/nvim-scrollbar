@@ -112,7 +112,7 @@ local BUILTINS = {
         thumb = { blend = 60 },
     },
     emacs = {
-        float = { placement = { anchor = "NW" } },
+        float = { placement = { anchor = "NW", gutter = "avoid" } },
         layout = {
             direction = "auto",
             columns = {
@@ -149,7 +149,7 @@ local NESTED_FIELDS = {
     track = { highlight = true },
     thumb = { text = true, blend = true, highlight = true, hide_if_all_visible = true },
     mark = { text = true, priority = true, highlight = true },
-    placement = { relative = true, anchor = true, row = true, col = true },
+    placement = { relative = true, anchor = true, row = true, col = true, gutter = true },
     layer = { kind = true, types = true, max_width = true },
 }
 

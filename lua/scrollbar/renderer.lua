@@ -8,12 +8,26 @@ local M = {}
 local NAMESPACE = vim.api.nvim_create_namespace("ScrollbarRenderer")
 local AUGROUP_NAME = "ScrollbarRendererLifecycle"
 local FLOAT_WINHIGHLIGHT = "Normal:ScrollbarBase,NormalNC:ScrollbarBase,EndOfBuffer:ScrollbarBase"
+local STATUSCOLUMN_WRAPPER_PATTERN = '^%%!v:lua%.require%("scrollbar%.renderer"%)%._statuscolumn%((%d+)%)$'
+
+---@class ScrollbarStatuscolumnReservation
+---@field original_statuscolumn string
+---@field original_numberwidth integer
+---@field applied_statuscolumn string
+---@field applied_numberwidth integer
+---@field span integer
+---@field base_textoff integer
+---@field limited boolean
+---@field failed boolean
 
 ---@type table<integer, ScrollbarWindowState>
 local states = {}
 
 ---@type table<integer, ScrollbarWindowState>
 local states_by_float = {}
+
+---@type table<integer, ScrollbarStatuscolumnReservation>
+local statuscolumn_reservations = {}
 
 ---@type table<integer, ScrollbarFlattenedMarksCache>
 local flattened_cache = {}
@@ -72,6 +86,240 @@ end
 ---@return boolean
 local function valid_window(winid)
     return type(winid) == "number" and vim.api.nvim_win_is_valid(winid)
+end
+
+---@param winid integer
+---@param name string
+---@param value string|integer
+---@return boolean
+local function set_local_option(winid, name, value)
+    local ok = pcall(vim.api.nvim_win_call, winid, function()
+        vim.cmd(string.format("noautocmd let &l:%s = %s", name, vim.fn.string(value)))
+    end)
+    return ok
+end
+
+---@param winid integer
+---@return string
+local function default_statuscolumn(winid)
+    local number = vim.api.nvim_get_option_value("number", { win = winid })
+    local relativenumber = vim.api.nvim_get_option_value("relativenumber", { win = winid })
+    local value = "%C%s"
+    if number or relativenumber then
+        return value .. "%=%l "
+    end
+    return value
+end
+
+---@param value string
+---@return integer?
+local function statuscolumn_owner(value)
+    return tonumber(value:match(STATUSCOLUMN_WRAPPER_PATTERN))
+end
+
+---@param source_win integer
+---@return string
+local function statuscolumn_wrapper(source_win)
+    return string.format('%%!v:lua.require("scrollbar.renderer")._statuscolumn(%d)', source_win)
+end
+
+---@param winid integer
+---@param parent_win? integer
+local function restore_inherited_statuscolumn(winid, parent_win)
+    if not valid_window(winid) then
+        return
+    end
+    local current = vim.api.nvim_get_option_value("statuscolumn", { win = winid })
+    local owner = statuscolumn_owner(current)
+    if owner == winid then
+        return
+    end
+    if owner ~= nil then
+        local inherited = statuscolumn_reservations[owner]
+        if inherited == nil then
+            set_local_option(winid, "statuscolumn", "")
+            return
+        end
+        local numberwidth = vim.api.nvim_get_option_value("numberwidth", { win = winid })
+        set_local_option(winid, "statuscolumn", inherited.original_statuscolumn)
+        if numberwidth == inherited.applied_numberwidth then
+            set_local_option(winid, "numberwidth", inherited.original_numberwidth)
+        end
+        return
+    end
+
+    local parent = parent_win and statuscolumn_reservations[parent_win] or nil
+    if parent_win ~= nil and parent ~= nil and valid_window(parent_win) then
+        local parent_statuscolumn = vim.api.nvim_get_option_value("statuscolumn", { win = parent_win })
+        local numberwidth = vim.api.nvim_get_option_value("numberwidth", { win = winid })
+        if current == parent_statuscolumn and numberwidth == parent.applied_numberwidth then
+            set_local_option(winid, "numberwidth", parent.original_numberwidth)
+        end
+    end
+end
+
+---@param source_win integer
+local function release_statuscolumn(source_win)
+    local reservation = statuscolumn_reservations[source_win]
+    statuscolumn_reservations[source_win] = nil
+    if reservation == nil or not valid_window(source_win) then
+        return
+    end
+
+    local current_statuscolumn = vim.api.nvim_get_option_value("statuscolumn", { win = source_win })
+    local current_numberwidth = vim.api.nvim_get_option_value("numberwidth", { win = source_win })
+    if current_statuscolumn == reservation.applied_statuscolumn then
+        set_local_option(source_win, "statuscolumn", reservation.failed and "" or reservation.original_statuscolumn)
+    end
+    if current_numberwidth == reservation.applied_numberwidth then
+        set_local_option(source_win, "numberwidth", reservation.original_numberwidth)
+    end
+end
+
+---@param source_win integer
+---@param span integer
+---@return ScrollbarStatuscolumnReservation?
+local function ensure_statuscolumn(source_win, span)
+    restore_inherited_statuscolumn(source_win)
+    if span <= 0 then
+        release_statuscolumn(source_win)
+        return nil
+    end
+
+    ---@type ScrollbarStatuscolumnReservation?
+    local reservation = statuscolumn_reservations[source_win]
+    if reservation ~= nil then
+        local current_statuscolumn = vim.api.nvim_get_option_value("statuscolumn", { win = source_win })
+        local current_numberwidth = vim.api.nvim_get_option_value("numberwidth", { win = source_win })
+        if
+            current_statuscolumn ~= reservation.applied_statuscolumn
+            or current_numberwidth ~= reservation.applied_numberwidth
+        then
+            release_statuscolumn(source_win)
+            reservation = nil
+        elseif reservation.span == span then
+            if reservation.failed then
+                set_local_option(source_win, "statuscolumn", "")
+                release_statuscolumn(source_win)
+                return nil
+            end
+            reservation.base_textoff = math.max(0, vim.fn.getwininfo(source_win)[1].textoff - span)
+            return reservation
+        end
+    end
+
+    if reservation == nil then
+        local original_statuscolumn = vim.api.nvim_get_option_value("statuscolumn", { win = source_win })
+        local inherited_owner = statuscolumn_owner(original_statuscolumn)
+        if inherited_owner ~= nil then
+            local inherited = statuscolumn_reservations[inherited_owner]
+            original_statuscolumn = inherited and inherited.original_statuscolumn or ""
+            set_local_option(source_win, "statuscolumn", original_statuscolumn)
+        end
+        local original_numberwidth = vim.api.nvim_get_option_value("numberwidth", { win = source_win })
+        reservation = {
+            original_statuscolumn = original_statuscolumn,
+            original_numberwidth = original_numberwidth,
+            applied_statuscolumn = statuscolumn_wrapper(source_win),
+            applied_numberwidth = original_numberwidth + span,
+            span = span,
+            base_textoff = vim.fn.getwininfo(source_win)[1].textoff,
+            limited = false,
+            failed = false,
+        }
+        statuscolumn_reservations[source_win] = reservation
+    else
+        reservation.base_textoff = math.max(0, vim.fn.getwininfo(source_win)[1].textoff - reservation.span)
+        reservation.span = span
+        reservation.limited = false
+    end
+
+    reservation.applied_numberwidth = math.min(20, reservation.original_numberwidth + span)
+    set_local_option(source_win, "numberwidth", reservation.applied_numberwidth)
+    set_local_option(source_win, "statuscolumn", reservation.applied_statuscolumn)
+    vim.api.nvim__redraw({ flush = true })
+    if reservation.failed then
+        set_local_option(source_win, "statuscolumn", "")
+        release_statuscolumn(source_win)
+        return nil
+    end
+    if vim.api.nvim_get_option_value("statuscolumn", { win = source_win }) ~= reservation.applied_statuscolumn then
+        release_statuscolumn(source_win)
+        return nil
+    end
+    local textoff = vim.fn.getwininfo(source_win)[1].textoff
+    local actual_span = math.max(0, textoff - reservation.base_textoff)
+    if actual_span < span then
+        reservation.span = actual_span
+        reservation.limited = true
+        set_local_option(source_win, "statuscolumn", reservation.applied_statuscolumn)
+        vim.api.nvim__redraw({ flush = true })
+        if reservation.failed then
+            set_local_option(source_win, "statuscolumn", "")
+            release_statuscolumn(source_win)
+            return nil
+        end
+        if vim.api.nvim_get_option_value("statuscolumn", { win = source_win }) ~= reservation.applied_statuscolumn then
+            release_statuscolumn(source_win)
+            return nil
+        end
+        textoff = vim.fn.getwininfo(source_win)[1].textoff
+    end
+    reservation.base_textoff = math.max(0, textoff - reservation.span)
+    return reservation
+end
+
+---@param active_config ScrollbarConfig
+---@return boolean
+local function reserves_statuscolumn(active_config)
+    local placement = active_config.float.placement
+    return placement.relative == "window"
+        and (placement.anchor == "NW" or placement.anchor == "SW")
+        and placement.gutter == "avoid"
+end
+
+---@param source_win integer
+---@return integer
+local function reservation_base_textoff(source_win)
+    local reservation = statuscolumn_reservations[source_win]
+    if reservation == nil then
+        return vim.fn.getwininfo(source_win)[1].textoff
+    end
+    local textoff = vim.fn.getwininfo(source_win)[1].textoff
+    reservation.base_textoff = math.max(0, textoff - reservation.span)
+    return reservation.base_textoff
+end
+
+---@param owner_win integer
+---@return string
+M._statuscolumn = function(owner_win)
+    local drawn_win = tonumber(vim.g.statusline_winid) or owner_win
+    if not valid_window(drawn_win) then
+        return ""
+    end
+    local reservation = statuscolumn_reservations[owner_win]
+    if reservation == nil then
+        return default_statuscolumn(drawn_win)
+    end
+
+    local value = reservation.original_statuscolumn
+    if value == "" then
+        value = default_statuscolumn(drawn_win)
+    elseif value:sub(1, 2) == "%!" then
+        if reservation.failed then
+            return string.rep(" ", reservation.base_textoff + reservation.span)
+        end
+        local ok, evaluated = pcall(vim.api.nvim_eval, value:sub(3))
+        if not ok then
+            reservation.failed = true
+            return string.rep(" ", reservation.base_textoff + reservation.span)
+        end
+        value = type(evaluated) == "string" and evaluated or vim.fn.string(evaluated)
+    end
+    if drawn_win == owner_win then
+        value = value .. string.rep(" ", reservation.span)
+    end
+    return value
 end
 
 ---@param winid integer
@@ -192,6 +440,7 @@ local function close_state(state, retain_cache)
     if vim.api.nvim_buf_is_valid(state.float_buf) then
         pcall(vim.api.nvim_buf_delete, state.float_buf, { force = true })
     end
+    release_statuscolumn(state.source_win)
 end
 
 ---@param source_win integer
@@ -202,6 +451,7 @@ local function close_source(source_win)
     else
         revealed[source_win] = nil
         clear_source_cache(source_win)
+        release_statuscolumn(source_win)
     end
 end
 
@@ -211,6 +461,8 @@ local function conceal_source(source_win)
     local state = states[source_win]
     if state ~= nil then
         close_state(state, true)
+    else
+        release_statuscolumn(source_win)
     end
 end
 
@@ -221,6 +473,13 @@ local function close_all_states()
     end
     for _, state in ipairs(pending) do
         close_state(state)
+    end
+    local reserved = {}
+    for source_win in pairs(statuscolumn_reservations) do
+        reserved[#reserved + 1] = source_win
+    end
+    for _, source_win in ipairs(reserved) do
+        release_statuscolumn(source_win)
     end
 end
 
@@ -261,10 +520,12 @@ local function source_text_area(source_win)
     local winbar = vim.api.nvim_get_option_value("winbar", { win = source_win })
     local winbar_rows = winbar == "" and 0 or 1
     local screen_position = vim.fn.win_screenpos(source_win)
+    local info = vim.fn.getwininfo(source_win)[1]
     return {
         width = vim.api.nvim_win_get_width(source_win),
         height = math.max(0, vim.api.nvim_win_get_height(source_win) - winbar_rows),
         top = screen_position[1] - 1 + winbar_rows,
+        textoff = info.textoff,
     }
 end
 
@@ -279,6 +540,7 @@ local function float_config(active_config, source_win, area, container_width, wi
     local placement = active_config.float.placement
     local north = placement.anchor == "NW" or placement.anchor == "NE"
     local west = placement.anchor == "NW" or placement.anchor == "SW"
+    local west_origin = reserves_statuscolumn(active_config) and reservation_base_textoff(source_win) or 0
     local vertical_anchor
     if placement.relative == "window" then
         vertical_anchor = north and 0 or area.height
@@ -290,7 +552,7 @@ local function float_config(active_config, source_win, area, container_width, wi
         relative = placement.relative == "window" and "win" or "editor",
         anchor = placement.anchor,
         row = vertical_anchor + placement.row,
-        col = (west and 0 or container_width) + placement.col,
+        col = (west and west_origin or container_width) + placement.col,
         width = width,
         height = area.height,
         focusable = active_config.mouse.enabled,
@@ -322,6 +584,7 @@ local function configure_window(float_win)
     vim.api.nvim_set_option_value("relativenumber", false, { win = float_win })
     vim.api.nvim_set_option_value("signcolumn", "no", { win = float_win })
     vim.api.nvim_set_option_value("foldcolumn", "0", { win = float_win })
+    vim.api.nvim_set_option_value("statuscolumn", "", { win = float_win })
     vim.api.nvim_set_option_value("cursorline", false, { win = float_win })
     vim.api.nvim_set_option_value("cursorcolumn", false, { win = float_win })
     vim.api.nvim_set_option_value("winfixbuf", true, { win = float_win })
@@ -743,64 +1006,116 @@ end
 local function render_source(source_win, selection, root_config)
     local active_config = selection.config
     local source_buf = vim.api.nvim_win_get_buf(source_win)
+    ---@type ScrollbarWindowState?
     local existing_state = states[source_win]
     if existing_state ~= nil and existing_state.source_buf ~= source_buf then
         close_state(existing_state)
+        existing_state = nil
     end
     if root_config.autohide.enabled and revealed[source_win] ~= source_buf then
         conceal_source(source_win)
         return nil
     end
-    local area = source_text_area(source_win)
-    if area.height < 1 then
-        close_source(source_win)
-        return nil
+    local reserved = reserves_statuscolumn(active_config)
+    if reserved then
+        local initial_width = existing_state and existing_state.width or active_config.layout.width
+        local initial_span = math.max(0, initial_width + active_config.float.placement.col)
+        if initial_span > 0 and ensure_statuscolumn(source_win, initial_span) == nil then
+            close_source(source_win)
+            return nil
+        end
+    else
+        release_statuscolumn(source_win)
     end
 
-    local container_width = active_config.float.placement.relative == "window" and area.width or vim.o.columns
     local expand_compact = active_config.render.geometry == "screen"
     local marks, buffer_revision, window_revision, compact_search =
         flattened_marks(source_win, source_buf, expand_compact)
+    local line_count = active_config.render.geometry == "line" and vim.api.nvim_buf_line_count(source_buf) or nil
+    local area
+    local container_width
     local geometry
-    local mark_layer
-    if active_config.render.geometry == "line" then
-        local line_count = vim.api.nvim_buf_line_count(source_buf)
-        local cached = line_mark_layer(
-            source_win,
-            source_buf,
-            buffer_revision,
-            window_revision,
-            line_count,
-            container_width,
-            area.height,
-            active_config,
-            marks,
-            compact_search
-        )
-        geometry = geometry_for(active_config, source_win, source_buf, area.height, marks, line_count, cached.mark_rows)
-        mark_layer = cached.layer
-    else
-        geometry = geometry_for(active_config, source_win, source_buf, area.height, marks)
+    local output
+    for _ = 1, 3 do
+        area = source_text_area(source_win)
+        if area.height < 1 then
+            close_source(source_win)
+            return nil
+        end
+        if active_config.float.placement.relative == "window" then
+            local base_textoff = reserved and reservation_base_textoff(source_win) or 0
+            container_width = math.max(0, area.width - base_textoff)
+            local reservation = statuscolumn_reservations[source_win]
+            if reserved and reservation ~= nil and reservation.limited then
+                local maximum_width = math.max(0, reservation.span - active_config.float.placement.col)
+                container_width = math.min(container_width, maximum_width)
+            end
+        else
+            container_width = vim.o.columns
+        end
+
+        local mark_layer
+        if line_count ~= nil then
+            local cached = line_mark_layer(
+                source_win,
+                source_buf,
+                buffer_revision,
+                window_revision,
+                line_count,
+                container_width,
+                area.height,
+                active_config,
+                marks,
+                compact_search
+            )
+            geometry =
+                geometry_for(active_config, source_win, source_buf, area.height, marks, line_count, cached.mark_rows)
+            mark_layer = cached.layer
+        else
+            geometry = geometry_for(active_config, source_win, source_buf, area.height, marks)
+        end
+        if geometry.total_extent <= area.height and active_config.thumb.hide_if_all_visible then
+            geometry.handle = { first_row = -1, last_row = -1 }
+        end
+
+        output = layout.compose({
+            config = active_config,
+            height = area.height,
+            line_count = line_count,
+            container_width = container_width,
+            geometry = geometry,
+            marks = marks,
+            mark_layer = mark_layer,
+            compact_search = line_count ~= nil and compact_search or nil,
+        })
+        if not reserved then
+            break
+        end
+        local span = math.max(0, output.width + active_config.float.placement.col)
+        local current = statuscolumn_reservations[source_win]
+        if span == (current and current.span or 0) then
+            break
+        end
+        if span > 0 and ensure_statuscolumn(source_win, span) == nil then
+            close_source(source_win)
+            return nil
+        end
+    end
+
+    assert(area ~= nil and geometry ~= nil and output ~= nil, "render geometry unavailable")
+    if reserved then
+        local reservation = statuscolumn_reservations[source_win]
+        local required_span = math.max(0, output.width + active_config.float.placement.col)
+        if required_span > 0 and (reservation == nil or reservation.span < required_span) then
+            close_source(source_win)
+            return nil
+        end
     end
     local all_visible = geometry.total_extent <= area.height
     if all_visible and active_config.hide_if_all_visible then
         close_source(source_win)
         return nil
     end
-    if all_visible and active_config.thumb.hide_if_all_visible then
-        geometry.handle = { first_row = -1, last_row = -1 }
-    end
-
-    local output = layout.compose({
-        config = active_config,
-        height = area.height,
-        line_count = active_config.render.geometry == "line" and vim.api.nvim_buf_line_count(source_buf) or nil,
-        container_width = container_width,
-        geometry = geometry,
-        marks = marks,
-        mark_layer = mark_layer,
-        compact_search = active_config.render.geometry == "line" and compact_search or nil,
-    })
     local cursor_row, cursor_col = cursor_screen_position(source_win, active_config)
     local cursor_position_available = cursor_row ~= nil and cursor_col ~= nil
     ---@type ScrollbarWindowState?
@@ -808,6 +1123,9 @@ local function render_source(source_win, selection, root_config)
     if state == nil or not valid_window(state.float_win) or not vim.api.nvim_buf_is_valid(state.float_buf) then
         if state ~= nil then
             close_state(state)
+            if reserved then
+                ensure_statuscolumn(source_win, math.max(0, output.width + active_config.float.placement.col))
+            end
         end
         local active_float_config =
             float_config(active_config, source_win, area, container_width, output.width, cursor_position_available)
@@ -1044,6 +1362,11 @@ M.source_windows = function(bufnr)
             stale[source_win] = true
         end
     end
+    for source_win in pairs(statuscolumn_reservations) do
+        if not selected[source_win] then
+            stale[source_win] = true
+        end
+    end
     for source_win in pairs(stale) do
         close_source(source_win)
     end
@@ -1117,10 +1440,19 @@ M.setup = function()
             local state = states[closed_win] or states_by_float[closed_win]
             if state ~= nil then
                 close_state(state)
-            elseif states[closed_win] == nil then
+            else
                 revealed[closed_win] = nil
                 clear_source_cache(closed_win)
+                release_statuscolumn(closed_win)
             end
+        end,
+    })
+    vim.api.nvim_create_autocmd("WinNew", {
+        group = lifecycle_group,
+        callback = function()
+            local current_win = vim.api.nvim_get_current_win()
+            local parent_win = vim.fn.win_getid(vim.fn.winnr("#"))
+            restore_inherited_statuscolumn(current_win, parent_win)
         end,
     })
     vim.api.nvim_create_autocmd({ "BufDelete", "BufWipeout" }, {

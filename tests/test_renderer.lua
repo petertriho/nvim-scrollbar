@@ -780,6 +780,7 @@ T["resolves every anchor and restores protected float configuration"] = function
                 anchor = anchor,
                 row = 2,
                 col = -3,
+                gutter = "overlap",
             }
             scrollbar_config.set(anchor_config)
             renderer.setup()
@@ -844,6 +845,424 @@ T["resolves every anchor and restores protected float configuration"] = function
     expect.equality(result.protected.focusable, false)
     expect.equality(result.protected.mouse, false)
     expect.equality(result.protected.zindex, 50)
+end
+
+T["applies live gutters only to window-relative west placements in avoid mode"] = function()
+    local child = new_child()
+    local result = child.lua_func(function(base_config)
+        local lines = {}
+        for index = 1, 80 do
+            lines[index] = "line " .. index
+        end
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        local source_win = vim.api.nvim_get_current_win()
+        vim.api.nvim_set_option_value("number", false, { win = source_win })
+        vim.api.nvim_set_option_value("relativenumber", false, { win = source_win })
+        vim.api.nvim_set_option_value("numberwidth", 4, { win = source_win })
+        vim.api.nvim_set_option_value("foldcolumn", "0", { win = source_win })
+        vim.api.nvim_set_option_value("signcolumn", "yes:2", { win = source_win })
+        vim.api.nvim_set_option_value("statuscolumn", "", { win = source_win })
+
+        local original_textoff = vim.fn.getwininfo(source_win)[1].textoff
+        local scrollbar_config = require("scrollbar.config")
+        local renderer = require("scrollbar.renderer")
+        local function render(relative, anchor, gutter, col)
+            local active = vim.deepcopy(base_config)
+            active.float.placement = {
+                relative = relative,
+                anchor = anchor,
+                row = 0,
+                col = col,
+                gutter = gutter,
+            }
+            scrollbar_config.set(active)
+            renderer.setup()
+            local state = assert(renderer.render(source_win))
+            return {
+                config = vim.api.nvim_win_get_config(state.float_win),
+                textoff = vim.fn.getwininfo(source_win)[1].textoff,
+            }
+        end
+
+        local cases = {
+            original_textoff = original_textoff,
+            source_width = vim.api.nvim_win_get_width(source_win),
+            avoid_nw = render("window", "NW", "avoid", 0),
+            avoid_sw = render("window", "SW", "avoid", 0),
+            avoid_negative = render("window", "NW", "avoid", -1),
+            overlap_nw = render("window", "NW", "overlap", -1),
+            overlap_sw = render("window", "SW", "overlap", -1),
+            east_ne = render("window", "NE", "avoid", -1),
+            east_se = render("window", "SE", "avoid", -1),
+            editor_nw = render("editor", "NW", "avoid", -1),
+            editor_sw = render("editor", "SW", "avoid", -1),
+        }
+        cases.final_statuscolumn = vim.api.nvim_get_option_value("statuscolumn", { win = source_win })
+        return cases
+    end, renderer_config())
+
+    expect.equality(result.original_textoff > 0, true)
+    for _, case in ipairs({ result.avoid_nw, result.avoid_sw }) do
+        expect.equality(case.config.col, result.original_textoff)
+        expect.equality(case.textoff, result.original_textoff + case.config.width)
+        expect.equality(case.config.col + case.config.width, case.textoff)
+    end
+    expect.equality(result.avoid_negative.config.col, result.original_textoff - 1)
+    expect.equality(result.avoid_negative.textoff, result.original_textoff + result.avoid_negative.config.width - 1)
+    expect.equality(result.overlap_nw.config.col, -1)
+    expect.equality(result.overlap_sw.config.col, -1)
+    expect.equality(result.overlap_nw.textoff, result.original_textoff)
+    expect.equality(result.overlap_sw.textoff, result.original_textoff)
+    expect.equality(result.east_ne.config.col, result.source_width - 1)
+    expect.equality(result.east_se.config.col, result.source_width - 1)
+    expect.equality(result.east_ne.textoff, result.original_textoff)
+    expect.equality(result.east_se.textoff, result.original_textoff)
+    expect.equality(result.editor_nw.config.col, -1)
+    expect.equality(result.editor_sw.config.col, -1)
+    expect.equality(result.editor_nw.textoff, result.original_textoff)
+    expect.equality(result.editor_sw.textoff, result.original_textoff)
+    expect.equality(result.final_statuscolumn, "")
+end
+
+T["preserves and restores user statuscolumn ownership around west reservations"] = function()
+    local child = new_child()
+    local result = child.lua_func(function(base_config)
+        local lines = {}
+        for index = 1, 80 do
+            lines[index] = "line " .. index
+        end
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        local source_win = vim.api.nvim_get_current_win()
+        local original_statuscolumn = "%s%=%l│"
+        vim.api.nvim_set_option_value("number", true, { win = source_win })
+        vim.api.nvim_set_option_value("numberwidth", 4, { win = source_win })
+        vim.api.nvim_set_option_value("foldcolumn", "1", { win = source_win })
+        vim.api.nvim_set_option_value("signcolumn", "yes:1", { win = source_win })
+        vim.api.nvim_set_option_value("statuscolumn", original_statuscolumn, { win = source_win })
+        local original_textoff = vim.fn.getwininfo(source_win)[1].textoff
+
+        base_config.float.hide_on_cursor = false
+        base_config.float.placement = {
+            relative = "window",
+            anchor = "NW",
+            row = 0,
+            col = 0,
+            gutter = "avoid",
+        }
+        local scrollbar_config = require("scrollbar.config")
+        scrollbar_config.set(base_config)
+        local renderer = require("scrollbar.renderer")
+        renderer.setup()
+        local west = assert(renderer.render(source_win))
+        local west_config = vim.api.nvim_win_get_config(west.float_win)
+        local reserved = {
+            statuscolumn = vim.api.nvim_get_option_value("statuscolumn", { win = source_win }),
+            numberwidth = vim.api.nvim_get_option_value("numberwidth", { win = source_win }),
+            textoff = vim.fn.getwininfo(source_win)[1].textoff,
+        }
+
+        local east_config = vim.deepcopy(base_config)
+        east_config.float.placement.anchor = "NE"
+        scrollbar_config.set(east_config)
+        local east = assert(renderer.render(source_win))
+        local restored = {
+            statuscolumn = vim.api.nvim_get_option_value("statuscolumn", { win = source_win }),
+            numberwidth = vim.api.nvim_get_option_value("numberwidth", { win = source_win }),
+            textoff = vim.fn.getwininfo(source_win)[1].textoff,
+            same_float = east.float_win == west.float_win,
+        }
+
+        scrollbar_config.set(base_config)
+        assert(renderer.render(source_win))
+        local external_statuscolumn = "%C%s%=%{v:lnum}·"
+        vim.api.nvim_set_option_value("statuscolumn", external_statuscolumn, { win = source_win })
+        vim.cmd("vsplit")
+        local inherited_win = vim.api.nvim_get_current_win()
+        local inherited = {
+            statuscolumn = vim.api.nvim_get_option_value("statuscolumn", { win = inherited_win }),
+            numberwidth = vim.api.nvim_get_option_value("numberwidth", { win = inherited_win }),
+        }
+        vim.api.nvim_win_close(inherited_win, true)
+        vim.api.nvim_set_current_win(source_win)
+        renderer.dispose(source_win)
+        local external = {
+            statuscolumn = vim.api.nvim_get_option_value("statuscolumn", { win = source_win }),
+            numberwidth = vim.api.nvim_get_option_value("numberwidth", { win = source_win }),
+        }
+
+        return {
+            original = {
+                statuscolumn = original_statuscolumn,
+                numberwidth = 4,
+                textoff = original_textoff,
+            },
+            reserved = reserved,
+            restored = restored,
+            external = external,
+            inherited = inherited,
+            external_statuscolumn = external_statuscolumn,
+            west = { col = west_config.col, width = west_config.width },
+        }
+    end, renderer_config())
+
+    expect.no_equality(result.reserved.statuscolumn, result.original.statuscolumn)
+    expect.equality(result.reserved.numberwidth > result.original.numberwidth, true)
+    expect.equality(result.reserved.textoff, result.original.textoff + result.west.width)
+    expect.equality(result.west.col, result.original.textoff)
+    expect.equality(result.west.col + result.west.width, result.reserved.textoff)
+    expect.equality(result.restored, {
+        statuscolumn = result.original.statuscolumn,
+        numberwidth = result.original.numberwidth,
+        textoff = result.original.textoff,
+        same_float = true,
+    })
+    expect.equality(result.external, {
+        statuscolumn = result.external_statuscolumn,
+        numberwidth = result.original.numberwidth,
+    })
+    expect.equality(result.inherited, result.external)
+end
+
+T["preserves native wrapped numbers and percent-bang statuscolumn results"] = function()
+    local child = new_child()
+    local result = child.lua_func(function(base_config)
+        local lines = { string.rep("x", 120) }
+        for index = 2, 80 do
+            lines[index] = "line " .. index
+        end
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        vim.cmd("vsplit")
+        local source_win = vim.api.nvim_get_current_win()
+        local other_win
+        for _, winid in ipairs(vim.api.nvim_list_wins()) do
+            if winid ~= source_win then
+                other_win = winid
+            end
+        end
+        assert(other_win ~= nil, "other source window unavailable")
+        vim.api.nvim_win_set_width(source_win, 20)
+        vim.api.nvim_set_option_value("wrap", true, { win = source_win })
+        vim.api.nvim_set_option_value("number", true, { win = source_win })
+        vim.api.nvim_set_option_value("relativenumber", false, { win = source_win })
+        vim.api.nvim_set_option_value("signcolumn", "no", { win = source_win })
+        vim.api.nvim_set_option_value("foldcolumn", "0", { win = source_win })
+        vim.api.nvim_set_option_value("statuscolumn", "", { win = source_win })
+
+        local function gutter_rows(width)
+            vim.api.nvim__redraw({ flush = true })
+            local info = vim.fn.getwininfo(source_win)[1]
+            local rows = {}
+            for row = 0, 1 do
+                local cells = {}
+                for offset = 0, width - 1 do
+                    cells[#cells + 1] = vim.fn.screenstring(info.winrow + row, info.wincol + offset)
+                end
+                rows[#rows + 1] = table.concat(cells)
+            end
+            return rows
+        end
+
+        local native_textoff = vim.fn.getwininfo(source_win)[1].textoff
+        local native_rows = gutter_rows(native_textoff)
+        base_config.float.hide_on_cursor = false
+        base_config.float.placement = {
+            relative = "window",
+            anchor = "NW",
+            row = 0,
+            col = 0,
+            gutter = "avoid",
+        }
+        base_config.layout.columns = { { "thumb" } }
+        base_config.thumb.text = " "
+        local scrollbar_config = require("scrollbar.config")
+        scrollbar_config.set(base_config)
+        local renderer = require("scrollbar.renderer")
+        renderer.setup()
+        assert(renderer.render(source_win))
+        local reserved_rows = gutter_rows(native_textoff)
+        renderer.dispose(source_win)
+
+        vim.api.nvim_set_option_value("wrap", false, { win = source_win })
+        vim.api.nvim_set_option_value("relativenumber", true, { win = source_win })
+        vim.api.nvim_set_option_value("signcolumn", "number", { win = source_win })
+        local namespace = vim.api.nvim_create_namespace("ScrollbarStatuscolumnTest")
+        vim.api.nvim_buf_set_extmark(0, namespace, 0, 0, { sign_text = "!", sign_hl_group = "ErrorMsg" })
+        local sign_textoff = vim.fn.getwininfo(source_win)[1].textoff
+        local native_sign_rows = gutter_rows(sign_textoff)
+        renderer.setup()
+        assert(renderer.render(source_win))
+        local reserved_sign_rows = gutter_rows(sign_textoff)
+        renderer.dispose(source_win)
+
+        vim.api.nvim_set_option_value("wrap", false, { win = source_win })
+        vim.api.nvim_set_option_value("number", false, { win = source_win })
+        vim.api.nvim_set_option_value("relativenumber", false, { win = source_win })
+        vim.api.nvim_set_option_value("signcolumn", "no", { win = source_win })
+        local contexts = {}
+        local statuscolumn_test = {}
+        package.loaded["scrollbar.test.statuscolumn"] = statuscolumn_test
+        statuscolumn_test.context = function()
+            contexts[#contexts + 1] = {
+                current = vim.api.nvim_get_current_win(),
+                drawn = tonumber(vim.g.statusline_winid),
+            }
+            return true
+        end
+        vim.api.nvim_set_option_value(
+            "statuscolumn",
+            '%!v:lua.require("scrollbar.test.statuscolumn").context()',
+            { win = source_win }
+        )
+        vim.api.nvim_set_current_win(other_win)
+        vim.api.nvim__redraw({ flush = true })
+        local expression_textoff = vim.fn.getwininfo(source_win)[1].textoff
+        local native_context = contexts[#contexts]
+        renderer.setup()
+        local expression_state = assert(renderer.render(source_win))
+        local reserved_context = contexts[#contexts]
+        local expression = {
+            resolved = renderer._statuscolumn(source_win),
+            textoff = vim.fn.getwininfo(source_win)[1].textoff,
+            width = expression_state.width,
+            native_context = native_context,
+            reserved_context = reserved_context,
+        }
+        renderer.dispose(source_win)
+        local restored_expression = vim.api.nvim_get_option_value("statuscolumn", { win = source_win })
+
+        local late_failure_calls = 0
+        local late_failure_enabled = false
+        statuscolumn_test.late_failure = function()
+            late_failure_calls = late_failure_calls + 1
+            if late_failure_enabled then
+                error("late statuscolumn failure")
+            end
+            return "OK"
+        end
+        vim.api.nvim_set_option_value(
+            "statuscolumn",
+            '%!v:lua.require("scrollbar.test.statuscolumn").late_failure()',
+            { win = source_win }
+        )
+        vim.api.nvim__redraw({ flush = true })
+        renderer.setup()
+        local late_state = assert(renderer.render(source_win))
+        local late_float = vim.api.nvim_win_get_config(late_state.float_win)
+        local calls_before_late_failure = late_failure_calls
+        late_failure_enabled = true
+        local failed_format = renderer._statuscolumn(source_win)
+        local late_during = {
+            calls = late_failure_calls - calls_before_late_failure,
+            textoff = vim.fn.getwininfo(source_win)[1].textoff,
+            float_right = late_float.col + late_float.width,
+            failed_width = vim.fn.strdisplaywidth(failed_format),
+        }
+        local late_after = renderer.render(source_win)
+        local late_failure = {
+            during = late_during,
+            rendered = late_after ~= nil,
+            statuscolumn = vim.api.nvim_get_option_value("statuscolumn", { win = source_win }),
+            numberwidth = vim.api.nvim_get_option_value("numberwidth", { win = source_win }),
+        }
+
+        local failure_calls = 0
+        statuscolumn_test.failure = function()
+            failure_calls = failure_calls + 1
+            error("statuscolumn failure")
+        end
+        vim.api.nvim_set_option_value(
+            "statuscolumn",
+            '%!v:lua.require("scrollbar.test.statuscolumn").failure()',
+            { win = source_win }
+        )
+        renderer.setup()
+        local failed_state = renderer.render(source_win)
+        local failure = {
+            calls = failure_calls,
+            rendered = failed_state ~= nil,
+            statuscolumn = vim.api.nvim_get_option_value("statuscolumn", { win = source_win }),
+            numberwidth = vim.api.nvim_get_option_value("numberwidth", { win = source_win }),
+        }
+
+        return {
+            native_rows = native_rows,
+            reserved_rows = reserved_rows,
+            native_sign_rows = native_sign_rows,
+            reserved_sign_rows = reserved_sign_rows,
+            expression = expression,
+            expression_textoff = expression_textoff,
+            restored_expression = restored_expression,
+            late_failure = late_failure,
+            failure = failure,
+            source_win = source_win,
+            other_win = other_win,
+        }
+    end, renderer_config())
+
+    expect.equality(result.reserved_rows, result.native_rows)
+    expect.equality(result.reserved_sign_rows, result.native_sign_rows)
+    expect.equality(result.expression.resolved, "v:true" .. string.rep(" ", result.expression.width))
+    expect.equality(result.expression.textoff, result.expression_textoff + result.expression.width)
+    expect.equality(result.expression.native_context, { current = result.other_win, drawn = result.source_win })
+    expect.equality(result.expression.reserved_context, result.expression.native_context)
+    expect.equality(result.restored_expression, '%!v:lua.require("scrollbar.test.statuscolumn").context()')
+    expect.equality(result.late_failure, {
+        during = {
+            calls = 1,
+            textoff = result.late_failure.during.float_right,
+            float_right = result.late_failure.during.float_right,
+            failed_width = result.late_failure.during.float_right,
+        },
+        rendered = false,
+        statuscolumn = "",
+        numberwidth = 4,
+    })
+    expect.equality(result.failure, {
+        calls = 1,
+        rendered = false,
+        statuscolumn = "",
+        numberwidth = 4,
+    })
+end
+
+T["declines west rendering when the full layout cannot fit in statuscolumn"] = function()
+    local child = new_child()
+    local result = child.lua_func(function(base_config)
+        local lines = {}
+        for index = 1, 100 do
+            lines[index] = "line " .. index
+        end
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        local source_win = vim.api.nvim_get_current_win()
+        vim.api.nvim_set_option_value("number", false, { win = source_win })
+        vim.api.nvim_set_option_value("relativenumber", false, { win = source_win })
+        vim.api.nvim_set_option_value("signcolumn", "no", { win = source_win })
+        vim.api.nvim_set_option_value("foldcolumn", "0", { win = source_win })
+        vim.api.nvim_set_option_value("statuscolumn", "", { win = source_win })
+
+        local columns = {}
+        for index = 1, 50 do
+            columns[index] = { "track" }
+        end
+        base_config.float.hide_on_cursor = false
+        base_config.float.placement = { relative = "window", anchor = "NW", gutter = "avoid" }
+        base_config.layout.columns = columns
+        require("scrollbar.config").set(base_config)
+        local renderer = require("scrollbar.renderer")
+        renderer.setup()
+        local state = renderer.render(source_win)
+        return {
+            rendered = state ~= nil,
+            statuscolumn = vim.api.nvim_get_option_value("statuscolumn", { win = source_win }),
+            numberwidth = vim.api.nvim_get_option_value("numberwidth", { win = source_win }),
+        }
+    end, renderer_config())
+
+    expect.equality(result, {
+        rendered = false,
+        statuscolumn = "",
+        numberwidth = 4,
+    })
 end
 
 T["aligns editor-relative tracks with active split text rows"] = function()
@@ -1447,7 +1866,13 @@ T["uses window and editor placement containers and resolves width per source win
         vim.cmd("vsplit")
         local narrow_win = vim.api.nvim_get_current_win()
         vim.api.nvim_win_set_width(narrow_win, 4)
+        vim.api.nvim_set_option_value("number", false, { win = narrow_win })
+        vim.api.nvim_set_option_value("relativenumber", false, { win = narrow_win })
+        vim.api.nvim_set_option_value("foldcolumn", "0", { win = narrow_win })
+        vim.api.nvim_set_option_value("signcolumn", "yes:1", { win = narrow_win })
+        vim.api.nvim_set_option_value("statuscolumn", "", { win = narrow_win })
         local narrow_width = vim.api.nvim_win_get_width(narrow_win)
+        local textoff = vim.fn.getwininfo(narrow_win)[1].textoff
         local dense_marks = {}
         for index = 1, 8 do
             dense_marks[index] = { line = index - 1, type = "Mark", text = string.char(96 + index) }
@@ -1473,6 +1898,7 @@ T["uses window and editor placement containers and resolves width per source win
             window = {
                 narrow = narrow_state_width,
                 narrow_container = narrow_width,
+                textoff = textoff,
                 wider = wider_state_width,
                 wider_container = wider_width,
                 same_resources = narrow.float_win == wider.float_win and narrow.float_buf == wider.float_buf,
@@ -1486,11 +1912,118 @@ T["uses window and editor placement containers and resolves width per source win
     end, renderer_config())
 
     expect.equality(result.per_height, { tall = 3, short = 4 })
-    expect.equality(result.window.narrow, math.min(8, result.window.narrow_container))
-    expect.equality(result.window.wider, math.min(8, result.window.wider_container))
+    expect.equality(result.window.textoff > 0, true)
+    expect.equality(result.window.narrow, math.min(8, result.window.narrow_container - result.window.textoff))
+    expect.equality(result.window.wider, math.min(8, result.window.wider_container - result.window.textoff))
     expect.equality(result.window.same_resources, true)
     expect.equality(result.editor.width, math.min(9, result.editor.container))
     expect.equality(result.editor.float_width, result.editor.width)
+end
+
+T["repositions in place and rebuilds expansion when the live gutter width changes"] = function()
+    local child = new_child()
+    local result = child.lua_func(function(base_config)
+        local lines = {}
+        for index = 1, 200 do
+            lines[index] = "line " .. index
+        end
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        vim.cmd("vsplit")
+        local source_win = vim.api.nvim_get_current_win()
+        vim.api.nvim_win_set_width(source_win, 8)
+        vim.api.nvim_win_set_height(source_win, 4)
+        vim.api.nvim_set_option_value("number", false, { win = source_win })
+        vim.api.nvim_set_option_value("relativenumber", false, { win = source_win })
+        vim.api.nvim_set_option_value("numberwidth", 4, { win = source_win })
+        vim.api.nvim_set_option_value("foldcolumn", "0", { win = source_win })
+        vim.api.nvim_set_option_value("signcolumn", "yes:1", { win = source_win })
+        vim.api.nvim_set_option_value("statuscolumn", "", { win = source_win })
+
+        local source_buf = vim.api.nvim_win_get_buf(source_win)
+        local marks = {}
+        for index = 1, 12 do
+            marks[index] = { line = 0, type = "Mark", text = string.char(96 + index) }
+        end
+        assert(require("scrollbar.store").set("marks", source_buf, marks))
+
+        base_config.float.hide_on_cursor = false
+        base_config.float.placement = {
+            relative = "window",
+            anchor = "NW",
+            row = 0,
+            col = 0,
+            gutter = "avoid",
+        }
+        base_config.layout.columns = {
+            { { kind = "marks", types = { "Mark" }, max_width = 20 } },
+            { "track", "thumb" },
+        }
+        require("scrollbar.config").set(base_config)
+
+        local layout = require("scrollbar.layout")
+        local original_mark_layer = layout.mark_layer
+        local builds = 0
+        local containers = {}
+        rawset(layout, "mark_layer", function(input)
+            builds = builds + 1
+            containers[builds] = input.container_width
+            return original_mark_layer(input)
+        end)
+
+        local renderer = require("scrollbar.renderer")
+        local initial_base_textoff = vim.fn.getwininfo(source_win)[1].textoff
+        renderer.setup()
+        local initial = assert(renderer.render(source_win))
+        local initial_textoff = vim.fn.getwininfo(source_win)[1].textoff
+        local float_win = initial.float_win
+        local float_buf = initial.float_buf
+        local initial_width = initial.width
+        local initial_config = vim.api.nvim_win_get_config(float_win)
+        local after_initial = builds
+
+        vim.api.nvim_set_option_value("signcolumn", "yes:2", { win = source_win })
+        local moved_base_textoff = vim.fn.getwininfo(source_win)[1].textoff - initial_width
+        local moved = assert(renderer.render(source_win))
+        local moved_textoff = vim.fn.getwininfo(source_win)[1].textoff
+        local moved_config = vim.api.nvim_win_get_config(moved.float_win)
+        local after_move = builds
+        renderer.render(source_win)
+        local after_noop = builds
+        rawset(layout, "mark_layer", original_mark_layer)
+
+        return {
+            source_width = vim.api.nvim_win_get_width(source_win),
+            initial = {
+                base_textoff = initial_base_textoff,
+                textoff = initial_textoff,
+                col = initial_config.col,
+                width = initial_width,
+                container = containers[1],
+            },
+            moved = {
+                base_textoff = moved_base_textoff,
+                textoff = moved_textoff,
+                col = moved_config.col,
+                width = moved.width,
+                container = containers[2],
+            },
+            builds = { after_initial, after_move, after_noop },
+            same_resources = moved.float_win == float_win and moved.float_buf == float_buf,
+        }
+    end, renderer_config())
+
+    expect.equality(result.initial.textoff > 0, true)
+    expect.equality(result.moved.base_textoff > result.initial.base_textoff, true)
+    expect.equality(result.initial.col, result.initial.base_textoff)
+    expect.equality(result.moved.col, result.moved.base_textoff)
+    expect.equality(result.initial.textoff, result.initial.base_textoff + result.initial.width)
+    expect.equality(result.moved.textoff, result.moved.base_textoff + result.moved.width)
+    expect.equality(result.initial.container, result.source_width - result.initial.base_textoff)
+    expect.equality(result.moved.container, result.source_width - result.moved.base_textoff)
+    expect.equality(result.initial.width <= result.initial.container, true)
+    expect.equality(result.moved.width <= result.moved.container, true)
+    expect.equality(result.builds, { 1, 2, 2 })
+    expect.equality(result.same_resources, true)
 end
 
 T["caches line mark work while keeping handle geometry current and invalidating exact inputs"] = function()
