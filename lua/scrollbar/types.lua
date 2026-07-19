@@ -371,12 +371,14 @@
 ---@field source_win integer
 ---@field height integer Track height in rows
 ---@field marks ScrollbarMark[]
+---@field compact_search? ScrollbarCompactSearch Private built-in search matches projected into compact_mark_rows
 
 ---@class ScrollbarGeometry
 ---@field total_extent integer Logical lines or rendered screen rows
 ---@field viewport_start integer Zero-based document coordinate
 ---@field viewport_end integer Zero-based inclusive document coordinate
 ---@field mark_rows integer[] Track rows aligned with the input marks
+---@field compact_mark_rows? integer[] Track rows aligned with compact_search entries; only produced by M.screen
 ---@field handle ScrollbarVerticalHandleGeometry
 
 ---@class ScrollbarLayoutInput
@@ -453,7 +455,6 @@
 ---@field window_revision integer
 ---@field marks ScrollbarLayoutMark[]
 ---@field compact_search? ScrollbarCompactSearch
----@field expanded_marks? ScrollbarLayoutMark[] Exact screen-mode expansion, intentionally expensive
 
 ---@class ScrollbarLineMarkLayerCache
 ---@field source_buf integer

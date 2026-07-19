@@ -800,4 +800,47 @@ T["screen geometry cache invalidates on window resize"] = function()
     expect.equality(result.g2_calls > 1, true)
 end
 
+T["M.screen projects compact_search rows aligned with equivalent expanded marks"] = function()
+    local child = new_child()
+    local result = child.lua_func(function()
+        local lines = {}
+        for index = 1, 30 do
+            lines[index] = "line " .. index
+        end
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        vim.cmd("split")
+        local source_win = vim.api.nvim_get_current_win()
+        vim.api.nvim_win_set_height(source_win, 10)
+
+        local layout_module = require("scrollbar.layout")
+        local compact = require("scrollbar.providers.search_compact")
+        local match_lines = { 0, 5, 10, 15, 20, 25 }
+        local reference_marks = {}
+        for index, line in ipairs(match_lines) do
+            reference_marks[index] = { line = line, type = "Search" }
+        end
+
+        local expanded = layout_module.screen({
+            source_win = source_win,
+            height = 10,
+            marks = reference_marks,
+        })
+        local projected = layout_module.screen({
+            source_win = source_win,
+            height = 10,
+            marks = {},
+            compact_search = compact.encode(match_lines),
+        })
+
+        return {
+            mark_rows = expanded.mark_rows,
+            compact_mark_rows = projected.compact_mark_rows,
+            has_compact_field = projected.compact_mark_rows ~= nil,
+        }
+    end)
+
+    expect.equality(result.has_compact_field, true)
+    expect.equality(result.compact_mark_rows, result.mark_rows)
+end
+
 return T

@@ -1685,6 +1685,85 @@ T["renders compact built-in search exactly and invalidates it by revision"] = fu
     expect.equality(result.changed, true)
 end
 
+T["screen-mode dense compact search renders identically to expanded marks"] = function()
+    local child = new_child()
+    local result = child.lua_func(
+        function(base_config)
+            local lines = {}
+            local ordinary_marks = {}
+            for index = 1, 1000 do
+                local line = index - 1
+                if index % 2 == 1 then
+                    lines[index] = "dense_a dense_b dense_b"
+                    ordinary_marks[#ordinary_marks + 1] = { line = line, type = "Search" }
+                    ordinary_marks[#ordinary_marks + 1] = { line = line, type = "Search" }
+                    ordinary_marks[#ordinary_marks + 1] = { line = line, type = "Search" }
+                else
+                    lines[index] = "dense_a plain plain"
+                    ordinary_marks[#ordinary_marks + 1] = { line = line, type = "Search" }
+                end
+            end
+            vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+            vim.cmd("split")
+            local source_win = vim.api.nvim_get_current_win()
+            vim.api.nvim_win_set_height(source_win, 10)
+            local source_buf = vim.api.nvim_win_get_buf(source_win)
+            local store = require("scrollbar.store")
+            local compact = require("scrollbar.providers.search_compact")
+            local renderer = require("scrollbar.renderer")
+
+            local match_lines = {}
+            for _, mark in ipairs(ordinary_marks) do
+                match_lines[#match_lines + 1] = mark.line
+            end
+
+            local active = vim.deepcopy(base_config)
+            active.render.geometry = "screen"
+            require("scrollbar.config").set(active)
+            renderer.setup()
+
+            assert(store.set("search", source_buf, ordinary_marks))
+            local ordinary = assert(renderer.render(source_win))
+            local expected = {
+                rows = vim.deepcopy(ordinary.rows),
+                highlights = vim.deepcopy(ordinary.highlights),
+                hitmap = vim.deepcopy(ordinary.hitmap),
+            }
+
+            assert(store._set_search_compact(source_buf, compact.encode(match_lines)))
+            local compact_state = assert(renderer.render(source_win))
+
+            local compact_mark_rows = 0
+            for _, cells in ipairs(compact_state.hitmap) do
+                for _, cell in ipairs(cells) do
+                    if cell.line ~= nil then
+                        compact_mark_rows = compact_mark_rows + 1
+                    end
+                end
+            end
+
+            return {
+                equivalent = vim.deep_equal(expected, {
+                    rows = compact_state.rows,
+                    highlights = compact_state.highlights,
+                    hitmap = compact_state.hitmap,
+                }),
+                compact_mark_rows = compact_mark_rows,
+                match_count = #ordinary_marks,
+            }
+        end,
+        renderer_config({
+            marks = {
+                Search = { text = { "-", "=", "#" } },
+            },
+        })
+    )
+
+    expect.equality(result.match_count, 2000)
+    expect.equality(result.compact_mark_rows > 0, true)
+    expect.equality(result.equivalent, true)
+end
+
 T["updates only dirty rows and fully replaces rows when dimensions change"] = function()
     local child = new_child()
     local result = child.lua_func(function(config)

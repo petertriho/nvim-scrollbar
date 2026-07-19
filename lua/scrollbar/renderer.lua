@@ -1,6 +1,5 @@
 local config = require("scrollbar.config")
 local layout = require("scrollbar.layout")
-local search_compact = require("scrollbar.providers.search_compact")
 local store = require("scrollbar.store")
 
 local M = {}
@@ -744,12 +743,11 @@ end
 
 ---@param source_win integer
 ---@param source_buf integer
----@param expand_compact boolean
 ---@return ScrollbarLayoutMark[] marks
 ---@return integer buffer_revision
 ---@return integer window_revision
 ---@return ScrollbarCompactSearch? compact_search
-local function flattened_marks(source_win, source_buf, expand_compact)
+local function flattened_marks(source_win, source_buf)
     local buffer_snapshot = store._get_snapshot(source_buf)
     local window_snapshot = store._get_window_snapshot(source_win)
     local cached = flattened_cache[source_win]
@@ -759,17 +757,7 @@ local function flattened_marks(source_win, source_buf, expand_compact)
         and cached.buffer_revision == buffer_snapshot.revision
         and cached.window_revision == window_snapshot.revision
     then
-        if expand_compact and cached.compact_search ~= nil and cached.expanded_marks == nil then
-            cached.expanded_marks =
-                vim.list_extend(vim.deepcopy(cached.marks), search_compact.to_marks(cached.compact_search))
-            for index = #cached.marks + 1, #cached.expanded_marks do
-                cached.expanded_marks[index].provider = "search"
-            end
-        end
-        return expand_compact and (cached.expanded_marks or cached.marks) or cached.marks,
-            buffer_snapshot.revision,
-            window_snapshot.revision,
-            cached.compact_search
+        return cached.marks, buffer_snapshot.revision, window_snapshot.revision, cached.compact_search
     end
 
     local providers = {}
@@ -805,7 +793,7 @@ local function flattened_marks(source_win, source_buf, expand_compact)
         marks = marks,
         compact_search = buffer_snapshot.compact_search,
     }
-    return flattened_marks(source_win, source_buf, expand_compact)
+    return marks, buffer_snapshot.revision, window_snapshot.revision, buffer_snapshot.compact_search
 end
 
 ---@param source_win integer
@@ -815,10 +803,16 @@ end
 ---@param marks ScrollbarLayoutMark[]
 ---@param line_count? integer
 ---@param mark_rows? integer[]
+---@param compact_search? ScrollbarCompactSearch
 ---@return ScrollbarGeometry
-local function geometry_for(active_config, source_win, source_buf, height, marks, line_count, mark_rows)
+local function geometry_for(active_config, source_win, source_buf, height, marks, line_count, mark_rows, compact_search)
     if active_config.render.geometry == "screen" then
-        return layout.screen({ source_win = source_win, height = height, marks = marks })
+        return layout.screen({
+            source_win = source_win,
+            height = height,
+            marks = marks,
+            compact_search = compact_search,
+        })
     end
 
     local viewport = vim.api.nvim_win_call(source_win, function()
@@ -1041,9 +1035,7 @@ local function render_source(source_win, selection, root_config)
         release_statuscolumn(source_win)
     end
 
-    local expand_compact = active_config.render.geometry == "screen"
-    local marks, buffer_revision, window_revision, compact_search =
-        flattened_marks(source_win, source_buf, expand_compact)
+    local marks, buffer_revision, window_revision, compact_search = flattened_marks(source_win, source_buf)
     local line_count = active_config.render.geometry == "line" and vim.api.nvim_buf_line_count(source_buf) or nil
     local area
     local container_width
@@ -1081,11 +1073,19 @@ local function render_source(source_win, selection, root_config)
                 marks,
                 compact_search
             )
-            geometry =
-                geometry_for(active_config, source_win, source_buf, area.height, marks, line_count, cached.mark_rows)
+            geometry = geometry_for(
+                active_config,
+                source_win,
+                source_buf,
+                area.height,
+                marks,
+                line_count,
+                cached.mark_rows,
+                compact_search
+            )
             mark_layer = cached.layer
         else
-            geometry = geometry_for(active_config, source_win, source_buf, area.height, marks)
+            geometry = geometry_for(active_config, source_win, source_buf, area.height, marks, nil, nil, compact_search)
         end
         if geometry.total_extent <= area.height and active_config.thumb.hide_if_all_visible then
             geometry.handle = { first_row = -1, last_row = -1 }
@@ -1099,7 +1099,7 @@ local function render_source(source_win, selection, root_config)
             geometry = geometry,
             marks = marks,
             mark_layer = mark_layer,
-            compact_search = line_count ~= nil and compact_search or nil,
+            compact_search = compact_search,
         })
         if not reserved then
             break
