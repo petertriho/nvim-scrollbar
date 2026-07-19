@@ -2473,6 +2473,7 @@ T["screen renders reuse flattened marks but always repeat text-height measuremen
         end)
         local original_text_height = vim.api.nvim_win_text_height
         local measurements = 0
+        ---@diagnostic disable-next-line: duplicate-set-field
         vim.api.nvim_win_text_height = function(...)
             measurements = measurements + 1
             return original_text_height(...)

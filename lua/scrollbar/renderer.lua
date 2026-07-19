@@ -50,12 +50,14 @@ local state_callback
 local function clear_source_cache(source_win)
     flattened_cache[source_win] = nil
     line_layer_cache[source_win] = nil
+    layout.clear_screen_cache(source_win)
 end
 
 local function clear_all_caches()
     flattened_cache = {}
     line_layer_cache = {}
     layout.clear_cache()
+    layout.clear_all_screen_caches()
 end
 
 ---@param source_buf integer

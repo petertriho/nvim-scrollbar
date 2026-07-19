@@ -1,5 +1,7 @@
 local M = {}
 
+local store = require("scrollbar.store")
+
 local function clamp(value, minimum, maximum)
     return math.max(minimum, math.min(value, maximum))
 end
@@ -70,39 +72,189 @@ M.normalized = function(input)
     }
 end
 
-local function screen_prefix(source_win, line)
+-- Mirrors `OPTION_PATTERNS` in `lua/scrollbar/scheduler.lua`. Duplicated here so
+-- `layout.lua` does not need to require `scheduler.lua` (which would reverse
+-- the existing dependency direction scheduler -> renderer -> layout). Keep the
+-- two copies in sync if either changes.
+local OPTION_PATTERNS = {
+    "ambiwidth",
+    "breakindent",
+    "cmdheight",
+    "concealcursor",
+    "conceallevel",
+    "diff",
+    "display",
+    "foldcolumn",
+    "foldenable",
+    "foldlevel",
+    "foldmethod",
+    "laststatus",
+    "linebreak",
+    "list",
+    "listchars",
+    "number",
+    "numberwidth",
+    "relativenumber",
+    "showbreak",
+    "showtabline",
+    "signcolumn",
+    "smoothscroll",
+    "statuscolumn",
+    "statusline",
+    "tabstop",
+    "winbar",
+    "wrap",
+}
+
+-- Capture each option's scope at module load so the digest can fetch the
+-- effective value for the correct scope (win/buf/global/tab).
+local OPTION_SCOPES = {}
+for _, name in ipairs(OPTION_PATTERNS) do
+    local ok, info = pcall(vim.api.nvim_get_option_info2, name, {})
+    if ok and info then
+        OPTION_SCOPES[name] = info.scope
+    end
+end
+
+-- Per-source-window cache of `nvim_win_text_height` results. The cache key is
+-- the union of every input that influences `nvim_win_text_height`: viewport
+-- (topline/topfill/skipcol), dimensions (line_count/height/win_height/win_width),
+-- mark revisions (buffer_revision/window_revision), an option digest of the
+-- OPTION_PATTERNS window options, and a single `nvim_win_text_height(win,{}).all`
+-- total-extent canary that catches silent fold toggles which fire no autocmd.
+-- On a hit, the only allowed API call is the canary itself.
+local screen_geometry_cache = {}
+
+local function option_digest(source_win)
+    local parts = {}
+    for index, name in ipairs(OPTION_PATTERNS) do
+        local scope = OPTION_SCOPES[name]
+        local ok, value
+        if scope == "win" then
+            ok, value = pcall(vim.api.nvim_get_option_value, name, { win = source_win })
+        elseif scope == "buf" then
+            local source_buf = vim.api.nvim_win_get_buf(source_win)
+            ok, value = pcall(vim.api.nvim_get_option_value, name, { buf = source_buf })
+        else
+            ok, value = pcall(vim.api.nvim_get_option_value, name, {})
+        end
+        if not ok then
+            value = "<error>"
+        end
+        parts[index] = name .. "\0" .. tostring(value)
+    end
+    return table.concat(parts, "\1")
+end
+
+local function screen_cache_for(source_win, height)
+    local source_buf = vim.api.nvim_win_get_buf(source_win)
+    local line_count = vim.api.nvim_buf_line_count(source_buf)
+    local total_extent = vim.api.nvim_win_text_height(source_win, {}).all
+    local view = vim.api.nvim_win_call(source_win, function()
+        return vim.fn.winsaveview()
+    end)
+    local win_height = vim.api.nvim_win_get_height(source_win)
+    local win_width = vim.api.nvim_win_get_width(source_win)
+    local buffer_revision = store._get_snapshot(source_buf).revision
+    local window_revision = store._get_window_snapshot(source_win).revision
+    local options_digest = option_digest(source_win)
+
+    local cached = screen_geometry_cache[source_win]
+    if
+        cached ~= nil
+        and cached.source_buf == source_buf
+        and cached.buffer_revision == buffer_revision
+        and cached.window_revision == window_revision
+        and cached.topline == view.topline
+        and cached.topfill == view.topfill
+        and cached.skipcol == view.skipcol
+        and cached.line_count == line_count
+        and cached.height == height
+        and cached.win_height == win_height
+        and cached.win_width == win_width
+        and cached.total_extent == total_extent
+        and cached.options_digest == options_digest
+    then
+        return cached
+    end
+
+    local entry = {
+        source_buf = source_buf,
+        buffer_revision = buffer_revision,
+        window_revision = window_revision,
+        topline = view.topline,
+        topfill = view.topfill,
+        skipcol = view.skipcol,
+        line_count = line_count,
+        height = height,
+        win_height = win_height,
+        win_width = win_width,
+        total_extent = total_extent,
+        options_digest = options_digest,
+        cached_total_extent = total_extent,
+        cached_topfill = view.topfill,
+        cached_skipcol = view.skipcol,
+        cached_topline = view.topline,
+        prefix_by_line = {},
+    }
+    screen_geometry_cache[source_win] = entry
+    return entry
+end
+
+local function screen_prefix(source_win, line, entry)
+    if entry ~= nil then
+        local cached = entry.prefix_by_line[line]
+        if cached ~= nil then
+            return cached
+        end
+        local computed = vim.api.nvim_win_text_height(source_win, { end_row = line, end_vcol = 0 }).all
+        entry.prefix_by_line[line] = computed
+        return computed
+    end
     return vim.api.nvim_win_text_height(source_win, { end_row = line, end_vcol = 0 }).all
 end
 
-local function wrapped_offset(source_win, line, skipcol)
+local function screen_range(source_win, start_line, end_line)
+    return vim.api.nvim_win_text_height(source_win, {
+        start_row = start_line,
+        start_vcol = 0,
+        end_row = end_line,
+        end_vcol = 0,
+    }).all
+end
+
+local function wrapped_offset(source_win, line, skipcol, entry)
     if skipcol <= 0 then
         return 0
     end
-
-    return vim.api.nvim_win_text_height(source_win, {
+    if entry ~= nil and entry.cached_wrapped_offset ~= nil then
+        return entry.cached_wrapped_offset
+    end
+    local offset = vim.api.nvim_win_text_height(source_win, {
         start_row = line,
         start_vcol = 0,
         end_row = line,
         end_vcol = skipcol,
     }).all
+    if entry ~= nil then
+        entry.cached_wrapped_offset = offset
+    end
+    return offset
 end
 
 ---@param input ScrollbarScreenGeometryInput
 ---@return ScrollbarGeometry
 M.screen = function(input)
     local source_win = input.source_win
-    local source_buf = vim.api.nvim_win_get_buf(source_win)
     local height = input.height
-    local line_count = vim.api.nvim_buf_line_count(source_buf)
+    local entry = screen_cache_for(source_win, height)
+    local line_count = entry.line_count
     local maximum_line = math.max(0, line_count - 1)
-    local total_extent = vim.api.nvim_win_text_height(source_win, {}).all
-    local view = vim.api.nvim_win_call(source_win, function()
-        return vim.fn.winsaveview()
-    end)
-    local top_line = clamp(view.topline - 1, 0, maximum_line)
-    local viewport_start = screen_prefix(source_win, top_line)
-        - view.topfill
-        + wrapped_offset(source_win, top_line, view.skipcol)
+    local total_extent = entry.cached_total_extent
+    local top_line = clamp(entry.cached_topline - 1, 0, maximum_line)
+    local viewport_start = screen_prefix(source_win, top_line, entry)
+        - entry.cached_topfill
+        + wrapped_offset(source_win, top_line, entry.cached_skipcol, entry)
     viewport_start = clamp(viewport_start, 0, math.max(0, total_extent - 1))
     local viewport_end = clamp(viewport_start + height - 1, 0, math.max(0, total_extent - 1))
 
@@ -122,13 +274,13 @@ M.screen = function(input)
     local prefix = 0
     for _, line in ipairs(unique_lines) do
         if line > previous_line then
-            prefix = prefix
-                + vim.api.nvim_win_text_height(source_win, {
-                    start_row = previous_line,
-                    start_vcol = 0,
-                    end_row = line,
-                    end_vcol = 0,
-                }).all
+            local cached = entry.prefix_by_line[line]
+            if cached ~= nil then
+                prefix = cached
+            else
+                prefix = prefix + screen_range(source_win, previous_line, line)
+                entry.prefix_by_line[line] = prefix
+            end
         end
         prefixes[line] = prefix
         previous_line = line
@@ -170,6 +322,7 @@ M.track_row_to_line = function(source_win, row, height, mode, total_extent)
         return math.floor(clamped_row * (line_count - 1) / (height - 1) + 0.5)
     end
 
+    local entry = screen_cache_for(source_win, height)
     local extent = math.max(1, total_extent)
     local target = extent <= height and math.min(clamped_row, extent - 1)
         or math.floor(clamped_row * (extent - 1) / (height - 1) + 0.5)
@@ -178,7 +331,7 @@ M.track_row_to_line = function(source_win, row, height, mode, total_extent)
     local result = 0
     while low <= high do
         local middle = math.floor((low + high) / 2)
-        if screen_prefix(source_win, middle) <= target then
+        if screen_prefix(source_win, middle, entry) <= target then
             result = middle
             low = middle + 1
         else
@@ -811,6 +964,14 @@ end
 
 M.clear_cache = function()
     glyph_cache = {}
+end
+
+M.clear_screen_cache = function(source_win)
+    screen_geometry_cache[source_win] = nil
+end
+
+M.clear_all_screen_caches = function()
+    screen_geometry_cache = {}
 end
 
 return M
