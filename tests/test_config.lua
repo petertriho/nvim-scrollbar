@@ -55,6 +55,7 @@ T["normalizes a fresh one-column default without setup-only state"] = function()
     local second = set()
     expect.equality(second.visibility, "all")
     expect.equality(second.float.placement.gutter, "avoid")
+    expect.equality(second.float.placement.gutter_position, "inner")
     expect.equality(second.layout.direction, "auto")
     expect.equality(second.layout.width, 1)
     expect.equality(layer_kinds(second.layout.columns[1]), { "track", "thumb", "marks" })
@@ -182,7 +183,14 @@ T["accepts the complete typed runtime schema"] = function()
         float = {
             zindex = 60,
             hide_on_cursor = false,
-            placement = { relative = "editor", anchor = "SW", row = -2, col = 3, gutter = "overlap" },
+            placement = {
+                relative = "editor",
+                anchor = "SW",
+                row = -2,
+                col = 3,
+                gutter = "overlap",
+                gutter_position = "outer",
+            },
         },
         layout = {
             direction = "rtl",
@@ -222,6 +230,7 @@ T["accepts the complete typed runtime schema"] = function()
     expect.equality(result.max_lines, 1000)
     expect.equality(result.float.placement.row, -2)
     expect.equality(result.float.placement.gutter, "overlap")
+    expect.equality(result.float.placement.gutter_position, "outer")
     expect.equality(result.layout.direction, "rtl")
     expect.equality(result.layout.width, 2)
     expect.equality(result.track.highlight, track_highlight)
@@ -337,6 +346,11 @@ T["failed setup preserves active config"] = function()
     expect_invalid(
         { float = { placement = { gutter = "inside" } } },
         "float.placement.gutter must be one of: avoid, overlap"
+    )
+    expect.equality(config.get(), before)
+    expect_invalid(
+        { float = { placement = { gutter_position = "middle" } } },
+        "float.placement.gutter_position must be one of: inner, outer"
     )
     expect.equality(config.get(), before)
     expect_invalid({ excluded_filetypes = { "lua", false } }, "excluded_filetypes%[2%] must be a string")

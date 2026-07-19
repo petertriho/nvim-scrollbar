@@ -17,6 +17,7 @@ local STATUSCOLUMN_WRAPPER_PATTERN = '^%%!v:lua%.require%("scrollbar%.renderer"%
 ---@field applied_numberwidth integer
 ---@field span integer
 ---@field base_textoff integer
+---@field position ScrollbarGutterPosition
 ---@field limited boolean
 ---@field failed boolean
 
@@ -178,8 +179,9 @@ end
 
 ---@param source_win integer
 ---@param span integer
+---@param position ScrollbarGutterPosition
 ---@return ScrollbarStatuscolumnReservation?
-local function ensure_statuscolumn(source_win, span)
+local function ensure_statuscolumn(source_win, span, position)
     restore_inherited_statuscolumn(source_win)
     if span <= 0 then
         release_statuscolumn(source_win)
@@ -194,6 +196,7 @@ local function ensure_statuscolumn(source_win, span)
         if
             current_statuscolumn ~= reservation.applied_statuscolumn
             or current_numberwidth ~= reservation.applied_numberwidth
+            or reservation.position ~= position
         then
             release_statuscolumn(source_win)
             reservation = nil
@@ -224,6 +227,7 @@ local function ensure_statuscolumn(source_win, span)
             applied_numberwidth = original_numberwidth + span,
             span = span,
             base_textoff = vim.fn.getwininfo(source_win)[1].textoff,
+            position = position,
             limited = false,
             failed = false,
         }
@@ -317,7 +321,8 @@ M._statuscolumn = function(owner_win)
         value = type(evaluated) == "string" and evaluated or vim.fn.string(evaluated)
     end
     if drawn_win == owner_win then
-        value = value .. string.rep(" ", reservation.span)
+        local gap = string.rep(" ", reservation.span)
+        value = reservation.position == "outer" and gap .. value or value .. gap
     end
     return value
 end
@@ -540,7 +545,10 @@ local function float_config(active_config, source_win, area, container_width, wi
     local placement = active_config.float.placement
     local north = placement.anchor == "NW" or placement.anchor == "NE"
     local west = placement.anchor == "NW" or placement.anchor == "SW"
-    local west_origin = reserves_statuscolumn(active_config) and reservation_base_textoff(source_win) or 0
+    local west_origin = 0
+    if reserves_statuscolumn(active_config) and placement.gutter_position == "inner" then
+        west_origin = reservation_base_textoff(source_win)
+    end
     local vertical_anchor
     if placement.relative == "window" then
         vertical_anchor = north and 0 or area.height
@@ -1020,7 +1028,10 @@ local function render_source(source_win, selection, root_config)
     if reserved then
         local initial_width = existing_state and existing_state.width or active_config.layout.width
         local initial_span = math.max(0, initial_width + active_config.float.placement.col)
-        if initial_span > 0 and ensure_statuscolumn(source_win, initial_span) == nil then
+        if
+            initial_span > 0
+            and ensure_statuscolumn(source_win, initial_span, active_config.float.placement.gutter_position) == nil
+        then
             close_source(source_win)
             return nil
         end
@@ -1096,7 +1107,7 @@ local function render_source(source_win, selection, root_config)
         if span == (current and current.span or 0) then
             break
         end
-        if span > 0 and ensure_statuscolumn(source_win, span) == nil then
+        if span > 0 and ensure_statuscolumn(source_win, span, active_config.float.placement.gutter_position) == nil then
             close_source(source_win)
             return nil
         end
@@ -1124,7 +1135,11 @@ local function render_source(source_win, selection, root_config)
         if state ~= nil then
             close_state(state)
             if reserved then
-                ensure_statuscolumn(source_win, math.max(0, output.width + active_config.float.placement.col))
+                ensure_statuscolumn(
+                    source_win,
+                    math.max(0, output.width + active_config.float.placement.col),
+                    active_config.float.placement.gutter_position
+                )
             end
         end
         local active_float_config =

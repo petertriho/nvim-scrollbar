@@ -82,7 +82,8 @@ ordered prefix remains and the tail is omitted. Custom providers emitting
 window. `"editor"` uses editor coordinates and renders only the active source
 window. `anchor` selects `NW`, `NE`, `SW`, or `SE`; signed `row` and `col`
 offsets are applied literally. `gutter` selects `"avoid"` (the default) or
-`"overlap"`.
+`"overlap"`. `gutter_position` selects `"inner"` (the default, beside buffer
+text) or `"outer"` (at the source-window edge) within an avoided west gutter.
 
 Gutter placement applies as follows:
 
@@ -94,20 +95,22 @@ Gutter placement applies as follows:
 
 For a window-relative west anchor, let `G` be the source's gutter width before
 the scrollbar reservation, `W` the rendered float width, and `C` the configured
-`col`. In `avoid` mode the renderer reserves `max(0, W + C)` blank cells at the
-text edge and places the float at `G + C`. With the default `col = 0`, the float
-occupies only those new cells and its right edge meets the shifted buffer-text
-edge. A positive offset leaves a gap before the float. A negative offset remains
-literal and may deliberately overlap existing gutter cells.
+`col`. In `avoid` mode the renderer reserves `max(0, W + C)` blank cells. With
+`gutter_position = "inner"`, the reservation follows the existing gutter and
+the float starts at `G + C`, beside the shifted buffer-text edge. With
+`gutter_position = "outer"`, the reservation precedes the existing gutter and
+the float starts at `C`, beside the source-window edge. A positive offset leaves
+a gap before the float within its reservation. A negative offset remains
+literal and may deliberately extend outside or overlap adjacent gutter cells.
 
 The reservation temporarily wraps the window-local `statuscolumn` and expands
 its available width. Existing fold, sign, number, custom-format, and `%!`
-content remains before the reserved blank cells. The original `statuscolumn`
-and `numberwidth` are restored when the scrollbar is hidden, disposed, becomes
-ineligible, or switches to an unaffected placement. An external edit made while
-the reservation is active is preserved instead of overwritten. Each split owns
-and restores its reservation independently, including splits created from an
-already reserved window.
+content remains intact before an `"inner"` reservation or after an `"outer"`
+reservation. The original `statuscolumn` and `numberwidth` are restored when the
+scrollbar is hidden, disposed, becomes ineligible, or switches to an unaffected
+placement. An external edit made while the reservation is active is preserved
+instead of overwritten. Each split owns and restores its reservation
+independently, including splits created from an already reserved window.
 
 Neovim limits the maximum statuscolumn width. If a declared west layout is too
 wide to reserve completely, the renderer omits that scrollbar instead of
