@@ -5,6 +5,7 @@
 ---@alias ScrollbarPlacementRelative "window"|"editor"
 ---@alias ScrollbarFloatAnchor "NW"|"NE"|"SW"|"SE"
 ---@alias ScrollbarGutterMode "avoid"|"overlap"
+---@alias ScrollbarGutterPosition "inner"|"outer"
 ---@alias ScrollbarLayoutDirection "auto"|"ltr"|"rtl"
 ---@alias ScrollbarSearchBackend "sync"|"worker"
 ---@alias ScrollbarText string|string[]
@@ -18,6 +19,7 @@
 ---@field row? integer
 ---@field col? integer
 ---@field gutter? ScrollbarGutterMode
+---@field gutter_position? ScrollbarGutterPosition
 
 ---@class ScrollbarUserFloatConfig
 ---@field zindex? integer
@@ -143,6 +145,7 @@
 ---@field row integer
 ---@field col integer
 ---@field gutter ScrollbarGutterMode
+---@field gutter_position ScrollbarGutterPosition
 
 ---@class ScrollbarFloatConfig
 ---@field zindex integer

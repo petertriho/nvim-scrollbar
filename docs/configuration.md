@@ -27,6 +27,7 @@ require("scrollbar").setup({
             row = 0,
             col = 0,
             gutter = "avoid", -- "avoid" or "overlap"
+            gutter_position = "inner", -- "inner" or "outer"
         },
     },
     layout = {
@@ -168,6 +169,7 @@ width belongs to the layout, not the provider.
 - `float.placement.relative`: `"window"` or `"editor"`.
 - `float.placement.anchor`: `"NW"`, `"NE"`, `"SW"`, or `"SE"`.
 - `float.placement.gutter`: `"avoid"` or `"overlap"`.
+- `float.placement.gutter_position`: `"inner"` or `"outer"`.
 - `float.placement.row` and `col`: signed integers.
 - `thumb.text`: one positive-display-width string without control characters.
 - Exclusion options: dense string lists.

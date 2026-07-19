@@ -35,7 +35,7 @@ T["compiles profile variants with setup-local presets and settled precedence"] =
                 match = { filetypes = { "lua" } },
                 preset = "local_review",
                 config = {
-                    float = { placement = { gutter = "overlap" } },
+                    float = { placement = { gutter = "overlap", gutter_position = "outer" } },
                     thumb = { blend = 10 },
                     mouse = { enabled = false },
                 },
@@ -57,12 +57,14 @@ T["compiles profile variants with setup-local presets and settled precedence"] =
     expect.equality(variants[2].config.thumb.text, "R")
     expect.equality(variants[2].config.thumb.blend, 10)
     expect.equality(variants[2].config.float.placement.gutter, "overlap")
+    expect.equality(variants[2].config.float.placement.gutter_position, "outer")
     expect.equality(variants[2].config.mouse.enabled, false)
     expect.equality(variants[2].config.visibility, root.visibility)
     expect.equality(variants[3].id, 2)
     expect.equality(variants[3].config.layout.width, 1)
     expect.equality(variants[3].config.thumb.blend, 35)
     expect.equality(variants[3].config.float.placement.gutter, "avoid")
+    expect.equality(variants[3].config.float.placement.gutter_position, "inner")
     expect.equality(variants[3].config.render.geometry, "screen")
 
     for _, variant in ipairs(variants) do
@@ -92,6 +94,14 @@ T["validates profile schema and the nested render-safe boundary"] = function()
             },
         },
     }, "float.placement.gutter must be one of: avoid, overlap")
+    expect_invalid({
+        profiles = {
+            {
+                match = { filetypes = { "lua" } },
+                config = { float = { placement = { gutter_position = "middle" } } },
+            },
+        },
+    }, "float.placement.gutter_position must be one of: inner, outer")
 
     local rejected = {
         { show = false },

@@ -847,7 +847,7 @@ T["resolves every anchor and restores protected float configuration"] = function
     expect.equality(result.protected.zindex, 50)
 end
 
-T["applies live gutters only to window-relative west placements in avoid mode"] = function()
+T["applies inner and outer gutters only to window-relative west placements in avoid mode"] = function()
     local child = new_child()
     local result = child.lua_func(function(base_config)
         local lines = {}
@@ -866,7 +866,7 @@ T["applies live gutters only to window-relative west placements in avoid mode"] 
         local original_textoff = vim.fn.getwininfo(source_win)[1].textoff
         local scrollbar_config = require("scrollbar.config")
         local renderer = require("scrollbar.renderer")
-        local function render(relative, anchor, gutter, col)
+        local function render(relative, anchor, gutter, col, gutter_position)
             local active = vim.deepcopy(base_config)
             active.float.placement = {
                 relative = relative,
@@ -874,6 +874,7 @@ T["applies live gutters only to window-relative west placements in avoid mode"] 
                 row = 0,
                 col = col,
                 gutter = gutter,
+                gutter_position = gutter_position,
             }
             scrollbar_config.set(active)
             renderer.setup()
@@ -889,6 +890,9 @@ T["applies live gutters only to window-relative west placements in avoid mode"] 
             source_width = vim.api.nvim_win_get_width(source_win),
             avoid_nw = render("window", "NW", "avoid", 0),
             avoid_sw = render("window", "SW", "avoid", 0),
+            outer_nw = render("window", "NW", "avoid", 0, "outer"),
+            outer_sw = render("window", "SW", "avoid", 0, "outer"),
+            outer_negative = render("window", "NW", "avoid", -1, "outer"),
             avoid_negative = render("window", "NW", "avoid", -1),
             overlap_nw = render("window", "NW", "overlap", -1),
             overlap_sw = render("window", "SW", "overlap", -1),
@@ -907,6 +911,12 @@ T["applies live gutters only to window-relative west placements in avoid mode"] 
         expect.equality(case.textoff, result.original_textoff + case.config.width)
         expect.equality(case.config.col + case.config.width, case.textoff)
     end
+    for _, case in ipairs({ result.outer_nw, result.outer_sw }) do
+        expect.equality(case.config.col, 0)
+        expect.equality(case.textoff, result.original_textoff + case.config.width)
+    end
+    expect.equality(result.outer_negative.config.col, -1)
+    expect.equality(result.outer_negative.textoff, result.original_textoff + result.outer_negative.config.width - 1)
     expect.equality(result.avoid_negative.config.col, result.original_textoff - 1)
     expect.equality(result.avoid_negative.textoff, result.original_textoff + result.avoid_negative.config.width - 1)
     expect.equality(result.overlap_nw.config.col, -1)
@@ -1078,9 +1088,19 @@ T["preserves native wrapped numbers and percent-bang statuscolumn results"] = fu
         scrollbar_config.set(base_config)
         local renderer = require("scrollbar.renderer")
         renderer.setup()
-        assert(renderer.render(source_win))
+        local inner_state = assert(renderer.render(source_win))
         local reserved_rows = gutter_rows(native_textoff)
+
+        base_config.float.placement.gutter_position = "outer"
+        scrollbar_config.set(base_config)
+        local outer_state = assert(renderer.render(source_win))
+        local outer_config = vim.api.nvim_win_get_config(outer_state.float_win)
+        local outer_rows = gutter_rows(native_textoff + outer_state.width)
+        local outer_textoff = vim.fn.getwininfo(source_win)[1].textoff
         renderer.dispose(source_win)
+
+        base_config.float.placement.gutter_position = "inner"
+        scrollbar_config.set(base_config)
 
         vim.api.nvim_set_option_value("wrap", false, { win = source_win })
         vim.api.nvim_set_option_value("relativenumber", true, { win = source_win })
@@ -1127,8 +1147,23 @@ T["preserves native wrapped numbers and percent-bang statuscolumn results"] = fu
             native_context = native_context,
             reserved_context = reserved_context,
         }
+
+        base_config.float.placement.gutter_position = "outer"
+        scrollbar_config.set(base_config)
+        local outer_expression_state = assert(renderer.render(source_win))
+        local outer_expression_config = vim.api.nvim_win_get_config(outer_expression_state.float_win)
+        local outer_expression = {
+            resolved = renderer._statuscolumn(source_win),
+            col = outer_expression_config.col,
+            width = outer_expression_state.width,
+            same_resources = outer_expression_state.float_win == expression_state.float_win
+                and outer_expression_state.float_buf == expression_state.float_buf,
+        }
         renderer.dispose(source_win)
         local restored_expression = vim.api.nvim_get_option_value("statuscolumn", { win = source_win })
+
+        base_config.float.placement.gutter_position = "inner"
+        scrollbar_config.set(base_config)
 
         local late_failure_calls = 0
         local late_failure_enabled = false
@@ -1187,9 +1222,19 @@ T["preserves native wrapped numbers and percent-bang statuscolumn results"] = fu
         return {
             native_rows = native_rows,
             reserved_rows = reserved_rows,
+            outer = {
+                rows = outer_rows,
+                width = outer_state.width,
+                col = outer_config.col,
+                textoff = outer_textoff,
+                inner_width = inner_state.width,
+                same_resources = outer_state.float_win == inner_state.float_win
+                    and outer_state.float_buf == inner_state.float_buf,
+            },
             native_sign_rows = native_sign_rows,
             reserved_sign_rows = reserved_sign_rows,
             expression = expression,
+            outer_expression = outer_expression,
             expression_textoff = expression_textoff,
             restored_expression = restored_expression,
             late_failure = late_failure,
@@ -1200,11 +1245,21 @@ T["preserves native wrapped numbers and percent-bang statuscolumn results"] = fu
     end, renderer_config())
 
     expect.equality(result.reserved_rows, result.native_rows)
+    expect.equality(result.outer.col, 0)
+    expect.equality(result.outer.width, result.outer.inner_width)
+    expect.equality(result.outer.same_resources, true)
+    expect.equality(result.outer.textoff, vim.fn.strdisplaywidth(result.native_rows[1]) + result.outer.width)
+    for index, row in ipairs(result.native_rows) do
+        expect.equality(result.outer.rows[index], string.rep(" ", result.outer.width) .. row)
+    end
     expect.equality(result.reserved_sign_rows, result.native_sign_rows)
     expect.equality(result.expression.resolved, "v:true" .. string.rep(" ", result.expression.width))
     expect.equality(result.expression.textoff, result.expression_textoff + result.expression.width)
     expect.equality(result.expression.native_context, { current = result.other_win, drawn = result.source_win })
     expect.equality(result.expression.reserved_context, result.expression.native_context)
+    expect.equality(result.outer_expression.resolved, string.rep(" ", result.outer_expression.width) .. "v:true")
+    expect.equality(result.outer_expression.col, 0)
+    expect.equality(result.outer_expression.same_resources, true)
     expect.equality(result.restored_expression, '%!v:lua.require("scrollbar.test.statuscolumn").context()')
     expect.equality(result.late_failure, {
         during = {
