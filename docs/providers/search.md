@@ -149,8 +149,11 @@ require("scrollbar").setup({
 ```
 
 The synchronous backend uses the same native Vim-regex scan on the parent main
-loop. It preserves the selected source window's view, but an expensive pattern
-or a large dense result set can pause editing until the scan completes.
+loop. It preserves the selected source window's view. Each synchronous scan is
+bounded by a per-call timeout (200 ms), a total wall-clock budget (400 ms), and
+a line-range stopline cap (200,000 lines from the cursor); when any bound fires,
+the scan publishes the matches collected so far flagged `partial = true`, so
+editing latency is bounded, not unbounded.
 
 Incremental synchronous scanning is also supported:
 
@@ -164,6 +167,31 @@ require("scrollbar").setup({
     },
 })
 ```
+
+### Synchronous budget
+
+The synchronous backend applies a layered budget to every accepted, incremental,
+and edit-driven scan:
+
+| Limit | Default | Effect |
+| --- | --- | --- |
+| Per-call timeout | 200 ms | Each forward and backward `searchpos` call aborts after this many milliseconds. |
+| Total wall-clock budget | 400 ms | The backward call is skipped when the forward call consumed enough of the total budget that a worst-case backward call could exceed it. |
+| Stopline cap | 200,000 lines | Forward and backward scans stop this many lines away from the cursor. |
+
+When any bound fires, the published compact carries `partial = true`. Otherwise
+the compact carries `partial = false`. The worker backend always publishes
+`partial = false` because its scans run off the parent loop.
+
+The partial flag is inspectable via the private store API:
+
+```lua
+require("scrollbar.store")._get_snapshot(bufnr).compact_search.partial
+```
+
+The same default budget applies to accepted, incremental, and edit-driven
+scans. The values are hardcoded for now; `providers.search.sync_budget` will be
+added only if real-world reports require tuning.
 
 ## Requests And Updates
 
@@ -207,13 +235,19 @@ until they are displayed.
 - The worker handles one scan at a time and prioritizes current requests. Rapid
   changes may leave a pending request briefly visible in worker status, but
   obsolete results are not published.
+- Synchronous fallback scans are budget-bounded. A scan that exceeds 200 ms per
+  call, 400 ms total, or 200,000 lines from the cursor publishes partial
+  results and yields the event loop. Defaults are conservative and not yet
+  exposed; report real-world cases that require tuning to justify adding
+  `providers.search.sync_budget`.
 
 ## Worker Fallback
 
 If the worker cannot start or exits unexpectedly, the provider warns once and
 switches that setup to the debounced synchronous scanner. Current and future
-requests continue through the fallback, but expensive scans can then pause the
-parent Neovim process.
+requests continue through the fallback; expensive scans are bounded by the
+synchronous budget described above, and partial results are flagged in the
+compact (see `store._get_snapshot(bufnr).compact_search.partial`).
 
 The worker is not automatically restarted within the same setup after failure.
 Running `require("scrollbar").setup(...)` again replaces the failed setup and may
@@ -316,7 +350,11 @@ that the synchronous scan still uses one eligible source window as its context.
 
 Check the configured backend and worker status. A synchronous configuration or
 a `failed` worker runs scans on the parent event loop. Prefer the worker backend
-and set `incsearch = false` for expensive searches.
+and set `incsearch = false` for expensive searches. If pauses exceed roughly
+400 ms in sync mode, the scan is hitting the total budget; partial results
+should appear with `partial = true` via
+`store._get_snapshot(bufnr).compact_search.partial`. The fix is to migrate to
+the worker backend or reduce the buffer or pattern cost.
 
 ### Marks look briefly out of date
 

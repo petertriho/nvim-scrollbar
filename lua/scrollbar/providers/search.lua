@@ -5,6 +5,22 @@ local worker = require("scrollbar.providers.search_worker")
 local INCSEARCH_DEBOUNCE_MS = 30
 local EDIT_DEBOUNCE_MS = 50
 
+local SYNC_BUDGET_MS = 400
+local SYNC_PER_CALL_TIMEOUT_MS = 200
+local SYNC_STOPLINE_CAP = 200000
+
+---@class ScrollbarSearchSyncBudget
+---@field total_ms integer Total wall-clock budget for one sync scan in milliseconds
+---@field per_call_ms integer Per-call timeout passed to each searchpos invocation
+---@field stopline integer Maximum line distance from the cursor for either direction
+
+---@type ScrollbarSearchSyncBudget
+local sync_budget = {
+    total_ms = SYNC_BUDGET_MS,
+    per_call_ms = SYNC_PER_CALL_TIMEOUT_MS,
+    stopline = SYNC_STOPLINE_CAP,
+}
+
 ---@class ScrollbarSearchCommandlineState
 ---@field bufnr integer
 ---@field pattern string
@@ -129,8 +145,28 @@ local function scan(context, bufnr, pattern)
                 return true
             end
 
-            vim.fn.searchpos(pattern, "Wnc", 0, 0, collect)
-            vim.fn.searchpos(pattern, "bWnc", 0, 0, collect)
+            local cursor_line = vim.fn.line(".")
+            local last_line = vim.fn.line("$")
+            local forward_stop = math.min(last_line, cursor_line + sync_budget.stopline)
+            local backward_stop = math.max(1, cursor_line - sync_budget.stopline)
+            local forward_capped = forward_stop < last_line
+            local backward_capped = backward_stop > 1
+
+            local t0 = vim.uv.hrtime()
+            vim.fn.searchpos(pattern, "Wnc", forward_stop, sync_budget.per_call_ms, collect)
+            local forward_ms = (vim.uv.hrtime() - t0) / 1e6
+            local partial = forward_capped or forward_ms >= sync_budget.per_call_ms * 0.95
+
+            if forward_ms < sync_budget.total_ms - sync_budget.per_call_ms then
+                vim.fn.searchpos(pattern, "bWnc", backward_stop, sync_budget.per_call_ms, collect)
+                local total_ms = (vim.uv.hrtime() - t0) / 1e6
+                if backward_capped or total_ms >= sync_budget.total_ms then
+                    partial = true
+                end
+            else
+                partial = true
+            end
+
             table.sort(matches, function(a, b)
                 return a[1] < b[1] or (a[1] == b[1] and a[2] < b[2])
             end)
@@ -139,7 +175,7 @@ local function scan(context, bufnr, pattern)
             for index, position in ipairs(matches) do
                 lines[index] = position[1] - 1
             end
-            return compact_search.encode(lines)
+            return compact_search.encode(lines, partial)
         end)
         vim.fn.winrestview(view)
         return { ok, result }
@@ -593,6 +629,21 @@ end
 ---@param context ScrollbarProviderContext
 function M.refresh(bufnr, context)
     request_refresh(context, bufnr, vim.fn.getreg("/"), "accepted")
+end
+
+---@param opts ScrollbarSearchSyncBudget
+function M._set_sync_budget_for_test(opts)
+    if type(package.loaded["scrollbar.test.search_worker"]) ~= "table" then
+        return
+    end
+    sync_budget = {
+        total_ms = SYNC_BUDGET_MS,
+        per_call_ms = SYNC_PER_CALL_TIMEOUT_MS,
+        stopline = SYNC_STOPLINE_CAP,
+    }
+    for key, value in pairs(opts or {}) do
+        sync_budget[key] = value
+    end
 end
 
 ---@param context ScrollbarProviderContext

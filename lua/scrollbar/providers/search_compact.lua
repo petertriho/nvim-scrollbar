@@ -3,8 +3,9 @@ local M = {}
 local UINT32_BYTES = 4
 
 ---@param lines integer[]
+---@param partial? boolean
 ---@return ScrollbarCompactSearch
-M.encode = function(lines)
+M.encode = function(lines, partial)
     local encoded = {}
     for index, line in ipairs(lines) do
         encoded[index] = string.char(
@@ -14,7 +15,7 @@ M.encode = function(lines)
             line % 0x100
         )
     end
-    return { data = table.concat(encoded), count = #lines }
+    return { data = table.concat(encoded), count = #lines, partial = partial == true }
 end
 
 ---@param compact ScrollbarCompactSearch
@@ -47,6 +48,7 @@ M.valid = function(compact)
         and compact.count >= 0
         and compact.count == math.floor(compact.count)
         and #compact.data == compact.count * UINT32_BYTES
+        and (compact.partial == nil or type(compact.partial) == "boolean")
 end
 
 return M

@@ -43,7 +43,7 @@ local function encode_lines(lines)
             line % 0x100
         )
     end
-    return { data = table.concat(encoded), count = #lines }
+    return { data = table.concat(encoded), count = #lines, partial = false }
 end
 
 local function scan(payload)

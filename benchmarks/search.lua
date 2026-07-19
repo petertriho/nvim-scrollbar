@@ -41,6 +41,14 @@ local function fixture(kind)
         return lines, { "sparse_a", "sparse_b" }, 100
     end
 
+    if kind == "pathological" then
+        local pathological_count = line_count * 10
+        for index = 1, pathological_count do
+            lines[index] = index % 2 == 1 and "dense_a dense_b dense_b" or "dense_a plain plain"
+        end
+        return lines, { "dense_a", "dense_b" }, pathological_count
+    end
+
     for index = 1, line_count do
         lines[index] = index % 2 == 1 and "dense_a dense_b dense_b" or "dense_a plain plain"
     end
@@ -54,15 +62,16 @@ local store = require("scrollbar.store")
 providers.register(search)
 
 local active_sample
-local last_publication_count
+local publication_generation = 0
 local original_store_set = store.set
 local original_compact_set = store._set_search_compact
 
-local function record_publication(started, finished, count, changed)
-    last_publication_count = count
+local function record_publication(started, finished, count, changed, partial)
+    publication_generation = publication_generation + 1
     if active_sample ~= nil and not active_sample.published then
         active_sample.published = true
         active_sample.match_count = count
+        active_sample.partial = partial
         active_sample.publication_duration = (finished - started) / 1000000
         active_sample.publication_finished = finished
         active_sample.publication_changed = next(changed) ~= nil
@@ -77,14 +86,14 @@ rawset(store, "set", function(provider, bufnr, marks)
     local started = vim.uv.hrtime()
     local success, changed = original_store_set(provider, bufnr, marks)
     local finished = vim.uv.hrtime()
-    record_publication(started, finished, #marks, changed)
+    record_publication(started, finished, #marks, changed, nil)
     return success, changed
 end)
 rawset(store, "_set_search_compact", function(bufnr, compact)
     local started = vim.uv.hrtime()
     local success, changed = original_compact_set(bufnr, compact)
     local finished = vim.uv.hrtime()
-    record_publication(started, finished, compact.count, changed)
+    record_publication(started, finished, compact.count, changed, compact.partial)
     return success, changed
 end)
 
@@ -169,7 +178,7 @@ local function activate(pattern)
     vim.api.nvim_win_set_cursor(0, { 1, 0 })
 end
 
-local function run_sample(trigger, expected_count)
+local function run_sample(trigger, expected_count, kind)
     local previous_eventignore = vim.o.eventignore
     vim.o.eventignore = "all"
     active_sample = { maximum_gap = 0 }
@@ -198,17 +207,27 @@ local function run_sample(trigger, expected_count)
     local result = active_sample
     active_sample = nil
     vim.o.eventignore = previous_eventignore
-    assert(result.match_count == expected_count, "search fixture produced an unexpected match count")
+    if kind == "pathological" then
+        assert(result.match_count > 0, "pathological fixture produced no matches")
+        assert(
+            result.match_count < expected_count,
+            "pathological fixture produced full count despite sync budget: " .. result.match_count
+        )
+        assert(result.partial == true, "pathological fixture did not report partial")
+    else
+        assert(result.match_count == expected_count, "search fixture produced an unexpected match count")
+        assert(result.partial == false, "search fixture reported partial unexpectedly")
+    end
     assert(result.publication_changed, "search benchmark must publish a changed result")
     return result
 end
 
-local function run_series(trigger_factory)
+local function run_series(trigger_factory, kind)
     local sequence = 0
     for _ = 1, warmup_count do
         sequence = sequence + 1
         local trigger, expected = trigger_factory(sequence)
-        run_sample(trigger, expected)
+        run_sample(trigger, expected, kind)
     end
 
     collectgarbage("collect")
@@ -222,7 +241,7 @@ local function run_series(trigger_factory)
     for _ = 1, iteration_count do
         sequence = sequence + 1
         local trigger, expected = trigger_factory(sequence)
-        local sample = run_sample(trigger, expected)
+        local sample = run_sample(trigger, expected, kind)
         match_count = sample.match_count
         table.insert(samples.callback, sample.callback_duration)
         table.insert(samples.latency, sample.result_latency)
@@ -239,7 +258,7 @@ local function run_series(trigger_factory)
 end
 
 local results = {}
-for _, kind in ipairs({ "sparse", "dense" }) do
+for _, kind in ipairs({ "sparse", "dense", "pathological" }) do
     local patterns, expected = setup_fixture(kind)
     local leave = callback("CmdlineLeave")
     local accepted = run_series(function(index)
@@ -248,7 +267,7 @@ for _, kind in ipairs({ "sparse", "dense" }) do
         return function()
             leave({ match = "/" })
         end, expected
-    end)
+    end, kind)
     table.insert(results, { trigger = "accepted", fixture = kind, result = accepted })
 
     patterns, expected = setup_fixture(kind)
@@ -264,17 +283,18 @@ for _, kind in ipairs({ "sparse", "dense" }) do
             rawset(vim.fn, "getcmdline", original_getcmdline)
         end,
             expected
-    end)
+    end, kind)
     table.insert(results, { trigger = "incsearch", fixture = kind, result = incsearch })
 
     patterns, expected = setup_fixture(kind)
     local pattern = patterns[1]
     activate(pattern)
     leave = callback("CmdlineLeave")
+    local pre_leave_generation = publication_generation
     leave({ match = "/" })
     assert(
         vim.wait(timeout_ms, function()
-            return last_publication_count == expected
+            return publication_generation > pre_leave_generation
         end, 1),
         "initial edit benchmark search did not publish"
     )
@@ -287,6 +307,9 @@ for _, kind in ipairs({ "sparse", "dense" }) do
         if kind == "sparse" then
             replacement = present and pattern .. " plain" or "plain plain"
             expected_after_edit = present and expected or expected - 1
+        elseif kind == "pathological" then
+            replacement = present and pattern .. " plain plain" or "plain plain plain"
+            expected_after_edit = expected
         else
             replacement = present and pattern .. " plain plain" or "plain plain plain"
             expected_after_edit = present and expected or expected - 1
@@ -296,9 +319,20 @@ for _, kind in ipairs({ "sparse", "dense" }) do
             text_changed({ buf = vim.api.nvim_get_current_buf() })
         end,
             expected_after_edit
-    end)
+    end, kind)
     table.insert(results, { trigger = "edit", fixture = kind, result = edit })
 end
+
+local max_pathological_callback_p95 = 0
+for _, row in ipairs(results) do
+    if row.fixture == "pathological" then
+        max_pathological_callback_p95 = math.max(max_pathological_callback_p95, row.result.callback.p95)
+    end
+end
+assert(
+    max_pathological_callback_p95 < 250,
+    "pathological sync callback p95 exceeded budget: " .. tostring(max_pathological_callback_p95)
+)
 
 local function triplet(stats)
     return string.format("%.3f / %.3f / %.3f", stats.median, stats.p95, stats.maximum)
@@ -534,6 +568,7 @@ local function run_publication_sample(trigger, expected_count, start_before_trig
     vim.o.eventignore = previous_eventignore
     assert(sample.match_count == expected_count, "worker fixture produced an unexpected match count")
     assert(sample.publication_changed, "worker benchmark must publish a changed result")
+    assert(sample.partial == false, "worker fixture reported partial unexpectedly")
     return sample
 end
 

@@ -282,6 +282,7 @@
 ---@class ScrollbarCompactSearch
 ---@field data string Big-endian zero-based line numbers, four bytes per exact match
 ---@field count integer Exact match count
+---@field partial? boolean True when any sync-budget bound fired during the scan
 
 ---@class ScrollbarLayoutMark: ScrollbarMark
 ---@field provider string Owning provider name used for deterministic ties and hit metadata
