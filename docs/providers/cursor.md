@@ -10,8 +10,10 @@ accepted.
 
 ```lua
 require("scrollbar").setup({
-    providers = {
-        cursor = true,
+    scrollbar = {
+        providers = {
+            cursor = true,
+        },
     },
 })
 ```
@@ -57,11 +59,13 @@ Customize the shared `Cursor` mark type under `marks`:
 
 ```lua
 require("scrollbar").setup({
-    marks = {
-        Cursor = {
-            text = "●",
-            priority = 0,
-            highlight = "CursorLineNr",
+    scrollbar = {
+        marks = {
+            Cursor = {
+                text = "●",
+                priority = 0,
+                highlight = "CursorLineNr",
+            },
         },
     },
 })

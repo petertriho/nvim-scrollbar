@@ -1,5 +1,6 @@
 local config = require("scrollbar.config")
 local layout = require("scrollbar.layout")
+local providers = require("scrollbar.providers")
 local store = require("scrollbar.store")
 
 local M = {}
@@ -760,21 +761,25 @@ local function flattened_marks(source_win, source_buf)
         return cached.marks, buffer_snapshot.revision, window_snapshot.revision, cached.compact_search
     end
 
-    local providers = {}
+    local provider_names = {}
     local seen = {}
     for provider in pairs(buffer_snapshot.marks) do
-        seen[provider] = true
+        if providers._consumer_enabled(provider, "scrollbar") then
+            seen[provider] = true
+        end
     end
     for provider in pairs(window_snapshot.marks) do
-        seen[provider] = true
+        if providers._consumer_enabled(provider, "scrollbar") then
+            seen[provider] = true
+        end
     end
     for provider in pairs(seen) do
-        providers[#providers + 1] = provider
+        provider_names[#provider_names + 1] = provider
     end
-    table.sort(providers)
+    table.sort(provider_names)
 
     local marks = {}
-    for _, provider in ipairs(providers) do
+    for _, provider in ipairs(provider_names) do
         for _, snapshot in ipairs({ buffer_snapshot.marks, window_snapshot.marks }) do
             for _, mark in ipairs(snapshot[provider] or {}) do
                 table.insert(marks, {
@@ -786,14 +791,15 @@ local function flattened_marks(source_win, source_buf)
             end
         end
     end
+    local compact_search = providers._consumer_enabled("search", "scrollbar") and buffer_snapshot.compact_search or nil
     flattened_cache[source_win] = {
         source_buf = source_buf,
         buffer_revision = buffer_snapshot.revision,
         window_revision = window_snapshot.revision,
         marks = marks,
-        compact_search = buffer_snapshot.compact_search,
+        compact_search = compact_search,
     }
-    return marks, buffer_snapshot.revision, window_snapshot.revision, buffer_snapshot.compact_search
+    return marks, buffer_snapshot.revision, window_snapshot.revision, compact_search
 end
 
 ---@param source_win integer

@@ -12,8 +12,10 @@ Load and configure gitsigns before calling `require("scrollbar").setup()`:
 require("gitsigns").setup()
 
 require("scrollbar").setup({
-    providers = {
-        gitsigns = true,
+    scrollbar = {
+        providers = {
+            gitsigns = true,
+        },
     },
 })
 ```
@@ -72,11 +74,13 @@ Customize the three built-in mark types under the top-level `marks` table:
 
 ```lua
 require("scrollbar").setup({
-    providers = { gitsigns = true },
-    marks = {
-        GitAdd = { text = "+", highlight = "DiffAdd" },
-        GitChange = { text = "~", highlight = "DiffChange" },
-        GitDelete = { text = "_", highlight = "DiffDelete" },
+    scrollbar = {
+        providers = { gitsigns = true },
+        marks = {
+            GitAdd = { text = "+", highlight = "DiffAdd" },
+            GitChange = { text = "~", highlight = "DiffChange" },
+            GitDelete = { text = "_", highlight = "DiffDelete" },
+        },
     },
 })
 ```

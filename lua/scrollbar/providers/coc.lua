@@ -1,4 +1,8 @@
-local M = { name = "coc", refresh_owner = { buffer = "provider" } }
+local M = {
+    name = "coc",
+    targets = { scrollbar = true, minimap = true },
+    refresh_owner = { buffer = "provider" },
+}
 
 local SEVERITY_TYPES = {
     Error = "Error",

@@ -12,9 +12,9 @@ T["loads and sets up in a clean child process"] = function()
 
     expect.no_error(function()
         child.lua([[
-            require("scrollbar").setup({
+            require("scrollbar").setup({ scrollbar = {
                 set_highlights = false,
-                render = { interval_ms = 0 },
+                update = { interval_ms = 0 },
                 providers = {
                     cursor = false,
                     diagnostic = false,
@@ -23,7 +23,7 @@ T["loads and sets up in a clean child process"] = function()
                     ale = false,
                     coc = false,
                 },
-            })
+            } })
         ]])
     end)
     expect.equality(child.fn.exists(":ScrollbarToggle"), 2)
@@ -40,9 +40,11 @@ T["enables accepted search and leaves Coc disabled by default"] = function()
 
     local result = child.lua_func(function()
         require("scrollbar").setup({
-            set_highlights = false,
-            render = { interval_ms = 0 },
-            mouse = { enabled = false },
+            scrollbar = {
+                set_highlights = false,
+                update = { interval_ms = 0 },
+                mouse = { enabled = false },
+            },
         })
 
         local config = require("scrollbar.config").get()

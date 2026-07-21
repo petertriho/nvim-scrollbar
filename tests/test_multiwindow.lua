@@ -30,20 +30,23 @@ T["root setup preserves independent floats for two views of one buffer"] = funct
         end)
 
         require("scrollbar").setup({
-            set_highlights = false,
-            render = { interval_ms = 1000, geometry = "line" },
-            mouse = { enabled = false },
-            thumb = { text = "H", hide_if_all_visible = false },
-            providers = {
-                cursor = false,
-                diagnostic = false,
-                search = false,
-                gitsigns = false,
-                ale = false,
-                coc = false,
+            scrollbar = {
+                set_highlights = false,
+                update = { interval_ms = 1000 },
+                render = { geometry = "line" },
+                mouse = { enabled = false },
+                thumb = { text = "H", hide_if_all_visible = false },
+                providers = {
+                    cursor = false,
+                    diagnostic = false,
+                    search = false,
+                    gitsigns = false,
+                    ale = false,
+                    coc = false,
+                },
+                excluded_buftypes = {},
+                excluded_filetypes = {},
             },
-            excluded_buftypes = {},
-            excluded_filetypes = {},
         })
         require("scrollbar.scheduler").flush()
 
@@ -98,28 +101,31 @@ T["same-buffer vertical splits avoid and update their own live gutters"] = funct
         local second_base_textoff = vim.fn.getwininfo(second)[1].textoff
 
         require("scrollbar.config").set({
-            set_highlights = false,
-            render = { interval_ms = 0, geometry = "line" },
-            float = {
-                hide_on_cursor = false,
-                placement = { relative = "window", anchor = "NW", row = 0, col = 0, gutter = "avoid" },
+            scrollbar = {
+                set_highlights = false,
+                update = { interval_ms = 0 },
+                render = { geometry = "line" },
+                float = {
+                    hide_on_cursor = false,
+                    placement = { relative = "window", anchor = "NW", row = 0, col = 0, gutter = "avoid" },
+                },
+                mouse = { enabled = false },
+                thumb = { text = "H", hide_if_all_visible = false },
+                providers = {
+                    cursor = false,
+                    diagnostic = false,
+                    search = false,
+                    marks = false,
+                    gitsigns = false,
+                    mini_diff = false,
+                    signify = false,
+                    vgit = false,
+                    ale = false,
+                    coc = false,
+                },
+                excluded_buftypes = {},
+                excluded_filetypes = {},
             },
-            mouse = { enabled = false },
-            thumb = { text = "H", hide_if_all_visible = false },
-            providers = {
-                cursor = false,
-                diagnostic = false,
-                search = false,
-                marks = false,
-                gitsigns = false,
-                mini_diff = false,
-                signify = false,
-                vgit = false,
-                ale = false,
-                coc = false,
-            },
-            excluded_buftypes = {},
-            excluded_filetypes = {},
         })
         local renderer = require("scrollbar.renderer")
         renderer.setup()
@@ -201,21 +207,24 @@ T["cursor marks stay local to each view of one buffer"] = function()
         vim.api.nvim_win_set_cursor(second, { 180, 0 })
 
         require("scrollbar").setup({
-            set_highlights = false,
-            render = { interval_ms = 0, geometry = "line" },
-            layout = { direction = "ltr", columns = { { "marks" }, { "thumb" } } },
-            mouse = { enabled = false },
-            thumb = { text = "H", hide_if_all_visible = false },
-            providers = {
-                cursor = true,
-                diagnostic = false,
-                search = false,
-                gitsigns = false,
-                ale = false,
-                coc = false,
+            scrollbar = {
+                set_highlights = false,
+                update = { interval_ms = 0 },
+                render = { geometry = "line" },
+                layout = { direction = "ltr", columns = { { "marks" }, { "thumb" } } },
+                mouse = { enabled = false },
+                thumb = { text = "H", hide_if_all_visible = false },
+                providers = {
+                    cursor = true,
+                    diagnostic = false,
+                    search = false,
+                    gitsigns = false,
+                    ale = false,
+                    coc = false,
+                },
+                excluded_buftypes = {},
+                excluded_filetypes = {},
             },
-            excluded_buftypes = {},
-            excluded_filetypes = {},
         })
         require("scrollbar.scheduler").flush()
 
@@ -266,21 +275,24 @@ T["window-local mark revisions rebuild only the affected static layer"] = functi
         local second = vim.api.nvim_get_current_win()
 
         local active_config = require("scrollbar.config").set({
-            set_highlights = false,
-            render = { interval_ms = 0, geometry = "line" },
-            layout = { direction = "ltr", columns = { { "marks" }, { "thumb" } } },
-            mouse = { enabled = false },
-            thumb = { text = "H", hide_if_all_visible = false },
-            providers = {
-                cursor = false,
-                diagnostic = false,
-                search = false,
-                gitsigns = false,
-                ale = false,
-                coc = false,
+            scrollbar = {
+                set_highlights = false,
+                update = { interval_ms = 0 },
+                render = { geometry = "line" },
+                layout = { direction = "ltr", columns = { { "marks" }, { "thumb" } } },
+                mouse = { enabled = false },
+                thumb = { text = "H", hide_if_all_visible = false },
+                providers = {
+                    cursor = false,
+                    diagnostic = false,
+                    search = false,
+                    gitsigns = false,
+                    ale = false,
+                    coc = false,
+                },
+                excluded_buftypes = {},
+                excluded_filetypes = {},
             },
-            excluded_buftypes = {},
-            excluded_filetypes = {},
         })
         local store = require("scrollbar.store")
         assert(store.set_window("test", first, { { line = 10, type = "Misc" } }))
@@ -357,30 +369,33 @@ T["real named marks stay with their source buffer and resolve width per window h
         vim.api.nvim_buf_set_mark(second_buf, "d", 21, 0, {})
 
         require("scrollbar").setup({
-            set_highlights = false,
-            render = { interval_ms = 0, geometry = "line" },
-            float = {
-                hide_on_cursor = false,
-                placement = { relative = "window", anchor = "NW", row = 0, col = 0 },
-            },
-            layout = {
-                columns = {
-                    { "track", "thumb", { kind = "marks", types = { "Mark" }, max_width = 6 } },
+            scrollbar = {
+                set_highlights = false,
+                update = { interval_ms = 0 },
+                render = { geometry = "line" },
+                float = {
+                    hide_on_cursor = false,
+                    placement = { relative = "window", anchor = "NW", row = 0, col = 0 },
                 },
+                layout = {
+                    columns = {
+                        { "track", "thumb", { kind = "marks", types = { "Mark" }, max_width = 6 } },
+                    },
+                },
+                mouse = { enabled = false },
+                thumb = { text = "H", hide_if_all_visible = false },
+                providers = {
+                    cursor = false,
+                    diagnostic = false,
+                    search = false,
+                    marks = true,
+                    gitsigns = false,
+                    ale = false,
+                    coc = false,
+                },
+                excluded_buftypes = {},
+                excluded_filetypes = {},
             },
-            mouse = { enabled = false },
-            thumb = { text = "H", hide_if_all_visible = false },
-            providers = {
-                cursor = false,
-                diagnostic = false,
-                search = false,
-                marks = true,
-                gitsigns = false,
-                ale = false,
-                coc = false,
-            },
-            excluded_buftypes = {},
-            excluded_filetypes = {},
         })
         require("scrollbar.scheduler").flush()
 
@@ -453,8 +468,11 @@ T["simultaneous windows render selected profile layouts geometry and filtering"]
         vim.api.nvim_win_set_height(second, 4)
         vim.api.nvim_set_current_win(first)
 
+        local providers = require("scrollbar.providers")
+        providers.register({ name = "profile-test" })
+        providers.register({ name = "marks" })
         local store = require("scrollbar.store")
-        store.set("test", first_buf, {
+        store.set("profile-test", first_buf, {
             { line = 10, type = "Error" },
             { line = 20, type = "Search" },
         })
@@ -466,40 +484,42 @@ T["simultaneous windows render selected profile layouts geometry and filtering"]
         })
 
         require("scrollbar").setup({
-            set_highlights = false,
-            render = { interval_ms = 0 },
-            float = { hide_on_cursor = false },
-            mouse = { enabled = false },
-            thumb = { text = "H", hide_if_all_visible = false },
-            providers = {
-                cursor = false,
-                diagnostic = false,
-                search = false,
-                marks = false,
-                gitsigns = false,
-                mini_diff = false,
-                signify = false,
-                vgit = false,
-                ale = false,
-                coc = false,
-            },
-            excluded_buftypes = {},
-            excluded_filetypes = {},
-            profiles = {
-                {
-                    match = { filetypes = { "lua" } },
-                    preset = "review",
-                    config = {
-                        render = { geometry = "screen" },
-                        float = { placement = { anchor = "NW" } },
-                    },
+            scrollbar = {
+                set_highlights = false,
+                update = { interval_ms = 0 },
+                float = { hide_on_cursor = false },
+                mouse = { enabled = false },
+                thumb = { text = "H", hide_if_all_visible = false },
+                providers = {
+                    cursor = false,
+                    diagnostic = false,
+                    search = false,
+                    marks = false,
+                    gitsigns = false,
+                    mini_diff = false,
+                    signify = false,
+                    vgit = false,
+                    ale = false,
+                    coc = false,
                 },
-                {
-                    match = { filetypes = { "markdown" } },
-                    preset = "navigate",
-                    config = {
-                        render = { geometry = "line" },
-                        float = { placement = { anchor = "SE" } },
+                excluded_buftypes = {},
+                excluded_filetypes = {},
+                profiles = {
+                    {
+                        match = { filetypes = { "lua" } },
+                        preset = "review",
+                        config = {
+                            render = { geometry = "screen" },
+                            float = { placement = { anchor = "NW" } },
+                        },
+                    },
+                    {
+                        match = { filetypes = { "markdown" } },
+                        preset = "navigate",
+                        config = {
+                            render = { geometry = "line" },
+                            float = { placement = { anchor = "SE" } },
+                        },
                     },
                 },
             },
@@ -571,50 +591,52 @@ T["two views of one buffer select independently and profile switches replace ren
         local wide = false
 
         require("scrollbar").setup({
-            set_highlights = false,
-            render = { interval_ms = 0 },
-            float = { hide_on_cursor = false },
-            mouse = { enabled = false },
-            thumb = { text = "H", hide_if_all_visible = false },
-            providers = {
-                cursor = false,
-                diagnostic = false,
-                search = false,
-                marks = false,
-                gitsigns = false,
-                mini_diff = false,
-                signify = false,
-                vgit = false,
-                ale = false,
-                coc = false,
-            },
-            excluded_buftypes = {},
-            excluded_filetypes = {},
-            profiles = {
-                {
-                    match = {
-                        when = function(context)
-                            return context.winid == first and wide
-                        end,
-                    },
-                    preset = "review",
-                    config = { float = { placement = { anchor = "NW" } } },
+            scrollbar = {
+                set_highlights = false,
+                update = { interval_ms = 0 },
+                float = { hide_on_cursor = false },
+                mouse = { enabled = false },
+                thumb = { text = "H", hide_if_all_visible = false },
+                providers = {
+                    cursor = false,
+                    diagnostic = false,
+                    search = false,
+                    marks = false,
+                    gitsigns = false,
+                    mini_diff = false,
+                    signify = false,
+                    vgit = false,
+                    ale = false,
+                    coc = false,
                 },
-                {
-                    match = {
-                        when = function(context)
-                            return context.winid == first
-                        end,
+                excluded_buftypes = {},
+                excluded_filetypes = {},
+                profiles = {
+                    {
+                        match = {
+                            when = function(context)
+                                return context.winid == first and wide
+                            end,
+                        },
+                        preset = "review",
+                        config = { float = { placement = { anchor = "NW" } } },
                     },
-                    preset = "minimal",
-                },
-                {
-                    match = {
-                        when = function(context)
-                            return context.winid == second
-                        end,
+                    {
+                        match = {
+                            when = function(context)
+                                return context.winid == first
+                            end,
+                        },
+                        preset = "minimal",
                     },
-                    preset = "gvim",
+                    {
+                        match = {
+                            when = function(context)
+                                return context.winid == second
+                            end,
+                        },
+                        preset = "gvim",
+                    },
                 },
             },
         })
@@ -677,29 +699,31 @@ T["editor-relative profiles render only for the active source beside window-rela
         vim.api.nvim_set_current_win(first)
 
         require("scrollbar").setup({
-            set_highlights = false,
-            render = { interval_ms = 0 },
-            float = { hide_on_cursor = false },
-            mouse = { enabled = false },
-            thumb = { hide_if_all_visible = false },
-            providers = {
-                cursor = false,
-                diagnostic = false,
-                search = false,
-                marks = false,
-                gitsigns = false,
-                mini_diff = false,
-                signify = false,
-                vgit = false,
-                ale = false,
-                coc = false,
-            },
-            excluded_buftypes = {},
-            excluded_filetypes = {},
-            profiles = {
-                {
-                    match = { filetypes = { "lua" } },
-                    config = { float = { placement = { relative = "editor" } } },
+            scrollbar = {
+                set_highlights = false,
+                update = { interval_ms = 0 },
+                float = { hide_on_cursor = false },
+                mouse = { enabled = false },
+                thumb = { hide_if_all_visible = false },
+                providers = {
+                    cursor = false,
+                    diagnostic = false,
+                    search = false,
+                    marks = false,
+                    gitsigns = false,
+                    mini_diff = false,
+                    signify = false,
+                    vgit = false,
+                    ale = false,
+                    coc = false,
+                },
+                excluded_buftypes = {},
+                excluded_filetypes = {},
+                profiles = {
+                    {
+                        match = { filetypes = { "lua" } },
+                        config = { float = { placement = { relative = "editor" } } },
+                    },
                 },
             },
         })

@@ -15,34 +15,36 @@ local function config()
 end
 
 local function expect_invalid(overrides, pattern)
-    local ok, err = pcall(config().set, overrides)
+    local ok, err = pcall(config().set, { scrollbar = overrides })
     expect.equality(ok, false)
     expect.no_equality(tostring(err):match(pattern), nil)
 end
 
 T["compiles profile variants with setup-local presets and settled precedence"] = function()
     local root = config().set({
-        preset = "zed",
-        presets = {
-            local_review = {
-                extends = "review",
-                thumb = { text = "R" },
-            },
-        },
-        thumb = { blend = 35 },
-        profiles = {
-            {
-                match = { filetypes = { "lua" } },
-                preset = "local_review",
-                config = {
-                    float = { placement = { gutter = "overlap", gutter_position = "outer" } },
-                    thumb = { blend = 10 },
-                    mouse = { enabled = false },
+        scrollbar = {
+            preset = "zed",
+            presets = {
+                local_review = {
+                    extends = "review",
+                    thumb = { text = "R" },
                 },
             },
-            {
-                match = { buftypes = { "quickfix" } },
-                config = { render = { geometry = "screen" } },
+            thumb = { blend = 35 },
+            profiles = {
+                {
+                    match = { filetypes = { "lua" } },
+                    preset = "local_review",
+                    config = {
+                        float = { placement = { gutter = "overlap", gutter_position = "outer" } },
+                        thumb = { blend = 10 },
+                        mouse = { enabled = false },
+                    },
+                },
+                {
+                    match = { buftypes = { "quickfix" } },
+                    config = { render = { geometry = "screen" } },
+                },
             },
         },
     })
@@ -111,7 +113,7 @@ T["validates profile schema and the nested render-safe boundary"] = function()
         { autohide = { enabled = true } },
         { providers = { cursor = false } },
         { excluded_filetypes = { "lua" } },
-        { render = { interval_ms = 50 } },
+        { update = { interval_ms = 50 } },
         { mouse = { extra = true } },
         { float = { extra = true } },
         { preset = "zed" },
@@ -126,9 +128,11 @@ end
 T["commits root and variants atomically"] = function()
     local module = config()
     local before = module.set({
-        visibility = "active",
-        profiles = {
-            { match = { filetypes = { "lua" } }, preset = "minimal" },
+        scrollbar = {
+            visibility = "active",
+            profiles = {
+                { match = { filetypes = { "lua" } }, preset = "minimal" },
+            },
         },
     })
     local before_variants = module.get_variants()
@@ -136,7 +140,7 @@ T["commits root and variants atomically"] = function()
     expect_invalid({
         profiles = {
             { match = { filetypes = { "lua" } }, preset = "review" },
-            { match = { buftypes = { "nofile" } }, config = { render = { interval_ms = 1 } } },
+            { match = { buftypes = { "nofile" } }, config = { update = { interval_ms = 1 } } },
         },
     }, "profile")
     expect.equality(module.get(), before)
@@ -153,28 +157,30 @@ T["selects the first profile with AND semantics and stable IDs"] = function()
     local skipped_calls = 0
 
     config().set({
-        profiles = {
-            {
-                match = {
-                    filetypes = { "markdown" },
-                    when = function()
-                        skipped_calls = skipped_calls + 1
-                        return true
-                    end,
+        scrollbar = {
+            profiles = {
+                {
+                    match = {
+                        filetypes = { "markdown" },
+                        when = function()
+                            skipped_calls = skipped_calls + 1
+                            return true
+                        end,
+                    },
+                    preset = "minimal",
                 },
-                preset = "minimal",
-            },
-            {
-                match = {
-                    filetypes = { "lua" },
-                    buftypes = { "nofile" },
-                    when = function()
-                        return true
-                    end,
+                {
+                    match = {
+                        filetypes = { "lua" },
+                        buftypes = { "nofile" },
+                        when = function()
+                            return true
+                        end,
+                    },
+                    preset = "review",
                 },
-                preset = "review",
+                { match = { filetypes = { "lua" } }, preset = "search" },
             },
-            { match = { filetypes = { "lua" } }, preset = "search" },
         },
     })
 
@@ -205,16 +211,18 @@ T["builds exact callback context and reevaluates predicates on every call"] = fu
     local received
 
     config().set({
-        profiles = {
-            {
-                match = {
-                    when = function(context)
-                        calls = calls + 1
-                        received = context
-                        return enabled
-                    end,
+        scrollbar = {
+            profiles = {
+                {
+                    match = {
+                        when = function(context)
+                            calls = calls + 1
+                            received = context
+                            return enabled
+                        end,
+                    },
+                    preset = "minimal",
                 },
-                preset = "minimal",
             },
         },
     })
@@ -240,22 +248,27 @@ T["falls back on callback errors rate limits notifications and recovers"] = func
     local failure = "first"
     local notifications = {}
     local original_notify = vim.notify
-    vim.notify = function(message, level)
+    rawset(vim, "notify", function(message, level)
         notifications[#notifications + 1] = { message, level }
-    end
+    end)
+    MiniTest.finally(function()
+        rawset(vim, "notify", original_notify)
+    end)
 
     config().set({
-        profiles = {
-            {
-                match = {
-                    when = function()
-                        if failure then
-                            error(failure)
-                        end
-                        return true
-                    end,
+        scrollbar = {
+            profiles = {
+                {
+                    match = {
+                        when = function()
+                            if failure then
+                                error(failure)
+                            end
+                            return true
+                        end,
+                    },
+                    preset = "minimal",
                 },
-                preset = "minimal",
             },
         },
     })
@@ -269,22 +282,23 @@ T["falls back on callback errors rate limits notifications and recovers"] = func
     failure = nil
     expect.equality(config().select(winid).variant_id, 1)
 
-    config().set({ profiles = {} })
+    config().set({ scrollbar = { profiles = {} } })
     config().set({
-        profiles = {
-            {
-                match = {
-                    when = function()
-                        error("first")
-                    end,
+        scrollbar = {
+            profiles = {
+                {
+                    match = {
+                        when = function()
+                            error("first")
+                        end,
+                    },
+                    preset = "minimal",
                 },
-                preset = "minimal",
             },
         },
     })
     expect.equality(config().select(winid).variant_id, 0)
     expect.equality(#notifications, 3)
-    vim.notify = original_notify
 end
 
 return T

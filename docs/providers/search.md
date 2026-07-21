@@ -11,9 +11,11 @@ The default configuration uses the worker backend and follows Neovim's current
 
 ```lua
 require("scrollbar").setup({
-    providers = {
-        search = {
-            backend = "worker",
+    scrollbar = {
+        providers = {
+            search = {
+                backend = "worker",
+            },
         },
     },
 })
@@ -45,8 +47,10 @@ line should not start preview scans:
 
 ```lua
 require("scrollbar").setup({
-    providers = {
-        search = { incsearch = false },
+    scrollbar = {
+        providers = {
+            search = { incsearch = false },
+        },
     },
 })
 ```
@@ -56,8 +60,10 @@ after a short debounce, even when Neovim's native option is disabled:
 
 ```lua
 require("scrollbar").setup({
-    providers = {
-        search = { incsearch = true },
+    scrollbar = {
+        providers = {
+            search = { incsearch = true },
+        },
     },
 })
 ```
@@ -142,8 +148,10 @@ depends on source-window state that the worker does not mirror:
 
 ```lua
 require("scrollbar").setup({
-    providers = {
-        search = { backend = "sync" },
+    scrollbar = {
+        providers = {
+            search = { backend = "sync" },
+        },
     },
 })
 ```
@@ -159,10 +167,12 @@ Incremental synchronous scanning is also supported:
 
 ```lua
 require("scrollbar").setup({
-    providers = {
-        search = {
-            incsearch = true,
-            backend = "sync",
+    scrollbar = {
+        providers = {
+            search = {
+                incsearch = true,
+                backend = "sync",
+            },
         },
     },
 })
@@ -296,11 +306,13 @@ highlight through `marks.Search`, and route the type through `layout`:
 
 ```lua
 require("scrollbar").setup({
-    marks = {
-        Search = {
-            text = { "s", "S" },
-            priority = 1,
-            highlight = { fg = "#ff9e64", bold = true },
+    scrollbar = {
+        marks = {
+            Search = {
+                text = { "s", "S" },
+                priority = 1,
+                highlight = { fg = "#ff9e64", bold = true },
+            },
         },
     },
 })

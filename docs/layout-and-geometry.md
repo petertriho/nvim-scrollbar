@@ -155,7 +155,7 @@ snapshots or another window's cache.
 diff filler, virtual lines, `topfill`, and wrapped offsets affect both marks and
 thumb geometry. It is more accurate and intentionally more expensive.
 
-`render.interval_ms` coalesces repeated invalidations into the latest frame.
+`update.interval_ms` coalesces repeated invalidations into the latest frame.
 
 ## Examples
 

@@ -14,8 +14,10 @@ available during the first provider refresh:
 require("mini.diff").setup()
 
 require("scrollbar").setup({
-    providers = {
-        mini_diff = true,
+    scrollbar = {
+        providers = {
+            mini_diff = true,
+        },
     },
 })
 ```

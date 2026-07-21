@@ -16,7 +16,8 @@ local function mouse_config(overrides)
     return require("scrollbar.presets").merge({
         show = true,
         set_highlights = true,
-        render = { interval_ms = 0, geometry = "line" },
+        update = { interval_ms = 0 },
+        render = { geometry = "line" },
         float = { placement = { relative = "window", anchor = "NW", row = 0, col = 5 } },
         layout = {
             direction = "ltr",
@@ -85,7 +86,14 @@ local function setup_single(child, options)
             end)
         end
 
-        local active_config = require("scrollbar.config").set(opts.config)
+        if opts.compact_search then
+            opts.config.providers.search = true
+        end
+        local providers = require("scrollbar.providers")
+        if opts.marks and #opts.marks > 0 and providers.get(opts.mark_provider) == nil then
+            providers.register({ name = opts.mark_provider })
+        end
+        local active_config = require("scrollbar.config").set({ scrollbar = opts.config })
         local source_buf = vim.api.nvim_win_get_buf(source_win)
         if opts.marks and #opts.marks > 0 then
             assert(require("scrollbar.store").set(opts.mark_provider, source_buf, opts.marks))
@@ -286,7 +294,7 @@ T["clicks an empty track cell proportionally and restores source focus"] = funct
         local source_win = vim.api.nvim_get_current_win()
         vim.api.nvim_win_set_height(source_win, 10)
 
-        local active_config = require("scrollbar.config").set(config)
+        local active_config = require("scrollbar.config").set({ scrollbar = config })
         local renderer = require("scrollbar.renderer")
         local scheduler = require("scrollbar.scheduler")
         local mouse = require("scrollbar.mouse")
@@ -872,7 +880,7 @@ T["keeps independent ownership for multiple source windows"] = function()
             vim.cmd("normal! zt")
         end)
 
-        local active_config = require("scrollbar.config").set(config)
+        local active_config = require("scrollbar.config").set({ scrollbar = config })
         local renderer = require("scrollbar.renderer")
         local scheduler = require("scrollbar.scheduler")
         local mouse = require("scrollbar.mouse")
@@ -1129,7 +1137,7 @@ T["uses each rendered profile's mouse policy and updates switched floats"] = fun
                 config = { mouse = { enabled = false } },
             },
         }
-        local active_config = require("scrollbar.config").set(config)
+        local active_config = require("scrollbar.config").set({ scrollbar = config })
         local renderer = require("scrollbar.renderer")
         local scheduler = require("scrollbar.scheduler")
         local mouse = require("scrollbar.mouse")
@@ -1197,7 +1205,7 @@ T["keeps track interaction geometry captured at press time across profile switch
             },
         }
 
-        local active_config = require("scrollbar.config").set(config)
+        local active_config = require("scrollbar.config").set({ scrollbar = config })
         local renderer = require("scrollbar.renderer")
         local scheduler = require("scrollbar.scheduler")
         local mouse = require("scrollbar.mouse")
@@ -1240,7 +1248,7 @@ T["passes input to the source while cursor-hidden and restores interaction"] = f
         local source_win = vim.api.nvim_get_current_win()
         vim.api.nvim_win_set_height(source_win, 10)
 
-        local active_config = require("scrollbar.config").set(config)
+        local active_config = require("scrollbar.config").set({ scrollbar = config })
         local source_position = vim.fn.win_screenpos(source_win)
         local overlap = true
         local screenrow = vim.fn.screenrow

@@ -1,4 +1,8 @@
-local M = { name = "ale", refresh_owner = { buffer = "provider" } }
+local M = {
+    name = "ale",
+    targets = { scrollbar = true, minimap = true },
+    refresh_owner = { buffer = "provider" },
+}
 
 local state = {
     context = nil,

@@ -1,4 +1,8 @@
-local M = { name = "signify", refresh_owner = { buffer = "provider" } }
+local M = {
+    name = "signify",
+    targets = { scrollbar = true, minimap = true },
+    refresh_owner = { buffer = "provider" },
+}
 
 ---@type { context: ScrollbarProviderContext? }
 local state = {

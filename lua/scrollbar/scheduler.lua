@@ -1,4 +1,6 @@
 local config = require("scrollbar.config")
+local providers = require("scrollbar.providers")
+local store = require("scrollbar.store")
 
 local M = {}
 
@@ -188,7 +190,7 @@ local function arm_timer(current)
 
     current.timer_armed = true
     current.timer:start(
-        current.config.render.interval_ms,
+        current.config.update.interval_ms,
         0,
         vim.schedule_wrap(function()
             if runtime ~= current then
@@ -301,108 +303,111 @@ local function invalidate_resized_windows()
     end
 end
 
+---Filter an event list down to the events enabled in the configured update set.
+---@param events string[] Candidate events for one autocmd registration.
+---@param enabled table<string, boolean> Lookup of enabled events.
+---@return string[] filtered Possibly empty; only events present in `enabled`.
+local function filter_events(events, enabled)
+    local filtered = {}
+    for _, event in ipairs(events) do
+        if enabled[event] then
+            filtered[#filtered + 1] = event
+        end
+    end
+    return filtered
+end
+
+---Register one autocmd group only if at least one of its events is enabled.
+---@param group integer Augroup id.
+---@param events string[] Events this registration covers.
+---@param enabled table<string, boolean> Enabled events lookup.
+---@param callback fun(args: table) Autocmd callback.
+---@param opts? table Extra nvim_create_autocmd options (e.g. pattern).
+local function register_group(group, events, enabled, callback, opts)
+    local filtered = filter_events(events, enabled)
+    if #filtered == 0 then
+        return
+    end
+    local autocmd_opts = { group = group, callback = callback }
+    if opts then
+        for key, value in pairs(opts) do
+            autocmd_opts[key] = value
+        end
+    end
+    vim.api.nvim_create_autocmd(filtered, autocmd_opts)
+end
+
 ---@param group integer
-local function create_autocmds(group)
-    vim.api.nvim_create_autocmd({ "BufEnter", "BufWinEnter" }, {
-        group = group,
-        callback = function(args)
-            if not event_is_owned(args) then
-                M.invalidate_buffer(args.buf)
-            end
-        end,
-    })
-    vim.api.nvim_create_autocmd({ "WinEnter", "TabEnter", "TermEnter", "CmdwinLeave" }, {
-        group = group,
-        callback = function(args)
-            if not event_is_owned(args) then
-                M.invalidate_all()
-            end
-        end,
-    })
-    vim.api.nvim_create_autocmd({ "CursorMoved", "CursorMovedI" }, {
-        group = group,
-        callback = function(args)
-            if not event_is_owned(args) then
-                activity_event_window(vim.api.nvim_get_current_win())
-            end
-        end,
-    })
-    vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI", "TextChangedP", "TextChangedT" }, {
-        group = group,
-        callback = function(args)
-            if not event_is_owned(args) then
-                M.invalidate_buffer(args.buf)
-            end
-        end,
-    })
-    vim.api.nvim_create_autocmd("WinScrolled", {
-        group = group,
-        callback = function(args)
-            if not event_is_owned(args) then
-                activity_scrolled_windows()
-            end
-        end,
-    })
-    vim.api.nvim_create_autocmd("WinResized", {
-        group = group,
-        callback = function(args)
-            if not event_is_owned(args) then
-                invalidate_resized_windows()
-            end
-        end,
-    })
-    vim.api.nvim_create_autocmd("VimResized", {
-        group = group,
-        callback = M.invalidate_all,
-    })
-    vim.api.nvim_create_autocmd("OptionSet", {
-        group = group,
-        pattern = OPTION_PATTERNS,
-        callback = function(args)
-            if not event_is_owned(args) then
-                M.invalidate_all()
-            end
-        end,
-    })
-    vim.api.nvim_create_autocmd("ColorScheme", {
-        group = group,
-        callback = function()
-            local current = runtime
-            if current == nil then
-                return
-            end
-            local ok, err = pcall(current.on_colorscheme)
-            if not ok then
-                vim.notify("[scrollbar.nvim] colorscheme refresh failed: " .. tostring(err), vim.log.levels.WARN)
-            end
+---@param enabled table<string, boolean>
+local function create_autocmds(group, enabled)
+    register_group(group, { "BufEnter", "BufWinEnter" }, enabled, function(args)
+        if not event_is_owned(args) then
+            M.invalidate_buffer(args.buf)
+        end
+    end)
+    register_group(group, { "WinEnter", "TabEnter", "TermEnter", "CmdwinLeave" }, enabled, function(args)
+        if not event_is_owned(args) then
             M.invalidate_all()
-        end,
-    })
-    vim.api.nvim_create_autocmd("WinClosed", {
-        group = group,
-        callback = function(args)
-            local current = runtime
-            if current == nil then
-                return
-            end
-            local closed_win = tonumber(args.match)
-            if closed_win ~= nil then
-                current.dirty[closed_win] = nil
-                close_hide_timer(current, closed_win)
-            end
-            if not event_is_owned(args) then
-                M.invalidate_all()
-            end
-        end,
-    })
-    vim.api.nvim_create_autocmd({ "BufDelete", "BufWipeout", "TabClosed" }, {
-        group = group,
-        callback = function(args)
-            if not event_is_owned(args) then
-                M.invalidate_all()
-            end
-        end,
-    })
+        end
+    end)
+    register_group(group, { "CursorMoved", "CursorMovedI" }, enabled, function(args)
+        if not event_is_owned(args) then
+            activity_event_window(vim.api.nvim_get_current_win())
+        end
+    end)
+    register_group(group, { "TextChanged", "TextChangedI", "TextChangedP", "TextChangedT" }, enabled, function(args)
+        if not event_is_owned(args) then
+            M.invalidate_buffer(args.buf)
+        end
+    end)
+    register_group(group, { "WinScrolled" }, enabled, function(args)
+        if not event_is_owned(args) then
+            activity_scrolled_windows()
+        end
+    end)
+    register_group(group, { "WinResized" }, enabled, function(args)
+        if not event_is_owned(args) then
+            invalidate_resized_windows()
+        end
+    end)
+    register_group(group, { "VimResized" }, enabled, function()
+        M.invalidate_all()
+    end)
+    register_group(group, { "OptionSet" }, enabled, function(args)
+        if not event_is_owned(args) then
+            M.invalidate_all()
+        end
+    end, { pattern = OPTION_PATTERNS })
+    register_group(group, { "ColorScheme" }, enabled, function()
+        local current = runtime
+        if current == nil then
+            return
+        end
+        local ok, err = pcall(current.on_colorscheme)
+        if not ok then
+            vim.notify("[scrollbar.nvim] colorscheme refresh failed: " .. tostring(err), vim.log.levels.WARN)
+        end
+        M.invalidate_all()
+    end)
+    register_group(group, { "WinClosed" }, enabled, function(args)
+        local current = runtime
+        if current == nil then
+            return
+        end
+        local closed_win = tonumber(args.match)
+        if closed_win ~= nil then
+            current.dirty[closed_win] = nil
+            close_hide_timer(current, closed_win)
+        end
+        if not event_is_owned(args) then
+            M.invalidate_all()
+        end
+    end)
+    register_group(group, { "BufDelete", "BufWipeout", "TabClosed" }, enabled, function(args)
+        if not event_is_owned(args) then
+            M.invalidate_all()
+        end
+    end)
 end
 
 ---@param options? ScrollbarSchedulerOptions
@@ -415,7 +420,7 @@ M.setup = function(options)
     local uv = vim.uv or vim.loop
     local timer = assert(uv.new_timer())
     local augroup = vim.api.nvim_create_augroup(AUGROUP_NAME, { clear = true })
-    runtime = {
+    local current = {
         config = active_config,
         renderer = active_renderer,
         on_colorscheme = options.on_colorscheme or function()
@@ -433,8 +438,27 @@ M.setup = function(options)
         hide_generations = {},
         held = {},
     }
+    runtime = current
+    current.unsubscribe_store = store.subscribe(function(event)
+        if
+            runtime ~= current
+            or event.channel ~= "marks"
+            or not providers._consumer_enabled(event.provider, "scrollbar")
+        then
+            return
+        end
+        if event.scope == "buffer" then
+            M.invalidate_buffer(event.target)
+        else
+            M.invalidate_window(event.target)
+        end
+    end)
     timer_closed = false
-    create_autocmds(augroup)
+    local events_enabled = {}
+    for _, event in ipairs(active_config.update.events) do
+        events_enabled[event] = true
+    end
+    create_autocmds(augroup, events_enabled)
 end
 
 ---@param winid integer
@@ -608,7 +632,7 @@ M.status = function()
         flushing = current ~= nil and current.flushing or false,
         dirty_windows = dirty_windows,
         augroup_id = current and current.augroup or nil,
-        interval_ms = current and current.config.render.interval_ms or nil,
+        interval_ms = current and current.config.update.interval_ms or nil,
     }
 end
 
@@ -617,6 +641,7 @@ M.dispose = function()
     if current == nil then
         return
     end
+    current.unsubscribe_store()
     runtime = nil
     current.dirty = {}
     current.timer_armed = false
