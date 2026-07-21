@@ -10,8 +10,10 @@ accepted.
 
 ```lua
 require("scrollbar").setup({
-    providers = {
-        diagnostic = true,
+    scrollbar = {
+        providers = {
+            diagnostic = true,
+        },
     },
 })
 ```
@@ -60,22 +62,24 @@ Customize the severity mark types under `marks`:
 
 ```lua
 require("scrollbar").setup({
-    layout = {
-        columns = {
-            { { kind = "marks", types = { "Error" } } },
-            { { kind = "marks", types = { "Warn" } }, "marks" },
+    scrollbar = {
+        layout = {
+            columns = {
+                { { kind = "marks", types = { "Error" } } },
+                { { kind = "marks", types = { "Warn" } }, "marks" },
+            },
         },
-    },
-    marks = {
-        Error = {
-            text = { "E", "!" },
-            priority = 1,
-            highlight = "DiagnosticError",
-        },
-        Warn = {
-            text = "W",
-            priority = 2,
-            highlight = "DiagnosticWarn",
+        marks = {
+            Error = {
+                text = { "E", "!" },
+                priority = 1,
+                highlight = "DiagnosticError",
+            },
+            Warn = {
+                text = "W",
+                priority = 2,
+                highlight = "DiagnosticWarn",
+            },
         },
     },
 })

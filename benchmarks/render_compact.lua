@@ -58,19 +58,22 @@ end
 
 local function configure_screen()
     require("scrollbar.config").set({
-        set_highlights = false,
-        render = { interval_ms = 0, geometry = "screen" },
-        excluded_buftypes = {},
-        excluded_filetypes = {},
-        thumb = { text = "H", hide_if_all_visible = false },
-        marks = { Search = { text = { "-", "=", "#" } } },
-        providers = {
-            cursor = false,
-            diagnostic = false,
-            gitsigns = false,
-            search = false,
-            ale = false,
-            coc = false,
+        scrollbar = {
+            set_highlights = false,
+            update = { interval_ms = 0 },
+            render = { geometry = "screen" },
+            excluded_buftypes = {},
+            excluded_filetypes = {},
+            thumb = { text = "H", hide_if_all_visible = false },
+            marks = { Search = { text = { "-", "=", "#" } } },
+            providers = {
+                cursor = false,
+                diagnostic = false,
+                gitsigns = false,
+                search = false,
+                ale = false,
+                coc = false,
+            },
         },
     })
     require("scrollbar.renderer").setup()

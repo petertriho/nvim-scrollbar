@@ -6,6 +6,12 @@ local T = MiniTest.new_set()
 
 local function new_child()
     local child = helpers.new_child()
+    child.lua([[
+        local providers = require("scrollbar.providers")
+        for _, name in ipairs({ "alpha", "buffer", "test", "window" }) do
+            providers.register({ name = name })
+        end
+    ]])
     MiniTest.finally(function()
         helpers.stop_child(child)
     end)
@@ -16,7 +22,8 @@ local function renderer_config(overrides)
     return require("scrollbar.presets").merge({
         show = true,
         set_highlights = false,
-        render = { interval_ms = 0, geometry = "line" },
+        update = { interval_ms = 0 },
+        render = { geometry = "line" },
         float = { placement = { relative = "window", anchor = "NE", row = 0, col = 0 } },
         layout = {
             columns = {
@@ -46,7 +53,7 @@ T["classifies buffers through renderer-owned eligibility"] = function()
         config.max_lines = 2
         config.excluded_buftypes = { "nofile" }
         config.excluded_filetypes = { "renderer-test" }
-        require("scrollbar.config").set(config)
+        require("scrollbar.config").set({ scrollbar = config })
         local renderer = require("scrollbar.renderer")
 
         local function buffer(lines)
@@ -100,7 +107,7 @@ T["keeps source predicates in parity with full enumeration"] = function()
         end
         vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
         local source_win = vim.api.nvim_get_current_win()
-        require("scrollbar.config").set(config)
+        require("scrollbar.config").set({ scrollbar = config })
         local renderer = require("scrollbar.renderer")
         renderer.setup()
         local state = assert(renderer.render(source_win))
@@ -166,7 +173,7 @@ T["maps focused renderer floats to sources and reconciles no active source"] = f
         local source_win = vim.api.nvim_get_current_win()
         config.visibility = "active"
         config.mouse.enabled = true
-        require("scrollbar.config").set(config)
+        require("scrollbar.config").set({ scrollbar = config })
         local renderer = require("scrollbar.renderer")
         renderer.setup()
         local state = assert(renderer.render(source_win))
@@ -219,7 +226,7 @@ T["reconciles reveal-only autohide state outside the selected source set"] = fun
         local second = vim.api.nvim_get_current_win()
         config.visibility = "active"
         config.autohide = { enabled = true, delay_ms = 500 }
-        require("scrollbar.config").set(config)
+        require("scrollbar.config").set({ scrollbar = config })
         local renderer = require("scrollbar.renderer")
         renderer.setup()
 
@@ -262,7 +269,7 @@ T["reconciles the full selected set before filtering by buffer"] = function()
         vim.api.nvim_buf_set_lines(second_buf, 0, -1, false, lines)
 
         local scrollbar_config = require("scrollbar.config")
-        scrollbar_config.set(config)
+        scrollbar_config.set({ scrollbar = config })
         local renderer = require("scrollbar.renderer")
         renderer.setup()
         local first_state = assert(renderer.render(first))
@@ -272,7 +279,7 @@ T["reconciles the full selected set before filtering by buffer"] = function()
 
         vim.bo[second_buf].filetype = "renderer-test"
         config.excluded_filetypes = { "renderer-test" }
-        scrollbar_config.set(config)
+        scrollbar_config.set({ scrollbar = config })
         local filtered_after_exclusion = renderer.source_windows(first_buf)
 
         return {
@@ -310,7 +317,7 @@ T["selects editor-relative profiles per source window"] = function()
                 config = { float = { placement = { relative = "editor" } } },
             },
         }
-        require("scrollbar.config").set(config)
+        require("scrollbar.config").set({ scrollbar = config })
         local renderer = require("scrollbar.renderer")
         renderer.setup()
         local first_sources = renderer.source_windows()
@@ -360,7 +367,7 @@ T["keeps same-buffer source windows independent and writes only float buffers"] 
             vim.cmd("normal! zt")
         end)
 
-        require("scrollbar.config").set(config)
+        require("scrollbar.config").set({ scrollbar = config })
         local store = require("scrollbar.store")
         assert(store.set("test", vim.api.nvim_win_get_buf(first), { { line = 199, type = "Misc" } }))
         assert(store.set_window("test", first, { { line = 0, type = "Misc" } }))
@@ -452,7 +459,7 @@ T["switches canonical Thumb spans to pressed groups without losing priorities"] 
             end
             vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
             local source_win = vim.api.nvim_get_current_win()
-            require("scrollbar.config").set(config)
+            require("scrollbar.config").set({ scrollbar = config })
             assert(
                 require("scrollbar.store").set("test", vim.api.nvim_get_current_buf(), { { line = 0, type = "Misc" } })
             )
@@ -501,7 +508,7 @@ T["renders track only in declared columns over a transparent float base"] = func
             end
             vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
             local source_win = vim.api.nvim_get_current_win()
-            require("scrollbar.config").set(config)
+            require("scrollbar.config").set({ scrollbar = config })
             assert(require("scrollbar.store").set("test", vim.api.nvim_get_current_buf(), {
                 { line = 0, type = "Misc" },
             }))
@@ -553,7 +560,7 @@ T["enforces visibility and editor-relative single ownership"] = function()
         local renderer = require("scrollbar.renderer")
         local scrollbar_config = require("scrollbar.config")
 
-        scrollbar_config.set(base_config)
+        scrollbar_config.set({ scrollbar = base_config })
         renderer.setup()
         renderer.render(first)
         renderer.render(second)
@@ -562,7 +569,7 @@ T["enforces visibility and editor-relative single ownership"] = function()
 
         local active_config = vim.deepcopy(base_config)
         active_config.visibility = "active"
-        scrollbar_config.set(active_config)
+        scrollbar_config.set({ scrollbar = active_config })
         renderer.setup()
         renderer.render(first)
         renderer.render(second)
@@ -571,7 +578,7 @@ T["enforces visibility and editor-relative single ownership"] = function()
         local editor_config = vim.deepcopy(base_config)
         editor_config.visibility = "all"
         editor_config.float.placement.relative = "editor"
-        scrollbar_config.set(editor_config)
+        scrollbar_config.set({ scrollbar = editor_config })
         renderer.setup()
         renderer.render(first)
         renderer.render(second)
@@ -599,7 +606,7 @@ T["enforces visibility and editor-relative single ownership"] = function()
         initially_hidden.show = false
         initially_hidden.visibility = "all"
         initially_hidden.float.placement.relative = "window"
-        scrollbar_config.set(initially_hidden)
+        scrollbar_config.set({ scrollbar = initially_hidden })
         renderer.setup()
         renderer.render(first)
         local setup_hidden = renderer.get_state(first) == nil
@@ -648,7 +655,7 @@ T["requires and clears per-window reveals when autohide is enabled"] = function(
         local second = vim.api.nvim_get_current_win()
 
         base_config.autohide = { enabled = true, delay_ms = 500 }
-        require("scrollbar.config").set(base_config)
+        require("scrollbar.config").set({ scrollbar = base_config })
         local renderer = require("scrollbar.renderer")
         renderer.setup()
 
@@ -709,7 +716,7 @@ T["retains line caches only across transient concealment"] = function()
         local source_win = vim.api.nvim_get_current_win()
         local source_buf = vim.api.nvim_get_current_buf()
         base_config.autohide = { enabled = true, delay_ms = 500 }
-        require("scrollbar.config").set(base_config)
+        require("scrollbar.config").set({ scrollbar = base_config })
         assert(require("scrollbar.store").set("test", source_buf, { { line = 100, type = "Misc" } }))
 
         local layout = require("scrollbar.layout")
@@ -782,7 +789,7 @@ T["resolves every anchor and restores protected float configuration"] = function
                 col = -3,
                 gutter = "overlap",
             }
-            scrollbar_config.set(anchor_config)
+            scrollbar_config.set({ scrollbar = anchor_config })
             renderer.setup()
             local state = assert(renderer.render(source_win))
             anchors[anchor] = vim.api.nvim_win_get_config(state.float_win)
@@ -795,7 +802,7 @@ T["resolves every anchor and restores protected float configuration"] = function
             row = -2,
             col = -4,
         }
-        scrollbar_config.set(editor_config)
+        scrollbar_config.set({ scrollbar = editor_config })
         renderer.setup()
         local state = assert(renderer.render(source_win))
         local editor = vim.api.nvim_win_get_config(state.float_win)
@@ -876,7 +883,7 @@ T["applies inner and outer gutters only to window-relative west placements in av
                 gutter = gutter,
                 gutter_position = gutter_position,
             }
-            scrollbar_config.set(active)
+            scrollbar_config.set({ scrollbar = active })
             renderer.setup()
             local state = assert(renderer.render(source_win))
             return {
@@ -960,7 +967,7 @@ T["preserves and restores user statuscolumn ownership around west reservations"]
             gutter = "avoid",
         }
         local scrollbar_config = require("scrollbar.config")
-        scrollbar_config.set(base_config)
+        scrollbar_config.set({ scrollbar = base_config })
         local renderer = require("scrollbar.renderer")
         renderer.setup()
         local west = assert(renderer.render(source_win))
@@ -973,7 +980,7 @@ T["preserves and restores user statuscolumn ownership around west reservations"]
 
         local east_config = vim.deepcopy(base_config)
         east_config.float.placement.anchor = "NE"
-        scrollbar_config.set(east_config)
+        scrollbar_config.set({ scrollbar = east_config })
         local east = assert(renderer.render(source_win))
         local restored = {
             statuscolumn = vim.api.nvim_get_option_value("statuscolumn", { win = source_win }),
@@ -982,7 +989,7 @@ T["preserves and restores user statuscolumn ownership around west reservations"]
             same_float = east.float_win == west.float_win,
         }
 
-        scrollbar_config.set(base_config)
+        scrollbar_config.set({ scrollbar = base_config })
         assert(renderer.render(source_win))
         local external_statuscolumn = "%C%s%=%{v:lnum}·"
         vim.api.nvim_set_option_value("statuscolumn", external_statuscolumn, { win = source_win })
@@ -1085,14 +1092,14 @@ T["preserves native wrapped numbers and percent-bang statuscolumn results"] = fu
         base_config.layout.columns = { { "thumb" } }
         base_config.thumb.text = " "
         local scrollbar_config = require("scrollbar.config")
-        scrollbar_config.set(base_config)
+        scrollbar_config.set({ scrollbar = base_config })
         local renderer = require("scrollbar.renderer")
         renderer.setup()
         local inner_state = assert(renderer.render(source_win))
         local reserved_rows = gutter_rows(native_textoff)
 
         base_config.float.placement.gutter_position = "outer"
-        scrollbar_config.set(base_config)
+        scrollbar_config.set({ scrollbar = base_config })
         local outer_state = assert(renderer.render(source_win))
         local outer_config = vim.api.nvim_win_get_config(outer_state.float_win)
         local outer_rows = gutter_rows(native_textoff + outer_state.width)
@@ -1100,7 +1107,7 @@ T["preserves native wrapped numbers and percent-bang statuscolumn results"] = fu
         renderer.dispose(source_win)
 
         base_config.float.placement.gutter_position = "inner"
-        scrollbar_config.set(base_config)
+        scrollbar_config.set({ scrollbar = base_config })
 
         vim.api.nvim_set_option_value("wrap", false, { win = source_win })
         vim.api.nvim_set_option_value("relativenumber", true, { win = source_win })
@@ -1149,7 +1156,7 @@ T["preserves native wrapped numbers and percent-bang statuscolumn results"] = fu
         }
 
         base_config.float.placement.gutter_position = "outer"
-        scrollbar_config.set(base_config)
+        scrollbar_config.set({ scrollbar = base_config })
         local outer_expression_state = assert(renderer.render(source_win))
         local outer_expression_config = vim.api.nvim_win_get_config(outer_expression_state.float_win)
         local outer_expression = {
@@ -1163,7 +1170,7 @@ T["preserves native wrapped numbers and percent-bang statuscolumn results"] = fu
         local restored_expression = vim.api.nvim_get_option_value("statuscolumn", { win = source_win })
 
         base_config.float.placement.gutter_position = "inner"
-        scrollbar_config.set(base_config)
+        scrollbar_config.set({ scrollbar = base_config })
 
         local late_failure_calls = 0
         local late_failure_enabled = false
@@ -1302,7 +1309,7 @@ T["declines west rendering when the full layout cannot fit in statuscolumn"] = f
         base_config.float.hide_on_cursor = false
         base_config.float.placement = { relative = "window", anchor = "NW", gutter = "avoid" }
         base_config.layout.columns = columns
-        require("scrollbar.config").set(base_config)
+        require("scrollbar.config").set({ scrollbar = base_config })
         local renderer = require("scrollbar.renderer")
         renderer.setup()
         local state = renderer.render(source_win)
@@ -1360,7 +1367,7 @@ T["aligns editor-relative tracks with active split text rows"] = function()
                     row = placement.row,
                     col = -3,
                 }
-                scrollbar_config.set(active)
+                scrollbar_config.set({ scrollbar = active })
                 renderer.setup()
                 local state = assert(renderer.render(source_win))
                 placements[placement.anchor] = {
@@ -1418,7 +1425,7 @@ T["keeps window-relative tracks inside source text rows"] = function()
             vim.api.nvim_set_option_value("winbar", winbar, { win = source_win })
             local active = vim.deepcopy(base_config)
             active.float.placement.anchor = anchor
-            scrollbar_config.set(active)
+            scrollbar_config.set({ scrollbar = active })
             renderer.setup()
             local raw_height = vim.api.nvim_win_get_height(source_win)
             local state = assert(renderer.render(source_win))
@@ -1440,7 +1447,7 @@ T["keeps window-relative tracks inside source text rows"] = function()
         local control = render("NE", "")
 
         vim.api.nvim_set_option_value("winbar", "WINBAR", { win = source_win })
-        scrollbar_config.set(base_config)
+        scrollbar_config.set({ scrollbar = base_config })
         renderer.setup()
         local get_height = vim.api.nvim_win_get_height
         vim.api.nvim_win_get_height = function(winid)
@@ -1486,7 +1493,7 @@ T["applies exclusions, limits, all-visible rules, and owned-window filtering"] =
         local excluded_filetype = vim.deepcopy(base_config)
         excluded_filetype.excluded_filetypes = { "renderer-test" }
         vim.bo.filetype = "renderer-test"
-        scrollbar_config.set(excluded_filetype)
+        scrollbar_config.set({ scrollbar = excluded_filetype })
         renderer.setup()
         renderer.render(source_win)
         local filetype_hidden = renderer.get_state(source_win) == nil
@@ -1495,7 +1502,7 @@ T["applies exclusions, limits, all-visible rules, and owned-window filtering"] =
         local excluded_buftype = vim.deepcopy(base_config)
         excluded_buftype.excluded_buftypes = { "nofile" }
         vim.bo.buftype = "nofile"
-        scrollbar_config.set(excluded_buftype)
+        scrollbar_config.set({ scrollbar = excluded_buftype })
         renderer.setup()
         renderer.render(source_win)
         local buftype_hidden = renderer.get_state(source_win) == nil
@@ -1503,14 +1510,14 @@ T["applies exclusions, limits, all-visible rules, and owned-window filtering"] =
 
         local limited = vim.deepcopy(base_config)
         limited.max_lines = 2
-        scrollbar_config.set(limited)
+        scrollbar_config.set({ scrollbar = limited })
         renderer.setup()
         renderer.render(source_win)
         local max_lines_hidden = renderer.get_state(source_win) == nil
 
         local all_visible = vim.deepcopy(base_config)
         all_visible.hide_if_all_visible = true
-        scrollbar_config.set(all_visible)
+        scrollbar_config.set({ scrollbar = all_visible })
         renderer.setup()
         renderer.render(source_win)
         local all_visible_hidden = renderer.get_state(source_win) == nil
@@ -1518,7 +1525,7 @@ T["applies exclusions, limits, all-visible rules, and owned-window filtering"] =
         local handle_hidden = vim.deepcopy(base_config)
         handle_hidden.hide_if_all_visible = false
         handle_hidden.thumb.hide_if_all_visible = true
-        scrollbar_config.set(handle_hidden)
+        scrollbar_config.set({ scrollbar = handle_hidden })
         renderer.setup()
         local state = assert(renderer.render(source_win))
         local namespace = vim.api.nvim_get_namespaces().ScrollbarRenderer
@@ -1534,7 +1541,7 @@ T["applies exclusions, limits, all-visible rules, and owned-window filtering"] =
         vim.bo.filetype = "renderer-test"
         local changed_exclusion = vim.deepcopy(base_config)
         changed_exclusion.excluded_filetypes = { "renderer-test" }
-        scrollbar_config.set(changed_exclusion)
+        scrollbar_config.set({ scrollbar = changed_exclusion })
         renderer.render(source_win)
 
         return {
@@ -1582,7 +1589,7 @@ T["aligns short-buffer marks without shrinking the track"] = function()
         for _, mode in ipairs({ "line", "screen" }) do
             local active = vim.deepcopy(base_config)
             active.render.geometry = mode
-            scrollbar_config.set(active)
+            scrollbar_config.set({ scrollbar = active })
             renderer.setup()
             local state = assert(renderer.render(source_win))
             cases[mode] = {
@@ -1636,7 +1643,7 @@ T["renders compact built-in search exactly and invalidates it by revision"] = fu
             for _, mode in ipairs({ "line", "screen" }) do
                 local active = vim.deepcopy(base_config)
                 active.render.geometry = mode
-                require("scrollbar.config").set(active)
+                require("scrollbar.config").set({ scrollbar = active })
                 renderer.setup()
 
                 assert(store.set("search", source_buf, ordinary_marks))
@@ -1674,6 +1681,7 @@ T["renders compact built-in search exactly and invalidates it by revision"] = fu
                 Search = { text = { "-", "=", "#" } },
                 Misc = { text = "M" },
             },
+            providers = { search = true },
         })
     )
 
@@ -1719,7 +1727,7 @@ T["screen-mode dense compact search renders identically to expanded marks"] = fu
 
             local active = vim.deepcopy(base_config)
             active.render.geometry = "screen"
-            require("scrollbar.config").set(active)
+            require("scrollbar.config").set({ scrollbar = active })
             renderer.setup()
 
             assert(store.set("search", source_buf, ordinary_marks))
@@ -1756,6 +1764,7 @@ T["screen-mode dense compact search renders identically to expanded marks"] = fu
             marks = {
                 Search = { text = { "-", "=", "#" } },
             },
+            providers = { search = true },
         })
     )
 
@@ -1776,7 +1785,7 @@ T["updates only dirty rows and fully replaces rows when dimensions change"] = fu
         local source_win = vim.api.nvim_get_current_win()
         vim.api.nvim_win_set_height(source_win, 8)
 
-        require("scrollbar.config").set(config)
+        require("scrollbar.config").set({ scrollbar = config })
         local store = require("scrollbar.store")
         local source_buf = vim.api.nvim_win_get_buf(source_win)
         assert(store.set("test", source_buf, { { line = 60, type = "Misc", text = "A" } }))
@@ -1878,7 +1887,7 @@ T["grows and shrinks expanded floats in place while pinning base cells for every
                 { "track", { kind = "marks", types = { "Mark" }, max_width = 6 } },
                 { "track", "marks", "thumb" },
             }
-            scrollbar_config.set(active)
+            scrollbar_config.set({ scrollbar = active })
             renderer.setup()
 
             assert(store.set("marks", source_buf, { { line = 0, type = "Mark", text = "a" } }))
@@ -1989,7 +1998,7 @@ T["uses window and editor placement containers and resolves width per source win
             { "track", "marks", "thumb" },
         }
         local scrollbar_config = require("scrollbar.config")
-        scrollbar_config.set(active)
+        scrollbar_config.set({ scrollbar = active })
         local renderer = require("scrollbar.renderer")
         renderer.setup()
         local tall = assert(renderer.render(first))
@@ -2022,7 +2031,7 @@ T["uses window and editor placement containers and resolves width per source win
 
         local editor = vim.deepcopy(active)
         editor.float.placement.relative = "editor"
-        scrollbar_config.set(editor)
+        scrollbar_config.set({ scrollbar = editor })
         renderer.setup()
         vim.api.nvim_set_current_win(narrow_win)
         local editor_state = assert(renderer.render(narrow_win))
@@ -2092,7 +2101,7 @@ T["repositions in place and rebuilds expansion when the live gutter width change
             { { kind = "marks", types = { "Mark" }, max_width = 20 } },
             { "track", "thumb" },
         }
-        require("scrollbar.config").set(base_config)
+        require("scrollbar.config").set({ scrollbar = base_config })
 
         local layout = require("scrollbar.layout")
         local original_mark_layer = layout.mark_layer
@@ -2174,7 +2183,7 @@ T["caches line mark work while keeping handle geometry current and invalidating 
         local source_buf = vim.api.nvim_win_get_buf(source_win)
 
         local scrollbar_config = require("scrollbar.config")
-        scrollbar_config.set(base_config)
+        scrollbar_config.set({ scrollbar = base_config })
         local store = require("scrollbar.store")
         local buffer_marks = { { line = 120, type = "Misc", text = "A" } }
         assert(store.set("buffer", source_buf, buffer_marks))
@@ -2234,7 +2243,7 @@ T["caches line mark work while keeping handle geometry current and invalidating 
 
         local changed_config = vim.deepcopy(base_config)
         changed_config.float.placement.anchor = "NW"
-        scrollbar_config.set(changed_config)
+        scrollbar_config.set({ scrollbar = changed_config })
         renderer.render(source_win)
         local after_config = builds
         local config_reused_flattened = rawequal(mark_tables[after_config], mark_tables[after_resize])
@@ -2243,21 +2252,22 @@ T["caches line mark work while keeping handle geometry current and invalidating 
         visual_config.track = { highlight = "Normal" }
         visual_config.thumb.highlight = "Normal"
         visual_config.marks.Misc.highlight = "WarningMsg"
-        visual_config.render.interval_ms = 99
+        visual_config.update = visual_config.update or {}
+        visual_config.update.interval_ms = 99
         visual_config.providers.marks = { numbers = true }
-        scrollbar_config.set(visual_config)
+        scrollbar_config.set({ scrollbar = visual_config })
         renderer.render(source_win)
         local after_visual_config = builds
 
         local changed_text = vim.deepcopy(visual_config)
         changed_text.marks.Misc.text = "Z"
-        scrollbar_config.set(changed_text)
+        scrollbar_config.set({ scrollbar = changed_text })
         renderer.render(source_win)
         local after_mark_text = builds
 
         local changed_priority = vim.deepcopy(changed_text)
         changed_priority.marks.Misc.priority = 9
-        scrollbar_config.set(changed_priority)
+        scrollbar_config.set({ scrollbar = changed_priority })
         renderer.render(source_win)
         local after_mark_priority = builds
 
@@ -2266,13 +2276,13 @@ T["caches line mark work while keeping handle geometry current and invalidating 
             { "track", { kind = "marks", types = { "Mark" }, max_width = 4 } },
             { "track", "marks", "thumb" },
         }
-        scrollbar_config.set(changed_layout)
+        scrollbar_config.set({ scrollbar = changed_layout })
         renderer.render(source_win)
         local after_layout = builds
 
         local changed_cap = vim.deepcopy(changed_layout)
         changed_cap.layout.columns[1][2].max_width = 5
-        scrollbar_config.set(changed_cap)
+        scrollbar_config.set({ scrollbar = changed_cap })
         renderer.render(source_win)
         local after_expansion_cap = builds
 
@@ -2384,7 +2394,7 @@ T["profile switches compare explicit cache inputs and invalidate only their sour
             profile("screen", { render = { geometry = "screen" } }),
         }
 
-        require("scrollbar.config").set(base_config)
+        require("scrollbar.config").set({ scrollbar = base_config })
         local source_buf = vim.api.nvim_win_get_buf(first)
         require("scrollbar.store").set("test", source_buf, { { line = 100, type = "Misc" } })
         local layout = require("scrollbar.layout")
@@ -2458,7 +2468,7 @@ T["direct config sets validate retained line caches by selected input"] = functi
         }
 
         local scrollbar_config = require("scrollbar.config")
-        scrollbar_config.set(base_config)
+        scrollbar_config.set({ scrollbar = base_config })
         local layout = require("scrollbar.layout")
         local original_mark_layer = layout.mark_layer
         local builds = 0
@@ -2474,14 +2484,14 @@ T["direct config sets validate retained line caches by selected input"] = functi
         local counts = { initial = builds }
 
         local equivalent = vim.deepcopy(base_config)
-        scrollbar_config.set(equivalent)
+        scrollbar_config.set({ scrollbar = equivalent })
         renderer.render(first)
         renderer.render(second)
         counts.equivalent = builds
 
         local selected_changed = vim.deepcopy(equivalent)
         selected_changed.profiles[1].config.marks.Misc.text = "B"
-        scrollbar_config.set(selected_changed)
+        scrollbar_config.set({ scrollbar = selected_changed })
         renderer.render(first)
         counts.selected_changed = builds
         renderer.render(second)
@@ -2489,14 +2499,14 @@ T["direct config sets validate retained line caches by selected input"] = functi
 
         local inactive_changed = vim.deepcopy(selected_changed)
         inactive_changed.profiles[2].config.marks.Misc.text = "J"
-        scrollbar_config.set(inactive_changed)
+        scrollbar_config.set({ scrollbar = inactive_changed })
         renderer.render(first)
         renderer.render(second)
         counts.inactive_changed = builds
 
         local invalid = vim.deepcopy(inactive_changed)
         invalid.excluded_filetypes = { false }
-        counts.failed = not pcall(scrollbar_config.set, invalid)
+        counts.failed = not pcall(scrollbar_config.set, { scrollbar = invalid })
         renderer.render(first)
         renderer.render(second)
         counts.after_failed = builds
@@ -2528,7 +2538,7 @@ T["screen renders reuse flattened marks but always repeat text-height measuremen
         local source_buf = vim.api.nvim_get_current_buf()
         local active_config = vim.deepcopy(base_config)
         active_config.render.geometry = "screen"
-        require("scrollbar.config").set(active_config)
+        require("scrollbar.config").set({ scrollbar = active_config })
         assert(require("scrollbar.store").set("test", source_buf, {
             { line = 10, type = "Misc" },
             { line = 150, type = "Misc" },
@@ -2604,7 +2614,7 @@ T["configures owned state once and reapplies only changed float configuration"] 
 
         local scrollbar_config = require("scrollbar.config")
         base_config.float.hide_on_cursor = false
-        scrollbar_config.set(base_config)
+        scrollbar_config.set({ scrollbar = base_config })
         local renderer = require("scrollbar.renderer")
         renderer.setup()
 
@@ -2648,7 +2658,7 @@ T["configures owned state once and reapplies only changed float configuration"] 
         }
         changed.float.placement.row = 1
         changed.mouse.enabled = true
-        scrollbar_config.set(changed)
+        scrollbar_config.set({ scrollbar = changed })
         renderer.render(source_win)
         local changed_state = assert(renderer.get_state(source_win))
         local changed_config = vim.api.nvim_win_get_config(changed_state.float_win)
@@ -2728,7 +2738,7 @@ T["hides on cursor overlap and restores the same resources only on transitions"]
         vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
         local source_win = vim.api.nvim_get_current_win()
 
-        require("scrollbar.config").set(base_config)
+        require("scrollbar.config").set({ scrollbar = base_config })
         local renderer = require("scrollbar.renderer")
         renderer.setup()
 
@@ -2831,7 +2841,7 @@ T["uses the full expanded width for cursor hiding"] = function()
             { "track", { kind = "marks", types = { "Mark" }, max_width = 6 } },
             { "track", "marks", "thumb" },
         }
-        require("scrollbar.config").set(base_config)
+        require("scrollbar.config").set({ scrollbar = base_config })
         assert(require("scrollbar.store").set("marks", source_buf, {
             { line = 0, type = "Mark", text = "a" },
             { line = 1, type = "Mark", text = "b" },
@@ -2914,14 +2924,14 @@ T["skips disabled cursor work and keeps unavailable coordinates visible"] = func
 
         local disabled_config = vim.deepcopy(base_config)
         disabled_config.float.hide_on_cursor = false
-        scrollbar_config.set(disabled_config)
+        scrollbar_config.set({ scrollbar = disabled_config })
         renderer.setup()
         local disabled = assert(renderer.render(source_win))
         local disabled_hide = vim.api.nvim_win_get_config(disabled.float_win).hide
         local disabled_calls = vim.deepcopy(calls)
 
         calls = { row = 0, col = 0, position = 0 }
-        scrollbar_config.set(base_config)
+        scrollbar_config.set({ scrollbar = base_config })
         renderer.setup()
         local unavailable = assert(renderer.render(source_win))
         local unavailable_calls = vim.deepcopy(calls)
@@ -3011,7 +3021,7 @@ T["uses reported float bounds across widths placements anchors and clipping"] = 
                 { "track", "thumb" },
             }
             active.float.placement = case.placement
-            scrollbar_config.set(active)
+            scrollbar_config.set({ scrollbar = active })
             position = case.position
             cursor = case.cursor
             local state = assert(renderer.render(source_win), case.name)
@@ -3082,7 +3092,7 @@ T["transfers cursor hiding between source windows on WinEnter"] = function()
         vim.cmd("split")
         local second = vim.api.nvim_get_current_win()
 
-        local active_config = require("scrollbar.config").set(base_config)
+        local active_config = require("scrollbar.config").set({ scrollbar = base_config })
         local renderer = require("scrollbar.renderer")
         renderer.setup()
 
@@ -3141,7 +3151,7 @@ T["performs cursor position work only for the current source window"] = function
         local first = vim.api.nvim_get_current_win()
         vim.cmd("split")
         local second = vim.api.nvim_get_current_win()
-        require("scrollbar.config").set(base_config)
+        require("scrollbar.config").set({ scrollbar = base_config })
         local renderer = require("scrollbar.renderer")
         renderer.setup()
 
@@ -3198,7 +3208,7 @@ T["repairs external hide mutations from cursor overlap state"] = function()
         end
         vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
         local source_win = vim.api.nvim_get_current_win()
-        require("scrollbar.config").set(base_config)
+        require("scrollbar.config").set({ scrollbar = base_config })
         local renderer = require("scrollbar.renderer")
         renderer.setup()
 
@@ -3258,7 +3268,7 @@ T["resets cursor-hidden state across autohide concealment and recreation"] = fun
         vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
         local source_win = vim.api.nvim_get_current_win()
         base_config.autohide = { enabled = true, delay_ms = 500 }
-        require("scrollbar.config").set(base_config)
+        require("scrollbar.config").set({ scrollbar = base_config })
         local renderer = require("scrollbar.renderer")
         renderer.setup()
 
@@ -3314,7 +3324,7 @@ T["cleans resources for lifecycle events, hide, toggle, and setup reset"] = func
         local first = vim.api.nvim_get_current_win()
         vim.cmd("split")
         local second = vim.api.nvim_get_current_win()
-        require("scrollbar.config").set(config)
+        require("scrollbar.config").set({ scrollbar = config })
         local renderer = require("scrollbar.renderer")
         renderer.setup()
 
@@ -3432,6 +3442,61 @@ T["cleans resources for lifecycle events, hide, toggle, and setup reset"] = func
         dispose_state_hidden = true,
         dispose_cleanup = true,
     })
+end
+
+T["filters minimap-only marks and compact search before flattening"] = function()
+    local child = new_child()
+    local result = child.lua_func(function(base_config)
+        local lines = {}
+        for index = 1, 200 do
+            lines[index] = "line " .. index
+        end
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        local source_win = vim.api.nvim_get_current_win()
+        local source_buf = vim.api.nvim_get_current_buf()
+
+        base_config.providers.diagnostic = false
+        base_config.providers.search = false
+        require("scrollbar.config").set({
+            scrollbar = base_config,
+            minimap = {
+                enabled = true,
+                providers = {
+                    cursor = false,
+                    diagnostic = true,
+                    search = true,
+                    marks = false,
+                    gitsigns = false,
+                    mini_diff = false,
+                    signify = false,
+                    vgit = false,
+                    ale = false,
+                    coc = false,
+                    treesitter = false,
+                    lsp_semantic_tokens = false,
+                },
+            },
+        })
+
+        local store = require("scrollbar.store")
+        assert(store.set("diagnostic", source_buf, { { line = 199, type = "Misc" } }))
+        assert(store._set_search_compact(source_buf, require("scrollbar.providers.search_compact").encode({ 0 })))
+
+        local renderer = require("scrollbar.renderer")
+        renderer.setup()
+        local state = assert(renderer.render(source_win))
+        local rendered_providers = {}
+        for _, row in ipairs(state.hitmap) do
+            for _, cell in ipairs(row) do
+                if cell.provider ~= nil then
+                    rendered_providers[cell.provider] = true
+                end
+            end
+        end
+        return rendered_providers
+    end, renderer_config())
+
+    expect.equality(result, {})
 end
 
 return T

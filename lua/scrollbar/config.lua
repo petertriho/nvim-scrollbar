@@ -1,5 +1,36 @@
+local minimap_config = require("scrollbar.minimap.config")
+local provider_config = require("scrollbar.provider_config")
 local presets = require("scrollbar.presets")
 local utils = require("scrollbar.utils")
+
+local DEFAULT_EVENTS = {
+    "BufEnter",
+    "BufWinEnter",
+    "WinEnter",
+    "TabEnter",
+    "TermEnter",
+    "CmdwinLeave",
+    "CursorMoved",
+    "CursorMovedI",
+    "TextChanged",
+    "TextChangedI",
+    "TextChangedP",
+    "TextChangedT",
+    "WinScrolled",
+    "WinResized",
+    "VimResized",
+    "OptionSet",
+    "ColorScheme",
+    "WinClosed",
+    "BufDelete",
+    "BufWipeout",
+    "TabClosed",
+}
+
+local ALLOWED_EVENTS = {}
+for _, event in ipairs(DEFAULT_EVENTS) do
+    ALLOWED_EVENTS[event] = true
+end
 
 local DEFAULTS = {
     show = true,
@@ -11,8 +42,11 @@ local DEFAULTS = {
         enabled = false,
         delay_ms = 1000,
     },
-    render = {
+    update = {
+        events = vim.deepcopy(DEFAULT_EVENTS),
         interval_ms = 16,
+    },
+    render = {
         geometry = "line",
     },
     float = {
@@ -182,6 +216,7 @@ local TOP_LEVEL_KEYS = {
     max_lines = true,
     hide_if_all_visible = true,
     autohide = true,
+    update = true,
     render = true,
     float = true,
     layout = true,
@@ -196,7 +231,8 @@ local TOP_LEVEL_KEYS = {
 
 local NESTED_KEYS = {
     autohide = { enabled = true, delay_ms = true },
-    render = { interval_ms = true, geometry = true },
+    update = { events = true, interval_ms = true },
+    render = { geometry = true },
     float = { zindex = true, hide_on_cursor = true, placement = true },
     ["float.placement"] = {
         relative = true,
@@ -212,20 +248,6 @@ local NESTED_KEYS = {
     thumb = { text = true, blend = true, highlight = true, hide_if_all_visible = true },
     mark = { text = true, priority = true, highlight = true },
     layer = { kind = true, types = true, max_width = true },
-    providers = {
-        cursor = true,
-        diagnostic = true,
-        search = true,
-        marks = true,
-        gitsigns = true,
-        mini_diff = true,
-        signify = true,
-        vgit = true,
-        ale = true,
-        coc = true,
-    },
-    search = { incsearch = true, backend = true },
-    ["providers.marks"] = { letters = true, numbers = true },
 }
 
 local PROFILE_KEYS = {
@@ -270,13 +292,14 @@ local ENUMS = {
     gutter = { avoid = true, overlap = true },
     gutter_position = { inner = true, outer = true },
     direction = { auto = true, ltr = true, rtl = true },
-    search_backend = { sync = true, worker = true },
 }
 
 ---@type ScrollbarConfig?
 local active
 ---@type ScrollbarCompiledVariant[]?
 local variants
+---@type ScrollbarEffectiveProviderPlan?
+local provider_plan
 local profile_error_notifications = {}
 
 local function invalid(message)
@@ -306,6 +329,7 @@ local function validate_shape(overrides)
         end
     end
 
+    validate_unknown_keys(overrides.update, NESTED_KEYS.update, "update")
     validate_unknown_keys(overrides.render, NESTED_KEYS.render, "render")
     validate_unknown_keys(overrides.autohide, NESTED_KEYS.autohide, "autohide")
     validate_unknown_keys(overrides.float, NESTED_KEYS.float, "float")
@@ -316,14 +340,7 @@ local function validate_shape(overrides)
     validate_unknown_keys(overrides.track, NESTED_KEYS.track, "track")
     validate_unknown_keys(overrides.mouse, NESTED_KEYS.mouse, "mouse")
     validate_unknown_keys(overrides.thumb, NESTED_KEYS.thumb, "thumb")
-    validate_unknown_keys(overrides.providers, NESTED_KEYS.providers, "providers")
-
-    if type(overrides.providers) == "table" and type(overrides.providers.search) == "table" then
-        validate_unknown_keys(overrides.providers.search, NESTED_KEYS.search, "providers.search")
-    end
-    if type(overrides.providers) == "table" and type(overrides.providers.marks) == "table" then
-        validate_unknown_keys(overrides.providers.marks, NESTED_KEYS["providers.marks"], "providers.marks")
-    end
+    provider_config.validate_shape(overrides.providers, provider_config.SCROLLBAR_NAMES, "providers")
 
     if type(overrides.marks) == "table" then
         for mark_type, mark in pairs(overrides.marks) do
@@ -666,43 +683,6 @@ local function compile_layout(layout, anchor)
     return result
 end
 
-local function normalize_providers(providers)
-    for _, name in ipairs({ "cursor", "diagnostic", "gitsigns", "mini_diff", "signify", "vgit", "ale", "coc" }) do
-        validate_boolean(providers[name], "providers." .. name)
-    end
-
-    local search = providers.search
-    if search == true then
-        providers.search = { backend = "worker" }
-    elseif type(search) == "table" then
-        if search.backend == nil then
-            search.backend = "worker"
-        end
-        if search.incsearch ~= nil then
-            validate_boolean(search.incsearch, "providers.search.incsearch")
-        end
-        validate_enum(search.backend, "providers.search.backend", ENUMS.search_backend)
-    elseif search ~= false then
-        invalid("providers.search must be a boolean or table")
-    end
-
-    local marks = providers.marks
-    if marks == true then
-        providers.marks = { letters = true, numbers = false }
-    elseif type(marks) == "table" then
-        if marks.letters == nil then
-            marks.letters = true
-        end
-        if marks.numbers == nil then
-            marks.numbers = false
-        end
-        validate_boolean(marks.letters, "providers.marks.letters")
-        validate_boolean(marks.numbers, "providers.marks.numbers")
-    elseif marks ~= false then
-        invalid("providers.marks must be a boolean or table")
-    end
-end
-
 local function layout_config(value)
     local marks = {}
     for mark_type, mark in pairs(value.marks) do
@@ -814,10 +794,32 @@ local function normalize(overrides)
     validate_boolean(result.autohide.enabled, "autohide.enabled")
     validate_integer(result.autohide.delay_ms, "autohide.delay_ms", false)
 
+    if type(result.update) ~= "table" then
+        invalid("update must be a table")
+    end
+    validate_integer(result.update.interval_ms, "update.interval_ms", true)
+    local event_count = dense_count(result.update.events, "update.events")
+    if event_count == 0 then
+        invalid("update.events must contain at least one event")
+    end
+    local seen_events = {}
+    for index = 1, event_count do
+        local event = result.update.events[index]
+        if type(event) ~= "string" then
+            invalid(string.format("update.events[%d] must be a string", index))
+        end
+        if not ALLOWED_EVENTS[event] then
+            invalid(string.format("update.events[%d] unknown event '%s'", index, event))
+        end
+        if seen_events[event] then
+            invalid(string.format("update.events[%d] duplicate event '%s'", index, event))
+        end
+        seen_events[event] = true
+    end
+
     if type(result.render) ~= "table" then
         invalid("render must be a table")
     end
-    validate_integer(result.render.interval_ms, "render.interval_ms", true)
     validate_enum(result.render.geometry, "render.geometry", ENUMS.geometry)
 
     if type(result.float) ~= "table" then
@@ -882,10 +884,12 @@ local function normalize(overrides)
     if type(result.providers) ~= "table" then
         invalid("providers must be a table")
     end
-    normalize_providers(result.providers)
+    local provider_requests
+    result.providers, provider_requests =
+        provider_config.normalize(result.providers, provider_config.SCROLLBAR_NAMES, "providers")
     validate_string_list(result.excluded_buftypes, "excluded_buftypes")
     validate_string_list(result.excluded_filetypes, "excluded_filetypes")
-    return result
+    return result, provider_requests
 end
 
 local function compile(overrides)
@@ -898,7 +902,7 @@ local function compile(overrides)
     local setup = vim.deepcopy(overrides)
     local compiled_profiles = compile_profiles(setup.profiles)
     setup.profiles = nil
-    local root = normalize(setup)
+    local root, provider_requests = normalize(setup)
     local compiled = {
         { id = 0, matcher = false, config = root },
     }
@@ -917,17 +921,106 @@ local function compile(overrides)
         variant.config.highlights = utils.get_highlight_groups(variant.config, variant.id, root.set_highlights)
         variant.config.layout_cache = layout_config(variant.config)
     end
-    return root, compiled
+    return root, compiled, provider_requests
 end
 
 local M = {}
 
----@param overrides? ScrollbarUserConfig
----@return ScrollbarConfig
+local TOP_LEVEL_DISPATCH_KEYS = {
+    scrollbar = true,
+    minimap = true,
+}
+
+---@param compiled ScrollbarCompiledVariant[]
+---@return table<string, ScrollbarMinimapOverlaySpec>
+local function minimap_default_overlay_types(compiled)
+    local result = {}
+    for _, variant in ipairs(compiled) do
+        for mark_type, mark in pairs(variant.config.marks) do
+            if mark_type ~= "Cursor" and result[mark_type] == nil then
+                result[mark_type] = {
+                    priority = mark.priority,
+                    highlight = vim.deepcopy(mark.highlight),
+                }
+            end
+        end
+    end
+    return result
+end
+
+local function validate_public_highlight_groups(scrollbar_variants, minimap_variants)
+    local owners = {
+        ScrollbarBase = "the scrollbar base",
+        ScrollbarTrack = "the scrollbar track",
+        ScrollbarThumb = "the scrollbar thumb",
+        ScrollbarThumbPressed = "the pressed scrollbar thumb",
+        ScrollbarHandle = "the legacy scrollbar handle",
+        ScrollbarHandlePressed = "the pressed legacy scrollbar handle",
+        ScrollbarMinimapBase = "the static minimap base",
+        ScrollbarMinimapContent = "the static minimap content",
+        ScrollbarMinimapViewport = "the static minimap viewport",
+        ScrollbarMinimapCursor = "the static minimap cursor",
+    }
+    local function claim(group, owner)
+        local existing = owners[group]
+        if existing ~= nil and existing ~= owner then
+            invalid(string.format("highlight group '%s' is claimed by %s and %s", group, existing, owner))
+        end
+        owners[group] = owner
+    end
+
+    for _, variant in ipairs(scrollbar_variants) do
+        for mark_type in pairs(variant.config.marks) do
+            local owner = "scrollbar mark type '" .. mark_type .. "'"
+            claim("Scrollbar" .. mark_type, owner)
+            claim("Scrollbar" .. mark_type .. "Thumb", owner .. " thumb overlap")
+            claim("Scrollbar" .. mark_type .. "ThumbPressed", owner .. " pressed thumb overlap")
+            claim("Scrollbar" .. mark_type .. "Handle", owner .. " legacy handle overlap")
+            claim("Scrollbar" .. mark_type .. "HandlePressed", owner .. " pressed legacy handle overlap")
+        end
+    end
+    for _, variant in ipairs(minimap_variants) do
+        for mark_type in pairs(variant.config.overlays.types) do
+            claim("ScrollbarMinimap" .. mark_type, "minimap overlay type '" .. mark_type .. "'")
+        end
+    end
+end
+
+--- @param overrides? table
+--- @return ScrollbarConfig
 M.set = function(overrides)
-    local normalized, compiled = compile(overrides)
+    if overrides == nil then
+        overrides = {}
+    elseif type(overrides) ~= "table" then
+        invalid("configuration must be a table")
+    end
+
+    for key in pairs(overrides) do
+        if not TOP_LEVEL_DISPATCH_KEYS[key] then
+            invalid(
+                string.format("unknown option '%s' (top-level options are 'scrollbar' and 'minimap')", tostring(key))
+            )
+        end
+    end
+
+    local scrollbar_overrides = overrides.scrollbar or {}
+    local minimap_overrides = overrides.minimap
+
+    local normalized, compiled, scrollbar_provider_requests = compile(scrollbar_overrides)
+    local normalized_minimap, compiled_minimap, minimap_provider_requests =
+        minimap_config._compile(minimap_overrides, minimap_default_overlay_types(compiled))
+    validate_public_highlight_groups(compiled, compiled_minimap)
+    local compiled_provider_plan = provider_config.compile_plan(
+        normalized,
+        scrollbar_provider_requests,
+        normalized_minimap,
+        minimap_provider_requests
+    )
+
     active = normalized
     variants = compiled
+    provider_plan = compiled_provider_plan
+    minimap_config._commit(normalized_minimap, compiled_minimap)
     profile_error_notifications = {}
     return active
 end
@@ -938,6 +1031,17 @@ M.get = function()
         M.set()
     end
     return assert(active, "active scrollbar config unavailable")
+end
+
+---@return ScrollbarMinimapConfig
+M.get_minimap = function()
+    return minimap_config.get()
+end
+
+---@return ScrollbarEffectiveProviderPlan
+M.get_provider_plan = function()
+    M.get()
+    return assert(provider_plan, "effective provider plan unavailable")
 end
 
 ---@return ScrollbarCompiledVariant[]

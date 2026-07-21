@@ -10,8 +10,10 @@ Install ALE and enable the provider:
 
 ```lua
 require("scrollbar").setup({
-    providers = {
-        ale = true,
+    scrollbar = {
+        providers = {
+            ale = true,
+        },
     },
 })
 ```
@@ -49,10 +51,12 @@ ALE uses the shared `Error` and `Warn` mark types:
 
 ```lua
 require("scrollbar").setup({
-    providers = { ale = true },
-    marks = {
-        Error = { text = "E", highlight = "DiagnosticError" },
-        Warn = { text = "W", highlight = "DiagnosticWarn" },
+    scrollbar = {
+        providers = { ale = true },
+        marks = {
+            Error = { text = "E", highlight = "DiagnosticError" },
+            Warn = { text = "W", highlight = "DiagnosticWarn" },
+        },
     },
 })
 ```

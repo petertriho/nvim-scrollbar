@@ -146,15 +146,17 @@ local function setup_fixture(kind)
     vim.api.nvim_win_set_cursor(0, { 1, 0 })
 
     local active_config = config.set({
-        set_highlights = false,
-        max_lines = false,
-        providers = {
-            cursor = false,
-            diagnostic = false,
-            gitsigns = false,
-            search = { incsearch = true },
-            ale = false,
-            coc = false,
+        scrollbar = {
+            set_highlights = false,
+            max_lines = false,
+            providers = {
+                cursor = false,
+                diagnostic = false,
+                gitsigns = false,
+                search = { incsearch = true },
+                ale = false,
+                coc = false,
+            },
         },
     })
     providers.setup({
@@ -466,17 +468,20 @@ local function configure_worker_fixture(kind, worker_test)
     vim.api.nvim_win_set_cursor(0, { 1, 0 })
 
     local active_config = config.set({
-        set_highlights = false,
-        max_lines = false,
-        render = { interval_ms = 0, geometry = "line" },
-        thumb = { text = "H", hide_if_all_visible = false },
-        providers = {
-            cursor = false,
-            diagnostic = false,
-            gitsigns = false,
-            search = { incsearch = true },
-            ale = false,
-            coc = false,
+        scrollbar = {
+            set_highlights = false,
+            max_lines = false,
+            update = { interval_ms = 0 },
+            render = { geometry = "line" },
+            thumb = { text = "H", hide_if_all_visible = false },
+            providers = {
+                cursor = false,
+                diagnostic = false,
+                gitsigns = false,
+                search = { incsearch = true },
+                ale = false,
+                coc = false,
+            },
         },
     })
     renderer.setup()

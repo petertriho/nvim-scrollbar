@@ -7,8 +7,10 @@ marks in each eligible loaded buffer.
 
 ```lua
 require("scrollbar").setup({
-    providers = {
-        marks = { letters = true, numbers = false },
+    scrollbar = {
+        providers = {
+            marks = { letters = true, numbers = false },
+        },
     },
 })
 ```
@@ -51,10 +53,12 @@ To expand colliding built-in names, put width on the lane:
 
 ```lua
 require("scrollbar").setup({
-    layout = {
-        columns = {
-            { "track", "thumb", { kind = "marks", types = { "Mark" }, max_width = 8 } },
-            { "marks" },
+    scrollbar = {
+        layout = {
+            columns = {
+                { "track", "thumb", { kind = "marks", types = { "Mark" }, max_width = 8 } },
+                { "marks" },
+            },
         },
     },
 })

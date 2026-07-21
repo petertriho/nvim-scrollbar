@@ -18,6 +18,7 @@ make typecheck
 make benchmark
 make benchmark-render
 make benchmark-search
+make benchmark-minimap
 make ci
 ```
 
@@ -26,7 +27,9 @@ make ci
 `make test-file` runs one MiniTest file. `make benchmark` is an alias for
 `make benchmark-render`; `make benchmark-search` runs the search benchmark;
 `make benchmark-marks` measures the per-call cost of the marks-provider
-`SafeState` reconcile path across a range of unique-buffer counts.
+`SafeState` reconcile path across a range of unique-buffer counts;
+`make benchmark-minimap` exercises the minimap squash + render path across
+file sizes, squash ratios, and the worker and sync backends.
 
 `make ci` runs formatting checks, Selene, LuaLS type checking, and the full test
 suite.

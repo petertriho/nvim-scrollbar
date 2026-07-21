@@ -29,15 +29,17 @@ local function setup_search_provider(child, search_config, worker_test)
         vim.o.wrapscan = false
 
         local active_config = require("scrollbar.config").set({
-            set_highlights = false,
-            render = { interval_ms = 0 },
-            providers = {
-                cursor = false,
-                diagnostic = false,
-                gitsigns = false,
-                search = value.search_config,
-                ale = false,
-                coc = false,
+            scrollbar = {
+                set_highlights = false,
+                update = { interval_ms = 0 },
+                providers = {
+                    cursor = false,
+                    diagnostic = false,
+                    gitsigns = false,
+                    search = value.search_config,
+                    ale = false,
+                    coc = false,
+                },
             },
         })
         local providers = require("scrollbar.providers")

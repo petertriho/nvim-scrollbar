@@ -39,7 +39,7 @@ T["generates canonical Thumb groups transparent base and equivalent Handle alias
         vim.api.nvim_set_hl(0, "PmenuSbar", { bg = "#112233" })
         vim.api.nvim_set_hl(0, "PmenuThumb", { bg = "#445566" })
         vim.api.nvim_set_hl(0, "PmenuSel", { bg = "#778899" })
-        require("scrollbar").setup(config)
+        require("scrollbar").setup({ scrollbar = config })
         local get = function(name)
             return vim.api.nvim_get_hl(0, { name = name, link = false })
         end
@@ -79,7 +79,7 @@ T["applies full highlight tables and projects string sources by channel"] = func
             vim.api.nvim_set_hl(0, "DirectThumbSource", { fg = "#010101", bg = "#123456", bold = true })
             vim.api.nvim_set_hl(0, "DirectMarkSource", { fg = "#654321", bg = "#020202", italic = true })
             vim.api.nvim_set_hl(0, "PmenuSel", { bg = "#345678" })
-            require("scrollbar").setup(config)
+            require("scrollbar").setup({ scrollbar = config })
             local get = function(name)
                 return vim.api.nvim_get_hl(0, { name = name, link = false })
             end
@@ -130,39 +130,9 @@ T["applies full highlight tables and projects string sources by channel"] = func
     })
 end
 
-T["regenerates automatic groups on ColorScheme and leaves manual groups untouched"] = function()
+T["preserves public canonical and legacy groups defined before setup"] = function()
     local child = new_child()
     local result = child.lua_func(function(config)
-        local scrollbar = require("scrollbar")
-        vim.api.nvim_set_hl(0, "ConfiguredTrackSource", { bg = "#102030" })
-        vim.api.nvim_set_hl(0, "PmenuSel", { bg = "#405060" })
-        scrollbar.setup(config.enabled)
-        for _, name in ipairs({
-            "ScrollbarBase",
-            "ScrollbarTrack",
-            "ScrollbarThumb",
-            "ScrollbarThumbPressed",
-            "ScrollbarSearch",
-            "ScrollbarSearchThumb",
-            "ScrollbarHandle",
-            "ScrollbarSearchHandle",
-        }) do
-            vim.api.nvim_set_hl(0, name, { bg = "#000000" })
-        end
-        vim.cmd("doautocmd ColorScheme")
-        local get = function(name)
-            return vim.api.nvim_get_hl(0, { name = name, link = false })
-        end
-        local regenerated = {
-            base = get("ScrollbarBase"),
-            track = get("ScrollbarTrack"),
-            thumb = get("ScrollbarThumb"),
-            pressed = get("ScrollbarThumbPressed"),
-            mark = get("ScrollbarSearch"),
-            overlap = get("ScrollbarSearchThumb"),
-            alias = get("ScrollbarSearchHandle"),
-        }
-
         local manual = {
             ScrollbarBase = { bg = "#010101" },
             ScrollbarTrack = { bg = "#123456" },
@@ -170,47 +140,162 @@ T["regenerates automatic groups on ColorScheme and leaves manual groups untouche
             ScrollbarThumbPressed = { bg = "#334455" },
             ScrollbarSearch = { fg = "#556677", italic = true },
             ScrollbarSearchThumb = { fg = "#667788", bg = "#778899" },
+            ScrollbarSearchThumbPressed = { fg = "#778899", bg = "#8899aa" },
             ScrollbarHandle = { bg = "#8899aa" },
+            ScrollbarHandlePressed = { bg = "#99aabb" },
             ScrollbarSearchHandle = { fg = "#99aabb" },
+            ScrollbarSearchHandlePressed = { fg = "#aabbcc" },
         }
         for name, definition in pairs(manual) do
             vim.api.nvim_set_hl(0, name, definition)
         end
-        scrollbar.setup(config.disabled)
-        vim.cmd("doautocmd ColorScheme")
-        local untouched = {}
+        local before = {}
         for name in pairs(manual) do
-            untouched[name] = get(name)
+            before[name] = vim.api.nvim_get_hl(0, { name = name, link = true })
         end
-        return { regenerated = regenerated, untouched = untouched }
+
+        require("scrollbar").setup({ scrollbar = config })
+        vim.cmd("doautocmd ColorScheme")
+        local after = {}
+        for name in pairs(manual) do
+            after[name] = vim.api.nvim_get_hl(0, { name = name, link = true })
+        end
+        return { before = before, after = after }
+    end, base_config())
+
+    expect.equality(result.after, result.before)
+end
+
+T["refreshes private definitions while preserving public links and later user overrides"] = function()
+    local child = new_child()
+    local result = child.lua_func(function(config)
+        local scrollbar = require("scrollbar")
+        vim.api.nvim_set_hl(0, "ConfiguredTrackSource", { bg = "#102030" })
+        vim.api.nvim_set_hl(0, "PmenuSel", { bg = "#405060" })
+        scrollbar.setup({ scrollbar = config.first })
+
+        local link = function(name)
+            return vim.api.nvim_get_hl(0, { name = name, link = true }).link
+        end
+        local get = function(name)
+            return vim.api.nvim_get_hl(0, { name = name, link = false })
+        end
+        local first_links = {
+            base = link("ScrollbarBase"),
+            track = link("ScrollbarTrack"),
+            thumb = link("ScrollbarThumb"),
+            mark = link("ScrollbarSearch"),
+            legacy_thumb = link("ScrollbarHandle"),
+            legacy_mark = link("ScrollbarSearchHandle"),
+        }
+        local first = {
+            track = get("ScrollbarTrack"),
+            thumb = get("ScrollbarThumb"),
+            mark = get("ScrollbarSearch"),
+        }
+
+        vim.api.nvim_set_hl(0, "ConfiguredTrackSource", { bg = "#203040" })
+        scrollbar.setup({ scrollbar = config.second })
+        local second_links = {
+            base = link("ScrollbarBase"),
+            track = link("ScrollbarTrack"),
+            thumb = link("ScrollbarThumb"),
+            mark = link("ScrollbarSearch"),
+            legacy_thumb = link("ScrollbarHandle"),
+            legacy_mark = link("ScrollbarSearchHandle"),
+        }
+        local second = {
+            track = get("ScrollbarTrack"),
+            thumb = get("ScrollbarThumb"),
+            mark = get("ScrollbarSearch"),
+        }
+
+        vim.api.nvim_set_hl(0, second_links.mark, { fg = "#000000" })
+        vim.api.nvim_set_hl(0, "ScrollbarSearch", { fg = "#556677", italic = true })
+        vim.cmd("doautocmd ColorScheme")
+        return {
+            first_links = first_links,
+            second_links = second_links,
+            first = first,
+            second = second,
+            refreshed_private_mark = get(second_links.mark),
+            preserved_public_mark = vim.api.nvim_get_hl(0, { name = "ScrollbarSearch", link = true }),
+        }
     end, {
-        enabled = base_config({
+        first = base_config({
             track = { highlight = "ConfiguredTrackSource" },
             thumb = { highlight = { bg = "#112233" } },
             marks = { Search = { highlight = { fg = "#abcdef" } } },
         }),
-        disabled = base_config({ set_highlights = false }),
+        second = base_config({
+            track = { highlight = "ConfiguredTrackSource" },
+            thumb = { highlight = { bg = "#223344" } },
+            marks = { Search = { highlight = { fg = "#fedcba" } } },
+        }),
     })
 
-    expect.equality(result.regenerated.base, {})
-    expect.equality(result.regenerated.track.bg, 0x102030)
-    expect.equality(result.regenerated.thumb, { bg = 0x112233, blend = 30 })
-    expect.equality(result.regenerated.pressed, { bg = 0x405060, blend = 30 })
-    expect.equality(result.regenerated.mark, { fg = 0xABCDEF })
-    expect.equality(result.regenerated.overlap, { fg = 0xABCDEF, bg = 0x112233, blend = 30 })
-    expect.equality(result.regenerated.alias, result.regenerated.overlap)
-    expect.equality(result.untouched.ScrollbarBase, { bg = 0x010101 })
-    expect.equality(result.untouched.ScrollbarTrack, { bg = 0x123456 })
-    expect.equality(result.untouched.ScrollbarThumb, { bg = 0x223344, bold = true, cterm = { bold = true } })
-    expect.equality(result.untouched.ScrollbarThumbPressed, { bg = 0x334455 })
-    expect.equality(result.untouched.ScrollbarSearch, {
+    expect.equality(result.first_links, result.second_links)
+    expect.equality(result.first_links.legacy_thumb, "ScrollbarThumb")
+    expect.equality(result.first_links.legacy_mark, "ScrollbarSearchThumb")
+    expect.no_equality(result.first_links.base:match("^ScrollbarGenerated%."), nil)
+    expect.no_equality(result.first_links.track:match("^ScrollbarGenerated%."), nil)
+    expect.no_equality(result.first_links.thumb:match("^ScrollbarGenerated%."), nil)
+    expect.no_equality(result.first_links.mark:match("^ScrollbarGenerated%."), nil)
+    expect.equality(result.first.track, { bg = 0x102030 })
+    expect.equality(result.first.thumb, { bg = 0x112233, blend = 30 })
+    expect.equality(result.first.mark, { fg = 0xABCDEF })
+    expect.equality(result.second.track, { bg = 0x203040 })
+    expect.equality(result.second.thumb, { bg = 0x223344, blend = 30 })
+    expect.equality(result.second.mark, { fg = 0xFEDCBA })
+    expect.equality(result.refreshed_private_mark, { fg = 0xFEDCBA })
+    expect.equality(result.preserved_public_mark, {
         fg = 0x556677,
         italic = true,
         cterm = { italic = true },
     })
-    expect.equality(result.untouched.ScrollbarSearchThumb, { fg = 0x667788, bg = 0x778899 })
-    expect.equality(result.untouched.ScrollbarHandle, { bg = 0x8899AA })
-    expect.equality(result.untouched.ScrollbarSearchHandle, { fg = 0x99AABB })
+end
+
+T["internal namespaces do not capture valid custom mark groups"] = function()
+    local child = new_child()
+    local result = child.lua_func(
+        function(config)
+            config.profiles = {
+                {
+                    match = { filetypes = { "lua" } },
+                    config = { marks = { Search = { highlight = { fg = "#666666" } } } },
+                },
+            }
+            require("scrollbar").setup({ scrollbar = config })
+            local variants = require("scrollbar.config").get_variants()
+            local profile_search = variants[2].config.highlights.marks.Search.mark
+            local get = function(name)
+                return vim.api.nvim_get_hl(0, { name = name, link = false })
+            end
+            local link = function(name)
+                return vim.api.nvim_get_hl(0, { name = name, link = true }).link
+            end
+            return {
+                generated = get("ScrollbarGeneratedSearch"),
+                profile_like = get("ScrollbarProfile1Search"),
+                generated_target = link("ScrollbarSearch"),
+                profile_search = profile_search,
+                profile_definition = get(profile_search),
+            }
+        end,
+        base_config({
+            marks = {
+                Search = { text = "s", priority = 1, highlight = { fg = "#111111" } },
+                GeneratedSearch = { text = "g", priority = 2, highlight = { fg = "#222222" } },
+                Profile1Search = { text = "p", priority = 3, highlight = { fg = "#333333" } },
+            },
+        })
+    )
+
+    expect.equality(result.generated, { fg = 0x222222 })
+    expect.equality(result.profile_like, { fg = 0x333333 })
+    expect.equality(result.generated_target, "ScrollbarGenerated.Search")
+    expect.equality(result.profile_search, "ScrollbarProfile1.Search")
+    expect.equality(result.profile_definition, { fg = 0x666666 })
 end
 
 T["generates and renders isolated automatic groups for every profile"] = function()
@@ -250,7 +335,7 @@ T["generates and renders isolated automatic groups for every profile"] = functio
                 },
             },
         }
-        require("scrollbar").setup(config)
+        require("scrollbar").setup({ scrollbar = config })
         local renderer = require("scrollbar.renderer")
         local first_state = assert(renderer.render(first))
         local second_state = assert(renderer.render(second))
@@ -270,27 +355,27 @@ T["generates and renders isolated automatic groups for every profile"] = functio
             return vim.api.nvim_get_hl(0, { name = name, link = false })
         end
 
-        vim.api.nvim_set_hl(0, "ScrollbarProfile1Track", { bg = "#000000" })
+        vim.api.nvim_set_hl(0, "ScrollbarProfile1.Track", { bg = "#000000" })
         vim.cmd("doautocmd ColorScheme")
         local names = vim.api.nvim_get_hl(0, {})
         return {
             first_groups = rendered_groups(first_state),
             second_groups = rendered_groups(second_state),
-            first_track = get("ScrollbarProfile1Track"),
-            first_thumb = get("ScrollbarProfile1Thumb"),
-            first_pressed = get("ScrollbarProfile1ThumbPressed"),
-            first_mark = get("ScrollbarProfile1Search"),
-            second_track = get("ScrollbarProfile2Track"),
-            second_thumb = get("ScrollbarProfile2Thumb"),
-            legacy_profile_group = names.ScrollbarProfile1Handle ~= nil,
+            first_track = get("ScrollbarProfile1.Track"),
+            first_thumb = get("ScrollbarProfile1.Thumb"),
+            first_pressed = get("ScrollbarProfile1.ThumbPressed"),
+            first_mark = get("ScrollbarProfile1.Search"),
+            second_track = get("ScrollbarProfile2.Track"),
+            second_thumb = get("ScrollbarProfile2.Thumb"),
+            legacy_profile_group = names["ScrollbarProfile1.Handle"] ~= nil,
             root_legacy_group = names.ScrollbarHandle ~= nil,
         }
     end, base_config())
 
-    expect.equality(result.first_groups.ScrollbarProfile1Track, true)
-    expect.equality(result.first_groups.ScrollbarProfile1ThumbPressed, true)
-    expect.equality(result.second_groups.ScrollbarProfile2Track, true)
-    expect.equality(result.second_groups.ScrollbarProfile2Thumb, true)
+    expect.equality(result.first_groups["ScrollbarProfile1.Track"], true)
+    expect.equality(result.first_groups["ScrollbarProfile1.ThumbPressed"], true)
+    expect.equality(result.second_groups["ScrollbarProfile2.Track"], true)
+    expect.equality(result.second_groups["ScrollbarProfile2.Thumb"], true)
     expect.equality(result.first_track, { bg = 0x112233 })
     expect.equality(result.first_thumb, { bg = 0x223344, blend = 11 })
     expect.equality(result.first_pressed.blend, 11)
@@ -308,22 +393,27 @@ T["manual highlight mode keeps every variant on canonical user groups"] = functi
             { match = { filetypes = { "lua" } }, preset = "review" },
             { match = { buftypes = { "nofile" } }, preset = "minimal" },
         }
-        require("scrollbar").setup(config)
+        require("scrollbar").setup({ scrollbar = config })
         local variants = require("scrollbar.config").get_variants()
         local groups = {}
         for _, variant in ipairs(variants) do
             groups[#groups + 1] = variant.config.highlights
         end
         local profile_names = {}
+        local generated_names = {}
         for name in pairs(vim.api.nvim_get_hl(0, {})) do
             if name:match("^ScrollbarProfile") then
                 profile_names[#profile_names + 1] = name
             end
+            if name:match("^ScrollbarGenerated%.") then
+                generated_names[#generated_names + 1] = name
+            end
         end
-        return { groups = groups, profile_names = profile_names }
+        return { groups = groups, profile_names = profile_names, generated_names = generated_names }
     end, base_config({ set_highlights = false }))
 
     expect.equality(result.profile_names, {})
+    expect.equality(result.generated_names, {})
     expect.equality(#result.groups, 3)
     for _, groups in ipairs(result.groups) do
         expect.equality(groups.track, "ScrollbarTrack")

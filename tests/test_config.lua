@@ -11,7 +11,7 @@ local T = MiniTest.new_set({
 })
 
 local function set(overrides)
-    return require("scrollbar.config").set(overrides)
+    return require("scrollbar.config").set({ scrollbar = overrides })
 end
 
 local function expect_invalid(overrides, pattern)
@@ -179,7 +179,8 @@ T["accepts the complete typed runtime schema"] = function()
         max_lines = 1000,
         hide_if_all_visible = true,
         autohide = { enabled = true, delay_ms = 750 },
-        render = { interval_ms = 0, geometry = "screen" },
+        update = { interval_ms = 0 },
+        render = { geometry = "screen" },
         float = {
             zindex = 60,
             hide_on_cursor = false,
@@ -355,6 +356,55 @@ T["failed setup preserves active config"] = function()
     expect.equality(config.get(), before)
     expect_invalid({ excluded_filetypes = { "lua", false } }, "excluded_filetypes%[2%] must be a string")
     expect.equality(config.get(), before)
+end
+
+T["top-level dispatch accepts only scrollbar and minimap"] = function()
+    local config = require("scrollbar.config")
+
+    local ok, err = pcall(config.set, { float = { width = 2 } })
+    expect.equality(ok, false)
+    expect.no_equality(tostring(err):match("unknown option 'float'"), nil)
+
+    local ok2, err2 = pcall(config.set, { visibility = "active" })
+    expect.equality(ok2, false)
+    expect.no_equality(tostring(err2):match("top%-level options are 'scrollbar' and 'minimap'"), nil)
+
+    local ok3 = pcall(config.set, { scrollbar = { visibility = "active" }, extra = true })
+    expect.equality(ok3, false)
+end
+
+T["minimap slice defaults to disabled and round-trips through config"] = function()
+    local config = require("scrollbar.config")
+    config.set({})
+
+    expect.equality(config.get_minimap().enabled, false)
+
+    config.set({ minimap = { enabled = true } })
+    expect.equality(config.get_minimap().enabled, true)
+
+    config.set({ minimap = { enabled = false } })
+    expect.equality(config.get_minimap().enabled, false)
+
+    ---@diagnostic disable-next-line: assign-type-mismatch
+    local ok, err = pcall(config.set, { minimap = { enabled = "yes" } })
+    expect.equality(ok, false)
+    expect.no_equality(tostring(err):match("minimap.enabled must be a boolean"), nil)
+
+    ---@diagnostic disable-next-line: assign-type-mismatch
+    local ok2, err2 = pcall(config.set, { minimap = "not a table" })
+    expect.equality(ok2, false)
+    expect.no_equality(tostring(err2):match("minimap must be a table"), nil)
+end
+
+T["update.events accepts only the closed allow-list and rejects duplicates"] = function()
+    expect.equality(set({ update = { events = { "BufEnter" } } }).update.events, { "BufEnter" })
+
+    expect_invalid({ update = { events = { "NotAnEvent" } } }, "unknown event 'NotAnEvent'")
+    expect_invalid({ update = { events = {} } }, "update.events must contain at least one event")
+    expect_invalid({ update = { events = { "BufEnter", "BufEnter" } } }, "duplicate event 'BufEnter'")
+
+    expect_invalid({ update = { interval_ms = -1 } }, "update.interval_ms must be a non%-negative integer")
+    expect_invalid({ update = { events = "BufEnter" } }, "update.events must be a dense list")
 end
 
 return T

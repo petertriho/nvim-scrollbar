@@ -42,7 +42,7 @@ local T = MiniTest.new_set({
             }) do
                 package.loaded[module] = nil
             end
-            require("scrollbar.config").set({})
+            require("scrollbar.config").set({ scrollbar = {} })
         end,
         post_case = function()
             local providers = package.loaded["scrollbar.providers"]

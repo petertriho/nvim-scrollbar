@@ -1,9 +1,9 @@
 # Presets
 
-Presets are setup-local presentation baselines. They can change `layout`,
-`track`, `thumb`, `marks`, and `float.placement`; they cannot change providers,
-visibility, geometry mode, mouse behavior, exclusions, autohide, or performance
-options.
+Scrollbar presets are setup-local presentation baselines. They can change
+`layout`, `track`, `thumb`, `marks`, and `float.placement`; they cannot change
+providers, visibility, geometry mode, mouse behavior, exclusions, autohide, or
+performance options.
 
 ## Built-ins
 
@@ -14,7 +14,11 @@ The catalog contains twelve colorscheme-aware layouts:
 - Task-oriented: `minimal`, `review`, `search`, `navigate`.
 
 ```lua
-require("scrollbar").setup({ preset = "review" })
+require("scrollbar").setup({
+    scrollbar = {
+        preset = "review",
+    },
+})
 ```
 
 ### General/Editor Layouts
@@ -33,8 +37,9 @@ require("scrollbar").setup({ preset = "review" })
   reservation, with an inward diagnostic fringe.
 - `xcode`: a compact bar with navigation and diagnostic stripes.
 
-Editor-named presets approximate scrollbar and annotation structure in terminal
-cells. They do not implement minimaps or claim pixel-perfect GUI fidelity.
+Editor-named scrollbar presets approximate scrollbar and annotation structure
+in terminal cells. They do not configure the separate minimap or claim
+pixel-perfect GUI fidelity.
 
 ### Task-Oriented
 
@@ -156,20 +161,22 @@ and `xcode` use `25`, and the other built-ins use `20`.
 
 ```lua
 require("scrollbar").setup({
-    preset = "focused",
-    presets = {
-        focused = {
-            extends = "intellij",
-            thumb = { blend = 15 },
-            layout = {
-                columns = {
-                    { "track", "thumb" },
-                    { { kind = "marks", types = { "Error", "Warn" } }, "marks" },
+    scrollbar = {
+        preset = "focused",
+        presets = {
+            focused = {
+                extends = "intellij",
+                thumb = { blend = 15 },
+                layout = {
+                    columns = {
+                        { "track", "thumb" },
+                        { { kind = "marks", types = { "Error", "Warn" } }, "marks" },
+                    },
                 },
             },
         },
+        thumb = { text = " " }, -- Root values win last.
     },
-    thumb = { text = " " }, -- Root values win last.
 })
 ```
 
@@ -191,8 +198,79 @@ such as `layout.columns`, selector `types`, and mark `text` replace atomically.
 Preset `float` accepts only `placement`. Root `float.zindex` and
 `float.hide_on_cursor` remain runtime behavior and are never preset-controlled.
 
+## Minimap Presets
+
+The minimap has a separate setup-local preset registry. It ships one built-in
+named `default` with `width = 16`, `height = false`, window-relative north-east
+placement, overlays enabled, and viewport tint enabled:
+
+```lua
+require("scrollbar").setup({
+    minimap = {
+        enabled = true,
+        preset = "default",
+    },
+})
+```
+
+Minimap preset definitions accept only these fields:
+
+| Field | Allowed value |
+| --- | --- |
+| `extends` | One parent preset name. |
+| `width` | `false` or a positive integer. `false` resolves to the runtime fallback width `16`. |
+| `height` | `false` or a positive integer. |
+| `float.placement` | `relative`, `anchor`, `row`, `col`, `gutter`, and `gutter_position`. |
+| `overlays` | `enabled` and `types`. |
+| `show_viewport` | Boolean. |
+| `autohide` | `enabled` and `delay_ms`. |
+| `visibility` | `"all"` or `"active"`. |
+
+`float.zindex`, `float.blend`, `providers`, `backend`, `mouse`, exclusions,
+updates, `content_glyphs`, and setup enablement are not preset fields.
+`visibility` and `autohide` are root runtime policies; keep them in the root
+minimap block when profiles select different presets.
+
+```lua
+require("scrollbar").setup({
+    minimap = {
+        enabled = true,
+        preset = "review-map",
+        presets = {
+            ["review-map"] = {
+                extends = "default",
+                width = 12,
+                float = {
+                    placement = { anchor = "NW", col = 1 },
+                },
+                overlays = {
+                    types = {
+                        Error = { priority = 0 },
+                        Hint = false,
+                        GitChange = { highlight = "DiffChange" },
+                    },
+                },
+                show_viewport = false,
+            },
+        },
+        providers = {
+            diagnostic = true,
+            gitsigns = true,
+        },
+    },
+})
+```
+
+Minimap preset inheritance, local overrides of the built-in name, deep copies,
+and precedence match scrollbar presets: neutral defaults, then the selected
+preset chain, then root minimap options. Dense lists such as event lists remain
+atomic, while keyed `overlays.types` entries deep-merge and preserve `false`
+tombstones for later layers to re-enable. Provider demand stays setup-level and
+is applied after preset resolution.
+
 ## Related
 
 - [Configuration](configuration.md)
 - [Layout and geometry](layout-and-geometry.md)
+- [Minimap configuration](minimap/configuration.md)
 - [Migration](migration.md)

@@ -1,4 +1,7 @@
 local config = require("scrollbar.config")
+local minimap = require("scrollbar.minimap")
+local minimap_renderer = require("scrollbar.minimap.renderer")
+local minimap_scheduler = require("scrollbar.minimap.scheduler")
 local mouse = require("scrollbar.mouse")
 local providers = require("scrollbar.providers")
 local renderer = require("scrollbar.renderer")
@@ -18,6 +21,8 @@ local BUILTINS = {
     { name = "vgit", module = "scrollbar.providers.vgit" },
     { name = "ale", module = "scrollbar.providers.ale" },
     { name = "coc", module = "scrollbar.providers.coc" },
+    { name = "treesitter", module = "scrollbar.providers.treesitter" },
+    { name = "lsp_semantic_tokens", module = "scrollbar.providers.lsp_semantic_tokens" },
 }
 
 ---@type table<string, ScrollbarProvider>
@@ -37,6 +42,7 @@ local function remove_orphaned_renderer_resources()
 end
 
 local function dispose_runtime()
+    minimap.dispose()
     mouse.dispose()
     scheduler.dispose()
     providers.dispose()
@@ -44,8 +50,8 @@ local function dispose_runtime()
     remove_orphaned_renderer_resources()
 end
 
----@param active_config ScrollbarConfig
-local function reconcile_builtins(active_config)
+---@param provider_plan ScrollbarEffectiveProviderPlan
+local function reconcile_builtins(provider_plan)
     for _, builtin in ipairs(BUILTINS) do
         local name = builtin.name
         local registered = providers.get(name)
@@ -54,10 +60,11 @@ local function reconcile_builtins(active_config)
             owned_builtins[name] = nil
         end
 
-        local enabled = active_config.providers[name] ~= false
+        local planned = provider_plan[name]
+        local enabled = planned ~= nil and planned.options ~= false
         if enabled and registered == nil then
             local provider = require(builtin.module)
-            providers.register(provider)
+            providers._register_builtin(provider)
             owned_builtins[name] = provider
         elseif not enabled and registered ~= nil and owned_builtins[name] == registered then
             providers.unregister(name)
@@ -73,11 +80,13 @@ local function create_commands()
     vim.api.nvim_create_user_command("ScrollbarRefresh", M.refresh, { force = true })
 end
 
----@param overrides? ScrollbarUserConfig
+---@param overrides? ScrollbarTopLevelConfig
 M.setup = function(overrides)
     local active_config = config.set(overrides)
+    local active_minimap_config = config.get_minimap()
+    local provider_plan = config.get_provider_plan()
     dispose_runtime()
-    reconcile_builtins(active_config)
+    reconcile_builtins(provider_plan)
 
     if active_config.set_highlights then
         utils.set_highlights()
@@ -87,15 +96,29 @@ M.setup = function(overrides)
     renderer.setup()
     scheduler.setup({ config = active_config, renderer = renderer })
     mouse.setup({ config = active_config, renderer = renderer, scheduler = scheduler })
+
+    -- Both store consumers must be subscribed before provider setup publishes.
+    minimap.setup()
     providers.setup({
         config = active_config,
-        invalidate_buffer = scheduler.invalidate_buffer,
-        invalidate_window = scheduler.invalidate_window,
-        source_windows = renderer.source_windows,
-        is_buffer_eligible = renderer.is_buffer_eligible,
-        is_source_window = renderer.is_source_window,
+        provider_plan = provider_plan,
+        consumer_policies = {
+            scrollbar = {
+                source_windows = renderer.source_windows,
+                is_buffer_eligible = renderer.is_buffer_eligible,
+                is_source_window = renderer.is_source_window,
+            },
+            minimap = {
+                source_windows = minimap_renderer.source_windows,
+                is_buffer_eligible = minimap_renderer.is_buffer_eligible,
+                is_source_window = minimap_renderer.is_source_window,
+            },
+        },
     })
     scheduler.invalidate_all()
+    if active_minimap_config.enabled then
+        minimap_scheduler.invalidate_all()
+    end
 end
 
 M.show = function()
@@ -129,10 +152,10 @@ M.refresh = function()
         end
     end
     for bufnr in pairs(buffers) do
-        providers.refresh(bufnr)
+        providers.refresh(bufnr, { consumer = "scrollbar" })
     end
     for _, winid in ipairs(windows) do
-        providers.refresh_window(winid)
+        providers.refresh_window(winid, { consumer = "scrollbar" })
     end
     scheduler.invalidate_all()
 end

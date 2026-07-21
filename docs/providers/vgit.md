@@ -13,8 +13,10 @@ settings are populated during the first provider refresh:
 require("vgit").setup()
 
 require("scrollbar").setup({
-    providers = {
-        vgit = true,
+    scrollbar = {
+        providers = {
+            vgit = true,
+        },
     },
 })
 ```

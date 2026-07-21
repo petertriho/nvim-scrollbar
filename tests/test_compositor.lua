@@ -13,7 +13,7 @@ local T = MiniTest.new_set({
 })
 
 local function config(overrides)
-    return require("scrollbar.config").set(overrides)
+    return require("scrollbar.config").set({ scrollbar = overrides })
 end
 
 local function compose(options)

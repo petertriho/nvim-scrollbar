@@ -7,7 +7,10 @@
 
 `nvim-scrollbar` renders one floating scrollbar per source window, with
 independent thumbs for split windows, declarative typed mark lanes, optional
-screen-row-accurate geometry, and mouse navigation.
+screen-row-accurate geometry, and mouse navigation. It also ships an
+**separately rendered minimap subsystem** — a separately-enabled floating minimap
+with a solid monochrome code texture, viewport tint, exact cursor-cell accent,
+click-to-jump, drag-to-scroll, and diagnostic/gitsigns/search overlays.
 
 ## Requirements
 
@@ -50,18 +53,21 @@ require("scrollbar").setup()
 
 ## Quick Start
 
-The defaults enable cursor, diagnostic, search, and named-mark providers for
-every eligible source window. A small customized setup might look like:
+The scrollbar defaults enable cursor, diagnostic, search, and named-mark
+providers for every eligible source window. A small customized setup might
+look like:
 
 ```lua
 require("scrollbar").setup({
-    preset = "zed",
-    autohide = {
-        enabled = true,
-    },
-    providers = {
-        search = { incsearch = true },
-        marks = { numbers = true },
+    scrollbar = {
+        preset = "zed",
+        autohide = {
+            enabled = true,
+        },
+        providers = {
+            search = { incsearch = true },
+            marks = { numbers = true },
+        },
     },
 })
 ```
@@ -75,15 +81,17 @@ Ordered contextual profiles can select a precompiled variant per source window:
 
 ```lua
 require("scrollbar").setup({
-    preset = "zed",
-    profiles = {
-        {
-            match = { filetypes = { "markdown", "text" } },
-            preset = "minimal",
-        },
-        {
-            match = { filetypes = { "lua" } },
-            preset = "review",
+    scrollbar = {
+        preset = "zed",
+        profiles = {
+            {
+                match = { filetypes = { "markdown", "text" } },
+                preset = "minimal",
+            },
+            {
+                match = { filetypes = { "lua" } },
+                preset = "review",
+            },
         },
     },
 })
@@ -96,20 +104,86 @@ Unknown keys and invalid values are rejected. See the
 [complete configuration reference](docs/configuration.md) for every default and
 accepted value.
 
+## Minimap
+
+The minimap is an independent subsystem: it has its own config slice,
+scheduler, renderer, mouse handler, presets, and profiles. It defaults to
+**disabled**. Its rendering lifecycle does not control the scrollbar, although
+enabled built-in providers may be shared by both renderers.
+
+```lua
+require("scrollbar").setup({
+    scrollbar = {},
+    minimap = {
+        enabled = true,
+    },
+})
+```
+
+The default placement is window-relative at the north-east corner — one solid
+16-column minimap per source window — with monochrome half-block content, a
+tint-only viewport, an exact cursor-cell accent, and store-published overlays
+on. Its default providers are cursor, diagnostic, search, and named marks.
+Treesitter and LSP semantic-token coloring are separate opt-in providers:
+
+```lua
+require("scrollbar").setup({
+    minimap = {
+        enabled = true,
+        providers = {
+            treesitter = true,
+            lsp_semantic_tokens = true,
+        },
+    },
+})
+```
+
+Ordinary overlays have independent minimap priority and highlight sources. The
+keyed map deep-merges with specs derived from scrollbar marks; use `false` to
+disable one derived type:
+
+```lua
+require("scrollbar").setup({
+    minimap = {
+        enabled = true,
+        overlays = {
+            types = {
+                Search = { priority = 0, highlight = "IncSearch" },
+                Hint = false,
+            },
+        },
+    },
+})
+```
+
+Automatic overlay groups use distinct public names such as
+`ScrollbarMinimapSearch`; existing user definitions of public scrollbar and
+minimap groups are preserved.
+
+See the [minimap documentation](docs/minimap/README.md) for the full schema,
+layout, overlays, and mouse behavior.
+
 ## Providers
 
-| Provider | Default | Source | Dependency |
-| --- | --- | --- | --- |
-| [`cursor`](docs/providers/cursor.md) | on | Source-window cursor | None |
-| [`diagnostic`](docs/providers/diagnostic.md) | on | Neovim `vim.diagnostic` | None |
-| [`search`](docs/providers/search.md) | on | Native `/` and `?` search | None |
-| [`marks`](docs/providers/marks.md) | on | Letter marks; optional numbered marks | None |
-| [`gitsigns`](docs/providers/gitsigns.md) | off | Git hunks | gitsigns.nvim |
-| [`mini_diff`](docs/providers/mini_diff.md) | off | mini.diff hunks | mini.diff |
-| [`signify`](docs/providers/signify.md) | off | vim-signify hunks | vim-signify |
-| [`vgit`](docs/providers/vgit.md) | off | vgit hunks | vgit.nvim |
-| [`ale`](docs/providers/ale.md) | off | ALE location list | ALE |
-| [`coc`](docs/providers/coc.md) | off | Coc diagnostic list | coc.nvim |
+| Provider | Scrollbar | Minimap | Source | Dependency |
+| --- | --- | --- | --- | --- |
+| [`cursor`](docs/providers/cursor.md) | on | on | Source-window cursor | None |
+| [`diagnostic`](docs/providers/diagnostic.md) | on | on | Neovim `vim.diagnostic` | None |
+| [`search`](docs/providers/search.md) | on | on | Native `/` and `?` search | None |
+| [`marks`](docs/providers/marks.md) | on | on | Letter marks; optional numbered marks | None |
+| [`gitsigns`](docs/providers/gitsigns.md) | off | off | Git hunks | gitsigns.nvim |
+| [`mini_diff`](docs/providers/mini_diff.md) | off | off | mini.diff hunks | mini.diff |
+| [`signify`](docs/providers/signify.md) | off | off | vim-signify hunks | vim-signify |
+| [`vgit`](docs/providers/vgit.md) | off | off | vgit hunks | vgit.nvim |
+| [`ale`](docs/providers/ale.md) | off | off | ALE location list | ALE |
+| [`coc`](docs/providers/coc.md) | off | off | Coc diagnostic list | coc.nvim |
+| [`treesitter`](docs/providers/treesitter.md) | unavailable | off | Treesitter highlight captures | Installed parser |
+| [`lsp_semantic_tokens`](docs/providers/lsp_semantic_tokens.md) | unavailable | off | LSP semantic tokens | Attached LSP client |
+
+The scrollbar and minimap provider tables are strict built-in allow-lists.
+When both request the same built-in, one provider instance serves their union;
+each renderer still filters the shared output through its own enabled-provider
+set. A disabled minimap contributes no built-in provider demand.
 
 See the [provider overview](docs/providers/README.md) for shared configuration
 rules, dependencies, update behavior, and links to every provider. New data
@@ -147,7 +221,17 @@ sources can be added through the [custom provider API](docs/providers/custom.md)
 - [Vgit](docs/providers/vgit.md)
 - [ALE](docs/providers/ale.md)
 - [Coc](docs/providers/coc.md)
+- [Treesitter](docs/providers/treesitter.md)
+- [LSP semantic tokens](docs/providers/lsp_semantic_tokens.md)
 - [Custom providers](docs/providers/custom.md)
+
+### Minimap Guides
+
+- [Minimap overview](docs/minimap/README.md)
+- [Minimap configuration](docs/minimap/configuration.md)
+- [Minimap layout](docs/minimap/layout.md)
+- [Minimap overlays](docs/minimap/overlays.md)
+- [Minimap mouse](docs/minimap/mouse.md)
 
 ## License
 

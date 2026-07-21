@@ -194,6 +194,7 @@ local function is_atomic_list(path, value)
     return name == "layout.columns"
         or name == "excluded_buftypes"
         or name == "excluded_filetypes"
+        or name == "update.events"
         or name:match("^marks%.[^.]+%.text$") ~= nil
         or path[#path] == "types"
 end

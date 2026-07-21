@@ -1,4 +1,9 @@
-local M = { name = "vgit", refresh_owner = { buffer = "provider" }, update_delay_ms = 50 }
+local M = {
+    name = "vgit",
+    targets = { scrollbar = true, minimap = true },
+    refresh_owner = { buffer = "provider" },
+    update_delay_ms = 50,
+}
 
 ---@class ScrollbarVgitSign
 ---@field col integer

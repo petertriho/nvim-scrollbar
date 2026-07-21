@@ -10,8 +10,10 @@ local T = MiniTest.new_set({
             package.loaded["scrollbar.providers"] = nil
             package.loaded["scrollbar.providers.cursor"] = nil
             require("scrollbar.config").set({
-                excluded_buftypes = {},
-                excluded_filetypes = { "scrollbar-excluded" },
+                scrollbar = {
+                    excluded_buftypes = {},
+                    excluded_filetypes = { "scrollbar-excluded" },
+                },
             })
         end,
         post_case = function()
@@ -98,6 +100,65 @@ T["cursor movement updates and invalidates only the event window"] = function()
     expect.equality(invalidated_windows, { target_win })
     expect.equality(store._get_window_snapshot(target_win).revision, target_revision + 2)
     expect.equality(store._get_window_snapshot(second_target_win).revision, second_revision)
+end
+
+T["one cursor read publishes matching marks and minimap points"] = function()
+    local providers = require("scrollbar.providers")
+    local store = require("scrollbar.store")
+    local target = new_buffer({ "one", "a\tbc", "three" })
+    local target_win = show_buffer(target)
+    local eligible = true
+    local function source_windows()
+        return eligible and { target_win } or {}
+    end
+    local function is_buffer_eligible(bufnr)
+        return eligible and bufnr == target
+    end
+    local function is_source_window(winid)
+        return eligible and winid == target_win
+    end
+
+    vim.api.nvim_set_current_win(target_win)
+    vim.api.nvim_win_set_cursor(target_win, { 1, 0 })
+    providers.register(require("scrollbar.providers.cursor"))
+    providers.setup({
+        consumer_policies = {
+            scrollbar = {
+                source_windows = source_windows,
+                is_buffer_eligible = is_buffer_eligible,
+                is_source_window = is_source_window,
+            },
+            minimap = {
+                source_windows = source_windows,
+                is_buffer_eligible = is_buffer_eligible,
+                is_source_window = is_source_window,
+            },
+        },
+    })
+
+    local original_get_cursor = vim.api.nvim_win_get_cursor
+    local reads = 0
+    vim.api.nvim_win_get_cursor = function(winid)
+        reads = reads + 1
+        return original_get_cursor(winid)
+    end
+    MiniTest.finally(function()
+        vim.api.nvim_win_get_cursor = original_get_cursor
+    end)
+
+    vim.api.nvim_win_set_cursor(target_win, { 2, 3 })
+    vim.api.nvim_exec_autocmds("CursorMoved", { buffer = target })
+
+    expect.equality(reads, 1)
+    expect.equality(store.get_window(target_win).cursor, { { line = 1, type = "Cursor" } })
+    expect.equality(store.get_minimap_points(target_win).cursor, {
+        { line = 1, col = 3, highlight = "ScrollbarMinimapCursor", priority = 14 },
+    })
+
+    eligible = false
+    vim.api.nvim_exec_autocmds("CursorMoved", { buffer = target })
+    expect.equality(store.get_window(target_win), {})
+    expect.equality(store.get_minimap_points(target_win), {})
 end
 
 T["cursor provider ignores excluded buffers"] = function()

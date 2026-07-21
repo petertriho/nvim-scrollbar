@@ -7,8 +7,10 @@ local T = MiniTest.new_set({
             package.loaded["scrollbar.config"] = nil
             package.loaded["scrollbar.store"] = nil
             require("scrollbar.config").set({
-                marks = {
-                    Custom = { text = "!", priority = 1, highlight = "WarningMsg" },
+                scrollbar = {
+                    marks = {
+                        Custom = { text = "!", priority = 1, highlight = "WarningMsg" },
+                    },
                 },
             })
         end,
@@ -92,6 +94,362 @@ T["replaces lists atomically and reports only changed buffers"] = function()
     })
 end
 
+T["stores provider-scoped minimap spans as complete copied replacements"] = function()
+    local store = require("scrollbar.store")
+    local bufnr = new_buffer({ "one", "two", "three" })
+    local spans = {
+        { line = 0, start_col = 0, end_col = 2, highlight = "@keyword", priority = 10 },
+        { line = 2, start_col = 1, end_col = 3, highlight = "Search", priority = -1 },
+    }
+
+    local initial = store._get_snapshot(bufnr)
+    local ok, changed = store.set_minimap_spans("alpha", bufnr, spans)
+    expect.equality(ok, true)
+    expect.equality(changed, { [bufnr] = true })
+
+    spans[1].line = 1
+    local public = store.get_minimap_spans(bufnr)
+    public.alpha[1].end_col = 99
+    expect.equality(store.get_minimap_spans(bufnr), {
+        alpha = {
+            { line = 0, start_col = 0, end_col = 2, highlight = "@keyword", priority = 10 },
+            { line = 2, start_col = 1, end_col = 3, highlight = "Search", priority = -1 },
+        },
+    })
+
+    local first = store._get_snapshot(bufnr)
+    expect.equality(first.minimap_span_revision, initial.minimap_span_revision + 1)
+    expect.equality(
+        select(
+            2,
+            store.set_minimap_spans("alpha", bufnr, {
+                { line = 1, start_col = 0, end_col = 1, highlight = "Normal", priority = 0 },
+            })
+        ),
+        { [bufnr] = true }
+    )
+    expect.equality(store.get_minimap_spans(bufnr), {
+        alpha = {
+            { line = 1, start_col = 0, end_col = 1, highlight = "Normal", priority = 0 },
+        },
+    })
+    expect.equality(first.minimap_spans.alpha, {
+        { line = 0, start_col = 0, end_col = 2, highlight = "@keyword", priority = 10 },
+        { line = 2, start_col = 1, end_col = 3, highlight = "Search", priority = -1 },
+    })
+end
+
+T["stores provider-scoped minimap points as complete copied replacements"] = function()
+    local store = require("scrollbar.store")
+    local bufnr = new_buffer({ "one", "two", "three" })
+    local winid = show_buffer(bufnr)
+    local points = {
+        { line = 0, col = 0, highlight = "Cursor", priority = 20 },
+        { line = 2, col = 4, highlight = "Search", priority = -2 },
+    }
+
+    local initial = store._get_window_snapshot(winid)
+    local ok, changed = store.set_minimap_points("alpha", winid, points)
+    expect.equality(ok, true)
+    expect.equality(changed, { [winid] = true })
+
+    points[1].line = 1
+    local public = store.get_minimap_points(winid)
+    public.alpha[1].col = 99
+    expect.equality(store.get_minimap_points(winid), {
+        alpha = {
+            { line = 0, col = 0, highlight = "Cursor", priority = 20 },
+            { line = 2, col = 4, highlight = "Search", priority = -2 },
+        },
+    })
+
+    local first = store._get_window_snapshot(winid)
+    expect.equality(first.minimap_point_revision, initial.minimap_point_revision + 1)
+    expect.equality(
+        select(
+            2,
+            store.set_minimap_points("alpha", winid, {
+                { line = 1, col = 3, highlight = "Normal", priority = 0 },
+            })
+        ),
+        { [winid] = true }
+    )
+    expect.equality(store.get_minimap_points(winid), {
+        alpha = {
+            { line = 1, col = 3, highlight = "Normal", priority = 0 },
+        },
+    })
+    expect.equality(first.minimap_points.alpha, {
+        { line = 0, col = 0, highlight = "Cursor", priority = 20 },
+        { line = 2, col = 4, highlight = "Search", priority = -2 },
+    })
+end
+
+T["validates minimap spans atomically and clears only that channel"] = function()
+    local notifications = capture_notifications()
+    local store = require("scrollbar.store")
+    local bufnr = new_buffer({ "one", "two" })
+    local valid = { { line = 0, start_col = 0, end_col = 1, highlight = "Normal", priority = 0 } }
+    local invalid_lists = {
+        false,
+        { [1] = valid[1], [3] = valid[1] },
+        { "span" },
+        { { line = "0", start_col = 0, end_col = 1, highlight = "Normal", priority = 0 } },
+        { { line = 0.5, start_col = 0, end_col = 1, highlight = "Normal", priority = 0 } },
+        { { line = -1, start_col = 0, end_col = 1, highlight = "Normal", priority = 0 } },
+        { { line = 0, start_col = "0", end_col = 1, highlight = "Normal", priority = 0 } },
+        { { line = 0, start_col = 0.5, end_col = 1, highlight = "Normal", priority = 0 } },
+        { { line = 0, start_col = -1, end_col = 1, highlight = "Normal", priority = 0 } },
+        { { line = 0, start_col = 0, end_col = "1", highlight = "Normal", priority = 0 } },
+        { { line = 0, start_col = 1, end_col = 1, highlight = "Normal", priority = 0 } },
+        { { line = 0, start_col = 2, end_col = 1, highlight = "Normal", priority = 0 } },
+        { { line = 0, start_col = 0, end_col = 1, highlight = 1, priority = 0 } },
+        { { line = 0, start_col = 0, end_col = 1, highlight = "", priority = 0 } },
+        { { line = 0, start_col = 0, end_col = 1, highlight = "Normal", priority = "0" } },
+        { { line = 0, start_col = 0, end_col = 1, highlight = "Normal", priority = 0.5 } },
+        { { line = 0, start_col = 0, end_col = 1, highlight = "Normal", priority = math.huge } },
+        { { line = 0, start_col = 0, end_col = 1, highlight = "Normal", priority = 0, extra = true } },
+    }
+
+    store.set("alpha", bufnr, { { line = 1, type = "Custom" } })
+    for index, spans in ipairs(invalid_lists) do
+        store.set_minimap_spans("alpha", bufnr, valid)
+        local before = store._get_snapshot(bufnr)
+        local ok, changed = store.set_minimap_spans("alpha", bufnr, spans)
+        expect.equality(ok, false)
+        expect.equality(changed, { [bufnr] = true })
+        expect.equality(store.get_minimap_spans(bufnr), {})
+        expect.equality(store.get(bufnr), { alpha = { { line = 1, type = "Custom" } } })
+        expect.equality(store._get_snapshot(bufnr).revision, before.revision)
+        expect.equality(store._get_snapshot(bufnr).minimap_span_revision, before.minimap_span_revision + 1)
+
+        store.set_minimap_spans("alpha", bufnr, spans)
+        expect.equality(#notifications, index)
+    end
+
+    store.set_minimap_spans("alpha", bufnr, {
+        { line = 1, start_col = 0, end_col = 2, highlight = "Normal", priority = 1 },
+        { line = 20, start_col = 0, end_col = 1, highlight = "Search", priority = 2 },
+    })
+    expect.equality(store.get_minimap_spans(bufnr), {
+        alpha = {
+            { line = 1, start_col = 0, end_col = 2, highlight = "Normal", priority = 1 },
+        },
+    })
+    expect.no_equality(notifications[1].message:match("invalid minimap spans.*buffer " .. bufnr), nil)
+end
+
+T["validates minimap points atomically and clears only that channel"] = function()
+    local notifications = capture_notifications()
+    local store = require("scrollbar.store")
+    local bufnr = new_buffer({ "one", "two" })
+    local winid = show_buffer(bufnr)
+    local valid = { { line = 0, col = 0, highlight = "Normal", priority = 0 } }
+    local invalid_lists = {
+        false,
+        { [1] = valid[1], [3] = valid[1] },
+        { "point" },
+        { { line = "0", col = 0, highlight = "Normal", priority = 0 } },
+        { { line = 0.5, col = 0, highlight = "Normal", priority = 0 } },
+        { { line = -1, col = 0, highlight = "Normal", priority = 0 } },
+        { { line = 0, col = "0", highlight = "Normal", priority = 0 } },
+        { { line = 0, col = 0.5, highlight = "Normal", priority = 0 } },
+        { { line = 0, col = -1, highlight = "Normal", priority = 0 } },
+        { { line = 0, col = 0, highlight = 1, priority = 0 } },
+        { { line = 0, col = 0, highlight = "", priority = 0 } },
+        { { line = 0, col = 0, highlight = "Normal", priority = "0" } },
+        { { line = 0, col = 0, highlight = "Normal", priority = 0.5 } },
+        { { line = 0, col = 0, highlight = "Normal", priority = 0, extra = true } },
+    }
+
+    store.set_window("alpha", winid, { { line = 1, type = "Custom" } })
+    for index, points in ipairs(invalid_lists) do
+        store.set_minimap_points("alpha", winid, valid)
+        local before = store._get_window_snapshot(winid)
+        local ok, changed = store.set_minimap_points("alpha", winid, points)
+        expect.equality(ok, false)
+        expect.equality(changed, { [winid] = true })
+        expect.equality(store.get_minimap_points(winid), {})
+        expect.equality(store.get_window(winid), { alpha = { { line = 1, type = "Custom" } } })
+        expect.equality(store._get_window_snapshot(winid).revision, before.revision)
+        expect.equality(store._get_window_snapshot(winid).minimap_point_revision, before.minimap_point_revision + 1)
+
+        store.set_minimap_points("alpha", winid, points)
+        expect.equality(#notifications, index)
+    end
+
+    store.set_minimap_points("alpha", winid, {
+        { line = 1, col = 3, highlight = "Normal", priority = 1 },
+        { line = 20, col = 0, highlight = "Search", priority = 2 },
+    })
+    expect.equality(store.get_minimap_points(winid), {
+        alpha = {
+            { line = 1, col = 3, highlight = "Normal", priority = 1 },
+        },
+    })
+
+    store.set_window("shared-warning", winid, { { line = -1, type = "Custom" } })
+    store.set_minimap_points("shared-warning", winid, { { line = -1, col = 0, highlight = "Normal", priority = 0 } })
+    expect.equality(#notifications, #invalid_lists + 2)
+    expect.no_equality(notifications[1].message:match("invalid minimap points.*window " .. winid), nil)
+end
+
+T["advances mark span and point revisions independently and skips equal output"] = function()
+    local store = require("scrollbar.store")
+    local bufnr = new_buffer({ "one", "two" })
+    local winid = show_buffer(bufnr)
+    local spans = { { line = 0, start_col = 0, end_col = 1, highlight = "Normal", priority = 1 } }
+    local points = { { line = 1, col = 2, highlight = "Cursor", priority = 2 } }
+
+    store.set("alpha", bufnr, { { line = 0, type = "Custom" } })
+    local marked_buffer = store._get_snapshot(bufnr)
+    store.set_minimap_spans("alpha", bufnr, spans)
+    local spanned_buffer = store._get_snapshot(bufnr)
+    expect.equality(spanned_buffer.revision, marked_buffer.revision)
+    expect.equality(spanned_buffer.minimap_span_revision, marked_buffer.minimap_span_revision + 1)
+    expect.equality(select(2, store.set_minimap_spans("alpha", bufnr, spans)), {})
+    expect.equality(rawequal(store._get_snapshot(bufnr), spanned_buffer), true)
+
+    store.set_window("alpha", winid, { { line = 0, type = "Custom" } })
+    local marked_window = store._get_window_snapshot(winid)
+    store.set_minimap_points("alpha", winid, points)
+    local pointed_window = store._get_window_snapshot(winid)
+    expect.equality(pointed_window.revision, marked_window.revision)
+    expect.equality(pointed_window.minimap_point_revision, marked_window.minimap_point_revision + 1)
+    expect.equality(select(2, store.set_minimap_points("alpha", winid, points)), {})
+    expect.equality(rawequal(store._get_window_snapshot(winid), pointed_window), true)
+
+    store.set("alpha", bufnr, { { line = 1, type = "Custom" } })
+    expect.equality(store._get_snapshot(bufnr).minimap_span_revision, spanned_buffer.minimap_span_revision)
+    store.set_window("alpha", winid, { { line = 1, type = "Custom" } })
+    expect.equality(store._get_window_snapshot(winid).minimap_point_revision, pointed_window.minimap_point_revision)
+end
+
+T["notifies channel-aware subscribers and unsubscribe is idempotent"] = function()
+    local store = require("scrollbar.store")
+    local bufnr = new_buffer({ "one", "two" })
+    local winid = show_buffer(bufnr)
+    local events = {}
+    local unsubscribe = store.subscribe(function(event)
+        table.insert(events, event)
+    end)
+
+    store.set("alpha", bufnr, { { line = 0, type = "Custom" } })
+    store.set_minimap_spans("alpha", bufnr, {
+        { line = 0, start_col = 0, end_col = 1, highlight = "Normal", priority = 1 },
+    })
+    store.set_window("beta", winid, { { line = 1, type = "Custom" } })
+    store.set_minimap_points("beta", winid, {
+        { line = 1, col = 2, highlight = "Cursor", priority = 2 },
+    })
+    store.set_minimap_points("beta", winid, {
+        { line = 1, col = 2, highlight = "Cursor", priority = 2 },
+    })
+
+    expect.equality(events, {
+        { scope = "buffer", channel = "marks", target = bufnr, provider = "alpha" },
+        { scope = "buffer", channel = "minimap_spans", target = bufnr, provider = "alpha" },
+        { scope = "window", channel = "marks", target = winid, provider = "beta" },
+        { scope = "window", channel = "minimap_points", target = winid, provider = "beta" },
+    })
+
+    unsubscribe()
+    unsubscribe()
+    store.clear("alpha", bufnr)
+    store.clear_minimap_points("beta", winid)
+    expect.equality(#events, 4)
+end
+
+T["provider cleanup clears every owned channel with provider-aware events"] = function()
+    local store = require("scrollbar.store")
+    local bufnr = new_buffer({ "one", "two" })
+    local winid = show_buffer(bufnr)
+    store.set("alpha", bufnr, { { line = 0, type = "Custom" } })
+    store.set_minimap_spans("alpha", bufnr, {
+        { line = 0, start_col = 0, end_col = 1, highlight = "Normal", priority = 1 },
+    })
+    store.set_window("alpha", winid, { { line = 1, type = "Custom" } })
+    store.set_minimap_points("alpha", winid, {
+        { line = 1, col = 2, highlight = "Cursor", priority = 2 },
+    })
+    local buffer_before = store._get_snapshot(bufnr)
+    local window_before = store._get_window_snapshot(winid)
+    local events = {}
+    store.subscribe(function(event)
+        table.insert(events, event)
+    end)
+
+    expect.equality(store.clear_provider("alpha"), { [bufnr] = true })
+    expect.equality(store.clear_window_provider("alpha"), { [winid] = true })
+    expect.equality(store.get(bufnr), {})
+    expect.equality(store.get_minimap_spans(bufnr), {})
+    expect.equality(store.get_window(winid), {})
+    expect.equality(store.get_minimap_points(winid), {})
+
+    local buffer_after = store._get_snapshot(bufnr)
+    local window_after = store._get_window_snapshot(winid)
+    expect.equality(buffer_after.revision, buffer_before.revision + 1)
+    expect.equality(buffer_after.minimap_span_revision, buffer_before.minimap_span_revision + 1)
+    expect.equality(window_after.revision, window_before.revision + 1)
+    expect.equality(window_after.minimap_point_revision, window_before.minimap_point_revision + 1)
+    expect.equality(events, {
+        { scope = "buffer", channel = "marks", target = bufnr, provider = "alpha" },
+        { scope = "buffer", channel = "minimap_spans", target = bufnr, provider = "alpha" },
+        { scope = "window", channel = "marks", target = winid, provider = "alpha" },
+        { scope = "window", channel = "minimap_points", target = winid, provider = "alpha" },
+    })
+    expect.equality(store.clear_provider("alpha"), {})
+    expect.equality(store.clear_window_provider("alpha"), {})
+    expect.equality(#events, 4)
+end
+
+T["buffer and window lifecycle cleanup emits every provider channel once"] = function()
+    local store = require("scrollbar.store")
+    local buffer_target = new_buffer({ "one", "two" })
+    local window_buffer = new_buffer({ "one", "two" })
+    local window_target = show_buffer(window_buffer)
+    for _, provider in ipairs({ "alpha", "beta" }) do
+        store.set(provider, buffer_target, { { line = 0, type = "Custom" } })
+        store.set_minimap_spans(provider, buffer_target, {
+            { line = 0, start_col = 0, end_col = 1, highlight = "Normal", priority = 1 },
+        })
+        store.set_window(provider, window_target, { { line = 1, type = "Custom" } })
+        store.set_minimap_points(provider, window_target, {
+            { line = 1, col = 2, highlight = "Cursor", priority = 2 },
+        })
+    end
+    local buffer_before = store._get_snapshot(buffer_target)
+    local window_before = store._get_window_snapshot(window_target)
+    local events = {}
+    store.subscribe(function(event)
+        table.insert(events, event)
+    end)
+
+    vim.api.nvim_buf_delete(buffer_target, { force = true })
+    vim.api.nvim_win_close(window_target, true)
+
+    local buffer_after = store._get_snapshot(buffer_target)
+    local window_after = store._get_window_snapshot(window_target)
+    expect.equality(buffer_after.marks, {})
+    expect.equality(buffer_after.minimap_spans, {})
+    expect.equality(buffer_after.revision, buffer_before.revision + 1)
+    expect.equality(buffer_after.minimap_span_revision, buffer_before.minimap_span_revision + 1)
+    expect.equality(window_after.marks, {})
+    expect.equality(window_after.minimap_points, {})
+    expect.equality(window_after.revision, window_before.revision + 1)
+    expect.equality(window_after.minimap_point_revision, window_before.minimap_point_revision + 1)
+    expect.equality(events, {
+        { scope = "buffer", channel = "marks", target = buffer_target, provider = "alpha" },
+        { scope = "buffer", channel = "marks", target = buffer_target, provider = "beta" },
+        { scope = "buffer", channel = "minimap_spans", target = buffer_target, provider = "alpha" },
+        { scope = "buffer", channel = "minimap_spans", target = buffer_target, provider = "beta" },
+        { scope = "window", channel = "marks", target = window_target, provider = "alpha" },
+        { scope = "window", channel = "marks", target = window_target, provider = "beta" },
+        { scope = "window", channel = "minimap_points", target = window_target, provider = "alpha" },
+        { scope = "window", channel = "minimap_points", target = window_target, provider = "beta" },
+    })
+end
+
 T["tracks independent revisions and preserves trusted snapshots across no-op updates"] = function()
     local store = require("scrollbar.store")
     local bufnr = new_buffer({ "one", "two", "three" })
@@ -99,8 +457,18 @@ T["tracks independent revisions and preserves trusted snapshots across no-op upd
 
     local initial_buffer = store._get_snapshot(bufnr)
     local initial_window = store._get_window_snapshot(winid)
-    expect.equality(initial_buffer, { marks = {}, revision = 0 })
-    expect.equality(initial_window, { marks = {}, revision = 0 })
+    expect.equality(initial_buffer, {
+        marks = {},
+        revision = 0,
+        minimap_spans = {},
+        minimap_span_revision = 0,
+    })
+    expect.equality(initial_window, {
+        marks = {},
+        revision = 0,
+        minimap_points = {},
+        minimap_point_revision = 0,
+    })
 
     store.set("alpha", bufnr, { { line = 0, type = "Custom" } })
     local first_buffer = store._get_snapshot(bufnr)
@@ -388,13 +756,55 @@ T["validates complete lists against the current config and mark contract"] = fun
     expect.equality(#notifications, #invalid_lists)
 
     require("scrollbar.config").set({
-        marks = {
-            Runtime = { text = "r", priority = 1, highlight = "Normal" },
+        scrollbar = {
+            marks = {
+                Runtime = { text = "r", priority = 1, highlight = "Normal" },
+            },
         },
     })
     local ok, changed = store.set("alpha", bufnr, { { line = 1, type = "Runtime" } })
     expect.equality(ok, true)
     expect.equality(changed, { [bufnr] = true })
+end
+
+T["accepts types configured only for minimap overlays"] = function()
+    require("scrollbar.config").set({
+        scrollbar = {},
+        minimap = {
+            overlays = {
+                types = {
+                    MinimapOnly = { priority = 1, highlight = "Special" },
+                },
+            },
+            profiles = {
+                {
+                    match = { filetypes = { "lua" } },
+                    config = {
+                        overlays = {
+                            types = {
+                                ProfileOnly = { priority = 2, highlight = "Question" },
+                            },
+                        },
+                    },
+                },
+            },
+        },
+    })
+    local store = require("scrollbar.store")
+    local bufnr = new_buffer({ "one", "two" })
+
+    local ok, changed = store.set("alpha", bufnr, {
+        { line = 0, type = "ProfileOnly" },
+        { line = 1, type = "MinimapOnly" },
+    })
+    expect.equality(ok, true)
+    expect.equality(changed, { [bufnr] = true })
+    expect.equality(store.get(bufnr), {
+        alpha = {
+            { line = 0, type = "ProfileOnly" },
+            { line = 1, type = "MinimapOnly" },
+        },
+    })
 end
 
 T["stale positions do not hide malformed fields in atomic replacements"] = function()

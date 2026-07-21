@@ -18,7 +18,7 @@ T["configuration rejects a non-boolean incsearch option without mutation"] = fun
     local result = child.lua_get([[(function()
         local config = require("scrollbar.config").get()
         local before = vim.deepcopy(config.providers.search)
-        local ok, err = pcall(require("scrollbar.config").set, { providers = { search = { incsearch = "yes" } } })
+        local ok, err = pcall(require("scrollbar.config").set, { scrollbar = { providers = { search = { incsearch = "yes" } } } })
         return {
             ok = ok,
             error = err,
@@ -38,7 +38,7 @@ T["a rejected legacy reconfiguration leaves the managed provider active"] = func
     local result = child.lua_get([[(function()
         local config = require("scrollbar.config").get()
         local before = vim.deepcopy(config.providers.search)
-        local ok, err = pcall(require("scrollbar.config").set, { providers = { search = { live = true } } })
+        local ok, err = pcall(require("scrollbar.config").set, { scrollbar = { providers = { search = { live = true } } } })
         return {
             ok = ok,
             error = err,

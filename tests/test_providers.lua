@@ -9,8 +9,10 @@ local T = MiniTest.new_set({
             package.loaded["scrollbar.store"] = nil
             package.loaded["scrollbar.providers"] = nil
             require("scrollbar.config").set({
-                marks = {
-                    Custom = { text = "!", priority = 1, highlight = "WarningMsg" },
+                scrollbar = {
+                    marks = {
+                        Custom = { text = "!", priority = 1, highlight = "WarningMsg" },
+                    },
                 },
             })
         end,
@@ -170,6 +172,107 @@ T["validates refresh ownership registration shapes"] = function()
     end
 end
 
+T["validates targets and minimap refresh ownership shapes"] = function()
+    local providers = require("scrollbar.providers")
+    local refresh = function()
+        return {}
+    end
+    local private = { enabled = true }
+    local valid = {
+        { name = "legacy-private", private_option = private },
+        { name = "scrollbar-target", targets = { scrollbar = true } },
+        { name = "minimap-target", targets = { minimap = true } },
+        { name = "dual-target", targets = { scrollbar = true, minimap = true } },
+        {
+            name = "minimap-buffer-manager",
+            targets = { minimap = true },
+            refresh_owner = { minimap_buffer = "manager" },
+            refresh_minimap = refresh,
+        },
+        {
+            name = "minimap-window-provider",
+            targets = { minimap = true },
+            refresh_owner = { minimap_window = "provider" },
+            refresh_minimap_window = refresh,
+        },
+    }
+    for _, provider in ipairs(valid) do
+        providers.register(provider)
+        expect.equality(providers.get(provider.name), provider)
+    end
+    local legacy_private = assert(providers.get("legacy-private"))
+    expect.equality(rawget(legacy_private, "private_option"), private)
+
+    expect_registration_error(
+        { name = "targets-scalar", targets = true },
+        "provider 'targets-scalar' targets must be a table"
+    )
+    expect_registration_error(
+        { name = "targets-empty", targets = {} },
+        "provider 'targets-empty' targets must enable at least one target"
+    )
+    expect_registration_error(
+        { name = "targets-false", targets = { scrollbar = false, minimap = false } },
+        "provider 'targets-false' targets must enable at least one target"
+    )
+    expect_registration_error(
+        { name = "targets-unknown", targets = { z = true, a = true } },
+        "provider 'targets-unknown' targets has unknown target 'a'"
+    )
+    expect_registration_error(
+        { name = "targets-scrollbar-type", targets = { scrollbar = 1 } },
+        "provider 'targets-scrollbar-type' targets.scrollbar must be a boolean"
+    )
+    expect_registration_error(
+        { name = "targets-minimap-type", targets = { minimap = "yes" } },
+        "provider 'targets-minimap-type' targets.minimap must be a boolean"
+    )
+    expect_registration_error({
+        name = "unknown-minimap-scope",
+        refresh_owner = { minimap_buffers = "manager" },
+        refresh = refresh,
+    }, "provider 'unknown-minimap-scope' refresh_owner has unknown scope 'minimap_buffers'")
+    expect_registration_error({
+        name = "missing-minimap-buffer-owner",
+        targets = { minimap = true },
+        refresh_minimap = refresh,
+    }, "provider 'missing-minimap-buffer-owner' refresh_minimap requires refresh_owner.minimap_buffer")
+    expect_registration_error({
+        name = "missing-minimap-window-owner",
+        targets = { minimap = true },
+        refresh_minimap_window = refresh,
+    }, "provider 'missing-minimap-window-owner' refresh_minimap_window requires refresh_owner.minimap_window")
+    expect_registration_error({
+        name = "extra-minimap-buffer-owner",
+        targets = { minimap = true },
+        refresh_owner = { minimap_buffer = "manager" },
+    }, "provider 'extra-minimap-buffer-owner' refresh_owner.minimap_buffer requires refresh_minimap")
+    expect_registration_error({
+        name = "extra-minimap-window-owner",
+        targets = { minimap = true },
+        refresh_owner = { minimap_window = "provider" },
+    }, "provider 'extra-minimap-window-owner' refresh_owner.minimap_window requires refresh_minimap_window")
+    expect_registration_error({
+        name = "scrollbar-only-minimap-buffer",
+        refresh_owner = { minimap_buffer = "manager" },
+        refresh_minimap = refresh,
+    }, "provider 'scrollbar-only-minimap-buffer' refresh_minimap requires targets.minimap")
+    expect_registration_error({
+        name = "scrollbar-only-minimap-window",
+        targets = { scrollbar = true },
+        refresh_owner = { minimap_window = "manager" },
+        refresh_minimap_window = refresh,
+    }, "provider 'scrollbar-only-minimap-window' refresh_minimap_window requires targets.minimap")
+
+    for _, field in ipairs({ "refresh_minimap", "refresh_minimap_window" }) do
+        expect_registration_error({
+            name = "invalid-" .. field,
+            targets = { minimap = true },
+            [field] = true,
+        }, "provider 'invalid-" .. field .. "' " .. field .. " must be a function")
+    end
+end
+
 T["registers before setup and initially refreshes eligible loaded buffers"] = function()
     local providers = require("scrollbar.providers")
     local target = new_buffer({ "one", "two" })
@@ -203,6 +306,57 @@ T["registers before setup and initially refreshes eligible loaded buffers"] = fu
     expect.equality(require("scrollbar.store").get(ignored), {})
 end
 
+T["keeps providers without targets scrollbar-only"] = function()
+    local providers = require("scrollbar.providers")
+    local target = new_buffer({ "one" })
+    local calls = { setup = 0, refresh = 0 }
+    local context
+
+    providers.register({
+        name = "legacy-target",
+        refresh_owner = { buffer = "provider" },
+        setup = function(provider_context)
+            calls.setup = calls.setup + 1
+            context = provider_context
+        end,
+        refresh = function()
+            calls.refresh = calls.refresh + 1
+            return {}
+        end,
+    })
+    providers.setup({
+        consumer_policies = {
+            scrollbar = {
+                is_buffer_eligible = function()
+                    return false
+                end,
+                source_windows = function()
+                    return {}
+                end,
+                is_source_window = function()
+                    return false
+                end,
+            },
+            minimap = {
+                is_buffer_eligible = function(bufnr)
+                    return bufnr == target
+                end,
+                source_windows = function()
+                    return {}
+                end,
+                is_source_window = function()
+                    return false
+                end,
+            },
+        },
+    })
+
+    expect.equality(calls, { setup = 1, refresh = 0 })
+    expect.equality(context.is_buffer_eligible(target), false)
+    expect.equality(providers.refresh(target, { consumer = "minimap" }), false)
+    expect.equality(calls.refresh, 0)
+end
+
 T["registers after setup and immediately sets up and refreshes"] = function()
     local providers = require("scrollbar.providers")
     local target = new_buffer({ "one" })
@@ -229,6 +383,424 @@ T["registers after setup and immediately sets up and refreshes"] = function()
     expect.equality(require("scrollbar.store").get(target), {
         late = { { line = 0, type = "Custom" } },
     })
+end
+
+T["activates custom minimap targets and publishes manager-owned outputs"] = function()
+    local providers = require("scrollbar.providers")
+    local store = require("scrollbar.store")
+    local target = new_buffer({ "one", "two" })
+    local winid = show_buffer(target)
+    local calls = { setup = 0, buffer = 0, window = 0 }
+
+    providers.register({
+        name = "minimap-manager",
+        targets = { minimap = true },
+        refresh_owner = { minimap_buffer = "manager", minimap_window = "manager" },
+        setup = function()
+            calls.setup = calls.setup + 1
+        end,
+        refresh_minimap = function(bufnr)
+            expect.equality(bufnr, target)
+            calls.buffer = calls.buffer + 1
+            return { { line = 1, start_col = 0, end_col = 2, highlight = "Search", priority = 4 } }
+        end,
+        refresh_minimap_window = function(refreshed_win)
+            expect.equality(refreshed_win, winid)
+            calls.window = calls.window + 1
+            return { { line = 1, col = 2, highlight = "Cursor", priority = 7 } }
+        end,
+    })
+    providers.setup({
+        consumer_policies = {
+            minimap = {
+                is_buffer_eligible = function(bufnr)
+                    return bufnr == target
+                end,
+                source_windows = function(bufnr)
+                    if bufnr == nil or bufnr == target then
+                        return { winid }
+                    end
+                    return {}
+                end,
+                is_source_window = function(source_win)
+                    return source_win == winid
+                end,
+            },
+        },
+    })
+
+    expect.equality(calls, { setup = 1, buffer = 1, window = 1 })
+    expect.equality(store.get(target), {})
+    expect.equality(store.get_minimap_spans(target), {
+        ["minimap-manager"] = {
+            { line = 1, start_col = 0, end_col = 2, highlight = "Search", priority = 4 },
+        },
+    })
+    expect.equality(store.get_window(winid), {})
+    expect.equality(store.get_minimap_points(winid), {
+        ["minimap-manager"] = {
+            { line = 1, col = 2, highlight = "Cursor", priority = 7 },
+        },
+    })
+
+    vim.api.nvim_exec_autocmds("TextChanged", { buffer = target })
+    vim.api.nvim_exec_autocmds("WinEnter", { buffer = target })
+    expect.equality(calls, { setup = 1, buffer = 2, window = 2 })
+end
+
+T["scopes provider-owned publication and policy queries to requested consumer unions"] = function()
+    local providers = require("scrollbar.providers")
+    local store = require("scrollbar.store")
+    local scrollbar_buffer = new_buffer({ "scrollbar" })
+    local minimap_buffer = new_buffer({ "minimap" })
+    local scrollbar_window = show_buffer(scrollbar_buffer)
+    local minimap_window = show_buffer(minimap_buffer)
+    local context
+
+    providers.register({
+        name = "dual-context",
+        targets = { scrollbar = true, minimap = true },
+        setup = function(provider_context)
+            context = provider_context
+        end,
+    })
+    providers.setup({
+        consumer_policies = {
+            scrollbar = {
+                is_buffer_eligible = function(bufnr)
+                    return bufnr == scrollbar_buffer
+                end,
+                source_windows = function(bufnr)
+                    if bufnr == nil or bufnr == scrollbar_buffer then
+                        return { scrollbar_window }
+                    end
+                    return {}
+                end,
+                is_source_window = function(winid)
+                    return winid == scrollbar_window
+                end,
+            },
+            minimap = {
+                is_buffer_eligible = function(bufnr)
+                    return bufnr == minimap_buffer
+                end,
+                source_windows = function(bufnr)
+                    if bufnr == nil or bufnr == minimap_buffer then
+                        return { minimap_window }
+                    end
+                    return {}
+                end,
+                is_source_window = function(winid)
+                    return winid == minimap_window
+                end,
+            },
+        },
+    })
+
+    expect.equality(context.source_windows(), { scrollbar_window, minimap_window })
+    expect.equality(context.is_buffer_eligible(scrollbar_buffer), true)
+    expect.equality(context.is_buffer_eligible(minimap_buffer), true)
+    expect.equality(context.is_source_window(scrollbar_window), true)
+    expect.equality(context.is_source_window(minimap_window), true)
+
+    expect.equality(context.set_marks(scrollbar_buffer, { { line = 0, type = "Custom", text = "s" } }), true)
+    expect.equality(context.set_marks(minimap_buffer, { { line = 0, type = "Custom", text = "m" } }), true)
+    expect.equality(
+        context.set_minimap_spans(scrollbar_buffer, {
+            { line = 0, start_col = 0, end_col = 1, highlight = "Search", priority = 1 },
+        }),
+        false
+    )
+    expect.equality(
+        context.set_minimap_spans(minimap_buffer, {
+            { line = 0, start_col = 0, end_col = 1, highlight = "Search", priority = 1 },
+        }),
+        true
+    )
+    expect.equality(context.set_window_marks(scrollbar_window, { { line = 0, type = "Custom" } }), true)
+    expect.equality(context.set_window_marks(minimap_window, { { line = 0, type = "Custom" } }), true)
+    expect.equality(
+        context.set_minimap_points(scrollbar_window, {
+            { line = 0, col = 0, highlight = "Cursor", priority = 1 },
+        }),
+        false
+    )
+    expect.equality(
+        context.set_minimap_points(minimap_window, {
+            { line = 0, col = 0, highlight = "Cursor", priority = 1 },
+        }),
+        true
+    )
+
+    expect.equality(store.get(scrollbar_buffer)["dual-context"], { { line = 0, type = "Custom", text = "s" } })
+    expect.equality(store.get(minimap_buffer)["dual-context"], { { line = 0, type = "Custom", text = "m" } })
+    expect.equality(store.get_minimap_spans(scrollbar_buffer), {})
+    expect.equality(store.get_minimap_spans(minimap_buffer)["dual-context"], {
+        { line = 0, start_col = 0, end_col = 1, highlight = "Search", priority = 1 },
+    })
+    expect.equality(store.get_window(scrollbar_window)["dual-context"], { { line = 0, type = "Custom" } })
+    expect.equality(store.get_window(minimap_window)["dual-context"], { { line = 0, type = "Custom" } })
+    expect.equality(store.get_minimap_points(scrollbar_window), {})
+    expect.equality(store.get_minimap_points(minimap_window)["dual-context"], {
+        { line = 0, col = 0, highlight = "Cursor", priority = 1 },
+    })
+
+    expect.equality(context.clear_marks(), true)
+    expect.equality(context.clear_window_marks(), true)
+    expect.equality(store.get(scrollbar_buffer), {})
+    expect.equality(store.get(minimap_buffer), {})
+    expect.no_equality(store.get_minimap_spans(minimap_buffer)["dual-context"], nil)
+    expect.no_equality(store.get_minimap_points(minimap_window)["dual-context"], nil)
+    expect.equality(context.clear_minimap_spans(), true)
+    expect.equality(context.clear_minimap_points(), true)
+    expect.equality(store.get_minimap_spans(minimap_buffer), {})
+    expect.equality(store.get_minimap_points(minimap_window), {})
+end
+
+T["uses the effective plan only for manager-owned builtins"] = function()
+    local providers = require("scrollbar.providers")
+    local scrollbar_buffer = new_buffer({ "scrollbar" })
+    local minimap_buffer = new_buffer({ "minimap" })
+    local calls = { builtin_setup = 0, builtin_refresh = {}, custom_setup = 0 }
+    local policies = {
+        scrollbar = {
+            is_buffer_eligible = function(bufnr)
+                return bufnr == scrollbar_buffer
+            end,
+            source_windows = function()
+                return {}
+            end,
+            is_source_window = function()
+                return false
+            end,
+        },
+        minimap = {
+            is_buffer_eligible = function(bufnr)
+                return bufnr == minimap_buffer
+            end,
+            source_windows = function()
+                return {}
+            end,
+            is_source_window = function()
+                return false
+            end,
+        },
+    }
+
+    providers._register_builtin({
+        name = "search",
+        targets = { scrollbar = true, minimap = true },
+        refresh_owner = { buffer = "provider" },
+        setup = function(context)
+            calls.builtin_setup = calls.builtin_setup + 1
+            expect.equality(context.config.providers.search, { backend = "sync" })
+        end,
+        refresh = function(bufnr)
+            table.insert(calls.builtin_refresh, bufnr)
+            return {}
+        end,
+    })
+    providers.register({
+        name = "custom-planned",
+        targets = { minimap = true },
+        setup = function()
+            calls.custom_setup = calls.custom_setup + 1
+        end,
+    })
+    providers.setup({
+        provider_plan = {
+            search = {
+                consumers = { scrollbar = false, minimap = true },
+                options = { backend = "sync" },
+                targets = { scrollbar = true, minimap = true },
+                execution = "parent",
+            },
+            ["custom-planned"] = {
+                consumers = { scrollbar = false, minimap = false },
+                options = false,
+                targets = { scrollbar = false, minimap = true },
+                execution = "parent",
+            },
+        },
+        consumer_policies = policies,
+    })
+
+    expect.equality(calls, {
+        builtin_setup = 1,
+        builtin_refresh = { minimap_buffer },
+        custom_setup = 1,
+    })
+
+    providers.setup({
+        provider_plan = {
+            search = {
+                consumers = { scrollbar = false, minimap = false },
+                options = false,
+                targets = { scrollbar = true, minimap = true },
+                execution = "parent",
+            },
+        },
+        consumer_policies = policies,
+    })
+    expect.equality(calls, {
+        builtin_setup = 1,
+        builtin_refresh = { minimap_buffer },
+        custom_setup = 2,
+    })
+end
+
+T["filters manual refreshes by consumer and channel without changing old signatures"] = function()
+    local providers = require("scrollbar.providers")
+    local target = new_buffer({ "one" })
+    local winid = show_buffer(target)
+    local calls = { marks = 0, spans = 0, window_marks = 0, points = 0 }
+
+    providers.register({
+        name = "filtered",
+        targets = { scrollbar = true, minimap = true },
+        refresh_owner = {
+            buffer = "provider",
+            minimap_buffer = "provider",
+            window = "provider",
+            minimap_window = "provider",
+        },
+        refresh = function()
+            calls.marks = calls.marks + 1
+            return {}
+        end,
+        refresh_minimap = function()
+            calls.spans = calls.spans + 1
+            return {}
+        end,
+        refresh_window = function()
+            calls.window_marks = calls.window_marks + 1
+            return {}
+        end,
+        refresh_minimap_window = function()
+            calls.points = calls.points + 1
+            return {}
+        end,
+    })
+    providers.setup({
+        consumer_policies = {
+            scrollbar = {
+                is_buffer_eligible = function(bufnr)
+                    return bufnr == target
+                end,
+                source_windows = function()
+                    return { winid }
+                end,
+                is_source_window = function(source_win)
+                    return source_win == winid
+                end,
+            },
+            minimap = {
+                is_buffer_eligible = function(bufnr)
+                    return bufnr == target
+                end,
+                source_windows = function()
+                    return { winid }
+                end,
+                is_source_window = function(source_win)
+                    return source_win == winid
+                end,
+            },
+        },
+    })
+    expect.equality(calls, { marks = 1, spans = 1, window_marks = 1, points = 1 })
+    calls = { marks = 0, spans = 0, window_marks = 0, points = 0 }
+
+    expect.equality(providers.refresh(target), true)
+    expect.equality(calls, { marks = 1, spans = 1, window_marks = 0, points = 0 })
+    calls.marks, calls.spans = 0, 0
+    expect.equality(providers.refresh(target, { consumer = "scrollbar" }), true)
+    expect.equality(calls, { marks = 1, spans = 0, window_marks = 0, points = 0 })
+    calls.marks, calls.spans = 0, 0
+    expect.equality(providers.refresh(target, { consumer = "minimap" }), true)
+    expect.equality(calls, { marks = 1, spans = 1, window_marks = 0, points = 0 })
+    calls.marks, calls.spans = 0, 0
+    expect.equality(providers.refresh(target, { channel = "minimap_spans" }), true)
+    expect.equality(calls, { marks = 0, spans = 1, window_marks = 0, points = 0 })
+    calls.marks, calls.spans = 0, 0
+    expect.equality(providers.refresh(target, { consumer = "scrollbar", channel = "minimap_spans" }), false)
+    expect.equality(calls, { marks = 0, spans = 0, window_marks = 0, points = 0 })
+
+    expect.equality(providers.refresh_window(winid), true)
+    expect.equality(calls, { marks = 0, spans = 0, window_marks = 1, points = 1 })
+    calls.window_marks, calls.points = 0, 0
+    expect.equality(providers.refresh_window(winid, { consumer = "scrollbar" }), true)
+    expect.equality(calls, { marks = 0, spans = 0, window_marks = 1, points = 0 })
+    calls.window_marks, calls.points = 0, 0
+    expect.equality(providers.refresh_window(winid, { consumer = "minimap" }), true)
+    expect.equality(calls, { marks = 0, spans = 0, window_marks = 1, points = 1 })
+    calls.window_marks, calls.points = 0, 0
+    expect.equality(providers.refresh_window(winid, { channel = "minimap_points" }), true)
+    expect.equality(calls, { marks = 0, spans = 0, window_marks = 0, points = 1 })
+    calls.window_marks, calls.points = 0, 0
+    expect.equality(providers.refresh_window(winid, { consumer = "scrollbar", channel = "minimap_points" }), false)
+    expect.equality(calls, { marks = 0, spans = 0, window_marks = 0, points = 0 })
+end
+
+T["applies consumer eligibility to consumer-filtered mark refreshes"] = function()
+    local providers = require("scrollbar.providers")
+    local store = require("scrollbar.store")
+    local scrollbar_buffer = new_buffer({ "scrollbar" })
+    local minimap_buffer = new_buffer({ "minimap" })
+    local scrollbar_window = show_buffer(scrollbar_buffer)
+    local minimap_window = show_buffer(minimap_buffer)
+    local calls = { buffers = {}, windows = {} }
+
+    providers.register({
+        name = "consumer-policy",
+        targets = { scrollbar = true, minimap = true },
+        refresh_owner = { buffer = "provider", window = "provider" },
+        refresh = function(bufnr)
+            table.insert(calls.buffers, bufnr)
+            return {}
+        end,
+        refresh_window = function(winid)
+            table.insert(calls.windows, winid)
+            return {}
+        end,
+    })
+    providers.setup({
+        consumer_policies = {
+            scrollbar = {
+                is_buffer_eligible = function(bufnr)
+                    return bufnr == scrollbar_buffer
+                end,
+                source_windows = function()
+                    return { scrollbar_window }
+                end,
+                is_source_window = function(winid)
+                    return winid == scrollbar_window
+                end,
+            },
+            minimap = {
+                is_buffer_eligible = function(bufnr)
+                    return bufnr == minimap_buffer
+                end,
+                source_windows = function()
+                    return { minimap_window }
+                end,
+                is_source_window = function(winid)
+                    return winid == minimap_window
+                end,
+            },
+        },
+    })
+    calls = { buffers = {}, windows = {} }
+    store.set("consumer-policy", minimap_buffer, { { line = 0, type = "Custom" } })
+    store.set_window("consumer-policy", minimap_window, { { line = 0, type = "Custom" } })
+
+    expect.equality(providers.refresh(minimap_buffer, { consumer = "scrollbar", channel = "marks" }), false)
+    expect.equality(store.get(minimap_buffer)["consumer-policy"], { { line = 0, type = "Custom" } })
+    expect.equality(providers.refresh(minimap_buffer, { consumer = "minimap", channel = "marks" }), true)
+    expect.equality(calls.buffers, { minimap_buffer })
+    expect.equality(providers.refresh_window(minimap_window, { consumer = "scrollbar", channel = "marks" }), false)
+    expect.equality(store.get_window(minimap_window)["consumer-policy"], { { line = 0, type = "Custom" } })
+    expect.equality(providers.refresh_window(minimap_window, { consumer = "minimap", channel = "marks" }), true)
+    expect.equality(calls.windows, { minimap_window })
 end
 
 T["refreshes window providers initially, manually, and on disposal"] = function()
@@ -587,6 +1159,101 @@ T["isolates failing window refreshes and resets warnings after recovery"] = func
     expect.equality(#notifications, 2)
 end
 
+T["isolates minimap callback failures from other providers and channels"] = function()
+    local notifications = capture_notifications()
+    local providers = require("scrollbar.providers")
+    local store = require("scrollbar.store")
+    local target = new_buffer({ "one" })
+    local winid = show_buffer(target)
+    local fail = { marks = false, spans = false, points = false }
+
+    providers.register({
+        name = "multi-channel",
+        targets = { scrollbar = true, minimap = true },
+        refresh_owner = {
+            buffer = "provider",
+            minimap_buffer = "provider",
+            minimap_window = "provider",
+        },
+        refresh = function()
+            if fail.marks then
+                error("marks exploded")
+            end
+            return { { line = 0, type = "Custom", text = "m" } }
+        end,
+        refresh_minimap = function()
+            if fail.spans then
+                error("spans exploded")
+            end
+            return { { line = 0, start_col = 0, end_col = 1, highlight = "Search", priority = 1 } }
+        end,
+        refresh_minimap_window = function()
+            if fail.points then
+                error("points exploded")
+            end
+            return { { line = 0, col = 0, highlight = "Cursor", priority = 1 } }
+        end,
+    })
+    providers.register({
+        name = "healthy-minimap",
+        targets = { minimap = true },
+        refresh_owner = { minimap_buffer = "provider", minimap_window = "provider" },
+        refresh_minimap = function()
+            return { { line = 0, start_col = 0, end_col = 1, highlight = "Visual", priority = 2 } }
+        end,
+        refresh_minimap_window = function()
+            return { { line = 0, col = 0, highlight = "Visual", priority = 2 } }
+        end,
+    })
+    providers.setup({
+        consumer_policies = {
+            scrollbar = {
+                is_buffer_eligible = function(bufnr)
+                    return bufnr == target
+                end,
+                source_windows = function()
+                    return { winid }
+                end,
+                is_source_window = function(source_win)
+                    return source_win == winid
+                end,
+            },
+            minimap = {
+                is_buffer_eligible = function(bufnr)
+                    return bufnr == target
+                end,
+                source_windows = function()
+                    return { winid }
+                end,
+                is_source_window = function(source_win)
+                    return source_win == winid
+                end,
+            },
+        },
+    })
+
+    fail.spans = true
+    fail.points = true
+    expect.equality(providers.refresh(target), true)
+    expect.equality(providers.refresh_window(winid), true)
+    expect.no_equality(store.get(target)["multi-channel"], nil)
+    expect.equality(store.get_minimap_spans(target)["multi-channel"], nil)
+    expect.no_equality(store.get_minimap_spans(target)["healthy-minimap"], nil)
+    expect.equality(store.get_minimap_points(winid)["multi-channel"], nil)
+    expect.no_equality(store.get_minimap_points(winid)["healthy-minimap"], nil)
+    expect.equality(#notifications, 2)
+
+    fail.spans = false
+    fail.points = false
+    providers.refresh(target)
+    providers.refresh_window(winid)
+    fail.marks = true
+    providers.refresh(target)
+    expect.equality(store.get(target)["multi-channel"], nil)
+    expect.no_equality(store.get_minimap_spans(target)["multi-channel"], nil)
+    expect.equality(#notifications, 3)
+end
+
 T["isolates dispose failures while still releasing resources and marks"] = function()
     local notifications = capture_notifications()
     local providers = require("scrollbar.providers")
@@ -619,6 +1286,89 @@ T["isolates dispose failures while still releasing resources and marks"] = funct
     expect.equality(require("scrollbar.store").get(target), {})
     expect.equality(#notifications, 1)
     expect.no_equality(notifications[1].message:match("provider 'bad%-dispose' dispose failed.*dispose exploded"), nil)
+end
+
+T["clears every owned channel on unregister and dispose through store events"] = function()
+    local providers = require("scrollbar.providers")
+    local store = require("scrollbar.store")
+    local target = new_buffer({ "one" })
+    local winid = show_buffer(target)
+    local invalidated_buffers = {}
+    local invalidated_windows = {}
+
+    local function register(name)
+        providers.register({
+            name = name,
+            targets = { scrollbar = true, minimap = true },
+            setup = function(context)
+                context.set_marks(target, { { line = 0, type = "Custom" } })
+                context.set_minimap_spans(target, {
+                    { line = 0, start_col = 0, end_col = 1, highlight = "Search", priority = 1 },
+                })
+                context.set_window_marks(winid, { { line = 0, type = "Custom" } })
+                context.set_minimap_points(winid, {
+                    { line = 0, col = 0, highlight = "Cursor", priority = 1 },
+                })
+            end,
+        })
+    end
+
+    register("all-channels-unregister")
+    providers.setup({
+        consumer_policies = {
+            scrollbar = {
+                is_buffer_eligible = function(bufnr)
+                    return bufnr == target
+                end,
+                source_windows = function()
+                    return { winid }
+                end,
+                is_source_window = function(source_win)
+                    return source_win == winid
+                end,
+            },
+            minimap = {
+                is_buffer_eligible = function(bufnr)
+                    return bufnr == target
+                end,
+                source_windows = function()
+                    return { winid }
+                end,
+                is_source_window = function(source_win)
+                    return source_win == winid
+                end,
+            },
+        },
+        invalidate_buffer = function(bufnr)
+            table.insert(invalidated_buffers, bufnr)
+        end,
+        invalidate_window = function(source_win)
+            table.insert(invalidated_windows, source_win)
+        end,
+    })
+    expect.equality(invalidated_buffers, { target })
+    expect.equality(invalidated_windows, { winid })
+
+    invalidated_buffers = {}
+    invalidated_windows = {}
+    providers.unregister("all-channels-unregister")
+    expect.equality(store.get(target), {})
+    expect.equality(store.get_minimap_spans(target), {})
+    expect.equality(store.get_window(winid), {})
+    expect.equality(store.get_minimap_points(winid), {})
+    expect.equality(invalidated_buffers, { target })
+    expect.equality(invalidated_windows, { winid })
+
+    register("all-channels-dispose")
+    invalidated_buffers = {}
+    invalidated_windows = {}
+    providers.dispose()
+    expect.equality(store.get(target), {})
+    expect.equality(store.get_minimap_spans(target), {})
+    expect.equality(store.get_window(winid), {})
+    expect.equality(store.get_minimap_points(winid), {})
+    expect.equality(invalidated_buffers, { target })
+    expect.equality(invalidated_windows, { winid })
 end
 
 T["dispatches automatic buffer refreshes by owner regardless of setup"] = function()

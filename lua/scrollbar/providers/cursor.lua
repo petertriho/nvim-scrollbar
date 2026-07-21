@@ -1,27 +1,45 @@
+local CURSOR_HIGHLIGHT = "ScrollbarMinimapCursor"
+local CURSOR_PRIORITY = 14
+
 ---@param winid integer
 ---@param context ScrollbarProviderContext
----@return ScrollbarMark[]?
+---@return ScrollbarMark[]? marks
+---@return ScrollbarMinimapSourcePoint[]? points
 local function collect(winid, context)
     if not context.is_source_window(winid) then
-        return nil
+        return nil, nil
     end
-    return { { line = vim.api.nvim_win_get_cursor(winid)[1] - 1, type = "Cursor" } }
+
+    local cursor = vim.api.nvim_win_get_cursor(winid)
+    local line = cursor[1] - 1
+    return { { line = line, type = "Cursor" } }, {
+        {
+            line = line,
+            col = cursor[2],
+            highlight = CURSOR_HIGHLIGHT,
+            priority = CURSOR_PRIORITY,
+        },
+    }
 end
 
 ---@param winid integer
 ---@param context ScrollbarProviderContext
 local function update(winid, context)
-    local marks = collect(winid, context)
+    local marks, points = collect(winid, context)
     if marks == nil then
         context.clear_window_marks(winid)
+        context.clear_minimap_points(winid)
     else
+        assert(points ~= nil, "cursor points are missing")
         context.set_window_marks(winid, marks)
+        context.set_minimap_points(winid, points)
     end
 end
 
 ---@type ScrollbarProvider
 return {
     name = "cursor",
+    targets = { scrollbar = true, minimap = true },
     refresh_owner = { window = "provider" },
     setup = function(context)
         local group = context.create_augroup("events")
@@ -33,17 +51,14 @@ return {
                     update(winid, context)
                 end
             end,
-            desc = "Update scrollbar cursor marks",
+            desc = "Update scrollbar cursor data",
         })
     end,
     refresh_window = function(winid, context)
-        local marks = collect(winid, context)
-        if marks == nil then
-            context.clear_window_marks(winid)
-        end
-        return marks
+        update(winid, context)
     end,
     dispose = function(context)
         context.clear_window_marks()
+        context.clear_minimap_points()
     end,
 }

@@ -15,8 +15,10 @@ its initial signs are placed during the first provider refresh:
 " Then configure scrollbar from Lua:
 
 require("scrollbar").setup({
-    providers = {
-        signify = true,
+    scrollbar = {
+        providers = {
+            signify = true,
+        },
     },
 })
 ```

@@ -41,8 +41,11 @@
 ---@field highlight? ScrollbarHighlight
 
 ---@class ScrollbarUserRenderConfig
----@field interval_ms? integer
 ---@field geometry? ScrollbarGeometryMode
+
+---@class ScrollbarUserUpdateConfig
+---@field events? string[]
+---@field interval_ms? integer
 
 ---@class ScrollbarUserAutohideConfig
 ---@field enabled? boolean
@@ -128,6 +131,7 @@
 ---@field max_lines? false|integer
 ---@field hide_if_all_visible? boolean
 ---@field autohide? ScrollbarUserAutohideConfig
+---@field update? ScrollbarUserUpdateConfig
 ---@field render? ScrollbarUserRenderConfig
 ---@field float? ScrollbarUserFloatConfig
 ---@field layout? ScrollbarUserLayoutConfig
@@ -138,6 +142,10 @@
 ---@field providers? ScrollbarUserProvidersConfig
 ---@field excluded_buftypes? string[]
 ---@field excluded_filetypes? string[]
+
+---@class ScrollbarTopLevelConfig
+---@field scrollbar? ScrollbarUserConfig
+---@field minimap? ScrollbarMinimapUserConfig
 
 ---@class ScrollbarPlacement
 ---@field relative ScrollbarPlacementRelative
@@ -186,8 +194,11 @@
 ---@field highlight ScrollbarHighlight
 
 ---@class ScrollbarRenderConfig
----@field interval_ms integer
 ---@field geometry ScrollbarGeometryMode
+
+---@class ScrollbarUpdateConfig
+---@field events string[]
+---@field interval_ms integer
 
 ---@class ScrollbarAutohideConfig
 ---@field enabled boolean
@@ -231,6 +242,24 @@
 ---@field ale boolean
 ---@field coc boolean
 
+---@alias ScrollbarProviderExecutionMode "parent"|"worker"
+
+---@class ScrollbarProviderConsumers
+---@field scrollbar boolean
+---@field minimap boolean
+
+---@class ScrollbarProviderTargets
+---@field scrollbar boolean
+---@field minimap boolean
+
+---@class ScrollbarEffectiveProvider
+---@field consumers ScrollbarProviderConsumers Consumers whose enabled config requests this provider
+---@field options ScrollbarProviderOption One normalized option set, or false when inactive
+---@field targets ScrollbarProviderTargets Built-in capabilities independent of current demand
+---@field execution ScrollbarProviderExecutionMode
+
+---@alias ScrollbarEffectiveProviderPlan table<string, ScrollbarEffectiveProvider>
+
 ---@class ScrollbarConfig
 ---@field show boolean
 ---@field visibility ScrollbarVisibility
@@ -238,6 +267,7 @@
 ---@field max_lines false|integer
 ---@field hide_if_all_visible boolean
 ---@field autohide ScrollbarAutohideConfig
+---@field update ScrollbarUpdateConfig
 ---@field render ScrollbarRenderConfig
 ---@field float ScrollbarFloatConfig
 ---@field layout ScrollbarLayoutConfig
@@ -279,6 +309,19 @@
 ---@field type string Configured mark type
 ---@field text? string Per-mark text override
 
+---@class ScrollbarMinimapSourceSpan
+---@field line integer Zero-based source buffer line
+---@field start_col integer Zero-based byte column, inclusive
+---@field end_col integer Zero-based byte column, exclusive
+---@field highlight string Non-empty highlight group name
+---@field priority integer Higher values win semantic composition
+
+---@class ScrollbarMinimapSourcePoint
+---@field line integer Zero-based source buffer line
+---@field col integer Zero-based byte column
+---@field highlight string Non-empty highlight group name
+---@field priority integer Higher values win point composition
+
 ---@class ScrollbarCompactSearch
 ---@field data string Big-endian zero-based line numbers, four bytes per exact match
 ---@field count integer Exact match count
@@ -291,8 +334,12 @@
 ---@field config ScrollbarConfig Provider-local snapshot; mutations cannot change root configuration
 ---@field set_marks fun(bufnr: integer, marks: ScrollbarMark[]): boolean Whether publication was accepted
 ---@field clear_marks fun(bufnr?: integer): boolean
+---@field set_minimap_spans fun(bufnr: integer, spans: ScrollbarMinimapSourceSpan[]): boolean Whether publication was accepted
+---@field clear_minimap_spans fun(bufnr?: integer): boolean
 ---@field set_window_marks fun(winid: integer, marks: ScrollbarMark[]): boolean Whether publication was accepted
 ---@field clear_window_marks fun(winid?: integer): boolean
+---@field set_minimap_points fun(winid: integer, points: ScrollbarMinimapSourcePoint[]): boolean Whether publication was accepted
+---@field clear_minimap_points fun(winid?: integer): boolean
 ---@field create_augroup fun(name: string): integer
 ---@field add_cleanup fun(cleanup: fun())
 ---@field is_buffer_eligible fun(bufnr: integer): boolean
@@ -303,29 +350,53 @@
 
 ---@alias ScrollbarProviderRefreshOwner "manager"|"provider"
 
+---@class ScrollbarProviderRefreshOptions
+---@field consumer? "scrollbar"|"minimap"
+---@field channel? ScrollbarStoreChannel
+
 ---@class ScrollbarProviderRefreshOwnership
 ---@field buffer? ScrollbarProviderRefreshOwner
 ---@field window? ScrollbarProviderRefreshOwner
+---@field minimap_buffer? ScrollbarProviderRefreshOwner
+---@field minimap_window? ScrollbarProviderRefreshOwner
 
 ---@class ScrollbarProvider
 ---@field name string
+---@field targets? { scrollbar?: boolean, minimap?: boolean } Omitted defaults to scrollbar-only
 ---@field refresh_owner? ScrollbarProviderRefreshOwnership
 ---@field setup? fun(context: ScrollbarProviderContext)
 ---@field refresh? fun(bufnr: integer, context: ScrollbarProviderContext): ScrollbarMark[]?
 ---@field refresh_window? fun(winid: integer, context: ScrollbarProviderContext): ScrollbarMark[]?
+---@field refresh_minimap? fun(bufnr: integer, context: ScrollbarProviderContext): ScrollbarMinimapSourceSpan[]?
+---@field refresh_minimap_window? fun(winid: integer, context: ScrollbarProviderContext): ScrollbarMinimapSourcePoint[]?
 ---@field dispose? fun(context: ScrollbarProviderContext)
 
 ---@alias ScrollbarStoreSnapshot table<string, ScrollbarMark[]>
 ---@alias ScrollbarWindowStoreSnapshot table<string, ScrollbarMark[]>
+---@alias ScrollbarMinimapSpanStoreSnapshot table<string, ScrollbarMinimapSourceSpan[]>
+---@alias ScrollbarMinimapPointStoreSnapshot table<string, ScrollbarMinimapSourcePoint[]>
+
+---@alias ScrollbarStoreScope "buffer"|"window"
+---@alias ScrollbarStoreChannel "marks"|"minimap_spans"|"minimap_points"
+
+---@class ScrollbarStoreEvent
+---@field scope ScrollbarStoreScope
+---@field channel ScrollbarStoreChannel
+---@field target integer
+---@field provider string
 
 ---@class ScrollbarStoreTrustedSnapshot
 ---@field marks ScrollbarStoreSnapshot Immutable by convention; internal callers must not mutate it
 ---@field revision integer Monotonic revision for this buffer's mark collection
 ---@field compact_search? ScrollbarCompactSearch Private built-in search representation
+---@field minimap_spans ScrollbarMinimapSpanStoreSnapshot Immutable by convention; internal callers must not mutate it
+---@field minimap_span_revision integer Monotonic revision for this buffer's minimap spans
 
 ---@class ScrollbarWindowStoreTrustedSnapshot
 ---@field marks ScrollbarWindowStoreSnapshot Immutable by convention; internal callers must not mutate it
 ---@field revision integer Monotonic revision for this window's mark collection
+---@field minimap_points ScrollbarMinimapPointStoreSnapshot Immutable by convention; internal callers must not mutate it
+---@field minimap_point_revision integer Monotonic revision for this window's minimap points
 
 ---@alias ScrollbarChangedBuffers table<integer, true>
 ---@alias ScrollbarChangedWindows table<integer, true>
@@ -498,6 +569,7 @@
 ---@field hide_timers table<integer, any>
 ---@field hide_generations table<integer, integer>
 ---@field held table<integer, true>
+---@field unsubscribe_store fun()
 
 ---@class ScrollbarSchedulerStatus
 ---@field setup boolean

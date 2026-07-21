@@ -1,4 +1,8 @@
-local M = { name = "search", refresh_owner = { buffer = "provider" } }
+local M = {
+    name = "search",
+    targets = { scrollbar = true, minimap = true },
+    refresh_owner = { buffer = "provider" },
+}
 local compact_search = require("scrollbar.providers.search_compact")
 local worker = require("scrollbar.providers.search_worker")
 
