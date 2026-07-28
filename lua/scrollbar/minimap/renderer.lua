@@ -12,6 +12,7 @@
 --- so unchanged renders reuse the prior buffer contents and highlights.
 
 local config_module = require("scrollbar.minimap.config")
+local highlight_module = require("scrollbar.minimap.highlights")
 local providers = require("scrollbar.providers")
 local semantic = require("scrollbar.minimap.semantic")
 local store = require("scrollbar.store")
@@ -25,6 +26,20 @@ local OWNED_WIN_VAR = "scrollbar_minimap_owned"
 local OWNED_BUF_VAR = "scrollbar_minimap_owned"
 local VIEWPORT_PRIORITY = 1
 local CONTENT_PRIORITY = 2
+
+---@param active_config ScrollbarMinimapConfig
+---@return integer blend
+---@return string winhighlight
+local function window_presentation(active_config)
+    local background_blend = active_config.background.blend
+    if background_blend == false then
+        return active_config.float.blend, FLOAT_WINHIGHLIGHT
+    end
+
+    local base = highlight_module.resolve("ScrollbarMinimapBase", background_blend, "base")
+    return math.max(active_config.float.blend, background_blend),
+        string.format("Normal:%s,NormalNC:%s,EndOfBuffer:%s", base, base, base)
+end
 
 ---@type table<integer, ScrollbarMinimapRendererState>
 local states = {}
@@ -109,7 +124,8 @@ end
 
 ---@param float_win integer
 ---@param blend integer Window pseudo-transparency (winblend), 0-100
-local function configure_window(float_win, blend)
+---@param winhighlight string
+local function configure_window(float_win, blend, winhighlight)
     vim.api.nvim_set_option_value("wrap", false, { win = float_win })
     vim.api.nvim_set_option_value("number", false, { win = float_win })
     vim.api.nvim_set_option_value("relativenumber", false, { win = float_win })
@@ -121,9 +137,22 @@ local function configure_window(float_win, blend)
     vim.api.nvim_set_option_value("winfixbuf", true, { win = float_win })
     vim.api.nvim_set_option_value("list", false, { win = float_win })
     vim.api.nvim_set_option_value("spell", false, { win = float_win })
-    vim.api.nvim_set_option_value("winhighlight", FLOAT_WINHIGHLIGHT, { win = float_win })
+    vim.api.nvim_set_option_value("winhighlight", winhighlight, { win = float_win })
     vim.api.nvim_set_option_value("winblend", blend or 0, { win = float_win })
     vim.api.nvim_win_set_var(float_win, OWNED_WIN_VAR, true)
+end
+
+---@param state ScrollbarMinimapRendererState
+---@param blend integer
+---@param winhighlight string
+local function update_window_presentation(state, blend, winhighlight)
+    if state.winblend == blend and state.winhighlight == winhighlight then
+        return
+    end
+    vim.api.nvim_set_option_value("winblend", blend, { win = state.float_win })
+    vim.api.nvim_set_option_value("winhighlight", winhighlight, { win = state.float_win })
+    state.winblend = blend
+    state.winhighlight = winhighlight
 end
 
 ---@param winid integer
@@ -310,6 +339,93 @@ local function float_config(
         result.win = source_win
     end
     return result
+end
+
+---@param float_win integer
+---@param expected table<string, any>
+---@return boolean
+local function has_float_config(float_win, expected)
+    local ok, current = pcall(vim.api.nvim_win_get_config, float_win)
+    if not ok then
+        return false
+    end
+    for key, value in pairs(expected) do
+        if not vim.deep_equal(current[key], value) then
+            return false
+        end
+    end
+    return true
+end
+
+---@param source_win integer
+---@param active_config ScrollbarMinimapConfig
+---@return integer? row
+---@return integer? col
+local function cursor_screen_position(source_win, active_config)
+    if not active_config.float.hide_on_cursor or vim.api.nvim_get_current_win() ~= source_win then
+        return nil, nil
+    end
+
+    local cursor_row = vim.fn.screenrow()
+    local cursor_col = vim.fn.screencol()
+    if type(cursor_row) ~= "number" or type(cursor_col) ~= "number" or cursor_row <= 0 or cursor_col <= 0 then
+        return nil, nil
+    end
+
+    return cursor_row - 1, cursor_col - 1
+end
+
+---@param state ScrollbarMinimapRendererState
+---@param cursor_row? integer
+---@param cursor_col? integer
+---@return boolean
+local function cursor_overlaps_float(state, cursor_row, cursor_col)
+    if cursor_row == nil or cursor_col == nil then
+        return false
+    end
+
+    local ok, position = pcall(vim.api.nvim_win_get_position, state.float_win)
+    if not ok or type(position) ~= "table" then
+        return false
+    end
+
+    local top = position[1]
+    local left = position[2]
+    local height = state.float_config.height
+    local width = state.float_config.width
+    if
+        type(top) ~= "number"
+        or type(left) ~= "number"
+        or type(height) ~= "number"
+        or type(width) ~= "number"
+        or height <= 0
+        or width <= 0
+    then
+        return false
+    end
+
+    return cursor_row >= top and cursor_row < top + height and cursor_col >= left and cursor_col < left + width
+end
+
+---@param state ScrollbarMinimapRendererState
+---@param cursor_row? integer
+---@param cursor_col? integer
+local function update_cursor_visibility(state, cursor_row, cursor_col)
+    local hidden = cursor_overlaps_float(state, cursor_row, cursor_col)
+    if state.hidden_by_cursor == hidden then
+        return
+    end
+
+    local active_float_config = vim.deepcopy(state.float_config)
+    active_float_config.hide = hidden
+    vim.api.nvim_win_set_config(state.float_win, active_float_config)
+    state.float_config = active_float_config
+    state.hidden_by_cursor = hidden
+end
+
+local function resolve_float_position()
+    -- Anchored positions settle during redraw; flush while hidden so the first visible frame is correct.
+    vim.api.nvim__redraw({ flush = true })
 end
 
 ---@param state ScrollbarMinimapRendererState
@@ -553,7 +669,8 @@ end
 
 ---@param rows string[]
 ---@param highlights ScrollbarMinimapHighlightSpan[][]
-local function write_highlights(float_buf, rows, highlights)
+---@param active_config ScrollbarMinimapConfig
+local function write_highlights(float_buf, rows, highlights, active_config)
     vim.api.nvim_buf_clear_namespace(float_buf, NAMESPACE, 0, -1)
     for row = 1, #rows do
         local spans = highlights[row] or {}
@@ -561,10 +678,14 @@ local function write_highlights(float_buf, rows, highlights)
             local start_col = cell_boundary_to_byte(rows[row], span.start_col)
             local end_col = cell_boundary_to_byte(rows[row], span.end_col)
             if start_col < end_col then
+                local highlight = span.highlight
+                if active_config.background.blend ~= false then
+                    highlight = highlight_module.resolve(highlight, active_config.float.blend, "layer")
+                end
                 vim.api.nvim_buf_set_extmark(float_buf, NAMESPACE, row - 1, start_col, {
                     end_row = row - 1,
                     end_col = end_col,
-                    hl_group = span.highlight,
+                    hl_group = highlight,
                     hl_mode = "combine",
                     priority = span.priority,
                     strict = false,
@@ -849,6 +970,9 @@ local function render_source(source_win, selection, root_config)
 
     overlay_layers(highlights, viewport_top_row, viewport_bottom_row, points, target_width, active_config.show_viewport)
 
+    local active_winblend, active_winhighlight = window_presentation(active_config)
+    local cursor_screen_row, cursor_screen_col = cursor_screen_position(source_win, active_config)
+    local cursor_position_available = cursor_screen_row ~= nil and cursor_screen_col ~= nil
     ---@type ScrollbarMinimapRendererState?
     local state = states[source_win]
     if state == nil or not valid_window(state.float_win) or not vim.api.nvim_buf_is_valid(state.float_buf) then
@@ -863,14 +987,15 @@ local function render_source(source_win, selection, root_config)
             vim.o.columns,
             target_width,
             target_height,
-            false
+            cursor_position_available
         )
         desired.style = "minimal"
         local float_buf = vim.api.nvim_create_buf(false, true)
         configure_buffer(float_buf)
         pcall(vim.api.nvim_buf_set_name, float_buf, string.format("scrollbar_minimap://%d/%d", source_win, float_buf))
         local float_win = vim.api.nvim_open_win(float_buf, false, desired)
-        configure_window(float_win, active_config.float.blend)
+        desired.style = nil
+        configure_window(float_win, active_winblend, active_winhighlight)
         state = {
             source_win = source_win,
             source_buf = source_buf,
@@ -890,10 +1015,15 @@ local function render_source(source_win, selection, root_config)
             cursor_col = cursor_col,
             overlay_signature = overlay_sig,
             cells_signature = cache and cache.signature or "",
-            hidden_by_autohide = false,
+            hidden_by_cursor = desired.hide == true,
+            winblend = active_winblend,
+            winhighlight = active_winhighlight,
         }
         states[source_win] = state
         states_by_float[float_win] = state
+        if cursor_position_available then
+            resolve_float_position()
+        end
     else
         local desired = float_config(
             active_config,
@@ -903,21 +1033,35 @@ local function render_source(source_win, selection, root_config)
             vim.o.columns,
             target_width,
             target_height,
-            state.hidden_by_autohide
+            cursor_position_available and state.hidden_by_cursor or false
         )
         if not vim.deep_equal(state.float_config, desired) then
+            if cursor_position_available then
+                desired.hide = true
+            end
             vim.api.nvim_win_set_config(state.float_win, desired)
             state.float_config = desired
+            state.hidden_by_cursor = desired.hide
+            if cursor_position_available then
+                resolve_float_position()
+            end
+        elseif not has_float_config(state.float_win, desired) then
+            vim.api.nvim_win_set_config(state.float_win, desired)
+            state.float_config = desired
+            state.hidden_by_cursor = desired.hide
         end
         state.source_buf = source_buf
         state.config = active_config
         state.variant_id = selection.variant_id
     end
 
+    update_cursor_visibility(state, cursor_screen_row, cursor_screen_col)
+    update_window_presentation(state, active_winblend, active_winhighlight)
+
     with_modifiable(state.float_buf, function()
         vim.api.nvim_buf_set_lines(state.float_buf, 0, -1, false, rows)
     end)
-    write_highlights(state.float_buf, rows, highlights)
+    write_highlights(state.float_buf, rows, highlights, active_config)
 
     state.width = target_width
     state.height = target_height

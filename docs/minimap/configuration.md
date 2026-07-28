@@ -20,9 +20,11 @@ require("scrollbar").setup({
         set_highlights = true,
         max_lines = false,
         autohide = { enabled = false, delay_ms = 1000 },
+        background = { blend = false },
         float = {
             zindex = 50,
             blend = 0,
+            hide_on_cursor = true,
             placement = {
                 relative = "window",
                 anchor = "NE",
@@ -81,8 +83,10 @@ require("scrollbar").setup({
 | `max_lines` | false \| integer | `false` | Skip rendering for buffers with more than this many lines. |
 | `autohide.enabled` | boolean | `false` | Reveal source minimaps on configured cursor/scroll activity, then conceal each after its inactivity deadline. |
 | `autohide.delay_ms` | integer | `1000` | Hide delay after the last activity in a source window. |
+| `background.blend` | false \| integer | `false` | Root-only base-surface blend policy. `false` inherits the selected `float.blend`; `0..100` overrides only the `ScrollbarMinimapBase` surface. |
 | `float.zindex` | integer | `50` | `nvim_open_win` z-index. |
-| `float.blend` | integer | `0` | Floating-window pseudo-transparency (`winblend`), 0-100. The default `0` keeps the minimap surface solid. |
+| `float.blend` | integer | `0` | Profile-aware full-float pseudo-transparency, 0-100. It remains the default blend for the base and all background-bearing layers unless `background.blend` or an explicit highlight blend overrides it. |
+| `float.hide_on_cursor` | boolean | `true` | Temporarily hide the active source window's minimap while the editing cursor overlaps its screen rectangle. Profiles may override this; presets may not. |
 | `float.placement.relative` | `"window"` \| `"editor"` | `"window"` | Float positioning reference. `"editor"` renders only the active source window's minimap (one editor-wide float that tracks focus). |
 | `float.placement.anchor` | `"NW"` \| `"NE"` \| `"SW"` \| `"SE"` | `"NE"` | Corner used as the row/col origin. |
 | `float.placement.row` | integer | `0` | Row offset from the anchor. |
@@ -105,6 +109,56 @@ require("scrollbar").setup({
 | `preset` | string | — | Name of a preset to apply (built-in or user-defined). |
 | `presets` | table | — | User-defined preset definitions. |
 | `profiles` | table[] | — | Ordered profile variants; first match wins. |
+
+## Blend Layers
+
+`float.blend` and `background.blend` control different layers:
+
+- `float.blend` is the profile-aware full-float control. With
+  `background.blend = false`, the renderer keeps the direct highlight path and
+  sets the float's `winblend` to the selected `float.blend`.
+- A numeric `background.blend` is root-only and overrides only the base surface
+  sourced from `ScrollbarMinimapBase`. It works when `float.blend = 0`, so the
+  base can blend while viewport, cursor, overlay, and semantic backgrounds stay
+  solid.
+- With a numeric base override, the effective window `winblend` is
+  `max(float.blend, background.blend)`. The renderer uses private highlight
+  copies to give the base its requested blend and to protect other resolved
+  background-bearing groups with the selected `float.blend`.
+- A source highlight's explicit `blend` is preserved. Foreground-only groups
+  are not copied; their text or glyph foreground remains above the selected
+  base surface.
+
+The renderer never rewrites canonical public `ScrollbarMinimap*` groups and
+does not create a second background float. Private resolved definitions are
+cached per source, blend, and role, then refreshed on setup and `ColorScheme`.
+Profile changes update the existing float's blend and highlight selection
+without recreating its window or buffer; the root `background.blend` remains
+unchanged.
+
+Neovim implements `winblend` and highlight `blend` as UI pseudo-transparency,
+not per-pixel alpha. Results depend on the active colorscheme and UI. A group
+without a resolved background continues to expose the base surface, and a group
+with its own explicit blend remains under user or colorscheme control.
+
+## Cursor Yielding
+
+With `float.hide_on_cursor = true`, only the source window in
+`nvim_get_current_win()` is evaluated. The renderer compares zero-based cursor
+screen coordinates with the float position reported by Neovim. Top and left
+edges are inclusive; bottom and right edges are exclusive. Unavailable cursor
+or float coordinates fail open and keep the minimap visible.
+
+Hiding changes only the existing float's `hide` config. Moving outside restores
+the same float window, scratch buffer, rendered rows, highlight cache, worker
+state, and mouse mappings. Inactive splits are restored rather than hidden from
+stored cursor positions, and this policy is independent of
+`minimap.providers.cursor`.
+
+The check runs when the minimap renders. The default `CursorMoved` and
+`CursorMovedI` events provide normal cursor cadence; removing them from
+`update.events` means overlap state waits for another configured invalidation.
+Set `float.hide_on_cursor = false` to skip cursor and float-position checks.
 
 ## Provider Defaults
 
@@ -147,10 +201,11 @@ TextChangedT, WinClosed, BufDelete, BufWipeout, ColorScheme
 ```
 
 Dropping `CursorMoved` removes the minimap scheduler's own cursor-activity
-invalidation and autohide activity handling. It does not disable provider-owned
-events: the default cursor provider can still publish a new minimap point until
-`minimap.providers.cursor = false`. Every accepted event name is validated
-against a closed allow-list at setup; typos are setup errors.
+invalidation, cursor-overlap cadence, and autohide activity handling. It does
+not disable provider-owned events: the default cursor provider can still
+publish a new minimap point until `minimap.providers.cursor = false`. Every
+accepted event name is validated against a closed allow-list at setup; typos
+are setup errors.
 
 ## Backends
 
@@ -218,8 +273,9 @@ require("scrollbar").setup({
 })
 ```
 
-Provider demand remains at the minimap root because presets are presentation
-only. See [Presets](../presets.md#minimap-presets) for the exact allow-list.
+Provider demand and `background.blend` remain at the minimap root. Neither the
+background policy nor `float.hide_on_cursor` is preset-owned. See
+[Presets](../presets.md#minimap-presets) for the exact allow-list.
 
 ## Profiles
 
@@ -245,9 +301,9 @@ A predicate error falls back to the root config and notifies once per
 distinct error message.
 
 Profile `config` blocks may override display options such as dimensions,
-placement, overlays, mouse behavior, and content glyphs. They cannot set
-`providers`; the selected root setup demand applies to every window for the
-shared provider lifecycle.
+`float.blend`, `float.hide_on_cursor`, placement, overlays, mouse behavior, and
+content glyphs. They cannot set `background` or `providers`; the selected root
+base policy and provider demand apply to every window.
 
 Overlay specs resolve in this order: derived scrollbar defaults, selected
 minimap preset, root minimap entries, then the matching minimap profile. A
@@ -262,7 +318,7 @@ with theme-owned default links:
 
 | Group | Default link | Role |
 | --- | --- | --- |
-| `ScrollbarMinimapBase` | `NormalFloat` | Solid float surface. |
+| `ScrollbarMinimapBase` | `NormalFloat` | Base float surface; numeric `background.blend` applies only to a private renderer copy of this group. |
 | `ScrollbarMinimapContent` | `Comment` | Monochrome highlight for occupied cells without a syntax capture. |
 | `ScrollbarMinimapViewport` | `CursorLine` | Projected viewport background tint. |
 | `ScrollbarMinimapCursor` | `Cursor` | Exact projected cursor-cell accent. |

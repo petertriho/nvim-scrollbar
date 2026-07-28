@@ -19,6 +19,13 @@
 ---@class ScrollbarMinimapUserFloatConfig
 ---@field zindex? integer
 ---@field blend? integer
+---@field hide_on_cursor? boolean
+---@field placement? ScrollbarMinimapUserPlacement
+
+---@class ScrollbarMinimapUserBackgroundConfig
+---@field blend? false|integer
+
+---@class ScrollbarMinimapUserPresetFloatConfig
 ---@field placement? ScrollbarMinimapUserPlacement
 
 ---@class ScrollbarMinimapUserAutohideConfig
@@ -58,7 +65,7 @@
 ---@field extends? string
 ---@field width? false|integer
 ---@field height? false|integer
----@field float? ScrollbarMinimapUserFloatConfig
+---@field float? ScrollbarMinimapUserPresetFloatConfig
 ---@field overlays? ScrollbarMinimapUserOverlaysConfig
 ---@field show_viewport? boolean
 ---@field autohide? ScrollbarMinimapUserAutohideConfig
@@ -94,6 +101,7 @@
 ---@field set_highlights? boolean
 ---@field max_lines? false|integer
 ---@field autohide? ScrollbarMinimapUserAutohideConfig
+---@field background? ScrollbarMinimapUserBackgroundConfig Root-only base surface policy; profiles and presets cannot override it
 ---@field float? ScrollbarMinimapUserFloatConfig
 ---@field width? false|integer
 ---@field height? false|integer
@@ -121,7 +129,11 @@
 ---@class ScrollbarMinimapFloatConfig
 ---@field zindex integer
 ---@field blend integer
+---@field hide_on_cursor boolean
 ---@field placement ScrollbarMinimapPlacement
+
+---@class ScrollbarMinimapBackgroundConfig
+---@field blend false|integer
 
 ---@class ScrollbarMinimapAutohideConfig
 ---@field enabled boolean
@@ -163,6 +175,7 @@
 ---@field set_highlights boolean
 ---@field max_lines false|integer
 ---@field autohide ScrollbarMinimapAutohideConfig
+---@field background ScrollbarMinimapBackgroundConfig
 ---@field float ScrollbarMinimapFloatConfig
 ---@field width false|integer
 ---@field height false|integer
@@ -285,7 +298,9 @@
 ---@field cursor_col? integer 1-based projected minimap cursor column
 ---@field overlay_signature string
 ---@field cells_signature string
----@field hidden_by_autohide boolean
+---@field hidden_by_cursor boolean
+---@field winblend integer
+---@field winhighlight string
 
 ---@class ScrollbarMinimapRendererWorker
 ---@field request fun(request: table): boolean

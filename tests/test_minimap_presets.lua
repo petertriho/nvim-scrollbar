@@ -74,6 +74,18 @@ end
 
 T["rejects removed minimap preset fields"] = function()
     expect_invalid(
+        { presets = { invalid = { background = { blend = 40 } } } },
+        "minimap preset 'invalid' cannot set 'background'"
+    )
+    expect_invalid(
+        { presets = { invalid = { float = { hide_on_cursor = false } } } },
+        "minimap preset 'invalid' cannot set 'float.hide_on_cursor'"
+    )
+    expect_invalid(
+        { presets = { invalid = { float = { blend = 20 } } } },
+        "minimap preset 'invalid' cannot set 'float.blend'"
+    )
+    expect_invalid(
         { presets = { invalid = { syntax_highlighting = true } } },
         "minimap preset 'invalid' cannot set 'syntax_highlighting'"
     )

@@ -87,9 +87,13 @@ local DEFAULTS = {
         enabled = false,
         delay_ms = 1000,
     },
+    background = {
+        blend = false,
+    },
     float = {
         zindex = 50,
         blend = 0,
+        hide_on_cursor = true,
         placement = {
             relative = "window",
             anchor = "NE",
@@ -138,6 +142,7 @@ local TOP_LEVEL_KEYS = {
     set_highlights = true,
     max_lines = true,
     autohide = true,
+    background = true,
     float = true,
     width = true,
     height = true,
@@ -154,8 +159,9 @@ local TOP_LEVEL_KEYS = {
 
 local NESTED_KEYS = {
     autohide = { enabled = true, delay_ms = true },
+    background = { blend = true },
     update = { events = true, interval_ms = true },
-    float = { zindex = true, blend = true, placement = true },
+    float = { zindex = true, blend = true, hide_on_cursor = true, placement = true },
     ["float.placement"] = {
         relative = true,
         anchor = true,
@@ -253,6 +259,7 @@ local function validate_shape(overrides)
 
     validate_unknown_keys(overrides.update, NESTED_KEYS.update, "minimap.update")
     validate_unknown_keys(overrides.autohide, NESTED_KEYS.autohide, "minimap.autohide")
+    validate_unknown_keys(overrides.background, NESTED_KEYS.background, "minimap.background")
     validate_unknown_keys(overrides.float, NESTED_KEYS.float, "minimap.float")
     if type(overrides.float) == "table" then
         validate_unknown_keys(overrides.float.placement, NESTED_KEYS["float.placement"], "minimap.float.placement")
@@ -519,6 +526,19 @@ local function normalize(overrides, default_overlay_types)
     validate_boolean(result.autohide.enabled, "minimap.autohide.enabled")
     validate_integer(result.autohide.delay_ms, "minimap.autohide.delay_ms", false)
 
+    if type(result.background) ~= "table" then
+        invalid("minimap.background must be a table")
+    end
+    if
+        result.background.blend ~= false
+        and (not is_integer(result.background.blend) or result.background.blend < 0)
+    then
+        invalid("minimap.background.blend must be false or an integer in 0..100")
+    end
+    if result.background.blend ~= false and result.background.blend > 100 then
+        invalid("minimap.background.blend must be at most 100")
+    end
+
     if type(result.update) ~= "table" then
         invalid("minimap.update must be a table")
     end
@@ -550,6 +570,7 @@ local function normalize(overrides, default_overlay_types)
     if result.float.blend > 100 then
         invalid("minimap.float.blend must be at most 100")
     end
+    validate_boolean(result.float.hide_on_cursor, "minimap.float.hide_on_cursor")
     if type(result.float.placement) ~= "table" then
         invalid("minimap.float.placement must be a table")
     end

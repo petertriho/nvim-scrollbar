@@ -56,10 +56,10 @@ cannot be changed by a profile.
 
 ## Cursor Intersection
 
-`float.hide_on_cursor = true` temporarily hides the active source window's whole
-scrollbar when the editing cursor enters any cell in the float's actual screen
-rectangle. Moving the cursor away restores the same float, buffer, rows,
-highlights, and mouse mappings.
+`scrollbar.float.hide_on_cursor = true` temporarily hides the active source
+window's whole scrollbar when the editing cursor enters any cell in the float's
+actual screen rectangle. Moving the cursor away restores the same float,
+buffer, rows, highlights, and mouse mappings.
 
 Only the cursor in `nvim_get_current_win()` triggers this behavior. Stored
 cursor positions in inactive splits do not hide their scrollbars. The check uses
@@ -69,8 +69,24 @@ The test compares cursor and float screen coordinates only; it does not inspect
 source lines or visible text.
 
 While hidden, the scrollbar does not capture mouse input, so those cells reach
-the source window. Set `float.hide_on_cursor = false` to keep the overlay visible
-under the cursor.
+the source window. Set `scrollbar.float.hide_on_cursor = false` to keep the
+overlay visible under the cursor.
+
+The minimap has the parallel policy `minimap.float.hide_on_cursor = true` by
+default. It evaluates only the active source window and hides when the cursor's
+zero-based screen coordinate is inside the float's reported rectangle. Top and
+left edges are inclusive; bottom and right edges are exclusive. Inactive split
+minimaps are restored, and unavailable coordinates fail open.
+
+Minimap cursor yielding changes only the existing float's `hide` flag. It keeps
+the same minimap window, buffer, worker and cell caches, rendered content, and
+mouse mappings. It is independent of `minimap.providers.cursor`; disabling the
+cursor point provider does not disable overlap hiding.
+
+The minimap check runs on configured render invalidations. The default
+`CursorMoved` and `CursorMovedI` events provide immediate updates; if those
+events are removed, visibility settles on the next configured minimap event.
+Set `minimap.float.hide_on_cursor = false` to skip the coordinate work.
 
 ## Related
 

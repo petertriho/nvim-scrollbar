@@ -19,6 +19,7 @@ local function reset_modules(child)
             "scrollbar.providers",
             "scrollbar.store",
             "scrollbar.minimap.config",
+            "scrollbar.minimap.highlights",
             "scrollbar.minimap.semantic",
             "scrollbar.minimap.worker",
             "scrollbar.minimap.overlays",
@@ -1557,6 +1558,608 @@ T["width false uses the 16-column renderer fallback"] = function()
 
     expect.equality(result.width, 16)
     expect.equality(result.cells, 16)
+end
+
+T["background inheritance keeps direct groups and uses full-float winblend"] = function()
+    local child = new_child()
+    reset_modules(child)
+    configure(child, {
+        enabled = true,
+        width = 1,
+        height = 1,
+        set_highlights = false,
+        show_viewport = false,
+        float = { blend = 35, hide_on_cursor = false },
+    })
+
+    local result = child.lua_func(function()
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, { "a" })
+        local renderer = require("scrollbar.minimap.renderer")
+        local state = assert(renderer.render(0))
+        local mark = vim.api.nvim_buf_get_extmarks(state.float_buf, renderer.namespace(), 0, -1, {
+            details = true,
+        })[1]
+        return {
+            winblend = vim.api.nvim_get_option_value("winblend", { win = state.float_win }),
+            winhighlight = vim.api.nvim_get_option_value("winhighlight", { win = state.float_win }),
+            highlight = mark and mark[4].hl_group or nil,
+        }
+    end)
+
+    expect.equality(result.winblend, 35)
+    expect.equality(
+        result.winhighlight,
+        "Normal:ScrollbarMinimapBase,NormalNC:ScrollbarMinimapBase,EndOfBuffer:ScrollbarMinimapBase"
+    )
+    expect.equality(result.highlight, "ScrollbarMinimapContent")
+end
+
+T["numeric background blend isolates base and background-bearing layers"] = function()
+    local child = new_child()
+    reset_modules(child)
+
+    local result = child.lua_func(function()
+        require("scrollbar.config").set({
+            scrollbar = {},
+            minimap = {
+                enabled = true,
+                width = 4,
+                height = 1,
+                set_highlights = false,
+                background = { blend = 60 },
+                float = { blend = 0, hide_on_cursor = false },
+                overlays = { enabled = true, types = { Error = {} } },
+                show_viewport = true,
+            },
+        })
+        vim.api.nvim_set_hl(0, "ScrollbarMinimapBase", { bg = "#101010" })
+        vim.api.nvim_set_hl(0, "ForegroundOnly", { fg = "#abcdef", bold = true })
+        vim.api.nvim_set_hl(0, "SemanticBackground", { fg = "#fedcba", bg = "#202020" })
+        vim.api.nvim_set_hl(0, "ScrollbarMinimapViewport", { bg = "#303030" })
+        vim.api.nvim_set_hl(0, "ScrollbarMinimapCursor", { bg = "#404040" })
+        vim.api.nvim_set_hl(0, "ScrollbarMinimapError", { bg = "#505050" })
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, { "abcd" })
+
+        local renderer = require("scrollbar.minimap.renderer")
+        renderer.setup({
+            worker = {
+                request = function(request)
+                    renderer.handle_worker_result({
+                        bufnr = request.bufnr,
+                        signature = request.signature,
+                        changedtick = vim.api.nvim_buf_get_changedtick(request.bufnr),
+                        semantic_revision = request.semantic_revision,
+                        filetype = request.filetype,
+                        cells = {
+                            {
+                                { char = "█", hl_group = "ForegroundOnly" },
+                                { char = "█", hl_group = "SemanticBackground" },
+                                { char = "█" },
+                                { char = "█" },
+                            },
+                        },
+                        max_line_width = 4,
+                    })
+                    return true
+                end,
+            },
+            overlays = {
+                project_with = function()
+                    return {
+                        {
+                            source_line = 0,
+                            minimap_row = 1,
+                            mark_type = "Error",
+                            priority = 2,
+                            highlight = "ScrollbarMinimapError",
+                            provider = "diagnostic",
+                        },
+                    }
+                end,
+            },
+        })
+        require("scrollbar.store").set_minimap_points("cursor", vim.api.nvim_get_current_win(), {
+            { line = 0, col = 3, highlight = "ScrollbarMinimapCursor", priority = 14 },
+        })
+
+        local state = assert(renderer.render(0))
+        local winhighlight = vim.api.nvim_get_option_value("winhighlight", { win = state.float_win })
+        local base = winhighlight:match("Normal:([^,]+)")
+        local definitions = {}
+        local foreground_seen = false
+        for _, mark in
+            ipairs(vim.api.nvim_buf_get_extmarks(state.float_buf, renderer.namespace(), 0, -1, { details = true }))
+        do
+            local name = mark[4].hl_group
+            if name == "ForegroundOnly" then
+                foreground_seen = true
+            else
+                local definition = vim.api.nvim_get_hl(0, { name = name, link = false })
+                if definition.bg ~= nil then
+                    definitions[definition.bg] = definition.blend
+                end
+            end
+        end
+        return {
+            winblend = vim.api.nvim_get_option_value("winblend", { win = state.float_win }),
+            base = vim.api.nvim_get_hl(0, { name = base, link = false }),
+            definitions = definitions,
+            foreground_seen = foreground_seen,
+        }
+    end)
+
+    expect.equality(result.winblend, 60)
+    expect.equality(result.base, { bg = 0x101010, blend = 60 })
+    expect.equality(result.definitions[0x202020], 0)
+    expect.equality(result.definitions[0x303030], 0)
+    expect.equality(result.definitions[0x404040], 0)
+    expect.equality(result.definitions[0x505050], 0)
+    expect.equality(result.foreground_seen, true)
+end
+
+T["profile full-float blend transitions reuse resources and refresh wrappers"] = function()
+    local child = new_child()
+    reset_modules(child)
+
+    local result = child.lua_func(function()
+        require("scrollbar.config").set({
+            scrollbar = {},
+            minimap = {
+                enabled = true,
+                width = 1,
+                height = 1,
+                set_highlights = false,
+                background = { blend = 20 },
+                float = { blend = 0, hide_on_cursor = false },
+                show_viewport = false,
+                profiles = {
+                    {
+                        match = { filetypes = { "lua" } },
+                        config = { float = { blend = 60 } },
+                    },
+                },
+            },
+        })
+        vim.api.nvim_set_hl(0, "ScrollbarMinimapBase", { bg = "#101010" })
+        vim.api.nvim_set_hl(0, "LayerBackground", { bg = "#202020" })
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, { "a" })
+
+        local renderer = require("scrollbar.minimap.renderer")
+        renderer.setup({
+            worker = {
+                request = function(request)
+                    renderer.handle_worker_result({
+                        bufnr = request.bufnr,
+                        signature = request.signature,
+                        changedtick = vim.api.nvim_buf_get_changedtick(request.bufnr),
+                        semantic_revision = request.semantic_revision,
+                        filetype = request.filetype,
+                        cells = { { { char = "█", hl_group = "LayerBackground" } } },
+                        max_line_width = 1,
+                    })
+                    return true
+                end,
+            },
+            overlays = {
+                project_with = function()
+                    return {}
+                end,
+            },
+        })
+
+        vim.bo.filetype = "text"
+        local first = assert(renderer.render(0))
+        local first_mark = vim.api.nvim_buf_get_extmarks(first.float_buf, renderer.namespace(), 0, -1, {
+            details = true,
+        })[1]
+        local first_group = first_mark[4].hl_group
+        local snapshot = {
+            float_win = first.float_win,
+            float_buf = first.float_buf,
+            winblend = vim.api.nvim_get_option_value("winblend", { win = first.float_win }),
+            layer = vim.api.nvim_get_hl(0, { name = first_group, link = false }),
+        }
+
+        vim.bo.filetype = "lua"
+        local second = assert(renderer.render(0))
+        local second_mark = vim.api.nvim_buf_get_extmarks(second.float_buf, renderer.namespace(), 0, -1, {
+            details = true,
+        })[1]
+        local second_group = second_mark[4].hl_group
+        local base = vim.api.nvim_get_option_value("winhighlight", { win = second.float_win }):match("Normal:([^,]+)")
+        return {
+            first = snapshot,
+            second = {
+                float_win = second.float_win,
+                float_buf = second.float_buf,
+                winblend = vim.api.nvim_get_option_value("winblend", { win = second.float_win }),
+                layer = vim.api.nvim_get_hl(0, { name = second_group, link = false }),
+                base = vim.api.nvim_get_hl(0, { name = base, link = false }),
+                background_blend = second.config.background.blend,
+            },
+        }
+    end)
+
+    expect.equality(result.first.float_win, result.second.float_win)
+    expect.equality(result.first.float_buf, result.second.float_buf)
+    expect.equality(result.first.winblend, 20)
+    expect.equality(result.first.layer, { bg = 0x202020, blend = 0 })
+    expect.equality(result.second.winblend, 60)
+    expect.equality(result.second.layer, { bg = 0x202020, blend = 60 })
+    expect.equality(result.second.base, { bg = 0x101010, blend = 20 })
+    expect.equality(result.second.background_blend, 20)
+end
+
+T["cursor overlap hides and restores the same minimap only on transitions"] = function()
+    local child = new_child()
+    reset_modules(child)
+    configure(child, {
+        enabled = true,
+        width = 4,
+        height = 4,
+        set_highlights = false,
+        show_viewport = false,
+    })
+
+    local result = child.lua_func(function()
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, { "one", "two", "three", "four" })
+        local source_win = vim.api.nvim_get_current_win()
+        local renderer = require("scrollbar.minimap.renderer")
+        local worker = require("scrollbar.minimap.worker")
+        local cursor = { row = 3, col = 7 }
+        local screenrow = vim.fn.screenrow
+        local screencol = vim.fn.screencol
+        local get_position = vim.api.nvim_win_get_position
+        local set_config = vim.api.nvim_win_set_config
+        local redraw = vim.api.nvim__redraw
+        local request = worker.request
+        local config_calls = 0
+        local redraw_calls = 0
+        local requests = 0
+        local position_resolved = false
+        rawset(vim.fn, "screenrow", function()
+            return cursor.row
+        end)
+        rawset(vim.fn, "screencol", function()
+            return cursor.col
+        end)
+        rawset(vim.api, "nvim_win_get_position", function()
+            return position_resolved and { 1, 5 } or { 1, 8 }
+        end)
+        rawset(vim.api, "nvim_win_set_config", function(...)
+            config_calls = config_calls + 1
+            return set_config(...)
+        end)
+        rawset(vim.api, "nvim__redraw", function(options)
+            redraw_calls = redraw_calls + 1
+            position_resolved = true
+            return redraw(options)
+        end)
+        ---@diagnostic disable-next-line: duplicate-set-field
+        worker.request = function(options)
+            requests = requests + 1
+            return request(options)
+        end
+
+        local hidden = assert(renderer.render(source_win))
+        local hidden_config = vim.api.nvim_win_get_config(hidden.float_win).hide
+        local hidden_by_cursor = hidden.hidden_by_cursor
+        local after_hide = config_calls
+        renderer.render(source_win)
+        local after_hidden_steady = config_calls
+
+        cursor.col = 5
+        local restored = assert(renderer.render(source_win))
+        local restored_config = vim.api.nvim_win_get_config(restored.float_win).hide
+        local after_restore = config_calls
+        renderer.render(source_win)
+        local after_visible_steady = config_calls
+
+        worker.request = request
+        rawset(vim.fn, "screenrow", screenrow)
+        rawset(vim.fn, "screencol", screencol)
+        rawset(vim.api, "nvim_win_get_position", get_position)
+        rawset(vim.api, "nvim_win_set_config", set_config)
+        rawset(vim.api, "nvim__redraw", redraw)
+        return {
+            hidden_by_cursor = hidden_by_cursor,
+            hidden_config = hidden_config,
+            restored_by_cursor = restored.hidden_by_cursor,
+            restored_config = restored_config,
+            same_float = hidden.float_win == restored.float_win,
+            same_buffer = hidden.float_buf == restored.float_buf,
+            resources_valid = vim.api.nvim_win_is_valid(restored.float_win)
+                and vim.api.nvim_buf_is_valid(restored.float_buf),
+            requests = requests,
+            redraw_calls = redraw_calls,
+            calls = {
+                after_hide = after_hide,
+                after_hidden_steady = after_hidden_steady,
+                after_restore = after_restore,
+                after_visible_steady = after_visible_steady,
+            },
+        }
+    end)
+
+    expect.equality(result, {
+        hidden_by_cursor = true,
+        hidden_config = true,
+        restored_by_cursor = false,
+        restored_config = false,
+        same_float = true,
+        same_buffer = true,
+        resources_valid = true,
+        requests = 1,
+        redraw_calls = 1,
+        calls = {
+            after_hide = 0,
+            after_hidden_steady = 0,
+            after_restore = 1,
+            after_visible_steady = 1,
+        },
+    })
+end
+
+T["cursor hiding uses inclusive top-left and exclusive bottom-right bounds"] = function()
+    local child = new_child()
+    reset_modules(child)
+    configure(child, {
+        enabled = true,
+        width = 4,
+        height = 3,
+        set_highlights = false,
+        show_viewport = false,
+        providers = { cursor = false },
+    })
+
+    local result = child.lua_func(function()
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, { "one", "two", "three" })
+        local renderer = require("scrollbar.minimap.renderer")
+        local source_win = vim.api.nvim_get_current_win()
+        local cursor = { row = 6, col = 8 }
+        local screenrow = vim.fn.screenrow
+        local screencol = vim.fn.screencol
+        local get_position = vim.api.nvim_win_get_position
+        rawset(vim.fn, "screenrow", function()
+            return cursor.row
+        end)
+        rawset(vim.fn, "screencol", function()
+            return cursor.col
+        end)
+        rawset(vim.api, "nvim_win_get_position", function()
+            return { 5, 7 }
+        end)
+
+        local top_left = assert(renderer.render(source_win))
+        local top_left_hidden = top_left.hidden_by_cursor
+        local cursor_projection = top_left.cursor_row
+        cursor.row = 9
+        local bottom = assert(renderer.render(source_win)).hidden_by_cursor
+        cursor.row = 6
+        cursor.col = 12
+        local right = assert(renderer.render(source_win)).hidden_by_cursor
+        cursor.row = 8
+        cursor.col = 11
+        local bottom_right_inside = assert(renderer.render(source_win)).hidden_by_cursor
+
+        rawset(vim.fn, "screenrow", screenrow)
+        rawset(vim.fn, "screencol", screencol)
+        rawset(vim.api, "nvim_win_get_position", get_position)
+        return {
+            top_left = top_left_hidden,
+            bottom = bottom,
+            right = right,
+            bottom_right_inside = bottom_right_inside,
+            cursor_projection = cursor_projection,
+        }
+    end)
+
+    expect.equality(result, {
+        top_left = true,
+        bottom = false,
+        right = false,
+        bottom_right_inside = true,
+        cursor_projection = nil,
+    })
+end
+
+T["disabled cursor hiding skips coordinate work and unavailable coordinates fail open"] = function()
+    local child = new_child()
+    reset_modules(child)
+    configure(child, {
+        enabled = true,
+        width = 4,
+        height = 3,
+        set_highlights = false,
+        show_viewport = false,
+        float = { hide_on_cursor = false },
+    })
+
+    local result = child.lua_func(function()
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, { "one", "two", "three" })
+        local source_win = vim.api.nvim_get_current_win()
+        local renderer = require("scrollbar.minimap.renderer")
+        local calls = { row = 0, col = 0, position = 0 }
+        local screenrow = vim.fn.screenrow
+        local screencol = vim.fn.screencol
+        local get_position = vim.api.nvim_win_get_position
+        rawset(vim.fn, "screenrow", function()
+            calls.row = calls.row + 1
+            return 0
+        end)
+        rawset(vim.fn, "screencol", function()
+            calls.col = calls.col + 1
+            return 0
+        end)
+        rawset(vim.api, "nvim_win_get_position", function(...)
+            calls.position = calls.position + 1
+            return get_position(...)
+        end)
+
+        local disabled = assert(renderer.render(source_win))
+        local disabled_calls = vim.deepcopy(calls)
+        local disabled_hide = vim.api.nvim_win_get_config(disabled.float_win).hide
+
+        require("scrollbar.config").set({
+            scrollbar = {},
+            minimap = {
+                enabled = true,
+                width = 4,
+                height = 3,
+                set_highlights = false,
+                show_viewport = false,
+                float = { hide_on_cursor = true },
+            },
+        })
+        renderer.setup({
+            worker = require("scrollbar.minimap.worker"),
+            overlays = require("scrollbar.minimap.overlays"),
+        })
+        calls = { row = 0, col = 0, position = 0 }
+        local unavailable = assert(renderer.render(source_win))
+        local unavailable_calls = vim.deepcopy(calls)
+
+        rawset(vim.fn, "screenrow", screenrow)
+        rawset(vim.fn, "screencol", screencol)
+        rawset(vim.api, "nvim_win_get_position", get_position)
+        return {
+            disabled_hide = disabled_hide,
+            disabled_calls = disabled_calls,
+            unavailable_hide = vim.api.nvim_win_get_config(unavailable.float_win).hide,
+            unavailable_calls = unavailable_calls,
+        }
+    end)
+
+    expect.equality(result, {
+        disabled_hide = false,
+        disabled_calls = { row = 0, col = 0, position = 0 },
+        unavailable_hide = false,
+        unavailable_calls = { row = 1, col = 1, position = 0 },
+    })
+end
+
+T["focus transfer restores inactive minimaps and hides the newly active source"] = function()
+    local child = new_child()
+    reset_modules(child)
+    configure(child, {
+        enabled = true,
+        width = 4,
+        height = 3,
+        set_highlights = false,
+        show_viewport = false,
+        update = { interval_ms = 0 },
+    })
+
+    local result = child.lua_func(function()
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, { "one", "two", "three" })
+        local first = vim.api.nvim_get_current_win()
+        vim.cmd("split")
+        local second = vim.api.nvim_get_current_win()
+        local renderer = require("scrollbar.minimap.renderer")
+        local screenrow = vim.fn.screenrow
+        local screencol = vim.fn.screencol
+        local get_position = vim.api.nvim_win_get_position
+        rawset(vim.fn, "screenrow", function()
+            return 3
+        end)
+        rawset(vim.fn, "screencol", function()
+            return 3
+        end)
+        rawset(vim.api, "nvim_win_get_position", function()
+            return { 2, 2 }
+        end)
+
+        local first_state = assert(renderer.render(first))
+        local second_state = assert(renderer.render(second))
+        local initial = {
+            first = first_state.hidden_by_cursor,
+            second = second_state.hidden_by_cursor,
+        }
+
+        local scheduler = require("scrollbar.minimap.scheduler")
+        scheduler.setup({ config = require("scrollbar.minimap.config").get(), renderer = renderer })
+        vim.api.nvim_set_current_win(first)
+        scheduler.invalidate_all()
+        scheduler.flush()
+        local transferred = {
+            first = assert(renderer.get_state(first)).hidden_by_cursor,
+            second = assert(renderer.get_state(second)).hidden_by_cursor,
+            same_first = assert(renderer.get_state(first)).float_win == first_state.float_win,
+            same_second = assert(renderer.get_state(second)).float_win == second_state.float_win,
+        }
+        scheduler.dispose()
+
+        rawset(vim.fn, "screenrow", screenrow)
+        rawset(vim.fn, "screencol", screencol)
+        rawset(vim.api, "nvim_win_get_position", get_position)
+        return { initial = initial, transferred = transferred }
+    end)
+
+    expect.equality(result, {
+        initial = { first = false, second = true },
+        transferred = { first = true, second = false, same_first = true, same_second = true },
+    })
+end
+
+T["cursor overlap state repairs external float hide mutations"] = function()
+    local child = new_child()
+    reset_modules(child)
+    configure(child, {
+        enabled = true,
+        width = 4,
+        height = 3,
+        set_highlights = false,
+        show_viewport = false,
+    })
+
+    local result = child.lua_func(function()
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, { "one", "two", "three" })
+        local source_win = vim.api.nvim_get_current_win()
+        local renderer = require("scrollbar.minimap.renderer")
+        local cursor_col = 2
+        local screenrow = vim.fn.screenrow
+        local screencol = vim.fn.screencol
+        local get_position = vim.api.nvim_win_get_position
+        rawset(vim.fn, "screenrow", function()
+            return 2
+        end)
+        rawset(vim.fn, "screencol", function()
+            return cursor_col
+        end)
+        rawset(vim.api, "nvim_win_get_position", function()
+            return { 1, 5 }
+        end)
+
+        local state = assert(renderer.render(source_win))
+        local corrupted_visible = vim.api.nvim_win_get_config(state.float_win)
+        corrupted_visible.hide = true
+        vim.api.nvim_win_set_config(state.float_win, corrupted_visible)
+        renderer.render(source_win)
+        local repaired_visible = vim.api.nvim_win_get_config(state.float_win).hide
+
+        cursor_col = 6
+        renderer.render(source_win)
+        local corrupted_hidden = vim.api.nvim_win_get_config(state.float_win)
+        corrupted_hidden.hide = false
+        vim.api.nvim_win_set_config(state.float_win, corrupted_hidden)
+        renderer.render(source_win)
+        local repaired_hidden = vim.api.nvim_win_get_config(state.float_win).hide
+
+        rawset(vim.fn, "screenrow", screenrow)
+        rawset(vim.fn, "screencol", screencol)
+        rawset(vim.api, "nvim_win_get_position", get_position)
+        return {
+            repaired_visible = repaired_visible,
+            repaired_hidden = repaired_hidden,
+            hidden_by_cursor = state.hidden_by_cursor,
+        }
+    end)
+
+    expect.equality(result, {
+        repaired_visible = false,
+        repaired_hidden = true,
+        hidden_by_cursor = true,
+    })
 end
 
 return T

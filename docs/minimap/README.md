@@ -37,6 +37,16 @@ without replacing its glyph. The viewport is a non-destructive tint, ordinary
 mark overlays tint occupied cells, and semantic spans participate in the
 squash itself.
 
+The base and full float have separate blend controls. `float.blend` remains the
+profile-aware full-float setting. Root-only `background.blend = false` inherits
+that value, while a numeric `0..100` overrides only the base surface and can
+blend it even when `float.blend = 0`. Explicit highlight blends are preserved.
+
+By default, the active minimap also yields when the editing cursor enters its
+screen rectangle. `float.hide_on_cursor = true` toggles only the existing
+float's hidden state, so moving away restores the same buffer, cache, and mouse
+mappings. Inactive split minimaps are not hidden by stored cursor positions.
+
 ## User Commands
 
 | Command | Behavior |

@@ -9,8 +9,9 @@
 independent thumbs for split windows, declarative typed mark lanes, optional
 screen-row-accurate geometry, and mouse navigation. It also ships an
 **separately rendered minimap subsystem** — a separately-enabled floating minimap
-with a solid monochrome code texture, viewport tint, exact cursor-cell accent,
-click-to-jump, drag-to-scroll, and diagnostic/gitsigns/search overlays.
+with a monochrome code texture, independently blendable base surface, viewport
+tint, exact cursor-cell accent, cursor-overlap yielding, click-to-jump,
+drag-to-scroll, and diagnostic/gitsigns/search overlays.
 
 ## Requirements
 
@@ -137,6 +138,13 @@ require("scrollbar").setup({
     },
 })
 ```
+
+`minimap.float.blend` controls the full float and may vary by profile.
+Root-only `minimap.background.blend = false` inherits that setting; a numeric
+value overrides only the base surface and works independently when the
+full-float blend is zero. The default `minimap.float.hide_on_cursor = true`
+temporarily hides only the active source's existing minimap when the editing
+cursor overlaps it, then restores the same resources when the cursor leaves.
 
 Ordinary overlays have independent minimap priority and highlight sources. The
 keyed map deep-merges with specs derived from scrollbar marks; use `false` to
