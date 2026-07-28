@@ -189,6 +189,15 @@ T["profile config rejects disallowed nested keys"] = function()
         profiles = {
             {
                 match = { filetypes = { "lua" } },
+                config = { background = { blend = 40 } },
+            },
+        },
+    }, "unknown option")
+
+    expect_invalid({
+        profiles = {
+            {
+                match = { filetypes = { "lua" } },
                 config = { float = { placement = { gutter = "inside" } } },
             },
         },
@@ -238,6 +247,23 @@ T["profile config rejects disallowed nested keys"] = function()
             },
         },
     }, "unknown option")
+end
+
+T["profile config accepts cursor hiding and full-float blend"] = function()
+    config().set({
+        background = { blend = 35 },
+        profiles = {
+            {
+                match = { filetypes = { "lua" } },
+                config = { float = { blend = 20, hide_on_cursor = false } },
+            },
+        },
+    })
+
+    local profile = config().get_variants()[2].config
+    expect.equality(profile.background.blend, 35)
+    expect.equality(profile.float.blend, 20)
+    expect.equality(profile.float.hide_on_cursor, false)
 end
 
 T["select returns the root variant for the root config when no profiles match"] = function()

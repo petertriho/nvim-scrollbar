@@ -226,10 +226,11 @@ Minimap preset definitions accept only these fields:
 | `autohide` | `enabled` and `delay_ms`. |
 | `visibility` | `"all"` or `"active"`. |
 
-`float.zindex`, `float.blend`, `providers`, `backend`, `mouse`, exclusions,
-updates, `content_glyphs`, and setup enablement are not preset fields.
-`visibility` and `autohide` are root runtime policies; keep them in the root
-minimap block when profiles select different presets.
+`background`, `float.zindex`, `float.blend`, `float.hide_on_cursor`, `providers`,
+`backend`, `mouse`, exclusions, updates, `content_glyphs`, and setup enablement
+are not preset fields. `background.blend`, `visibility`, and `autohide` are root
+runtime policies. `float.blend` and `float.hide_on_cursor` may vary by profile,
+but neither policy is preset-owned.
 
 ```lua
 require("scrollbar").setup({

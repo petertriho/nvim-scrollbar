@@ -62,9 +62,7 @@ M.setup = function(overrides)
     end
 
     active_config = root_config
-    if root_config.set_highlights then
-        highlights.set()
-    end
+    highlights.set()
 
     worker.setup({
         backend = root_config.backend,
@@ -91,9 +89,7 @@ M.setup = function(overrides)
         config = root_config,
         renderer = renderer,
         on_colorscheme = function()
-            if root_config.set_highlights then
-                highlights.set()
-            end
+            highlights.set()
         end,
     })
     mouse.setup({

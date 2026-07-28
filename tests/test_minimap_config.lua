@@ -62,8 +62,10 @@ T["defaults to disabled with sensible defaults"] = function()
     expect.equality(result.max_lines, false)
     expect.equality(result.autohide.enabled, false)
     expect.equality(result.autohide.delay_ms, 1000)
+    expect.equality(result.background.blend, false)
     expect.equality(result.float.zindex, 50)
     expect.equality(result.float.blend, 0)
+    expect.equality(result.float.hide_on_cursor, true)
     expect.equality(result.float.placement.relative, "window")
     expect.equality(result.float.placement.anchor, "NE")
     expect.equality(result.float.placement.row, 0)
@@ -124,9 +126,11 @@ T["accepts the complete valid schema and deep copies inputs"] = function()
         set_highlights = false,
         max_lines = 5000,
         autohide = { enabled = true, delay_ms = 250 },
+        background = { blend = 65 },
         float = {
             zindex = 90,
             blend = 35,
+            hide_on_cursor = false,
             placement = {
                 relative = "window",
                 anchor = "SW",
@@ -173,8 +177,10 @@ T["accepts the complete valid schema and deep copies inputs"] = function()
     expect.equality(result.set_highlights, false)
     expect.equality(result.max_lines, 5000)
     expect.equality(result.autohide.delay_ms, 250)
+    expect.equality(result.background.blend, 65)
     expect.equality(result.float.zindex, 90)
     expect.equality(result.float.blend, 35)
+    expect.equality(result.float.hide_on_cursor, false)
     expect.equality(result.float.placement.anchor, "SW")
     expect.equality(result.float.placement.gutter, "avoid")
     expect.equality(result.float.placement.gutter_position, "outer")
@@ -226,6 +232,7 @@ end
 
 T["rejects unknown nested keys"] = function()
     expect_invalid({ autohide = { extra = true } }, "unknown option 'minimap%.autohide%.extra'")
+    expect_invalid({ background = { extra = true } }, "unknown option 'minimap%.background%.extra'")
     expect_invalid({ update = { extra = true } }, "unknown option 'minimap%.update%.extra'")
     expect_invalid({ float = { extra = true } }, "unknown option 'minimap%.float%.extra'")
     expect_invalid({ float = { placement = { extra = true } } }, "unknown option 'minimap%.float%.placement%.extra'")
@@ -246,9 +253,14 @@ T["rejects invalid scalar and enum values"] = function()
     expect_invalid({ backend = "remote" }, "minimap%.backend must be one of")
     expect_invalid({ autohide = { enabled = "yes" } }, "minimap%.autohide%.enabled must be a boolean")
     expect_invalid({ autohide = { delay_ms = 0 } }, "minimap%.autohide%.delay_ms must be a positive integer")
+    expect_invalid({ background = { blend = true } }, "minimap%.background%.blend must be false or an integer")
+    expect_invalid({ background = { blend = -1 } }, "minimap%.background%.blend must be false or an integer")
+    expect_invalid({ background = { blend = 1.5 } }, "minimap%.background%.blend must be false or an integer")
+    expect_invalid({ background = { blend = 101 } }, "minimap%.background%.blend must be at most 100")
     expect_invalid({ float = { zindex = 0 } }, "minimap%.float%.zindex must be a positive integer")
     expect_invalid({ float = { blend = -1 } }, "minimap%.float%.blend must be a non%-negative integer")
     expect_invalid({ float = { blend = 101 } }, "minimap%.float%.blend must be at most 100")
+    expect_invalid({ float = { hide_on_cursor = 1 } }, "minimap%.float%.hide_on_cursor must be a boolean")
     expect_invalid({ float = { placement = { anchor = "C" } } }, "minimap%.float%.placement%.anchor must be one of")
     expect_invalid(
         { float = { placement = { relative = "screen" } } },
@@ -276,6 +288,7 @@ end
 
 T["rejects malformed table values"] = function()
     expect_invalid({ autohide = false }, "minimap%.autohide must be a table")
+    expect_invalid({ background = false }, "minimap%.background must be a table")
     expect_invalid({ update = false }, "minimap%.update must be a table")
     expect_invalid({ float = false }, "minimap%.float must be a table")
     expect_invalid({ float = { placement = false } }, "minimap%.float%.placement must be a table")
