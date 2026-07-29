@@ -101,14 +101,14 @@ minimap type `Search`.
 For each published mark the minimap computes a 1-based minimap row using
 `v_ratio = max(1, source_line_count / minimap_height)` and
 `floor(mark.line / v_ratio) + 1`, clamped to `[1, minimap_height]`. This is a
-terminal-row line-mode projection, not the doubled logical-row mapping used for
-content and points. After one winning overlay is selected for a row, the
+terminal-row line-mode projection shared by content, viewport tint, points, and
+mouse interaction. After one winning overlay is selected for a row, the
 renderer applies the selected compiled minimap group (for example
 `ScrollbarMinimapError`, or an internal automatic-profile group) only to
 contiguous runs of occupied squash cells on that row.
 
 Occupancy is read from the underlying squash cells, not the displayed glyph,
-so custom `content_glyphs` do not change ordinary overlay projection. A fully
+so a custom `content_glyph` does not change ordinary overlay projection. A fully
 empty projected row receives no ordinary overlay extmark, and that signal is
 intentionally invisible rather than replaced by an edge marker or full-row
 fallback.

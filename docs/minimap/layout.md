@@ -60,31 +60,24 @@ horizontal column count (default `16`). `height` defaults to `false`,
 meaning "track the source window height"; an explicit integer clamps to
 the source window height.
 
-The grid is composed by `lua/scrollbar/minimap/squash.lua` using **half-block
-rendering** for twice the vertical density of a plain cell grid:
+The grid is composed by `lua/scrollbar/minimap/squash.lua` using one source-line
+bucket per terminal minimap row:
 
-1. **Logical grid.** Internally the squash runs on `logical_height = height * 2`
-   rows so each terminal row can encode two source rows as a single
-   half-block character. **Vertical merge:**
-   `v_ratio = max(1, source_lines / logical_height)`. Logical row `r` owns
-   source lines `[floor(r * v_ratio), floor((r+1) * v_ratio))`.
-2. **Binary density.** Each logical cell is either filled (any non-blank
-   character) or empty (whitespace). Run length no longer matters.
+1. **Vertical merge.** `v_ratio = max(1, source_lines / height)`. Target row
+   `r` owns source lines
+   `[floor(r * v_ratio), floor((r+1) * v_ratio))`. Every occupied source cell
+   in that range is merged by binary OR. When the target is taller than the
+   source, the remaining rows are blank.
+2. **Binary density.** Each source display column is either filled (any
+   non-blank character) or empty (whitespace). Run length no longer matters.
 3. **Horizontal merge.** `h_ratio = max(1, max_source_line_len / width)`.
    Target column `c` owns source columns aggregated by binary OR. The
    longest source line's display width (`max_line_width`) is threaded back
    from the worker so the renderer can apply the same `h_ratio` when
    projecting the cursor column.
-4. **Pairing.** Each terminal row `k` pairs logical rows `2k-1` (top) and
-   `2k` (bottom) into one half-block character per column:
-
-   | Top logical row | Bottom logical row | Character |
-   | --- | --- | --- |
-   | empty | empty | ` ` (space) |
-   | filled | empty | `▀` (upper half block) |
-   | empty | filled | `▄` (lower half block) |
-   | filled | filled | `█` (full block) |
-
+4. **Canonical cells.** Empty output cells are spaces and occupied output cells
+   are `█`. The renderer maps occupied cells to `content_glyph`, so glyph
+   customization does not change the squash result, cache key, or occupancy.
 5. **Highlight composition.** Occupied cells use
    `ScrollbarMinimapContent` by default. Enabled semantic providers publish
    zero-based source byte spans, which are converted to display columns before
@@ -94,20 +87,19 @@ rendering** for twice the vertical density of a plain cell grid:
    captures. Semantic color is applied only where source content is occupied.
 
 Indentation is preserved as leading blank cells because whitespace columns
-always produce density 0. A missing bottom logical row (when source lines
-don't fill the logical grid) is treated as all-empty, so the final paired
-row renders its content in the top half (`▀`).
+always produce density 0. Tabs, wide characters, and combining characters use
+Neovim display-column widths before horizontal ownership is computed.
 
 ## Viewport Tint
 
 When `show_viewport = true` (default), the renderer applies
 `ScrollbarMinimapViewport` across the minimap rows corresponding to the source
-window's `w0..w$` range. The projection runs in doubled logical-row space and
-maps back to terminal rows via `ceil(logical_row / 2)`, giving 2x positional
-precision over a terminal-row-only mapping.
+window's `w0..w$` range. It uses the same terminal-row line-mode projection as
+content, ordinary overlays, points, and mouse interaction:
+`floor(source_line / v_ratio) + 1`, clamped to the minimap height.
 
 The viewport is a highlight-only layer. It spans the full minimap width and
-never rewrites half-block or custom content glyphs.
+never rewrites canonical occupancy or custom content glyphs.
 
 ## Cursor Point
 
@@ -115,8 +107,8 @@ The default `minimap.providers.cursor = true` publishes one window-scoped point
 at the exact cursor byte column. The renderer converts the source prefix to
 display width, then applies the same horizontal ratio as the squash
 (`floor(display_col / h_ratio) + 1`, clamped to `[1, width]`). The row uses the
-doubled logical-height mapping. This remains exact for text, whitespace, and
-end-of-line positions.
+same terminal-row `v_ratio` as content and overlays. This remains exact for
+text, whitespace, and end-of-line positions.
 
 The point uses `ScrollbarMinimapCursor`, links to `Cursor` by default,
 has extmark priority `14`, and does not replace the content glyph. Disable it

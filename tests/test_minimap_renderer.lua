@@ -52,8 +52,8 @@ local function configure(child, minimap_overrides)
     end, minimap_overrides)
 end
 
-local function render_mark_ranges(child, content_glyphs)
-    return child.lua_func(function(glyphs)
+local function render_mark_ranges(child, content_glyph)
+    return child.lua_func(function(glyph)
         require("scrollbar.config").set({
             scrollbar = {},
             minimap = {
@@ -62,7 +62,7 @@ local function render_mark_ranges(child, content_glyphs)
                 height = 1,
                 set_highlights = false,
                 show_viewport = false,
-                content_glyphs = glyphs,
+                content_glyph = glyph,
             },
         })
         local renderer = require("scrollbar.minimap.renderer")
@@ -74,8 +74,8 @@ local function render_mark_ranges(child, content_glyphs)
                     max_line_width = 3,
                     cells = {
                         {
-                            { char = "▀", hl_group = "ErrorMsg" },
-                            { char = "▄", hl_group = "WarningMsg" },
+                            { char = "█", hl_group = "ErrorMsg" },
+                            { char = "█", hl_group = "WarningMsg" },
                             { char = "█", hl_group = "Comment" },
                         },
                     },
@@ -102,7 +102,7 @@ local function render_mark_ranges(child, content_glyphs)
             ranges[mark[4].hl_group] = { mark[3], mark[4].end_col }
         end
         return { row = state.rows[1], ranges = ranges }
-    end, content_glyphs)
+    end, content_glyph)
 end
 
 local function render_overlay_marks(child, options)
@@ -115,8 +115,8 @@ local function render_overlay_marks(child, options)
             show_viewport = false,
             overlays = { enabled = true, types = { Error = {}, Search = {} } },
         }
-        if opts.glyphs ~= nil then
-            overrides.content_glyphs = opts.glyphs
+        if opts.glyph ~= nil then
+            overrides.content_glyph = opts.glyph
         end
         require("scrollbar.config").set({ scrollbar = {}, minimap = overrides })
         local renderer = require("scrollbar.minimap.renderer")
@@ -132,8 +132,8 @@ local function render_overlay_marks(child, options)
                             { char = "█" },
                             { char = " " },
                             { char = " " },
-                            { char = "▀" },
-                            { char = "▄" },
+                            { char = "█" },
+                            { char = "█" },
                         },
                         {
                             { char = " " },
@@ -226,11 +226,11 @@ T["renders a sync squash grid into the minimap buffer"] = function()
     expect.no_equality(result.rows, nil)
     expect.equality(result.height, 2)
     expect.equality(result.width, 3)
-    expect.equality(result.rows[1], "██▄")
-    expect.equality(result.rows[2], "   ")
+    expect.equality(result.rows[1], "██ ")
+    expect.equality(result.rows[2], "███")
 end
 
-T["content_glyphs remap squashed cells to custom glyphs"] = function()
+T["content_glyph remaps every occupied cell"] = function()
     local child = new_child()
     reset_modules(child)
     configure(child, {
@@ -239,7 +239,7 @@ T["content_glyphs remap squashed cells to custom glyphs"] = function()
         height = 2,
         set_highlights = false,
         show_viewport = false,
-        content_glyphs = { top = "▘", bottom = "▖", both = "▌" },
+        content_glyph = "▌",
     })
 
     local result = child.lua_func(function()
@@ -249,18 +249,17 @@ T["content_glyphs remap squashed cells to custom glyphs"] = function()
         return { rows = state.rows }
     end)
 
-    -- Default glyphs would render "██▄"; the quadrant set remaps to "▌▌▖".
-    expect.equality(result.rows[1], "▌▌▖")
-    expect.equality(result.rows[2], "   ")
+    expect.equality(result.rows[1], "▌▌ ")
+    expect.equality(result.rows[2], "▌▌▌")
 end
 
-T["highlight ranges align with complete UTF-8 half-block cells"] = function()
+T["highlight ranges align with complete UTF-8 content glyphs"] = function()
     local child = new_child()
     reset_modules(child)
 
-    local result = render_mark_ranges(child, { top = "▀", bottom = "▄", both = "█" })
+    local result = render_mark_ranges(child, "█")
 
-    expect.equality(result.row, "▀▄█")
+    expect.equality(result.row, "███")
     expect.equality(result.ranges.ErrorMsg, { 0, 3 })
     expect.equality(result.ranges.WarningMsg, { 3, 6 })
     expect.equality(result.ranges.Comment, { 6, 9 })
@@ -270,15 +269,15 @@ T["highlight ranges align with custom multibyte and ASCII cells"] = function()
     local child = new_child()
     reset_modules(child)
 
-    local multibyte = render_mark_ranges(child, { top = "▘", bottom = "▖", both = "▌" })
-    expect.equality(multibyte.row, "▘▖▌")
+    local multibyte = render_mark_ranges(child, "▌")
+    expect.equality(multibyte.row, "▌▌▌")
     expect.equality(multibyte.ranges.ErrorMsg, { 0, 3 })
     expect.equality(multibyte.ranges.WarningMsg, { 3, 6 })
     expect.equality(multibyte.ranges.Comment, { 6, 9 })
 
     reset_modules(child)
-    local ascii = render_mark_ranges(child, { top = "a", bottom = "b", both = "c" })
-    expect.equality(ascii.row, "abc")
+    local ascii = render_mark_ranges(child, "#")
+    expect.equality(ascii.row, "###")
     expect.equality(ascii.ranges.ErrorMsg, { 0, 1 })
     expect.equality(ascii.ranges.WarningMsg, { 1, 2 })
     expect.equality(ascii.ranges.Comment, { 2, 3 })
@@ -483,6 +482,71 @@ T["viewport tint highlights the projected source viewport rows without changing 
         expect.equality(row:find("─", 1, true), nil)
         expect.equality(row:find("│", 1, true), nil)
     end
+end
+
+T["content viewport marks and points share one terminal-row projection"] = function()
+    local child = new_child()
+    reset_modules(child)
+    configure(child, {
+        enabled = true,
+        width = 1,
+        height = 4,
+        set_highlights = false,
+        show_viewport = true,
+        overlays = { enabled = true, types = { Error = {} } },
+    })
+
+    local result = child.lua_func(function()
+        local lines = {}
+        for index = 1, 20 do
+            lines[index] = ""
+        end
+        lines[11] = "x"
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        local source_win = vim.api.nvim_get_current_win()
+        vim.api.nvim_win_set_height(source_win, 4)
+        vim.api.nvim_win_set_cursor(source_win, { 11, 0 })
+        vim.cmd("normal! zt")
+
+        local store = require("scrollbar.store")
+        store.set("diagnostic", vim.api.nvim_get_current_buf(), { { line = 10, type = "Error" } })
+        store.set_minimap_points("cursor", source_win, {
+            { line = 10, col = 0, highlight = "ScrollbarMinimapCursor", priority = 14 },
+        })
+
+        local renderer = require("scrollbar.minimap.renderer")
+        local state = assert(renderer.render(source_win))
+        local rows_by_highlight = {}
+        for _, mark in
+            ipairs(vim.api.nvim_buf_get_extmarks(state.float_buf, renderer.namespace(), 0, -1, { details = true }))
+        do
+            local highlight = mark[4] and mark[4].hl_group
+            if highlight ~= nil then
+                rows_by_highlight[highlight] = mark[2] + 1
+            end
+        end
+        local content_row
+        for row, text in ipairs(state.rows) do
+            if text == "█" then
+                content_row = row
+            end
+        end
+        return {
+            content = content_row,
+            viewport = rows_by_highlight.ScrollbarMinimapViewport,
+            mark = rows_by_highlight.ScrollbarMinimapError,
+            point = rows_by_highlight.ScrollbarMinimapCursor,
+            cursor = state.cursor_row,
+        }
+    end)
+
+    expect.equality(result, {
+        content = 3,
+        viewport = 3,
+        mark = 3,
+        point = 3,
+        cursor = 3,
+    })
 end
 
 T["cursor points project exact text whitespace and end-of-line columns"] = function()
@@ -694,7 +758,7 @@ T["semantic overlays tint only contiguous occupied cell runs"] = function()
         end
     end
 
-    expect.equality(result.rows, { "██  ▀▄", "      " })
+    expect.equality(result.rows, { "██  ██", "      " })
     expect.equality(error_ranges, { { 0, 6 }, { 8, 14 } })
     expect.equality(has_search, false)
     expect.equality(result.projected_source_win, result.source_win)
@@ -705,7 +769,7 @@ T["semantic occupancy is independent of custom glyph remapping"] = function()
     reset_modules(child)
 
     local result = render_overlay_marks(child, {
-        glyphs = { top = "a", bottom = "b", both = "c" },
+        glyph = "a",
     })
     local ranges = {}
     for _, mark in ipairs(result.marks) do
@@ -714,7 +778,7 @@ T["semantic occupancy is independent of custom glyph remapping"] = function()
         end
     end
 
-    expect.equality(result.rows[1], "cc  ab")
+    expect.equality(result.rows[1], "aa  aa")
     expect.equality(ranges, { { 0, 2 }, { 4, 6 } })
 end
 
@@ -744,6 +808,51 @@ T["cache hit skips the worker request"] = function()
 
     expect.equality(result.first, 1)
     expect.equality(result.second, 1)
+end
+
+T["content glyph changes reuse cached canonical cells"] = function()
+    local child = new_child()
+    reset_modules(child)
+    configure(child, {
+        enabled = true,
+        width = 4,
+        height = 1,
+        set_highlights = false,
+        show_viewport = false,
+    })
+
+    local result = child.lua_func(function()
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, { "abcd" })
+        local worker = require("scrollbar.minimap.worker")
+        local original_request = worker.request
+        local requests = 0
+        ---@diagnostic disable-next-line: duplicate-set-field
+        worker.request = function(request)
+            requests = requests + 1
+            return original_request(request)
+        end
+
+        local renderer = require("scrollbar.minimap.renderer")
+        local first = assert(renderer.render(0)).rows[1]
+        require("scrollbar.config").set({
+            scrollbar = {},
+            minimap = {
+                enabled = true,
+                width = 4,
+                height = 1,
+                set_highlights = false,
+                show_viewport = false,
+                content_glyph = "#",
+            },
+        })
+        local second = assert(renderer.render(0)).rows[1]
+        worker.request = original_request
+        return { first = first, second = second, requests = requests }
+    end)
+
+    expect.equality(result.first, "████")
+    expect.equality(result.second, "####")
+    expect.equality(result.requests, 1)
 end
 
 T["parent semantic spans recolor occupied cells and invalidate once per revision"] = function()
@@ -840,7 +949,7 @@ T["hide and show keep worker semantic revisions monotonic"] = function()
                         changedtick = vim.api.nvim_buf_get_changedtick(request.bufnr),
                         semantic_revision = request.semantic_revision,
                         filetype = request.filetype,
-                        cells = { { { char = "▀", hl_group = nil } } },
+                        cells = { { { char = "█", hl_group = nil } } },
                         max_line_width = 1,
                     })
                     return true
@@ -916,7 +1025,7 @@ T["semantic input skips empty providers and mark-point recomputation"] = functio
                         changedtick = vim.api.nvim_buf_get_changedtick(request.bufnr),
                         semantic_revision = request.semantic_revision,
                         filetype = request.filetype,
-                        cells = { { { char = "▀", hl_group = nil } } },
+                        cells = { { { char = "█", hl_group = nil } } },
                         max_line_width = 1,
                     })
                     return true
@@ -1064,7 +1173,7 @@ T["renderer rejects stale semantic results without clearing newer pending work"]
                 signature = request.signature,
                 changedtick = vim.api.nvim_buf_get_changedtick(bufnr),
                 semantic_revision = request.semantic_revision,
-                cells = { { { char = "▀", hl_group = highlight } } },
+                cells = { { { char = "█", hl_group = highlight } } },
                 max_line_width = 1,
             })
         end
@@ -1119,7 +1228,7 @@ T["worker-native span publication reuses the accepted cell result"] = function()
                         signature = request.signature,
                         changedtick = vim.api.nvim_buf_get_changedtick(request.bufnr),
                         semantic_revision = request.semantic_revision,
-                        cells = { { { char = "▀", hl_group = "@variable" } } },
+                        cells = { { { char = "█", hl_group = "@variable" } } },
                         max_line_width = 1,
                         worker_spans = {
                             { line = 0, start_col = 0, end_col = 1, highlight = "@variable", priority = 100 },

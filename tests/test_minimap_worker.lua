@@ -102,7 +102,7 @@ T["sync backend returns a cell grid for a buffer"] = function()
     expect.equality(result.generation, 1)
     expect.equality(result.signature, "test")
     expect.equality(result.max_line_width, 6)
-    expect.equality(grid_chars(result.cells), { "██▄", "   " })
+    expect.equality(grid_chars(result.cells), { "██ ", "███" })
 end
 
 T["sync backend composes parent semantic spans and echoes their revision"] = function()
@@ -130,7 +130,7 @@ T["sync backend composes parent semantic spans and echoes their revision"] = fun
     end)
 
     expect.equality(result.semantic_revision, 4)
-    expect.equality(grid_chars(result.cells), { "▀▀▀ ▀" })
+    expect.equality(grid_chars(result.cells), { "███ █" })
     expect.equality(grid_highlights(result.cells), { { nil, "Emoji", "Emoji", nil, nil } })
 end
 
@@ -233,7 +233,7 @@ T["worker backend renders a buffer via child RPC"] = function()
     expect.no_equality(captured.payload, nil)
     expect.equality(captured.payload.generation, 1)
     expect.equality(captured.payload.max_line_width, 6)
-    expect.equality(grid_chars(captured.payload.cells), { "██▄", "   " })
+    expect.equality(grid_chars(captured.payload.cells), { "██ ", "███" })
 end
 
 T["worker backend retains distinct same-buffer projection requests"] = function()
@@ -458,6 +458,7 @@ T["worker backend skips language resolution and child treesitter work when disab
     expect.equality(vim.tbl_contains(result.timings, "capture_extract"), false)
     for _, row in ipairs(result.cells) do
         for _, cell in ipairs(row) do
+            expect.equality(cell.char == " " or cell.char == "█", true)
             expect.equality(cell.hl_group, nil)
         end
     end
@@ -718,9 +719,8 @@ T["on_lines deltas update child mirror after snapshot completes"] = function()
     end)
     local captured = wait_for_result(child, 2)
     expect.equality(captured.ok, true)
-    -- "ABCDEFGHIJ" (10 wide) pairs with "def" (3 wide): col1 covers src cols
-    -- 1-5 (both filled), col2 covers src cols 6-10 (only top filled).
-    expect.equality(grid_chars(captured.payload.cells)[1], "█▀")
+    -- The first source line owns row 1; both horizontal buckets are occupied.
+    expect.equality(grid_chars(captured.payload.cells)[1], "██")
 end
 
 T["dispose cleans up child mirror buffers and tears down the worker"] = function()

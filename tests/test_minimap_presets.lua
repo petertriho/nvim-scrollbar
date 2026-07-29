@@ -74,6 +74,10 @@ end
 
 T["rejects removed minimap preset fields"] = function()
     expect_invalid(
+        { presets = { invalid = { content_glyph = "#" } } },
+        "minimap preset 'invalid' cannot set 'content_glyph'"
+    )
+    expect_invalid(
         { presets = { invalid = { background = { blend = 40 } } } },
         "minimap preset 'invalid' cannot set 'background'"
     )

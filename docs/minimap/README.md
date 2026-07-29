@@ -29,13 +29,14 @@ require("scrollbar").setup({
 
 The default placement is `window`-relative at the north-east corner, so each
 source window gets its own solid 16-column minimap. The visible float uses
-**half-block characters** (` `, `▀`, `▄`, `█`) to represent source density at
-2x vertical resolution. Occupied cells are monochrome by default. Enable
-Treesitter color with `minimap.providers.treesitter = true`, while the default
-cursor provider publishes an exact byte point that accents the projected cell
-without replacing its glyph. The viewport is a non-destructive tint, ordinary
-mark overlays tint occupied cells, and semantic spans participate in the
-squash itself.
+one source-line bucket per terminal row. The squash contract emits canonical
+space or full-block (`█`) cells; the renderer displays occupied cells with the
+single-width `content_glyph`, which also defaults to `█`. Occupied cells are
+monochrome by default. Enable Treesitter color with
+`minimap.providers.treesitter = true`, while the default cursor provider
+publishes an exact byte point that accents the projected cell without replacing
+its glyph. The viewport is a non-destructive tint, ordinary mark overlays tint
+occupied cells, and semantic spans participate in the squash itself.
 
 The base and full float have separate blend controls. `float.blend` remains the
 profile-aware full-float setting. Root-only `background.blend = false` inherits

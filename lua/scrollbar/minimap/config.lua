@@ -133,7 +133,7 @@ local DEFAULTS = {
         lsp_semantic_tokens = false,
     },
     show_viewport = true,
-    content_glyphs = { top = "▀", bottom = "▄", both = "█" },
+    content_glyph = "█",
 }
 
 local TOP_LEVEL_KEYS = {
@@ -154,7 +154,7 @@ local TOP_LEVEL_KEYS = {
     overlays = true,
     providers = true,
     show_viewport = true,
-    content_glyphs = true,
+    content_glyph = true,
 }
 
 local NESTED_KEYS = {
@@ -205,7 +205,7 @@ local PROFILE_CONFIG_KEYS = {
     overlays = true,
     show_viewport = true,
     mouse = true,
-    content_glyphs = true,
+    content_glyph = true,
 }
 
 local PROFILE_NESTED_KEYS = {
@@ -610,21 +610,10 @@ local function normalize(overrides, default_overlay_types)
 
     validate_boolean(result.show_viewport, "minimap.show_viewport")
 
-    if type(result.content_glyphs) ~= "table" then
-        invalid("minimap.content_glyphs must be a table")
-    end
-    for _, key in ipairs({ "top", "bottom", "both" }) do
-        local glyph = result.content_glyphs[key]
-        if type(glyph) ~= "string" or glyph == "" then
-            invalid(string.format("minimap.content_glyphs.%s must be a non-empty string", key))
-        elseif vim.fn.strdisplaywidth(glyph) ~= 1 then
-            invalid(string.format("minimap.content_glyphs.%s must be a single-width glyph", key))
-        end
-    end
-    for key in pairs(result.content_glyphs) do
-        if key ~= "top" and key ~= "bottom" and key ~= "both" then
-            invalid(string.format("unknown option 'minimap.content_glyphs.%s'", tostring(key)))
-        end
+    if type(result.content_glyph) ~= "string" or result.content_glyph == "" then
+        invalid("minimap.content_glyph must be a non-empty string")
+    elseif vim.fn.strdisplaywidth(result.content_glyph) ~= 1 then
+        invalid("minimap.content_glyph must be a single-width glyph")
     end
 
     validate_string_list(result.excluded_buftypes, "minimap.excluded_buftypes")

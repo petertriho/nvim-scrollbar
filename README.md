@@ -122,9 +122,11 @@ require("scrollbar").setup({
 ```
 
 The default placement is window-relative at the north-east corner — one solid
-16-column minimap per source window — with monochrome half-block content, a
+16-column minimap per source window — with monochrome full-block content, a
 tint-only viewport, an exact cursor-cell accent, and store-published overlays
-on. Its default providers are cursor, diagnostic, search, and named marks.
+on. Each terminal minimap row represents one source-line bucket, and occupied
+cells render with the configurable single-width `content_glyph` (`"█"` by
+default). Its default providers are cursor, diagnostic, search, and named marks.
 Treesitter and LSP semantic-token coloring are separate opt-in providers:
 
 ```lua

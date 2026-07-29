@@ -2,32 +2,23 @@
 ---
 --- Input: a list of source lines plus a target `(width, height)` and optional
 --- per-line highlight tuples. Output: a `(height × width)` grid of cells where
---- each cell is `{ char = <half-block char>, hl_group = <string|nil> }`, plus
+--- each cell is `{ char = <canonical char>, hl_group = <string|nil> }`, plus
 --- a second return value `max_line_width` (display width of the longest source
 --- line).
 ---
---- Half-block algorithm:
+--- Single-box algorithm:
 ---   1. Per source line, compute a binary density array (one entry per
 ---      display column). Blank/whitespace columns are 0; any non-blank
 ---      column is 1. Run length no longer matters.
----   2. Logical grid. The algorithm operates on `logical_height = height * 2`
----      rows so each terminal row can encode two logical rows (top + bottom
----      halves) as a single half-block character. Vertical merge:
----      `v_ratio = max(1, source_lines / logical_height)`. Logical row `r`
+---   2. Vertical merge: `v_ratio = max(1, source_lines / height)`. Target row `r`
 ---      owns source lines `[floor(r * v_ratio), floor((r+1) * v_ratio))`.
 ---      Per column, binary OR of the merged range wins; the first ordered
 ---      semantic highlight among filled columns wins.
 ---   3. Horizontal merge: `h_ratio = max(1, max_source_line_len / width)`.
 ---      Target column `c` owns source columns aggregated by binary OR.
----   4. Pairing. Each terminal row `k` pairs logical rows `2k-1` (top) and
----      `2k` (bottom) into a single half-block character per column:
----          empty + empty   -> " " (space)
----          filled + empty  -> "▀" (upper half block)
----          empty + filled  -> "▄" (lower half block)
----          filled + filled -> "█" (full block)
----      A missing bottom row (odd logical height) is treated as all-empty.
----      Ordered semantic highlights keep their priority across both halves.
----      Legacy unordered tuples retain top-row priority.
+---   4. Canonical output. Empty cells emit a space and occupied cells emit `█`.
+---      Ordered semantic highlights keep their priority across all merged lines;
+---      legacy unordered tuples retain source and tuple order.
 ---
 --- Indentation is preserved as leading blank cells because whitespace columns
 --- always produce density 0. The function is pure and deterministic: identical
@@ -83,11 +74,6 @@ local function blank_grid(width, height)
     return grid
 end
 
-local HALF_BLOCK = {
-    [false] = { [false] = " ", [true] = "▄" },
-    [true] = { [false] = "▀", [true] = "█" },
-}
-
 ---@class ScrollbarMinimapResolvedHighlight
 ---@field hl_group string
 ---@field order? integer
@@ -115,7 +101,7 @@ end
 ---
 ---@param source_lines string[]
 ---@param target_width integer
----@param target_height integer Terminal (display) height; doubling is internal.
+---@param target_height integer Terminal row count.
 ---@param highlights? table<integer, ScrollbarMinimapSquashHighlight[]>
 ---@return ScrollbarMinimapCell[][] grid
 ---@return integer max_line_width Display width of the longest source line.
@@ -145,12 +131,11 @@ M.squash = function(source_lines, target_width, target_height, highlights)
         return blank_grid(target_width, target_height), 0
     end
 
-    local logical_height = target_height * 2
-    local v_ratio = math.max(1, source_count / logical_height)
+    local v_ratio = math.max(1, source_count / target_height)
 
     ---@type { density: integer[], hl: (ScrollbarMinimapResolvedHighlight|nil)[] }[]
-    local logical = {}
-    for row = 1, logical_height do
+    local merged_rows = {}
+    for row = 1, target_height do
         local row_start = math.floor((row - 1) * v_ratio) + 1
         local row_end_exclusive = math.floor(row * v_ratio) + 1
 
@@ -195,66 +180,43 @@ M.squash = function(source_lines, target_width, target_height, highlights)
             end
         end
 
-        logical[row] = { density = merged_density, hl = merged_hl }
+        merged_rows[row] = { density = merged_density, hl = merged_hl }
     end
 
     local h_ratio = math.max(1, max_width / target_width)
 
     local grid = {}
-    for term_row = 1, target_height do
-        local top = logical[2 * term_row - 1]
-        local bottom = logical[2 * term_row]
+    for row = 1, target_height do
+        local merged = merged_rows[row]
         local cells = {}
         for col = 1, target_width do
             local col_start = math.floor((col - 1) * h_ratio) + 1
             local col_end_exclusive = math.floor(col * h_ratio) + 1
 
-            local top_filled = false
-            local bottom_filled = false
+            local filled = false
             for src_col = col_start, col_end_exclusive - 1 do
-                if top ~= nil and top.density[src_col] == 1 then
-                    top_filled = true
-                end
-                if bottom ~= nil and bottom.density[src_col] == 1 then
-                    bottom_filled = true
+                if merged.density[src_col] == 1 then
+                    filled = true
                 end
             end
 
             ---@type ScrollbarMinimapResolvedHighlight?
             local resolved_hl
-            if top_filled then
+            if filled then
                 for src_col = col_start, col_end_exclusive - 1 do
-                    local candidate = top ~= nil and top.hl[src_col] or nil
-                    if
-                        top ~= nil
-                        and top.density[src_col] == 1
-                        and candidate ~= nil
-                        and highlight_wins(candidate, resolved_hl)
-                    then
-                        resolved_hl = candidate
-                    end
-                end
-            end
-            if bottom_filled then
-                for src_col = col_start, col_end_exclusive - 1 do
-                    local candidate = bottom ~= nil and bottom.hl[src_col] or nil
-                    if
-                        bottom ~= nil
-                        and bottom.density[src_col] == 1
-                        and candidate ~= nil
-                        and highlight_wins(candidate, resolved_hl)
-                    then
+                    local candidate = merged.hl[src_col]
+                    if merged.density[src_col] == 1 and candidate ~= nil and highlight_wins(candidate, resolved_hl) then
                         resolved_hl = candidate
                     end
                 end
             end
 
             cells[col] = {
-                char = HALF_BLOCK[top_filled][bottom_filled],
+                char = filled and "█" or " ",
                 hl_group = resolved_hl and resolved_hl.hl_group or nil,
             }
         end
-        grid[term_row] = cells
+        grid[row] = cells
     end
 
     return grid, max_width
