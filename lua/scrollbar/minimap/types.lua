@@ -83,17 +83,12 @@
 ---@field overlays? ScrollbarMinimapUserOverlaysConfig
 ---@field show_viewport? boolean
 ---@field mouse? ScrollbarMinimapUserMouseConfig
----@field content_glyphs? ScrollbarMinimapContentGlyphs
+---@field content_glyph? string Single-width glyph used for occupied cells
 
 ---@class ScrollbarMinimapUserProfile
 ---@field match ScrollbarMinimapUserProfileMatcher
 ---@field preset? string
 ---@field config? ScrollbarMinimapUserProfileConfig
-
----@class ScrollbarMinimapContentGlyphs
----@field top string Glyph used for top-half-filled cells
----@field bottom string Glyph used for bottom-half-filled cells
----@field both string Glyph used for both-halves-filled cells
 
 ---@class ScrollbarMinimapUserConfig
 ---@field enabled? boolean
@@ -116,7 +111,7 @@
 ---@field overlays? ScrollbarMinimapUserOverlaysConfig
 ---@field providers? ScrollbarMinimapUserProvidersConfig Setup-level built-in provider demand; profiles and presets cannot override it
 ---@field show_viewport? boolean
----@field content_glyphs? ScrollbarMinimapContentGlyphs
+---@field content_glyph? string Single-width glyph used for occupied cells
 
 ---@class ScrollbarMinimapPlacement
 ---@field relative ScrollbarPlacementRelative
@@ -187,7 +182,7 @@
 ---@field overlays ScrollbarMinimapOverlaysConfig
 ---@field providers ScrollbarMinimapProvidersConfig
 ---@field show_viewport boolean
----@field content_glyphs ScrollbarMinimapContentGlyphs
+---@field content_glyph string Single-width glyph used for occupied cells
 
 ---@class ScrollbarMinimapCompiledVariant
 ---@field id integer Root is 0; profile variants use their one-based declaration index
@@ -205,7 +200,7 @@
 ---@field order? integer Lower values win semantic composition; omitted preserves legacy tuple order
 
 ---@class ScrollbarMinimapCell
----@field char string One of " ", "▀", "▄", "█" from squash output
+---@field char " "|"█" Canonical empty or occupied value from squash output
 ---@field hl_group string|nil
 
 ---@class ScrollbarMinimapOverlay

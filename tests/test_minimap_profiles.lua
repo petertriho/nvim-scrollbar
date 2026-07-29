@@ -266,6 +266,41 @@ T["profile config accepts cursor hiding and full-float blend"] = function()
     expect.equality(profile.float.hide_on_cursor, false)
 end
 
+T["profile config accepts and validates content glyphs"] = function()
+    config().set({
+        profiles = {
+            {
+                match = { filetypes = { "lua" } },
+                config = { content_glyph = "#" },
+            },
+            {
+                match = { filetypes = { "markdown" } },
+                config = { content_glyph = "▌" },
+            },
+        },
+    })
+
+    local variants = config().get_variants()
+    expect.equality(variants[2].config.content_glyph, "#")
+    expect.equality(variants[3].config.content_glyph, "▌")
+
+    expect_invalid({
+        profiles = {
+            { match = { filetypes = { "lua" } }, config = { content_glyph = "" } },
+        },
+    }, "minimap%.content_glyph must be a non%-empty string")
+    expect_invalid({
+        profiles = {
+            { match = { filetypes = { "lua" } }, config = { content_glyph = "ab" } },
+        },
+    }, "minimap%.content_glyph must be a single%-width glyph")
+    expect_invalid({
+        profiles = {
+            { match = { filetypes = { "lua" } }, config = { content_glyphs = { both = "x" } } },
+        },
+    }, "unknown option 'minimap%.profiles%[1%]%.config%.content_glyphs'")
+end
+
 T["select returns the root variant for the root config when no profiles match"] = function()
     local bufnr = vim.api.nvim_create_buf(false, true)
     local winid = vim.api.nvim_get_current_win()

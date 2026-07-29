@@ -498,13 +498,12 @@ local function sweep_states()
     end
 end
 
----Translate a cell grid into buffer text rows + per-row highlight spans.
----`glyph_map` optionally remaps squash content chars (`▀▄█`) to custom glyphs.
+---Translate a canonical cell grid into buffer text rows + per-row highlight spans.
 ---@param cells ScrollbarMinimapCell[][]
----@param glyph_map? table<string, string> Maps squash chars to custom glyphs
+---@param content_glyph string Glyph used for every occupied cell
 ---@return string[] rows
 ---@return ScrollbarMinimapHighlightSpan[][] highlights
-local function compose_rows(cells, glyph_map)
+local function compose_rows(cells, content_glyph)
     if cells == nil then
         return {}, {}
     end
@@ -517,16 +516,13 @@ local function compose_rows(cells, glyph_map)
         local col = 1
         for c = 1, #cells_in_row do
             local cell = cells_in_row[c]
-            local char = cell.char or " "
-            if glyph_map ~= nil and char ~= " " then
-                char = glyph_map[char] or char
-            end
+            local occupied = cell.char ~= " "
+            local char = occupied and content_glyph or " "
             local width = vim.fn.strdisplaywidth(char)
             if width <= 0 then
                 width = 1
             end
             line_chars[c] = char
-            local occupied = cell.char ~= " "
             local highlight = occupied and (cell.hl_group or "ScrollbarMinimapContent") or nil
             if highlight ~= nil then
                 local previous = line_spans[#line_spans]
@@ -597,23 +593,14 @@ end
 ---Project provider-owned source byte points onto the completed squash grid.
 ---@param source_win integer
 ---@param source_buf integer
----@param logical_height integer
 ---@param target_height integer
 ---@param target_width integer
----@param v_ratio_logical number
+---@param v_ratio number
 ---@param h_ratio number
 ---@return ScrollbarMinimapProjectedPoint[] points
 ---@return integer? cursor_row
 ---@return integer? cursor_col
-local function project_points(
-    source_win,
-    source_buf,
-    logical_height,
-    target_height,
-    target_width,
-    v_ratio_logical,
-    h_ratio
-)
+local function project_points(source_win, source_buf, target_height, target_width, v_ratio, h_ratio)
     local snapshot = store._get_window_snapshot(source_win)
     local provider_names = vim.tbl_keys(snapshot.minimap_points)
     table.sort(provider_names)
@@ -625,8 +612,7 @@ local function project_points(
     for _, provider in ipairs(provider_names) do
         if providers._consumer_enabled(provider, "minimap") then
             for _, point in ipairs(snapshot.minimap_points[provider]) do
-                local row_logical = math.max(1, math.min(logical_height, math.floor(point.line / v_ratio_logical) + 1))
-                local row = math.max(1, math.min(target_height, math.ceil(row_logical / 2)))
+                local row = math.max(1, math.min(target_height, math.floor(point.line / v_ratio) + 1))
                 local source_line = source_lines[point.line]
                 if source_line == nil then
                     source_line = vim.api.nvim_buf_get_lines(source_buf, point.line, point.line + 1, true)[1] or ""
@@ -846,15 +832,9 @@ local function render_source(source_win, selection, root_config)
     local viewport_top = viewport[1]
     local viewport_bottom = viewport[2]
     local source_line_count = line_count_of(source_buf)
-    -- Viewport rows are computed in doubled logical-row space (matching the
-    -- half-block squash) and mapped back to terminal rows via ceil(/2).
-    local logical_height = target_height * 2
-    local v_ratio_logical = math.max(1, source_line_count / logical_height)
-    local viewport_top_logical = math.max(1, math.min(logical_height, math.floor(viewport_top / v_ratio_logical) + 1))
-    local viewport_bottom_logical =
-        math.max(1, math.min(logical_height, math.floor(viewport_bottom / v_ratio_logical) + 1))
-    local viewport_top_row = math.max(1, math.min(target_height, math.ceil(viewport_top_logical / 2)))
-    local viewport_bottom_row = math.max(1, math.min(target_height, math.ceil(viewport_bottom_logical / 2)))
+    local v_ratio = math.max(1, source_line_count / target_height)
+    local viewport_top_row = math.max(1, math.min(target_height, math.floor(viewport_top / v_ratio) + 1))
+    local viewport_bottom_row = math.max(1, math.min(target_height, math.floor(viewport_bottom / v_ratio) + 1))
 
     local overlays = {}
     if active_config.overlays.enabled and options_ref and options_ref.overlays then
@@ -920,12 +900,7 @@ local function render_source(source_win, selection, root_config)
     end
 
     local cells = cache and cache.cells or {}
-    local content_glyphs = active_config.content_glyphs
-    local glyph_map
-    if content_glyphs ~= nil then
-        glyph_map = { ["▀"] = content_glyphs.top, ["▄"] = content_glyphs.bottom, ["█"] = content_glyphs.both }
-    end
-    local rows, highlights = compose_rows(cells, glyph_map)
+    local rows, highlights = compose_rows(cells, active_config.content_glyph)
     for index = #rows, target_height + 1, -1 do
         rows[index] = nil
         highlights[index] = nil
@@ -943,7 +918,7 @@ local function render_source(source_win, selection, root_config)
     local max_line_width = (cache and cache.max_line_width) or 0
     local h_ratio = math.max(1, max_line_width / target_width)
     local points, cursor_row, cursor_col =
-        project_points(source_win, source_buf, logical_height, target_height, target_width, v_ratio_logical, h_ratio)
+        project_points(source_win, source_buf, target_height, target_width, v_ratio, h_ratio)
 
     for _, overlay in ipairs(overlays) do
         local row = overlay.minimap_row

@@ -68,7 +68,7 @@ require("scrollbar").setup({
             lsp_semantic_tokens = false,
         },
         show_viewport = true,
-        content_glyphs = { top = "▀", bottom = "▄", both = "█" },
+        content_glyph = "█",
     },
 })
 ```
@@ -105,7 +105,7 @@ require("scrollbar").setup({
 | `overlays.types` | table<string, false \| `{ priority?, highlight? }`> | derived scrollbar specs except `Cursor` | Keyed ordinary-overlay specs. Entries deep-merge with derived defaults; `false` disables one type. A minimap-only custom type must supply both fields. |
 | `providers` | table | See below | Setup-level built-in provider demand for the minimap. Presets and profiles cannot override this table. |
 | `show_viewport` | boolean | `true` | Apply a non-destructive background tint across projected viewport rows. |
-| `content_glyphs` | table | `{ top = "▀", bottom = "▄", both = "█" }` | Glyphs used for squashed content cells: `top` for upper-half-filled, `bottom` for lower-half-filled, `both` for both-halves-filled. Each must be a single-width glyph. Set e.g. `{ top = "▘", bottom = "▖", both = "▌" }` for small quadrant squares, or any chars (including Nerd Font glyphs). Defaults to the classic half/full blocks. |
+| `content_glyph` | string | `"█"` | Glyph displayed for every occupied canonical cell. It must be non-empty and have display width exactly one; single-width ASCII, Unicode, and Nerd Font glyphs are accepted. This is presentation-only and does not change occupancy or the worker cache. |
 | `preset` | string | — | Name of a preset to apply (built-in or user-defined). |
 | `presets` | table | — | User-defined preset definitions. |
 | `profiles` | table[] | — | Ordered profile variants; first match wins. |
@@ -273,8 +273,9 @@ require("scrollbar").setup({
 })
 ```
 
-Provider demand and `background.blend` remain at the minimap root. Neither the
-background policy nor `float.hide_on_cursor` is preset-owned. See
+Provider demand, `background.blend`, and `content_glyph` remain at the minimap
+root unless a profile overrides the glyph. Neither the background policy,
+`content_glyph`, nor `float.hide_on_cursor` is preset-owned. See
 [Presets](../presets.md#minimap-presets) for the exact allow-list.
 
 ## Profiles
@@ -302,7 +303,7 @@ distinct error message.
 
 Profile `config` blocks may override display options such as dimensions,
 `float.blend`, `float.hide_on_cursor`, placement, overlays, mouse behavior, and
-content glyphs. They cannot set `background` or `providers`; the selected root
+`content_glyph`. They cannot set `background` or `providers`; the selected root
 base policy and provider demand apply to every window.
 
 Overlay specs resolve in this order: derived scrollbar defaults, selected
@@ -356,7 +357,8 @@ invalid enum values, non-dense event lists, duplicate events, numeric overlay
 keys, malformed type names, unknown spec fields, invalid priorities or
 highlights, and incomplete minimap-only specs all fail setup with a
 `[scrollbar.nvim]`-prefixed error. The old dense string-list overlay schema is
-not accepted. `Base`, `Content`, `Viewport`, and `Cursor` are reserved because
+not accepted. `content_glyph` must be a non-empty display-width-one string.
+`Base`, `Content`, `Viewport`, and `Cursor` are reserved because
 their canonical names belong to static minimap layers. Setup also rejects a
 scrollbar/minimap type pair that would claim the same public highlight group,
 such as scrollbar `MinimapSearch` and minimap `Search`. The same ownership check

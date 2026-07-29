@@ -227,7 +227,7 @@ Minimap preset definitions accept only these fields:
 | `visibility` | `"all"` or `"active"`. |
 
 `background`, `float.zindex`, `float.blend`, `float.hide_on_cursor`, `providers`,
-`backend`, `mouse`, exclusions, updates, `content_glyphs`, and setup enablement
+`backend`, `mouse`, exclusions, updates, `content_glyph`, and setup enablement
 are not preset fields. `background.blend`, `visibility`, and `autohide` are root
 runtime policies. `float.blend` and `float.hide_on_cursor` may vary by profile,
 but neither policy is preset-owned.

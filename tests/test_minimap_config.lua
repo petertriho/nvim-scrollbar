@@ -84,7 +84,7 @@ T["defaults to disabled with sensible defaults"] = function()
     expect.equality(result.overlays.enabled, true)
     expect.equality(result.overlays.types, FULL_OVERLAY_TYPES)
     expect.equality(result.show_viewport, true)
-    expect.equality(result.content_glyphs, { top = "▀", bottom = "▄", both = "█" })
+    expect.equality(result.content_glyph, "█")
     expect.equality(rawget(result, "preset"), nil)
     expect.equality(rawget(result, "presets"), nil)
     expect.equality(rawget(result, "profiles"), nil)
@@ -169,7 +169,7 @@ T["accepts the complete valid schema and deep copies inputs"] = function()
             lsp_semantic_tokens = true,
         },
         show_viewport = false,
-        content_glyphs = { top = "▘", bottom = "▖", both = "▌" },
+        content_glyph = "▌",
     })
 
     expect.equality(result.enabled, true)
@@ -209,7 +209,7 @@ T["accepts the complete valid schema and deep copies inputs"] = function()
     expect.equality(result.providers.treesitter, true)
     expect.equality(result.providers.lsp_semantic_tokens, true)
     expect.equality(result.show_viewport, false)
-    expect.equality(result.content_glyphs, { top = "▘", bottom = "▖", both = "▌" })
+    expect.equality(result.content_glyph, "▌")
 
     excluded_buftypes[1] = "mutated"
     excluded_filetypes[1] = "mutated"
@@ -227,6 +227,10 @@ end
 T["rejects removed minimap options and unknown provider names"] = function()
     expect_invalid({ syntax_highlighting = true }, "unknown option 'minimap%.syntax_highlighting'")
     expect_invalid({ show_cursor_row = true }, "unknown option 'minimap%.show_cursor_row'")
+    expect_invalid(
+        { content_glyphs = { top = "x", bottom = "x", both = "x" } },
+        "unknown option 'minimap%.content_glyphs'"
+    )
     expect_invalid({ providers = { custom = true } }, "unknown option 'minimap%.providers%.custom'")
 end
 
@@ -300,13 +304,14 @@ T["rejects malformed table values"] = function()
         { excluded_buftypes = { [1] = "terminal", [3] = "nofile" } },
         "minimap%.excluded_buftypes must be a dense list"
     )
-    expect_invalid({ content_glyphs = false }, "minimap%.content_glyphs must be a table")
-    expect_invalid({ content_glyphs = { top = 1 } }, "minimap%.content_glyphs%.top must be a non%-empty string")
-    expect_invalid(
-        { content_glyphs = { top = "▘", bottom = "▖", both = "█", bogus = "x" } },
-        "unknown option 'minimap%.content_glyphs%.bogus'"
-    )
-    expect_invalid({ content_glyphs = { top = "ab" } }, "minimap%.content_glyphs%.top must be a single%-width glyph")
+    expect_invalid({ content_glyph = false }, "minimap%.content_glyph must be a non%-empty string")
+    expect_invalid({ content_glyph = "" }, "minimap%.content_glyph must be a non%-empty string")
+    expect_invalid({ content_glyph = "ab" }, "minimap%.content_glyph must be a single%-width glyph")
+end
+
+T["accepts single-width ASCII and multibyte content glyphs"] = function()
+    expect.equality(set({ content_glyph = "#" }).content_glyph, "#")
+    expect.equality(set({ content_glyph = "▌" }).content_glyph, "▌")
 end
 
 T["rejects malformed update events lists"] = function()
@@ -635,6 +640,7 @@ T["profile config whitelist allows display-only overrides"] = function()
                     overlays = { enabled = false },
                     show_viewport = false,
                     mouse = { enabled = false },
+                    content_glyph = "#",
                 },
             },
         },
@@ -646,6 +652,7 @@ T["profile config whitelist allows display-only overrides"] = function()
     expect.equality(variants[2].config.overlays.enabled, false)
     expect.equality(variants[2].config.show_viewport, false)
     expect.equality(variants[2].config.mouse.enabled, false)
+    expect.equality(variants[2].config.content_glyph, "#")
     expect.equality(result.width, 16)
 end
 
