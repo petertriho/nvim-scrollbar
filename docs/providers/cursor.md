@@ -49,6 +49,10 @@ updated for the current event window on:
 - `BufWinEnter`
 - `WinEnter`
 
+In wired top-level setups the cursor-move events ride the scheduler's shared
+cursor-activity dispatch (one autocmd callback per move); the provider keeps
+its own registration in standalone setups.
+
 `:ScrollbarRefresh` refreshes every eligible source window explicitly. Disabling
 the provider or re-running setup clears cursor marks owned by the previous
 provider instance.
