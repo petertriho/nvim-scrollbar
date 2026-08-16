@@ -439,6 +439,7 @@
 ---@field height integer Track height in rows
 ---@field line_count integer Logical source-buffer line count
 ---@field marks ScrollbarMark[]
+---@field previous? { rows: integer[], line_count: number, height?: integer, segments?: integer[][] } Prior rows plus the context needed to recompute only shifted entries
 
 ---@class ScrollbarScreenGeometryInput
 ---@field source_win integer
@@ -492,6 +493,10 @@
 ---@field width integer Effective total layout width
 ---@field column_offset integer East-anchor translation applied to base content
 ---@field expanded_lane_id false|integer
+---@field marks_identity ScrollbarLayoutMark[] Identity of the marks list the layer was built from
+---@field segments? integer[][] Provider segments as [first, last] index ranges over line-sorted marks; nil when unavailable
+---@field height integer Track height the layer was built for
+---@field mark_rows integer[] Track rows aligned with marks_identity
 
 ---@class ScrollbarLayoutOutput
 ---@field rows string[]
@@ -540,6 +545,7 @@
 ---@field container_width integer
 ---@field height integer
 ---@field config table Precompiled cache-relevant inputs for the selected variant
+---@field marks ScrollbarLayoutMark[] Identity of the flattened marks the rows and layer were built from
 ---@field mark_rows integer[]
 ---@field layer ScrollbarResolvedMarkLayer
 
@@ -574,6 +580,8 @@
 ---@field flushing boolean
 ---@field augroup integer
 ---@field uv any
+---@field text_events table<string, boolean> Text-change autocmd events registered for subscriber dispatch
+---@field cursor_events table<string, boolean> Cursor-activity autocmd events registered for subscriber dispatch
 ---@field hide_timers table<integer, any>
 ---@field hide_generations table<integer, integer>
 ---@field held table<integer, true>

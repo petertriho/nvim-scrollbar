@@ -288,8 +288,6 @@ local function is_dense_list(value)
     return count == maximum
 end
 
----@param text any
----@return string?
 -- Memo of already-validated text values. Strings are immutable, so a value
 -- that passed once (string type, no control characters, positive display
 -- width) always will; provider refreshes publish repetitive glyph texts, and
@@ -297,6 +295,8 @@ end
 local validated_text = {}
 local validated_text_count = 0
 
+---@param text any
+---@return string?
 local function validate_text(text)
     if validated_text[text] then
         return nil
@@ -325,7 +325,7 @@ end
 ---@param previous? ScrollbarMark[] trusted normalized payload from the previous revision
 ---@return ScrollbarMark[]? normalized
 ---@return string? error_signature
----@return boolean unchanged true when every retained element matched and the count is stable
+---@return boolean? unchanged true when every retained element matched and the count is stable; nil on error
 local function validate_marks(bufnr, marks, previous)
     if not vim.api.nvim_buf_is_valid(bufnr) then
         return nil, "buffer is invalid"
@@ -400,7 +400,7 @@ end
 ---@param previous? ScrollbarMinimapSourceSpan[] trusted normalized payload from the previous revision
 ---@return ScrollbarMinimapSourceSpan[]? normalized
 ---@return string? error_signature
----@return boolean unchanged true when every retained element matched and the count is stable
+---@return boolean? unchanged true when every retained element matched and the count is stable; nil on error
 local function validate_minimap_spans(bufnr, spans, previous)
     if not vim.api.nvim_buf_is_valid(bufnr) then
         return nil, "buffer is invalid"
@@ -488,7 +488,7 @@ end
 ---@param previous? ScrollbarMinimapSourcePoint[] trusted normalized payload from the previous revision
 ---@return ScrollbarMinimapSourcePoint[]? normalized
 ---@return string? error_signature
----@return boolean unchanged true when every retained element matched and the count is stable
+---@return boolean? unchanged true when every retained element matched and the count is stable; nil on error
 local function validate_minimap_points(winid, points, previous)
     if not vim.api.nvim_win_is_valid(winid) then
         return nil, "window is invalid"
@@ -694,7 +694,7 @@ end
 M.set_window = function(provider, winid, marks)
     local normalized
     local validation_error
-    local unchanged = false
+    local unchanged = false ---@type boolean?
     local current = marks_by_window[winid]
     local previous = current and current.marks[provider] or nil
     if not vim.api.nvim_win_is_valid(winid) then

@@ -34,7 +34,7 @@ local function entry_name(entry)
     return nil
 end
 
----@param byte integer
+---@param name string
 ---@return boolean
 local function is_lowercase_name(name)
     local byte = name:byte()

@@ -1606,8 +1606,6 @@ M.is_buffer_eligible = function(bufnr)
     return buffer_eligible(bufnr, config.get())
 end
 
----@param winid integer
----@return boolean
 -- The exported predicate serves hot event paths (provider collect/publish
 -- re-checks, scheduler activity) that run several times per keystroke; those
 -- accept the documented 50ms bound. Render passes stay uncached so stale
@@ -1622,6 +1620,8 @@ end
 -- `active_source` is part of the key (WinEnter clears the memo anyway).
 local SOURCE_SELECTION_TTL_MS = 50
 
+---@param winid integer
+---@return boolean
 M.is_source_window = function(winid)
     local root_config = config.get()
     local now = vim.uv.now()

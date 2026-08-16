@@ -21,6 +21,8 @@ local M = {}
 ---@field source_windows? fun(bufnr?: integer): integer[]
 ---@field is_buffer_eligible? fun(bufnr: integer): boolean
 ---@field is_source_window? fun(winid: integer): boolean
+---@field on_text_change? fun(fn: fun(args: table), events?: string[]): boolean? Scheduler text-change dispatch; returns false or nil when the hub is inactive
+---@field on_cursor_activity? fun(fn: fun(args: table), events?: string[]): boolean? Scheduler cursor-activity dispatch; returns false or nil when the hub is inactive
 
 ---@class ScrollbarProviderConsumerPolicy
 ---@field source_windows fun(bufnr?: integer): integer[]
@@ -33,6 +35,8 @@ local M = {}
 ---@field consumer_policies table<"scrollbar"|"minimap", ScrollbarProviderConsumerPolicy>
 ---@field invalidate_buffer fun(bufnr: integer)
 ---@field invalidate_window fun(winid: integer)
+---@field on_text_change? fun(fn: fun(args: table), events?: string[]): boolean? Scheduler text-change dispatch; nil in standalone setups
+---@field on_cursor_activity? fun(fn: fun(args: table), events?: string[]): boolean? Scheduler cursor-activity dispatch; nil in standalone setups
 
 ---@type table<string, ScrollbarManagedProvider>
 local registry = {}

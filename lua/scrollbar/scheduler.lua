@@ -390,13 +390,11 @@ local function register_group(group, events, enabled, callback, opts)
     vim.api.nvim_create_autocmd(filtered, autocmd_opts)
 end
 
----@param group integer
----@param enabled table<string, boolean>
 ---Clear the renderer's source-eligibility memo. Wired from the scheduler's
 ---topology/option rows so filetype/buftype/max_lines changes are picked up
 ---immediately; cursor/text rows deliberately do NOT clear it (the memo
 ---exists precisely to make those cheap).
-local renderer_module ---@type table?
+local renderer_module ---@type table|false?
 local function invalidate_source_selection()
     if renderer_module == nil then
         local ok, module = pcall(require, "scrollbar.renderer")
@@ -407,6 +405,8 @@ local function invalidate_source_selection()
     end
 end
 
+---@param group integer
+---@param enabled table<string, boolean>
 local function create_autocmds(group, enabled)
     register_group(group, { "BufEnter", "BufWinEnter" }, enabled, function(args)
         if not event_is_owned(args) then
