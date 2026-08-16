@@ -50,10 +50,48 @@ local OPTION_PATTERNS = {
 local runtime
 local timer_closed = false
 
+-- Text-change subscriptions: providers (e.g. marks) can ride the scheduler's
+-- TextChanged dispatch instead of registering their own augroup, so one
+-- autocmd invocation per keystroke covers scheduling and provider updates.
+---@type fun(args: table)[]
+local text_change_subscribers = {}
+local cursor_activity_subscribers = {}
+
+local function notify_text_change_subscribers(args)
+    for _, subscriber in ipairs(text_change_subscribers) do
+        local ok, err = pcall(subscriber, args)
+        if not ok then
+            vim.notify("[scrollbar.nvim] text-change subscriber failed: " .. tostring(err), vim.log.levels.WARN)
+        end
+    end
+end
+
+local function notify_cursor_activity_subscribers(args)
+    for _, subscriber in ipairs(cursor_activity_subscribers) do
+        local ok, err = pcall(subscriber, args)
+        if not ok then
+            vim.notify("[scrollbar.nvim] cursor-activity subscriber failed: " .. tostring(err), vim.log.levels.WARN)
+        end
+    end
+end
+
 ---@param current ScrollbarSchedulerRuntime
 ---@param bufnr integer
 ---@return boolean
 local function owned_buffer(current, bufnr)
+    -- `0` is nvim's current-buffer alias (e.g. OptionSet args). Resolve it to
+    -- the real buffer: during renderer float configuration the current buffer
+    -- is the float buffer, which the registry covers.
+    if bufnr == 0 then
+        bufnr = vim.api.nvim_get_current_buf()
+    end
+    -- Registry-only fast path: a pure table lookup, safe because queueing
+    -- an ineligible window is harmless (flush re-checks eligibility) while
+    -- the registry can never claim a source resource.
+    local fast = current.renderer.is_owned_float_buffer
+    if type(fast) == "function" then
+        return fast(bufnr) == true
+    end
     if type(current.renderer.is_owned_buffer) ~= "function" then
         return false
     end
@@ -65,6 +103,10 @@ end
 ---@param winid integer
 ---@return boolean
 local function owned_window(current, winid)
+    local fast = current.renderer.is_owned_float_window
+    if type(fast) == "function" then
+        return fast(winid) == true
+    end
     if type(winid) ~= "number" or not vim.api.nvim_win_is_valid(winid) then
         return false
     end
@@ -350,24 +392,43 @@ end
 
 ---@param group integer
 ---@param enabled table<string, boolean>
+---Clear the renderer's source-eligibility memo. Wired from the scheduler's
+---topology/option rows so filetype/buftype/max_lines changes are picked up
+---immediately; cursor/text rows deliberately do NOT clear it (the memo
+---exists precisely to make those cheap).
+local renderer_module ---@type table?
+local function invalidate_source_selection()
+    if renderer_module == nil then
+        local ok, module = pcall(require, "scrollbar.renderer")
+        renderer_module = ok and module or false
+    end
+    if renderer_module and type(renderer_module.invalidate_source_selection) == "function" then
+        pcall(renderer_module.invalidate_source_selection)
+    end
+end
+
 local function create_autocmds(group, enabled)
     register_group(group, { "BufEnter", "BufWinEnter" }, enabled, function(args)
         if not event_is_owned(args) then
+            invalidate_source_selection()
             M.invalidate_buffer(args.buf)
         end
     end)
     register_group(group, { "WinEnter", "TabEnter", "TermEnter", "CmdwinLeave" }, enabled, function(args)
         if not event_is_owned(args) then
+            invalidate_source_selection()
             M.invalidate_all()
         end
     end)
     register_group(group, { "CursorMoved", "CursorMovedI" }, enabled, function(args)
         if not event_is_owned(args) then
             activity_event_window(vim.api.nvim_get_current_win())
+            notify_cursor_activity_subscribers(args)
         end
     end)
     register_group(group, { "TextChanged", "TextChangedI", "TextChangedP", "TextChangedT" }, enabled, function(args)
         if not event_is_owned(args) then
+            notify_text_change_subscribers(args)
             M.invalidate_buffer(args.buf)
         end
     end)
@@ -387,8 +448,10 @@ local function create_autocmds(group, enabled)
     register_group(group, { "OptionSet" }, enabled, function(args)
         if not event_is_owned(args) then
             -- Extent-affecting options gate the layout's digest cache; clear
-            -- it so the next render re-reads options immediately.
+            -- it so the next render re-reads options immediately. Options can
+            -- also flip source eligibility (filetype/buftype windows).
             layout.invalidate_screen_options()
+            invalidate_source_selection()
             M.invalidate_all()
         end
     end, { pattern = OPTION_PATTERNS })
@@ -472,7 +535,98 @@ M.setup = function(options)
     for _, event in ipairs(active_config.update.events) do
         events_enabled[event] = true
     end
+    text_change_subscribers = {}
+    cursor_activity_subscribers = {}
     create_autocmds(augroup, events_enabled)
+    local text_events = {}
+    for _, event in ipairs({ "TextChanged", "TextChangedI", "TextChangedP", "TextChangedT" }) do
+        if events_enabled[event] then
+            text_events[event] = true
+        end
+    end
+    current.text_events = text_events
+    local cursor_events = {}
+    for _, event in ipairs({ "CursorMoved", "CursorMovedI" }) do
+        if events_enabled[event] then
+            cursor_events[event] = true
+        end
+    end
+    current.cursor_events = cursor_events
+end
+
+---Subscribe to the scheduler's TextChanged dispatch. The callback runs on
+---text-change events fired for non-owned buffers, before invalidation.
+---`events` lists event names the subscriber needs beyond `update.events`;
+---each is registered as a subscriber-only dispatch row when missing.
+---@param fn fun(args: table)
+---@param events? string[]
+M.subscribe_text_change = function(fn, events)
+    if type(fn) ~= "function" then
+        return false
+    end
+    text_change_subscribers[#text_change_subscribers + 1] = fn
+    local current = runtime
+    if current == nil or current.augroup == nil then
+        return false
+    end
+    local registered = current.text_events
+    if registered == nil then
+        return
+    end
+    for _, event in ipairs(events or {}) do
+        if not registered[event] then
+            registered[event] = true
+            vim.api.nvim_create_autocmd(event, {
+                group = current.augroup,
+                callback = function(args)
+                    if not event_is_owned(args) then
+                        notify_text_change_subscribers(args)
+                    end
+                end,
+                desc = "Scrollbar text-change subscribers",
+            })
+        end
+    end
+    return true
+end
+
+---Subscribe to the scheduler's cursor-activity dispatch (CursorMoved(I)).
+---The callback runs after the scheduler's own activity handling, for
+---non-owned events. `events` lists event names the subscriber needs beyond
+---`update.events`; each is registered as a subscriber-only dispatch row when
+---missing. Returns false when the hub is inactive so the caller keeps its
+---own registration.
+---@param fn fun(args: table)
+---@param events? string[]
+---@return boolean
+M.subscribe_cursor_activity = function(fn, events)
+    if type(fn) ~= "function" then
+        return false
+    end
+    cursor_activity_subscribers[#cursor_activity_subscribers + 1] = fn
+    local current = runtime
+    if current == nil or current.augroup == nil then
+        return false
+    end
+    local registered = current.cursor_events
+    if registered == nil then
+        return false
+    end
+    for _, event in ipairs(events or {}) do
+        if not registered[event] then
+            registered[event] = true
+            vim.api.nvim_create_autocmd(event, {
+                group = current.augroup,
+                callback = function(args)
+                    if not event_is_owned(args) then
+                        notify_cursor_activity_subscribers(args)
+                    end
+                end,
+                desc = "Scrollbar cursor-activity subscribers",
+            })
+        end
+    end
+    return true
 end
 
 ---@param winid integer
@@ -494,8 +648,19 @@ M.invalidate_buffer = function(bufnr)
         return 0
     end
 
+    -- Enumerating raw windows showing the buffer avoids the per-window
+    -- eligibility/config checks on every text change. Queueing an ineligible
+    -- window is harmless: flush re-checks eligibility before rendering.
+    local windows
+    if type(current.renderer.windows_showing_buffer) == "function" then
+        local ok, enumerated = pcall(current.renderer.windows_showing_buffer, bufnr)
+        windows = ok and type(enumerated) == "table" and enumerated or source_windows(current, bufnr)
+    else
+        windows = source_windows(current, bufnr)
+    end
+
     local count = 0
-    for _, winid in ipairs(source_windows(current, bufnr)) do
+    for _, winid in ipairs(windows) do
         if not current.dirty[winid] then
             count = count + 1
         end
@@ -657,6 +822,8 @@ M.dispose = function()
     end
     current.unsubscribe_store()
     runtime = nil
+    text_change_subscribers = {}
+    cursor_activity_subscribers = {}
     current.dirty = {}
     current.timer_armed = false
     local hide_windows = {}

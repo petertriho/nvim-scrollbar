@@ -47,6 +47,9 @@ local states = {}
 ---@type table<integer, ScrollbarMinimapRendererState>
 local states_by_float = {}
 
+---@type table<integer, boolean>
+local owned_float_buffers = {}
+
 ---@type table<integer, table<string, ScrollbarMinimapCellCache>>
 local cell_cache = {}
 
@@ -120,6 +123,7 @@ local function configure_buffer(float_buf)
     vim.api.nvim_set_option_value("filetype", "scrollbar_minimap", { buf = float_buf })
     vim.api.nvim_set_option_value("modifiable", false, { buf = float_buf })
     vim.api.nvim_buf_set_var(float_buf, OWNED_BUF_VAR, true)
+    owned_float_buffers[float_buf] = true
 end
 
 ---@param float_win integer
@@ -171,6 +175,9 @@ end
 ---@param bufnr integer
 ---@return boolean
 local function owned_buffer(bufnr)
+    if owned_float_buffers[bufnr] then
+        return true
+    end
     if type(bufnr) ~= "number" or not vim.api.nvim_buf_is_valid(bufnr) then
         return false
     end
@@ -433,6 +440,7 @@ end
 local function forget_state(state, retain_cache)
     states[state.source_win] = nil
     states_by_float[state.float_win] = nil
+    owned_float_buffers[state.float_buf] = nil
     revealed[state.source_win] = nil
     if not retain_cache then
         prune_cell_cache(state.source_buf)
@@ -1245,10 +1253,41 @@ M.is_owned_window = function(winid)
     return owned_window(winid)
 end
 
+--- Registry-only ownership checks (see scrollbar/renderer.lua notes): the
+--- variable fallbacks only matter for prior-generation orphans, which the
+--- setup sweep detects via `is_owned_*`.
+---@param winid integer
+---@return boolean
+M.is_owned_float_window = function(winid)
+    return states_by_float[winid] ~= nil
+end
+
+---@param bufnr integer
+---@return integer[]
+M.windows_showing_buffer = function(bufnr)
+    if type(bufnr) ~= "number" then
+        return {}
+    end
+    local windows = {}
+    for _, winid in ipairs(vim.api.nvim_list_wins()) do
+        local ok, shown = pcall(vim.api.nvim_win_get_buf, winid)
+        if ok and shown == bufnr then
+            windows[#windows + 1] = winid
+        end
+    end
+    return windows
+end
+
 ---@param bufnr integer
 ---@return boolean
 M.is_owned_buffer = function(bufnr)
     return owned_buffer(bufnr)
+end
+
+---@param bufnr integer
+---@return boolean
+M.is_owned_float_buffer = function(bufnr)
+    return owned_float_buffers[bufnr] == true
 end
 
 ---@param bufnr integer

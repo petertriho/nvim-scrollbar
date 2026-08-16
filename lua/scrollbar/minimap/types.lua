@@ -220,6 +220,9 @@
 ---@field is_buffer_eligible fun(bufnr: integer): boolean
 ---@field is_owned_buffer? fun(bufnr: integer): boolean
 ---@field is_owned_window? fun(winid: integer): boolean
+---@field is_owned_float_buffer? fun(bufnr: integer): boolean
+---@field is_owned_float_window? fun(winid: integer): boolean
+---@field windows_showing_buffer? fun(bufnr: integer): integer[]
 ---@field render fun(source_win: integer)
 ---@field reveal? fun(source_win: integer): boolean
 ---@field conceal? fun(source_win: integer): boolean
@@ -229,6 +232,7 @@
 ---@field config? ScrollbarMinimapConfig
 ---@field renderer? ScrollbarMinimapSchedulerRenderer
 ---@field on_colorscheme? fun()
+---@field on_text_change? fun(fn: fun(args: table), events?: string[]): boolean Shared TextChanged dispatch hosted by the scrollbar scheduler; returns false when the hub is inactive so the caller keeps its own registration
 
 ---@class ScrollbarMinimapSchedulerRuntime
 ---@field config ScrollbarMinimapConfig
