@@ -153,7 +153,25 @@ snapshots or another window's cache.
 
 `render.geometry = "screen"` uses `nvim_win_text_height()` so wrapping, folds,
 diff filler, virtual lines, `topfill`, and wrapped offsets affect both marks and
-thumb geometry. It is more accurate and intentionally more expensive.
+thumb geometry.
+
+Screen geometry keeps a per-window extent cache so this accuracy stays cheap
+in steady state:
+
+- Windows whose every line renders to one display row (no wraps, no closed
+  folds — verified) use arithmetic extents: scrolling and option changes render
+  without measuring, and text edits verify only the edited lines.
+- Other windows maintain a chunk table of display heights. Recorded text edits
+  re-measure just the chunks they overlap, and each render re-validates a few
+  chunks round-robin instead of rescanning the whole buffer. Fold commands fire
+  no autocmd, so silent fold changes are picked up by that bounded sweep.
+- Prefix anchors (display rows before a line) survive scrolls and text edits,
+  so scrolling and typing reuse prior measurements instead of rewalking the
+  buffer.
+
+Users can tighten the uniform re-verification window through
+`require("scrollbar.layout").screen_extent_verify_interval_ms` (default 250;
+`0` re-verifies every render).
 
 `update.interval_ms` coalesces repeated invalidations into the latest frame.
 

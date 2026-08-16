@@ -36,6 +36,9 @@ local flattened_cache = {}
 ---@type table<integer, ScrollbarLineMarkLayerCache>
 local line_layer_cache = {}
 
+---@type table<integer, table>
+local screen_layer_cache = {}
+
 ---@type table<integer, integer>
 local revealed = {}
 
@@ -50,12 +53,14 @@ local state_callback
 local function clear_source_cache(source_win)
     flattened_cache[source_win] = nil
     line_layer_cache[source_win] = nil
+    screen_layer_cache[source_win] = nil
     layout.clear_screen_cache(source_win)
 end
 
 local function clear_all_caches()
     flattened_cache = {}
     line_layer_cache = {}
+    screen_layer_cache = {}
     layout.clear_cache()
     layout.clear_all_screen_caches()
 end
@@ -329,6 +334,9 @@ M._statuscolumn = function(owner_win)
     return value
 end
 
+---@type table<integer, boolean>
+local owned_float_buffers = {}
+
 ---@param winid integer
 ---@return boolean
 local function owned_window(winid)
@@ -339,29 +347,35 @@ local function owned_window(winid)
         return false
     end
 
-    local ok, owned = pcall(vim.api.nvim_win_get_var, winid, "scrollbar_owned")
-    return ok and owned == true
+    -- `vim.w` reads return nil for missing variables instead of raising,
+    -- keeping the per-event cost off the exception path.
+    return vim.w[winid].scrollbar_owned == true
 end
 
 ---@param bufnr integer
 ---@return boolean
 local function owned_buffer(bufnr)
+    if owned_float_buffers[bufnr] then
+        return true
+    end
     if type(bufnr) ~= "number" or not vim.api.nvim_buf_is_valid(bufnr) then
         return false
     end
-    local ok, owned = pcall(vim.api.nvim_buf_get_var, bufnr, "scrollbar_owned")
-    return ok and owned == true
+    return vim.b[bufnr].scrollbar_owned == true
 end
 
 ---@param winid integer
 ---@return boolean
 local function normal_window(winid)
-    if not valid_window(winid) or owned_window(winid) then
+    if not valid_window(winid) then
         return false
     end
 
     local ok, window_config = pcall(vim.api.nvim_win_get_config, winid)
-    return ok and window_config.relative == ""
+    if not ok or window_config.relative ~= "" then
+        return false
+    end
+    return not owned_window(winid)
 end
 
 ---@param bufnr integer
@@ -431,6 +445,7 @@ end
 local function forget_state(state, retain_cache)
     states[state.source_win] = nil
     states_by_float[state.float_win] = nil
+    owned_float_buffers[state.float_buf] = nil
     if not retain_cache then
         revealed[state.source_win] = nil
         clear_source_cache(state.source_win)
@@ -585,6 +600,7 @@ local function configure_buffer(float_buf)
     vim.api.nvim_set_option_value("filetype", "scrollbar", { buf = float_buf })
     vim.api.nvim_set_option_value("modifiable", false, { buf = float_buf })
     vim.api.nvim_buf_set_var(float_buf, "scrollbar_owned", true)
+    owned_float_buffers[float_buf] = true
 end
 
 ---@param float_win integer
@@ -742,6 +758,15 @@ local function resolve_float_position()
     vim.api.nvim__redraw({ flush = true })
 end
 
+---@param left ScrollbarLayoutMark
+---@param right ScrollbarLayoutMark
+local function flattened_mark_less(left, right)
+    if left.line ~= right.line then
+        return left.line < right.line
+    end
+    return (left.text or "") < (right.text or "")
+end
+
 ---@param source_win integer
 ---@param source_buf integer
 ---@return ScrollbarLayoutMark[] marks
@@ -778,16 +803,31 @@ local function flattened_marks(source_win, source_buf)
     end
     table.sort(provider_names)
 
+    -- Providers are emitted in name order with each provider's marks sorted
+    -- by (line, text), so the flattened array is in `source_less` order. The
+    -- layout then skips per-group sorts on rebuilds; the sort cost is paid
+    -- only when a revision change rebuilds this cache anyway.
     local marks = {}
     for _, provider in ipairs(provider_names) do
+        local base = #marks
         for _, snapshot in ipairs({ buffer_snapshot.marks, window_snapshot.marks }) do
             for _, mark in ipairs(snapshot[provider] or {}) do
-                table.insert(marks, {
+                marks[#marks + 1] = {
                     provider = provider,
                     line = mark.line,
                     type = mark.type,
                     text = mark.text,
-                })
+                }
+            end
+        end
+        if #marks > base + 1 then
+            local region = {}
+            for index = base + 1, #marks do
+                region[#region + 1] = marks[index]
+            end
+            table.sort(region, flattened_mark_less)
+            for index = 1, #region do
+                marks[base + index] = region[index]
             end
         end
     end
@@ -817,6 +857,7 @@ local function geometry_for(active_config, source_win, source_buf, height, marks
             source_win = source_win,
             height = height,
             marks = marks,
+            marks_sorted = true,
             compact_search = compact_search,
         })
     end
@@ -873,11 +914,67 @@ local function line_mark_layer(
         return cached
     end
 
-    local mark_rows = layout.normalized_mark_rows({
-        height = height,
-        line_count = line_count,
-        marks = marks,
-    })
+    -- Rows and the mark layer depend only on marks, line_count, height,
+    -- container_width, and layout config — not on the revisions. When the
+    -- flattened marks table is the same object as last build, recompute rows
+    -- in place (storing only shifted entries); when nothing shifted, every
+    -- layer input is provably identical and the cached layer is reused.
+    local rows_changed = nil
+    local mark_rows
+    if
+        cached ~= nil
+        and compact_search == nil
+        and cached.source_buf == source_buf
+        and cached.marks == marks
+        and cached.height == height
+    then
+        mark_rows, rows_changed = layout.normalized_mark_rows({
+            height = height,
+            line_count = line_count,
+            marks = marks,
+            previous = {
+                rows = cached.mark_rows,
+                line_count = cached.line_count,
+                height = cached.height,
+                segments = cached.layer ~= nil and cached.layer.segments or nil,
+            },
+        })
+    else
+        mark_rows = layout.normalized_mark_rows({
+            height = height,
+            line_count = line_count,
+            marks = marks,
+        })
+    end
+
+    if
+        rows_changed ~= nil
+        and #rows_changed == 0
+        and cached ~= nil
+        and cached.container_width == container_width
+        and (cached.config == layout_cache or vim.deep_equal(cached.config, layout_cache))
+    then
+        cached.config = layout_cache
+        cached.buffer_revision = buffer_revision
+        cached.window_revision = window_revision
+        cached.line_count = line_count
+        return cached
+    end
+
+    -- A few shifted rows with everything else identical: hand the layout
+    -- the previous layer so it rebuilds only the affected rows.
+    local previous_layer_input = nil
+    if
+        rows_changed ~= nil
+        and #rows_changed > 0
+        and cached ~= nil
+        and cached.layer ~= nil
+        and cached.container_width == container_width
+        and (cached.config == layout_cache or vim.deep_equal(cached.config, layout_cache))
+    then
+        previous_layer_input = { layer = cached.layer, changed = rows_changed }
+    end
+
     cached = {
         source_buf = source_buf,
         buffer_revision = buffer_revision,
@@ -886,6 +983,7 @@ local function line_mark_layer(
         container_width = container_width,
         height = height,
         config = layout_cache,
+        marks = marks,
         mark_rows = mark_rows,
         layer = layout.mark_layer({
             config = active_config,
@@ -894,11 +992,81 @@ local function line_mark_layer(
             container_width = container_width,
             geometry = { mark_rows = mark_rows },
             marks = marks,
+            marks_sorted = true,
             compact_search = compact_search,
+            previous = previous_layer_input,
         }),
     }
     line_layer_cache[source_win] = cached
     return cached
+end
+
+---@param source_win integer
+---@param source_buf integer
+---@param buffer_revision integer
+---@param window_revision integer
+---@param container_width integer
+---@param height integer
+---@param active_config ScrollbarConfig
+---@param marks ScrollbarLayoutMark[]
+---@param geometry ScrollbarGeometry
+---@param compact_search? ScrollbarCompactSearch
+---@return ScrollbarResolvedMarkLayer
+local function screen_mark_layer(
+    source_win,
+    source_buf,
+    buffer_revision,
+    window_revision,
+    container_width,
+    height,
+    active_config,
+    marks,
+    geometry,
+    compact_search
+)
+    local layout_cache = active_config.layout_cache
+    local cached = screen_layer_cache[source_win]
+    if
+        cached ~= nil
+        and cached.source_buf == source_buf
+        and cached.buffer_revision == buffer_revision
+        and cached.window_revision == window_revision
+        and cached.container_width == container_width
+        and cached.height == height
+        and cached.marks == marks
+        and cached.compact == compact_search
+        and cached.mark_rows == geometry.mark_rows
+        and cached.compact_mark_rows == geometry.compact_mark_rows
+        and (cached.config == layout_cache or vim.deep_equal(cached.config, layout_cache))
+    then
+        cached.config = layout_cache
+        return cached.layer
+    end
+
+    local layer = layout.mark_layer({
+        config = active_config,
+        height = height,
+        line_count = vim.api.nvim_buf_line_count(source_buf),
+        container_width = container_width,
+        geometry = geometry,
+        marks = marks,
+        marks_sorted = true,
+        compact_search = compact_search,
+    })
+    screen_layer_cache[source_win] = {
+        source_buf = source_buf,
+        buffer_revision = buffer_revision,
+        window_revision = window_revision,
+        container_width = container_width,
+        height = height,
+        marks = marks,
+        compact = compact_search,
+        mark_rows = geometry.mark_rows,
+        compact_mark_rows = geometry.compact_mark_rows,
+        config = layout_cache,
+        layer = layer,
+    }
+    return layer
 end
 
 ---@param float_buf integer
@@ -1092,6 +1260,18 @@ local function render_source(source_win, selection, root_config)
             mark_layer = cached.layer
         else
             geometry = geometry_for(active_config, source_win, source_buf, area.height, marks, nil, nil, compact_search)
+            mark_layer = screen_mark_layer(
+                source_win,
+                source_buf,
+                buffer_revision,
+                window_revision,
+                container_width,
+                area.height,
+                active_config,
+                marks,
+                geometry,
+                compact_search
+            )
         end
         if geometry.total_extent <= area.height and active_config.thumb.hide_if_all_visible then
             geometry.handle = { first_row = -1, last_row = -1 }
@@ -1429,6 +1609,22 @@ end
 ---@return boolean
 M.is_visible = function()
     return visible
+end
+
+---@param bufnr integer
+---@return integer[]
+M.windows_showing_buffer = function(bufnr)
+    if type(bufnr) ~= "number" then
+        return {}
+    end
+    local windows = {}
+    for _, winid in ipairs(vim.api.nvim_list_wins()) do
+        local ok, shown = pcall(vim.api.nvim_win_get_buf, winid)
+        if ok and shown == bufnr then
+            windows[#windows + 1] = winid
+        end
+    end
+    return windows
 end
 
 ---@param source_win? integer

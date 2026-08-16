@@ -381,6 +381,9 @@ T["screen geometry cache hits issue zero nvim_win_text_height calls beyond the c
         vim.cmd("normal! 30,80fold")
 
         local layout_module = require("scrollbar.layout")
+        -- Tighten the sweep interval: consecutive passes otherwise share a
+        -- sweep window and legitimately issue zero measurements.
+        layout_module.screen_extent_sweep_interval_ms = 0
         local source_win = vim.api.nvim_get_current_win()
         local marks = {}
         for index = 0, 199, 13 do
@@ -404,6 +407,7 @@ T["screen geometry cache hits issue zero nvim_win_text_height calls beyond the c
         local first = call_screen()
         local second = call_screen()
         counter.restore()
+        layout_module.screen_extent_sweep_interval_ms = nil
         return { first = first, second = second }
     end)
 
@@ -470,11 +474,11 @@ T["renderer clear_source_cache clears the screen-geometry cache"] = function()
         }
     end)
 
-    expect.equality(result.warm_calls, 1)
-    expect.equality(result.cleared_calls > 1, true)
+    expect.equality(result.warm_calls, 0)
+    expect.equality(result.cleared_calls >= 1, true)
 end
 
-T["track_row_to_line reuses cached prefixes within a stable viewport"] = function()
+T["track_row_to_line issues zero text-height calls in uniform windows"] = function()
     local child = new_child()
     local result = child.lua_func(function()
         local function wrap_win_text_height_counter()
@@ -529,10 +533,10 @@ T["track_row_to_line reuses cached prefixes within a stable viewport"] = functio
         }
     end)
 
-    expect.equality(result.baseline > 0, true)
-    expect.equality(result.repeat_delta, 1)
-    expect.equality(result.another_delta, 1)
-    expect.equality(result.final_delta, 1)
+    expect.equality(result.baseline, 1)
+    expect.equality(result.repeat_delta, 0)
+    expect.equality(result.another_delta, 0)
+    expect.equality(result.final_delta, 0)
 end
 
 local COUNTER_FACTORY_CODE = [=[
@@ -559,6 +563,10 @@ local COUNTER_FACTORY_CODE = [=[
 T["screen geometry cache invalidates on fold close without an autocmd"] = function()
     local child = new_child()
     local result = child.lua_func(function(factory_code)
+        local layout_module = require("scrollbar.layout")
+        -- Tighten the uniform verify interval so the silent fold change is
+        -- observed deterministically on the next screen pass.
+        layout_module.screen_extent_verify_interval_ms = 0
         local counter = loadstring(factory_code)()
         local lines = {}
         for index = 1, 200 do
@@ -569,7 +577,6 @@ T["screen geometry cache invalidates on fold close without an autocmd"] = functi
         vim.cmd("30,80fold")
         vim.cmd("30,80foldopen")
 
-        local layout_module = require("scrollbar.layout")
         local source_win = vim.api.nvim_get_current_win()
         local marks = { { line = 0, type = "Search" }, { line = 199, type = "Search" } }
         local function call_screen()
@@ -586,6 +593,7 @@ T["screen geometry cache invalidates on fold close without an autocmd"] = functi
         local g2 = call_screen()
         local g2_calls = counter.delta(warm_calls)
         counter.restore()
+        layout_module.screen_extent_verify_interval_ms = nil
         return {
             g1_extent = g1.total_extent,
             g2_extent = g2.total_extent,
@@ -602,6 +610,10 @@ T["screen geometry cache invalidates on window option change"] = function()
     local result = child.lua_func(function(factory_code)
         local counter = loadstring(factory_code)()
         vim.o.columns = 30
+        -- Tighten the digest interval: consecutive standalone calls otherwise
+        -- share a digest window and legitimately reuse the cached digest
+        -- (wired setups clear it immediately on OptionSet instead).
+        require("scrollbar.layout").screen_extent_digest_interval_ms = 0
         local lines = {}
         for index = 1, 100 do
             lines[index] = "line " .. index
@@ -627,6 +639,7 @@ T["screen geometry cache invalidates on window option change"] = function()
         local g2 = call_screen()
         local wrap_calls = counter.delta(warm_calls)
         counter.restore()
+        require("scrollbar.layout").screen_extent_digest_interval_ms = nil
         return {
             g1_extent = g1.total_extent,
             g2_extent = g2.total_extent,
@@ -638,7 +651,7 @@ T["screen geometry cache invalidates on window option change"] = function()
     expect.equality(result.wrap_calls > 1, true)
 end
 
-T["screen geometry cache invalidates on option-only change that leaves extent unchanged"] = function()
+T["screen geometry skips measurements on layout-only option changes"] = function()
     local child = new_child()
     local result = child.lua_func(function(factory_code)
         local counter = loadstring(factory_code)()
@@ -674,10 +687,12 @@ T["screen geometry cache invalidates on option-only change that leaves extent un
     end, COUNTER_FACTORY_CODE)
 
     expect.equality(result.g2_extent == result.g1_extent, true)
-    expect.equality(result.number_calls > 1, true)
+    -- 'number' cannot change vertical extents; a uniform window keeps its
+    -- verified extent without re-measuring.
+    expect.equality(result.number_calls, 0)
 end
 
-T["screen geometry cache invalidates on viewport scroll"] = function()
+T["screen geometry recomputes viewport without measurements on scroll"] = function()
     local child = new_child()
     local result = child.lua_func(function(factory_code)
         local counter = loadstring(factory_code)()
@@ -715,10 +730,10 @@ T["screen geometry cache invalidates on viewport scroll"] = function()
     end, COUNTER_FACTORY_CODE)
 
     expect.equality(result.g2_viewport_start ~= result.g1_viewport_start, true)
-    expect.equality(result.g2_calls > 1, true)
+    expect.equality(result.g2_calls, 0)
 end
 
-T["screen geometry cache invalidates on buffer text change"] = function()
+T["screen geometry tracks text growth without measurements in uniform windows"] = function()
     local child = new_child()
     local result = child.lua_func(function(factory_code)
         local counter = loadstring(factory_code)()
@@ -727,6 +742,8 @@ T["screen geometry cache invalidates on buffer text change"] = function()
             lines[index] = "line " .. index
         end
         vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        vim.wo.wrap = false
+        vim.wo.foldmethod = "manual"
 
         local layout_module = require("scrollbar.layout")
         local source_buf = vim.api.nvim_get_current_buf()
@@ -758,10 +775,11 @@ T["screen geometry cache invalidates on buffer text change"] = function()
     end, COUNTER_FACTORY_CODE)
 
     expect.equality(result.g2_extent > result.g1_extent, true)
-    expect.equality(result.g2_calls > 1, true)
+    -- Uniform manual-fold nowrap windows update extents by arithmetic.
+    expect.equality(result.g2_calls, 0)
 end
 
-T["screen geometry cache invalidates on window resize"] = function()
+T["screen geometry handles window resize without measurements in uniform windows"] = function()
     local child = new_child()
     local result = child.lua_func(function(factory_code)
         local counter = loadstring(factory_code)()
@@ -797,7 +815,7 @@ T["screen geometry cache invalidates on window resize"] = function()
     end, COUNTER_FACTORY_CODE)
 
     expect.equality(result.g2_last_row < result.g1_last_row, true)
-    expect.equality(result.g2_calls > 1, true)
+    expect.equality(result.g2_calls, 0)
 end
 
 T["M.screen projects compact_search rows aligned with equivalent expanded marks"] = function()

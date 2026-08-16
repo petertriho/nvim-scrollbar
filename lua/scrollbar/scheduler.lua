@@ -1,10 +1,16 @@
 local config = require("scrollbar.config")
 local providers = require("scrollbar.providers")
 local store = require("scrollbar.store")
+local layout = require("scrollbar.layout")
 
 local M = {}
 
 local AUGROUP_NAME = "ScrollbarScheduler"
+-- Window/buffer options whose changes can affect rendered scrollbar layout.
+-- `lua/scrollbar/layout.lua` keeps an extent-relevant subset
+-- (EXTENT_OPTION_PATTERNS) for its screen-geometry cache digests; this list is
+-- the superset used for OptionSet autocmd patterns. Keep it a superset of the
+-- layout subset if either changes.
 local OPTION_PATTERNS = {
     "ambiwidth",
     "breakindent",
@@ -15,8 +21,13 @@ local OPTION_PATTERNS = {
     "display",
     "foldcolumn",
     "foldenable",
+    "foldexpr",
+    "foldignore",
     "foldlevel",
+    "foldmarker",
     "foldmethod",
+    "foldminlines",
+    "foldnestmax",
     "laststatus",
     "linebreak",
     "list",
@@ -375,6 +386,9 @@ local function create_autocmds(group, enabled)
     end)
     register_group(group, { "OptionSet" }, enabled, function(args)
         if not event_is_owned(args) then
+            -- Extent-affecting options gate the layout's digest cache; clear
+            -- it so the next render re-reads options immediately.
+            layout.invalidate_screen_options()
             M.invalidate_all()
         end
     end, { pattern = OPTION_PATTERNS })
