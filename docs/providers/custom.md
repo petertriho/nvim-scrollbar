@@ -402,6 +402,8 @@ same entry.
 | `clear_minimap_points(winid?)` | Unconditionally clear one window, or all minimap points owned by this provider when omitted |
 | `create_augroup(name)` | Create a provider-owned, namespaced augroup removed during cleanup |
 | `add_cleanup(fn)` | Register a provider-owned cleanup callback |
+| `on_text_change(fn, events?)` | Optional shared TextChanged dispatch hosted by the scheduler in wired top-level setups; returns `false` when absent so the provider keeps its own registration |
+| `on_cursor_activity(fn, events?)` | Optional shared CursorMoved/CursorMovedI dispatch hosted by the scheduler in wired top-level setups; returns `false` when absent so the provider keeps its own registration |
 | `is_buffer_eligible(bufnr)` | Query live eligibility across the provider's declared target union |
 | `is_source_window(winid)` | Query live source membership across the provider's declared target union |
 | `source_windows(bufnr?)` | Return the copied, de-duplicated target-union source-window list, optionally filtered by buffer |
@@ -419,6 +421,16 @@ list returns `true` without a store event or render queue.
 The built-in search provider's compact representation and `_set_search_compact`
 context hook are private implementation details. Custom providers publish
 ordinary public mark lists; they do not publish compact blobs.
+
+When `on_text_change` or `on_cursor_activity` is present (the normal
+`require("scrollbar").setup()` wiring), subscribing through them folds the
+provider's work into the scheduler's existing autocmd row so a keystroke or
+cursor move pays one callback invocation instead of one per provider. The
+callback runs for non-owned events only; `events` names any dispatch rows the
+provider needs beyond `update.events`. Both hooks return `false` when the
+shared dispatch is unavailable (standalone provider-manager setups), so a
+provider that wants the shared path should fall back to its own `create_augroup`
+registration — the built-in marks and cursor providers show the pattern.
 
 For asynchronous work, use the policy queries to avoid unnecessary collection,
 but always treat the setter as the final authority because eligibility can
