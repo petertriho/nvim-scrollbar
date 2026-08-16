@@ -82,6 +82,32 @@ T["isolates providers and buffers and returns copied snapshots"] = function()
     })
 end
 
+T["reuses unchanged normalized elements while replacing changed marks"] = function()
+    local store = require("scrollbar.store")
+    local bufnr = new_buffer({ "one", "two", "three", "four" })
+
+    assert(store.set("alpha", bufnr, {
+        { line = 0, type = "Custom", text = "x" },
+        { line = 1, type = "Custom", text = "y" },
+        { line = 2, type = "Custom", text = "z" },
+    }))
+
+    local changed = {
+        { line = 99, type = "Custom", text = "stale" },
+        { line = 1, type = "Custom", text = "y" },
+        { line = 0, type = "Custom", text = "changed" },
+    }
+    assert(store.set("alpha", bufnr, changed))
+    changed[2].text = "mutated"
+
+    expect.equality(store.get(bufnr), {
+        alpha = {
+            { line = 1, type = "Custom", text = "y" },
+            { line = 0, type = "Custom", text = "changed" },
+        },
+    })
+end
+
 T["replaces lists atomically and reports only changed buffers"] = function()
     local store = require("scrollbar.store")
     local bufnr = new_buffer({ "one", "two", "three" })

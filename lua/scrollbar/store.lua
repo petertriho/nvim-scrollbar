@@ -38,6 +38,44 @@ local function is_integer(value)
     return type(value) == "number" and value ~= math.huge and value ~= -math.huge and value == math.floor(value)
 end
 
+-- Union of configured mark types across scrollbar and minimap variants,
+-- rebuilt only when either compiled variants table is replaced. `config.set`
+-- and the minimap equivalent recompile into fresh tables, so identity is the
+-- invalidation signal; publications otherwise re-derived this set on every
+-- call, which showed up as measurable per-publication overhead.
+local cached_mark_types
+local cached_scrollbar_variants
+local cached_minimap_variants
+
+---@return table<string, true>
+local function configured_mark_types()
+    local scrollbar_variants = config.get_variants()
+    local minimap_variants = minimap_config.get_variants()
+    if
+        cached_mark_types ~= nil
+        and cached_scrollbar_variants == scrollbar_variants
+        and cached_minimap_variants == minimap_variants
+    then
+        return cached_mark_types
+    end
+
+    local mark_types = {}
+    for _, variant in ipairs(scrollbar_variants) do
+        for mark_type in pairs(variant.config.marks) do
+            mark_types[mark_type] = true
+        end
+    end
+    for _, variant in ipairs(minimap_variants) do
+        for mark_type in pairs(variant.config.overlays.types) do
+            mark_types[mark_type] = true
+        end
+    end
+    cached_mark_types = mark_types
+    cached_scrollbar_variants = scrollbar_variants
+    cached_minimap_variants = minimap_variants
+    return mark_types
+end
+
 ---@param changed table<integer, true>
 ---@param target integer
 local function mark_changed(changed, target)
@@ -86,6 +124,63 @@ local function copy_snapshot(snapshot)
         copy[provider] = marks
     end
     return copy
+end
+
+-- Specialized equality for stored normalized payloads. `vim.deep_equal`
+-- costs ~250 ns per mark (type dispatch + generic table walking); provider
+-- refreshes re-publish identical payloads on every event, so the no-op path
+-- is the hot one. Field-wise comparison keeps semantics identical because
+-- validation guarantees the exact field sets.
+
+local function marks_equal(left, right)
+    local count = #left
+    if count ~= #right then
+        return false
+    end
+    for index = 1, count do
+        local a = left[index]
+        local b = right[index]
+        if a.line ~= b.line or a.type ~= b.type or a.text ~= b.text then
+            return false
+        end
+    end
+    return true
+end
+
+local function spans_equal(left, right)
+    local count = #left
+    if count ~= #right then
+        return false
+    end
+    for index = 1, count do
+        local a = left[index]
+        local b = right[index]
+        if
+            a.line ~= b.line
+            or a.start_col ~= b.start_col
+            or a.end_col ~= b.end_col
+            or a.highlight ~= b.highlight
+            or a.priority ~= b.priority
+        then
+            return false
+        end
+    end
+    return true
+end
+
+local function points_equal(left, right)
+    local count = #left
+    if count ~= #right then
+        return false
+    end
+    for index = 1, count do
+        local a = left[index]
+        local b = right[index]
+        if a.line ~= b.line or a.col ~= b.col or a.highlight ~= b.highlight or a.priority ~= b.priority then
+            return false
+        end
+    end
+    return true
 end
 
 ---@param snapshot table<string, any>
@@ -195,7 +290,17 @@ end
 
 ---@param text any
 ---@return string?
+-- Memo of already-validated text values. Strings are immutable, so a value
+-- that passed once (string type, no control characters, positive display
+-- width) always will; provider refreshes publish repetitive glyph texts, and
+-- the pcall'd strdisplaywidth API per mark dominated text-bearing validation.
+local validated_text = {}
+local validated_text_count = 0
+
 local function validate_text(text)
+    if validated_text[text] then
+        return nil
+    end
     if type(text) ~= "string" then
         return "text must be a string"
     end
@@ -207,13 +312,21 @@ local function validate_text(text)
     if not ok or width <= 0 then
         return "text must have positive display width"
     end
+    validated_text[text] = true
+    validated_text_count = validated_text_count + 1
+    if validated_text_count > 4096 then
+        validated_text = {}
+        validated_text_count = 0
+    end
 end
 
 ---@param bufnr integer
 ---@param marks any
+---@param previous? ScrollbarMark[] trusted normalized payload from the previous revision
 ---@return ScrollbarMark[]? normalized
 ---@return string? error_signature
-local function validate_marks(bufnr, marks)
+---@return boolean unchanged true when every retained element matched and the count is stable
+local function validate_marks(bufnr, marks, previous)
     if not vim.api.nvim_buf_is_valid(bufnr) then
         return nil, "buffer is invalid"
     end
@@ -222,18 +335,10 @@ local function validate_marks(bufnr, marks)
     end
 
     local line_count = vim.api.nvim_buf_line_count(bufnr)
-    local mark_types = {}
-    for _, variant in ipairs(config.get_variants()) do
-        for mark_type in pairs(variant.config.marks) do
-            mark_types[mark_type] = true
-        end
-    end
-    for _, variant in ipairs(minimap_config.get_variants()) do
-        for mark_type in pairs(variant.config.overlays.types) do
-            mark_types[mark_type] = true
-        end
-    end
+    local mark_types = configured_mark_types()
     local normalized = {}
+    local count = 0
+    local unchanged = previous ~= nil
     for index, mark in ipairs(marks) do
         if type(mark) ~= "table" then
             return nil, string.format("marks[%d] must be a table", index)
@@ -260,21 +365,43 @@ local function validate_marks(bufnr, marks)
         end
 
         if mark.line < line_count then
-            table.insert(normalized, {
-                line = mark.line,
-                type = mark.type,
-                text = mark.text,
-            })
+            count = count + 1
+            -- Reuse the trusted normalized element when the value is unchanged:
+            -- provider refreshes typically move a few marks while the rest of the
+            -- payload stays identical, and re-allocating every element shows up
+            -- as GC pauses in publication p95 tails. Reused elements are already
+            -- store-owned, so callers can never gain write access through them.
+            local retained = previous and previous[count] or nil
+            if
+                retained ~= nil
+                and retained.line == mark.line
+                and retained.type == mark.type
+                and retained.text == mark.text
+            then
+                normalized[count] = retained
+            else
+                normalized[count] = {
+                    line = mark.line,
+                    type = mark.type,
+                    text = mark.text,
+                }
+                unchanged = false
+            end
         end
     end
-    return normalized, nil
+    if previous == nil or #previous ~= count then
+        unchanged = false
+    end
+    return normalized, nil, unchanged
 end
 
 ---@param bufnr integer
 ---@param spans any
+---@param previous? ScrollbarMinimapSourceSpan[] trusted normalized payload from the previous revision
 ---@return ScrollbarMinimapSourceSpan[]? normalized
 ---@return string? error_signature
-local function validate_minimap_spans(bufnr, spans)
+---@return boolean unchanged true when every retained element matched and the count is stable
+local function validate_minimap_spans(bufnr, spans, previous)
     if not vim.api.nvim_buf_is_valid(bufnr) then
         return nil, "buffer is invalid"
     end
@@ -284,6 +411,8 @@ local function validate_minimap_spans(bufnr, spans)
 
     local line_count = vim.api.nvim_buf_line_count(bufnr)
     local normalized = {}
+    local count = 0
+    local unchanged = previous ~= nil
     for index, span in ipairs(spans) do
         if type(span) ~= "table" then
             return nil, string.format("minimap spans[%d] must be a table", index)
@@ -325,23 +454,42 @@ local function validate_minimap_spans(bufnr, spans)
         end
 
         if span.line < line_count then
-            table.insert(normalized, {
-                line = span.line,
-                start_col = span.start_col,
-                end_col = span.end_col,
-                highlight = span.highlight,
-                priority = span.priority,
-            })
+            count = count + 1
+            local retained = previous and previous[count] or nil
+            if
+                retained ~= nil
+                and retained.line == span.line
+                and retained.start_col == span.start_col
+                and retained.end_col == span.end_col
+                and retained.highlight == span.highlight
+                and retained.priority == span.priority
+            then
+                normalized[count] = retained
+            else
+                normalized[count] = {
+                    line = span.line,
+                    start_col = span.start_col,
+                    end_col = span.end_col,
+                    highlight = span.highlight,
+                    priority = span.priority,
+                }
+                unchanged = false
+            end
         end
     end
-    return normalized, nil
+    if previous == nil or #previous ~= count then
+        unchanged = false
+    end
+    return normalized, nil, unchanged
 end
 
 ---@param winid integer
 ---@param points any
+---@param previous? ScrollbarMinimapSourcePoint[] trusted normalized payload from the previous revision
 ---@return ScrollbarMinimapSourcePoint[]? normalized
 ---@return string? error_signature
-local function validate_minimap_points(winid, points)
+---@return boolean unchanged true when every retained element matched and the count is stable
+local function validate_minimap_points(winid, points, previous)
     if not vim.api.nvim_win_is_valid(winid) then
         return nil, "window is invalid"
     end
@@ -351,6 +499,8 @@ local function validate_minimap_points(winid, points)
 
     local line_count = vim.api.nvim_buf_line_count(vim.api.nvim_win_get_buf(winid))
     local normalized = {}
+    local count = 0
+    local unchanged = previous ~= nil
     for index, point in ipairs(points) do
         if type(point) ~= "table" then
             return nil, string.format("minimap points[%d] must be a table", index)
@@ -380,15 +530,31 @@ local function validate_minimap_points(winid, points)
         end
 
         if point.line < line_count then
-            table.insert(normalized, {
-                line = point.line,
-                col = point.col,
-                highlight = point.highlight,
-                priority = point.priority,
-            })
+            count = count + 1
+            local retained = previous and previous[count] or nil
+            if
+                retained ~= nil
+                and retained.line == point.line
+                and retained.col == point.col
+                and retained.highlight == point.highlight
+                and retained.priority == point.priority
+            then
+                normalized[count] = retained
+            else
+                normalized[count] = {
+                    line = point.line,
+                    col = point.col,
+                    highlight = point.highlight,
+                    priority = point.priority,
+                }
+                unchanged = false
+            end
         end
     end
-    return normalized, nil
+    if previous == nil or #previous ~= count then
+        unchanged = false
+    end
+    return normalized, nil, unchanged
 end
 
 ---@param provider string
@@ -397,7 +563,9 @@ end
 ---@return boolean success
 ---@return ScrollbarChangedBuffers changed_buffers
 M.set = function(provider, bufnr, marks)
-    local normalized, validation_error = validate_marks(bufnr, marks)
+    local current = marks_by_buffer[bufnr]
+    local previous = current and current.marks[provider] or nil
+    local normalized, validation_error, unchanged = validate_marks(bufnr, marks, previous)
     if normalized == nil then
         assert(validation_error ~= nil, "validation error missing")
         local changed = M.clear(provider, bufnr)
@@ -406,11 +574,9 @@ M.set = function(provider, bufnr, marks)
     end
 
     reset_warnings(provider, "marks", bufnr)
-    local current = marks_by_buffer[bufnr]
     local buffer_marks = current and current.marks or empty_buffer_snapshot.marks
-    local previous = buffer_marks[provider]
     local replacing_compact = provider == "search" and current ~= nil and current.compact_search ~= nil
-    if not replacing_compact and previous ~= nil and vim.deep_equal(previous, normalized) then
+    if not replacing_compact and (unchanged or (previous ~= nil and marks_equal(previous, normalized))) then
         return true, {}
     end
 
@@ -448,7 +614,9 @@ end
 ---@return boolean success
 ---@return ScrollbarChangedBuffers changed_buffers
 M.set_minimap_spans = function(provider, bufnr, spans)
-    local normalized, validation_error = validate_minimap_spans(bufnr, spans)
+    local current = marks_by_buffer[bufnr]
+    local previous = current and current.minimap_spans[provider] or nil
+    local normalized, validation_error, unchanged = validate_minimap_spans(bufnr, spans, previous)
     if normalized == nil then
         assert(validation_error ~= nil, "validation error missing")
         local changed = M.clear_minimap_spans(provider, bufnr)
@@ -457,10 +625,8 @@ M.set_minimap_spans = function(provider, bufnr, spans)
     end
 
     reset_warnings(provider, "minimap_spans", bufnr)
-    local current = marks_by_buffer[bufnr]
     local buffer_spans = current and current.minimap_spans or empty_buffer_snapshot.minimap_spans
-    local previous = buffer_spans[provider]
-    if previous ~= nil and vim.deep_equal(previous, normalized) then
+    if unchanged or (previous ~= nil and spans_equal(previous, normalized)) then
         return true, {}
     end
 
@@ -528,10 +694,13 @@ end
 M.set_window = function(provider, winid, marks)
     local normalized
     local validation_error
+    local unchanged = false
+    local current = marks_by_window[winid]
+    local previous = current and current.marks[provider] or nil
     if not vim.api.nvim_win_is_valid(winid) then
         validation_error = "window is invalid"
     else
-        normalized, validation_error = validate_marks(vim.api.nvim_win_get_buf(winid), marks)
+        normalized, validation_error, unchanged = validate_marks(vim.api.nvim_win_get_buf(winid), marks, previous)
     end
     if normalized == nil then
         assert(validation_error ~= nil, "validation error missing")
@@ -541,10 +710,8 @@ M.set_window = function(provider, winid, marks)
     end
 
     reset_warnings(provider, "marks", winid)
-    local current = marks_by_window[winid]
     local window_marks = current and current.marks or empty_window_snapshot.marks
-    local previous = window_marks[provider]
-    if previous ~= nil and vim.deep_equal(previous, normalized) then
+    if unchanged or (previous ~= nil and marks_equal(previous, normalized)) then
         return true, {}
     end
 
@@ -572,7 +739,9 @@ end
 ---@return boolean success
 ---@return ScrollbarChangedWindows changed_windows
 M.set_minimap_points = function(provider, winid, points)
-    local normalized, validation_error = validate_minimap_points(winid, points)
+    local current = marks_by_window[winid]
+    local previous = current and current.minimap_points[provider] or nil
+    local normalized, validation_error, unchanged = validate_minimap_points(winid, points, previous)
     if normalized == nil then
         assert(validation_error ~= nil, "validation error missing")
         local changed = M.clear_minimap_points(provider, winid)
@@ -581,10 +750,8 @@ M.set_minimap_points = function(provider, winid, points)
     end
 
     reset_warnings(provider, "minimap_points", winid)
-    local current = marks_by_window[winid]
     local window_points = current and current.minimap_points or empty_window_snapshot.minimap_points
-    local previous = window_points[provider]
-    if previous ~= nil and vim.deep_equal(previous, normalized) then
+    if unchanged or (previous ~= nil and points_equal(previous, normalized)) then
         return true, {}
     end
 
