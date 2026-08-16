@@ -43,7 +43,7 @@ local function create_commands()
 end
 
 ---@param overrides? ScrollbarMinimapUserConfig
-M.setup = function(overrides)
+M.setup = function(overrides, wiring)
     local root_config
     if overrides == nil then
         -- Config was already validated by the top-level dispatcher.
@@ -91,6 +91,7 @@ M.setup = function(overrides)
         on_colorscheme = function()
             highlights.set()
         end,
+        on_text_change = wiring ~= nil and wiring.on_text_change or nil,
     })
     mouse.setup({
         renderer = renderer,

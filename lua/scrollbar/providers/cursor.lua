@@ -43,14 +43,28 @@ return {
     refresh_owner = { window = "provider" },
     setup = function(context)
         local group = context.create_augroup("events")
+        local function refresh(args)
+            local winid = vim.api.nvim_get_current_win()
+            if vim.api.nvim_win_is_valid(winid) and vim.api.nvim_win_get_buf(winid) == args.buf then
+                update(winid, context)
+            end
+        end
+        -- Ride the scheduler's cursor-activity dispatch when wired: one
+        -- autocmd invocation per cursor move covers scheduling and the cursor
+        -- update. Falls back to own registration in standalone setups.
+        if type(context.on_cursor_activity) == "function" then
+            if context.on_cursor_activity(refresh, { "CursorMoved", "CursorMovedI" }) then
+                vim.api.nvim_create_autocmd({ "BufWinEnter", "WinEnter" }, {
+                    group = group,
+                    callback = refresh,
+                    desc = "Update scrollbar cursor data",
+                })
+                return
+            end
+        end
         vim.api.nvim_create_autocmd({ "CursorMoved", "CursorMovedI", "BufWinEnter", "WinEnter" }, {
             group = group,
-            callback = function(args)
-                local winid = vim.api.nvim_get_current_win()
-                if vim.api.nvim_win_is_valid(winid) and vim.api.nvim_win_get_buf(winid) == args.buf then
-                    update(winid, context)
-                end
-            end,
+            callback = refresh,
             desc = "Update scrollbar cursor data",
         })
     end,

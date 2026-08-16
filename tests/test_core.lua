@@ -189,7 +189,7 @@ T["registers configured built-ins once and removes disabled root-owned providers
         cursor_registered = true,
         diagnostic_registered = true,
         cursor_reused = true,
-        cursor_autocmds = 4,
+        cursor_autocmds = 2,
         diagnostic_autocmds = 1,
         cursor_removed = true,
         diagnostic_preserved = true,
@@ -477,6 +477,51 @@ T["registers both marks modes and fully removes the disabled builtin"] = functio
     })
 end
 
+T["scheduler-hosted text-change subscription reconciles marks through the default wiring"] = function()
+    local child = new_child()
+    local result = child.lua_func(function(config)
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, { "one", "two", "three" })
+        vim.api.nvim_buf_set_mark(0, "a", 2, 0, {})
+
+        local scrollbar = require("scrollbar")
+        local wired = vim.deepcopy(config)
+        wired.providers.marks = true
+        scrollbar.setup({ scrollbar = wired })
+        local store = require("scrollbar.store")
+        local bufnr = vim.api.nvim_get_current_buf()
+        vim.api.nvim_exec_autocmds("BufEnter", { buffer = bufnr })
+        local settled = vim.wait(300, function()
+            return (store.get(bufnr).marks or {})[1] ~= nil
+        end, 20)
+
+        -- The marks provider rides the scheduler's TextChanged dispatch: its
+        -- own augroup must not carry text-change rows in the wired setup.
+        local standalone_text_rows = 0
+        for _, autocmd in
+            ipairs(vim.api.nvim_get_autocmds({
+                event = { "TextChanged", "TextChangedI", "TextChangedP", "TextChangedT" },
+            }))
+        do
+            if autocmd.group_name == "ScrollbarProvider_marks_events" then
+                standalone_text_rows = standalone_text_rows + 1
+            end
+        end
+
+        vim.api.nvim_buf_set_lines(0, 0, 0, false, { "inserted" })
+        vim.api.nvim_exec_autocmds("TextChangedI", { buffer = bufnr })
+        local shifted = store.get(bufnr).marks
+        return {
+            settled = settled,
+            standalone_text_rows = standalone_text_rows,
+            shifted_line = shifted and shifted[1] and shifted[1].line or nil,
+        }
+    end, root_config())
+
+    expect.equality(result.settled, true)
+    expect.equality(result.standalone_text_rows, 0)
+    expect.equality(result.shifted_line, 2)
+end
+
 T["configured cursor and diagnostics publish only through the central store"] = function()
     local child = new_child()
     local result = child.lua_func(function(config)
@@ -581,7 +626,10 @@ T["repeated setup replaces all owned runtime resources without duplication"] = f
     expect.equality(result.new_float, true)
     expect.equality(result.scheduler_group_replaced, true)
     expect.equality(result.scheduler_autocmds > 0, true)
-    expect.equality(result.provider_manager_autocmds, 6)
+    -- No built-in provider uses manager-owned refresh, so the manager
+    -- registers no dispatch autocmds by default (they would be a per-keystroke
+    -- registry walk that cannot dispatch anything).
+    expect.equality(result.provider_manager_autocmds, 0)
     expect.equality(result.mouse_autocmds, 4)
     expect.equality(result.mappings, 3)
     expect.equality(result.owned_buffers, 1)

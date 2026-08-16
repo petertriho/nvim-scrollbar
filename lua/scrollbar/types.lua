@@ -342,6 +342,8 @@
 ---@field clear_minimap_points fun(winid?: integer): boolean
 ---@field create_augroup fun(name: string): integer
 ---@field add_cleanup fun(cleanup: fun())
+---@field on_text_change? fun(fn: fun(args: table), events?: string[]) Shared TextChanged dispatch hosted by the scheduler; absent in standalone provider setups
+---@field on_cursor_activity? fun(fn: fun(args: table), events?: string[]): boolean Shared cursor-activity dispatch hosted by the scheduler; absent in standalone provider setups
 ---@field is_buffer_eligible fun(bufnr: integer): boolean
 ---@field is_source_window fun(winid: integer): boolean
 ---@field source_windows fun(bufnr?: integer): integer[]
@@ -553,6 +555,8 @@
 ---@field is_visible? fun(): boolean
 ---@field is_owned_buffer? fun(bufnr: integer): boolean
 ---@field is_owned_window? fun(winid: integer): boolean
+---@field is_owned_float_buffer? fun(bufnr: integer): boolean
+---@field is_owned_float_window? fun(winid: integer): boolean
 ---@field windows_showing_buffer? fun(bufnr: integer): integer[]
 
 ---@class ScrollbarSchedulerOptions

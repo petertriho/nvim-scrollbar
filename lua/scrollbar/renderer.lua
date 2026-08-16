@@ -49,11 +49,18 @@ local visible = false
 ---@type fun(state: ScrollbarWindowState)?
 local state_callback
 
+-- Forward declarations: populated beside `source_selection` below and
+-- cleared by the cache lifecycle functions above them.
+local eligibility_cache = {}
+local selection_cache = {}
+
 ---@param source_win integer
 local function clear_source_cache(source_win)
     flattened_cache[source_win] = nil
     line_layer_cache[source_win] = nil
     screen_layer_cache[source_win] = nil
+    eligibility_cache[source_win] = nil
+    selection_cache[source_win] = nil
     layout.clear_screen_cache(source_win)
 end
 
@@ -421,12 +428,60 @@ local function active_source_window()
     end
 end
 
+-- Eligibility memo: `basic_eligible` (window normality + buffer eligibility)
+-- costs ~2.2µs and runs several times per keystroke (cursor provider collect
+-- plus publish re-checks, scheduler activity). Its inputs are the window,
+-- its buffer's line count (`max_lines`), and the static root excludes —
+-- never profile matchers, which stay dynamic per call. Event-exact clearing
+-- is wired from the scheduler's topology/option rows; the TTL bounds
+-- filetype/buftype-flip staleness for standalone use.
+local ELIGIBILITY_TTL_MS = 50
+
+local function basic_eligible_cached(source_win, root_config)
+    local now = vim.uv.now()
+    local cached = eligibility_cache[source_win]
+    local ok_win, source_buf = pcall(vim.api.nvim_win_get_buf, source_win)
+    if not ok_win then
+        return false
+    end
+    local line_count = nil
+    if type(root_config.max_lines) == "number" then
+        local ok_count, count = pcall(vim.api.nvim_buf_line_count, source_buf)
+        if not ok_count then
+            return false
+        end
+        line_count = count
+    end
+    if
+        cached ~= nil
+        and cached.at >= now - (M.eligibility_interval_ms or ELIGIBILITY_TTL_MS)
+        and cached.root == root_config
+        and cached.bufnr == source_buf
+        and cached.line_count == line_count
+    then
+        return cached.eligible
+    end
+    local eligible = normal_window(source_win) and buffer_eligible(source_buf, root_config) or false
+    eligibility_cache[source_win] = {
+        at = now,
+        root = root_config,
+        bufnr = source_buf,
+        line_count = line_count,
+        eligible = eligible,
+    }
+    return eligible
+end
+
 ---@param source_win integer
 ---@param root_config ScrollbarConfig
 ---@param active_source? integer
+---@param basic_ok? boolean Precomputed `basic_eligible` result
 ---@return ScrollbarConfigSelection?
-local function source_selection(source_win, root_config, active_source)
-    if not basic_eligible(source_win, root_config) then
+local function source_selection(source_win, root_config, active_source, basic_ok)
+    if basic_ok == nil then
+        basic_ok = basic_eligible(source_win, root_config)
+    end
+    if not basic_ok then
         return nil
     end
     if root_config.visibility == "active" and source_win ~= active_source then
@@ -1521,6 +1576,24 @@ M.is_owned_window = function(winid)
     return owned_window(winid)
 end
 
+--- Registry-only ownership checks. They recognize exactly the resources the
+--- current renderer generation created; the variable fallbacks in
+--- `owned_window`/`owned_buffer` additionally cover orphans left by a prior
+--- generation, which only the setup-time sweep needs. The scheduler treats a
+--- missed orphan as an ordinary source resource and its flush re-checks
+--- eligibility, so the cheap checks are safe on the per-keystroke path.
+---@param winid integer
+---@return boolean
+M.is_owned_float_window = function(winid)
+    return states_by_float[winid] ~= nil
+end
+
+---@param bufnr integer
+---@return boolean
+M.is_owned_float_buffer = function(bufnr)
+    return owned_float_buffers[bufnr] == true
+end
+
 ---@param bufnr integer
 ---@return boolean
 M.is_owned_buffer = function(bufnr)
@@ -1535,8 +1608,62 @@ end
 
 ---@param winid integer
 ---@return boolean
+-- The exported predicate serves hot event paths (provider collect/publish
+-- re-checks, scheduler activity) that run several times per keystroke; those
+-- accept the documented 50ms bound. Render passes stay uncached so stale
+-- windows reconcile on the very next flush.
+-- Full-selection memo for the exported predicate: provider collect/publish
+-- re-checks and scheduler activity call this up to four times per keystroke,
+-- and each call would re-resolve `config.select` plus `active_source_window`
+-- (~5µs). Render paths never route through here — they call
+-- `source_selection` directly so profile `when` matchers stay dynamic per
+-- render and stale windows reconcile on the next flush (test-pinned).
+-- Editor-relative placement makes the result focus-dependent, so
+-- `active_source` is part of the key (WinEnter clears the memo anyway).
+local SOURCE_SELECTION_TTL_MS = 50
+
 M.is_source_window = function(winid)
-    return source_selection(winid, config.get(), active_source_window()) ~= nil
+    local root_config = config.get()
+    local now = vim.uv.now()
+    local ok_win, source_buf = pcall(vim.api.nvim_win_get_buf, winid)
+    if not ok_win then
+        return false
+    end
+    local active_source = active_source_window()
+    local cached = selection_cache[winid]
+    if
+        cached ~= nil
+        and cached.at >= now - (M.source_selection_interval_ms or SOURCE_SELECTION_TTL_MS)
+        and cached.root == root_config
+        and cached.bufnr == source_buf
+        and cached.active_source == active_source
+    then
+        return cached.selected
+    end
+    local selected = basic_eligible_cached(winid, root_config)
+            and source_selection(winid, root_config, active_source, true) ~= nil
+        or false
+    selection_cache[winid] = {
+        at = now,
+        root = root_config,
+        bufnr = source_buf,
+        active_source = active_source,
+        selected = selected,
+    }
+    return selected
+end
+
+---Clear cached source eligibility (one window or all). Wired to the
+---scheduler's topology/option events; safe to call at any time.
+---@param source_win? integer
+M.invalidate_source_selection = function(source_win)
+    if source_win == nil then
+        eligibility_cache = {}
+        selection_cache = {}
+    else
+        eligibility_cache[source_win] = nil
+        selection_cache[source_win] = nil
+    end
 end
 
 ---@param bufnr? integer

@@ -5,6 +5,12 @@ local UPPERCASE_END = string.byte("Z")
 local NUMBERED_START = string.byte("0")
 local NUMBERED_END = string.byte("9")
 
+--- Line count each buffer was last reconciled at. Text edits can only move
+--- mark lines when the number of lines changes (inserts/deletes above them);
+--- ordinary keystrokes leave counts stable and skip the reconcile entirely.
+--- MarkSet and SafeState still reconcile unconditionally.
+local reconciled_line_counts = {}
+
 ---@param marks ScrollbarMark[]
 ---@param line_count integer
 ---@param row integer
@@ -13,6 +19,40 @@ local function add_mark(marks, line_count, row, name)
     if row > 0 and row <= line_count then
         table.insert(marks, { line = row - 1, type = "Mark", text = name })
     end
+end
+
+---@param entry table getmarklist entry { mark: "'a", pos: [line, col, bufnr] }
+---@return string? name
+local function entry_name(entry)
+    local name = entry.mark
+    if type(name) == "string" then
+        name = name:sub(2)
+        if #name == 1 then
+            return name
+        end
+    end
+    return nil
+end
+
+---@param byte integer
+---@return boolean
+local function is_lowercase_name(name)
+    local byte = name:byte()
+    return byte >= LOWERCASE_START and byte <= LOWERCASE_END
+end
+
+---@param name string
+---@return boolean
+local function is_uppercase_name(name)
+    local byte = name:byte()
+    return byte >= UPPERCASE_START and byte <= UPPERCASE_END
+end
+
+---@param name string
+---@return boolean
+local function is_numbered_name(name)
+    local byte = name:byte()
+    return byte >= NUMBERED_START and byte <= NUMBERED_END
 end
 
 ---@param bufnr integer
@@ -29,26 +69,31 @@ local function collect(bufnr, context)
     if provider_config == false then
         return nil
     end
-    if provider_config.letters then
-        for byte = LOWERCASE_START, LOWERCASE_END do
-            local name = string.char(byte)
-            local position = vim.api.nvim_buf_get_mark(bufnr, name)
-            add_mark(marks, line_count, position[1], name)
-        end
-        for byte = UPPERCASE_START, UPPERCASE_END do
-            local name = string.char(byte)
-            local position = vim.api.nvim_get_mark(name, {})
-            if position[3] == bufnr then
-                add_mark(marks, line_count, position[1], name)
+    -- One getmarklist call per scope replaces one nvim_get_mark call per
+    -- letter (62 API round-trips and their per-call table allocations on
+    -- every reconcile).
+    local wants_letter = provider_config.letters == true
+    local wants_number = provider_config.numbers == true
+    if wants_letter then
+        for _, entry in ipairs(vim.fn.getmarklist(bufnr)) do
+            local name = entry_name(entry)
+            if name ~= nil and is_lowercase_name(name) then
+                add_mark(marks, line_count, entry.pos[2], name)
             end
         end
     end
-    if provider_config.numbers then
-        for byte = NUMBERED_START, NUMBERED_END do
-            local name = string.char(byte)
-            local position = vim.api.nvim_get_mark(name, {})
-            if position[3] == bufnr then
-                add_mark(marks, line_count, position[1], name)
+    if wants_letter or wants_number then
+        for _, entry in ipairs(vim.fn.getmarklist()) do
+            local pos = entry.pos
+            if pos[1] == bufnr then
+                local name = entry_name(entry)
+                if name ~= nil then
+                    local wanted_name = is_uppercase_name(name) and wants_letter
+                        or (is_numbered_name(name) and wants_number)
+                    if wanted_name then
+                        add_mark(marks, line_count, pos[2], name)
+                    end
+                end
             end
         end
     end
@@ -65,12 +110,35 @@ end
 ---@param bufnr integer
 ---@param context ScrollbarProviderContext
 local function update(bufnr, context)
+    if not vim.api.nvim_buf_is_valid(bufnr) then
+        reconciled_line_counts[bufnr] = nil
+        return
+    end
+    local line_count = vim.api.nvim_buf_line_count(bufnr)
     local marks = collect(bufnr, context)
+    reconciled_line_counts[bufnr] = line_count
     if marks == nil or #marks == 0 then
         context.clear_marks(bufnr)
     else
         context.set_marks(bufnr, marks)
     end
+end
+
+---Text changes can only move mark lines when the buffer's line count
+---changes; keystrokes that keep the count skip the reconcile. MarkSet and
+---SafeState reconcile unconditionally, so mark creation and exotic edits
+---stay covered.
+---@param bufnr integer
+---@param context ScrollbarProviderContext
+local function update_after_text_change(bufnr, context)
+    if not vim.api.nvim_buf_is_valid(bufnr) then
+        reconciled_line_counts[bufnr] = nil
+        return
+    end
+    if reconciled_line_counts[bufnr] == vim.api.nvim_buf_line_count(bufnr) then
+        return
+    end
+    update(bufnr, context)
 end
 
 ---@param context ScrollbarProviderContext
@@ -119,16 +187,32 @@ return {
     refresh_owner = { buffer = "provider" },
     setup = function(context)
         local group = context.create_augroup("events")
-        vim.api.nvim_create_autocmd(
-            { "BufEnter", "BufWinEnter", "TextChanged", "TextChangedI", "TextChangedP", "TextChangedT" },
-            {
+        -- Eligibility events re-establish publication state unconditionally;
+        -- text-change events only need reconciliation when the buffer's line
+        -- count changed (the only way typing can move mark lines).
+        vim.api.nvim_create_autocmd({ "BufEnter", "BufWinEnter" }, {
+            group = group,
+            callback = function(args)
+                update(args.buf, context)
+            end,
+            desc = "Update scrollbar marks",
+        })
+        local text_change_events = { "TextChanged", "TextChangedI", "TextChangedP", "TextChangedT" }
+        if type(context.on_text_change) == "function" then
+            -- Ride the scheduler's TextChanged dispatch: one autocmd
+            -- invocation per keystroke covers scheduling and reconciliation.
+            context.on_text_change(function(args)
+                update_after_text_change(args.buf, context)
+            end, text_change_events)
+        else
+            vim.api.nvim_create_autocmd(text_change_events, {
                 group = group,
                 callback = function(args)
-                    update(args.buf, context)
+                    update_after_text_change(args.buf, context)
                 end,
                 desc = "Update scrollbar marks",
-            }
-        )
+            })
+        end
 
         local pattern = mark_set_pattern(context)
         if pattern == nil then
@@ -168,5 +252,6 @@ return {
     end,
     dispose = function(context)
         context.clear_marks()
+        reconciled_line_counts = {}
     end,
 }

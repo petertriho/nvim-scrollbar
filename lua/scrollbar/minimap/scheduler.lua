@@ -29,6 +29,16 @@ local timer_closed = false
 ---@param bufnr integer
 ---@return boolean
 local function owned_buffer(current, bufnr)
+    -- `0` is nvim's current-buffer alias (e.g. OptionSet args); resolve to
+    -- the real buffer before the registry lookup (see scrollbar/scheduler.lua).
+    if bufnr == 0 then
+        bufnr = vim.api.nvim_get_current_buf()
+    end
+    -- Registry-only fast path (see scrollbar/scheduler.lua notes).
+    local fast = current.renderer.is_owned_float_buffer
+    if type(fast) == "function" then
+        return fast(bufnr) == true
+    end
     if type(current.renderer.is_owned_buffer) ~= "function" then
         return false
     end
@@ -40,6 +50,10 @@ end
 ---@param winid integer
 ---@return boolean
 local function owned_window(current, winid)
+    local fast = current.renderer.is_owned_float_window
+    if type(fast) == "function" then
+        return fast(winid) == true
+    end
     if type(winid) ~= "number" or not vim.api.nvim_win_is_valid(winid) then
         return false
     end
@@ -440,6 +454,24 @@ M.setup = function(options)
     for _, event in ipairs(active_config.update.events) do
         events_enabled[event] = true
     end
+    -- Ride the scrollbar scheduler's shared TextChanged dispatch when wired:
+    -- one autocmd invocation per keystroke covers both schedulers. Falls back
+    -- to own registration when the hub is unavailable (standalone setups).
+    if type(options.on_text_change) == "function" then
+        local text_events =
+            filter_events({ "TextChanged", "TextChangedI", "TextChangedP", "TextChangedT" }, events_enabled)
+        if
+            options.on_text_change(function(args)
+                if not event_is_owned(args) then
+                    M.invalidate_buffer(args.buf)
+                end
+            end, text_events)
+        then
+            for _, event in ipairs(text_events) do
+                events_enabled[event] = nil
+            end
+        end
+    end
     create_autocmds(augroup, events_enabled)
 end
 
@@ -462,8 +494,18 @@ M.invalidate_buffer = function(bufnr)
         return 0
     end
 
+    -- Raw window enumeration keeps the per-keystroke cost off the eligibility
+    -- path; flush re-checks eligibility before rendering.
+    local windows
+    if type(current.renderer.windows_showing_buffer) == "function" then
+        local ok, enumerated = pcall(current.renderer.windows_showing_buffer, bufnr)
+        windows = ok and type(enumerated) == "table" and enumerated or source_windows(current, bufnr)
+    else
+        windows = source_windows(current, bufnr)
+    end
+
     local count = 0
-    for _, winid in ipairs(source_windows(current, bufnr)) do
+    for _, winid in ipairs(windows) do
         if not current.dirty[winid] then
             count = count + 1
         end

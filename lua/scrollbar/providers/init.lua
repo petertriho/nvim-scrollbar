@@ -395,6 +395,11 @@ local function make_context(entry)
             end
             table.insert(entry.cleanups, cleanup)
         end,
+        -- Shared TextChanged dispatch hosted by the scheduler (when wired by
+        -- init.lua); providers use it instead of their own augroup so a
+        -- keystroke pays one autocmd invocation. Absent in standalone setups.
+        on_text_change = manager.on_text_change,
+        on_cursor_activity = manager.on_cursor_activity,
         source_windows = function(bufnr)
             return source_windows(entry, bufnr)
         end,
@@ -1040,6 +1045,8 @@ M.setup = function(options)
     manager = {
         config = active_config,
         provider_plan = vim.deepcopy(options.provider_plan or config.get_provider_plan()),
+        on_text_change = type(options.on_text_change) == "function" and options.on_text_change or nil,
+        on_cursor_activity = type(options.on_cursor_activity) == "function" and options.on_cursor_activity or nil,
         consumer_policies = {
             scrollbar = {
                 source_windows = scrollbar_policy.source_windows or options.source_windows or renderer.source_windows,
@@ -1073,49 +1080,74 @@ M.setup = function(options)
     end
 
     manager_group = vim.api.nvim_create_augroup("ScrollbarProviderManager", { clear = true })
-    vim.api.nvim_create_autocmd({ "BufEnter", "TextChanged", "TextChangedI", "TextChangedP" }, {
-        group = manager_group,
-        callback = function(args)
-            if manager == nil then
-                return
+    -- Register manager-owned refresh dispatch only when at least one active
+    -- provider claims it. Built-in providers all own their refresh, so the
+    -- default installation registers no manager autocmds at all; every
+    -- TextChanged* keystroke otherwise paid a registry walk that could not
+    -- dispatch anything.
+    local manager_buffer_refresh = false
+    local manager_window_refresh = false
+    for _, name in ipairs(order) do
+        local entry = registry[name]
+        if is_active(entry) then
+            local ownership = entry.provider.refresh_owner
+            if ownership ~= nil then
+                manager_buffer_refresh = manager_buffer_refresh
+                    or ownership.buffer == "manager"
+                    or ownership.minimap_buffer == "manager"
+                manager_window_refresh = manager_window_refresh
+                    or ownership.window == "manager"
+                    or ownership.minimap_window == "manager"
             end
-            for _, name in ipairs(order) do
-                local entry = registry[name]
-                local ownership = entry.provider.refresh_owner
-                if ownership ~= nil and ownership.buffer == "manager" then
-                    refresh_entry(entry, args.buf)
+        end
+    end
+    if manager_buffer_refresh then
+        vim.api.nvim_create_autocmd({ "BufEnter", "TextChanged", "TextChangedI", "TextChangedP" }, {
+            group = manager_group,
+            callback = function(args)
+                if manager == nil then
+                    return
                 end
-                if ownership ~= nil and ownership.minimap_buffer == "manager" then
-                    refresh_minimap_entry(entry, args.buf)
-                end
-            end
-        end,
-    })
-    vim.api.nvim_create_autocmd({ "BufWinEnter", "WinEnter" }, {
-        group = manager_group,
-        callback = function(args)
-            if manager == nil then
-                return
-            end
-            local winid = vim.api.nvim_get_current_win()
-            for _, name in ipairs(order) do
-                local entry = registry[name]
-                local ownership = entry.provider.refresh_owner
-                if ownership ~= nil and ownership.window == "manager" then
-                    if args.event == "BufWinEnter" then
-                        store.clear_window(entry.provider.name, winid)
+                for _, name in ipairs(order) do
+                    local entry = registry[name]
+                    local ownership = entry.provider.refresh_owner
+                    if ownership ~= nil and ownership.buffer == "manager" then
+                        refresh_entry(entry, args.buf)
                     end
-                    refresh_window_entry(entry, winid)
-                end
-                if ownership ~= nil and ownership.minimap_window == "manager" then
-                    if args.event == "BufWinEnter" then
-                        store.clear_minimap_points(entry.provider.name, winid)
+                    if ownership ~= nil and ownership.minimap_buffer == "manager" then
+                        refresh_minimap_entry(entry, args.buf)
                     end
-                    refresh_minimap_window_entry(entry, winid)
                 end
-            end
-        end,
-    })
+            end,
+        })
+    end
+    if manager_window_refresh then
+        vim.api.nvim_create_autocmd({ "BufWinEnter", "WinEnter" }, {
+            group = manager_group,
+            callback = function(args)
+                if manager == nil then
+                    return
+                end
+                local winid = vim.api.nvim_get_current_win()
+                for _, name in ipairs(order) do
+                    local entry = registry[name]
+                    local ownership = entry.provider.refresh_owner
+                    if ownership ~= nil and ownership.window == "manager" then
+                        if args.event == "BufWinEnter" then
+                            store.clear_window(entry.provider.name, winid)
+                        end
+                        refresh_window_entry(entry, winid)
+                    end
+                    if ownership ~= nil and ownership.minimap_window == "manager" then
+                        if args.event == "BufWinEnter" then
+                            store.clear_minimap_points(entry.provider.name, winid)
+                        end
+                        refresh_minimap_window_entry(entry, winid)
+                    end
+                end
+            end,
+        })
+    end
 
     for _, name in ipairs(order) do
         local entry = registry[name]

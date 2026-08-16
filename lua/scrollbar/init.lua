@@ -98,10 +98,12 @@ M.setup = function(overrides)
     mouse.setup({ config = active_config, renderer = renderer, scheduler = scheduler })
 
     -- Both store consumers must be subscribed before provider setup publishes.
-    minimap.setup()
+    minimap.setup(nil, { on_text_change = scheduler.subscribe_text_change })
     providers.setup({
         config = active_config,
         provider_plan = provider_plan,
+        on_text_change = scheduler.subscribe_text_change,
+        on_cursor_activity = scheduler.subscribe_cursor_activity,
         consumer_policies = {
             scrollbar = {
                 source_windows = renderer.source_windows,

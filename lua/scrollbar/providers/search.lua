@@ -219,6 +219,24 @@ local function request_state(bufnr)
     return state
 end
 
+-- TextChanged autocmds are attached only while at least one buffer holds
+-- pending or completed search state. With no live search they would run on
+-- every keystroke only to prove there is nothing to refresh.
+local text_change_group ---@type integer?
+local text_change_attached = false
+
+local reconcile_text_change_events ---@type fun(context: ScrollbarProviderContext)
+
+---@return boolean
+local function search_state_active()
+    for _, state in pairs(request_states) do
+        if state.pending ~= nil or state.completed_signature ~= nil then
+            return true
+        end
+    end
+    return false
+end
+
 ---@param bufnr integer
 local function cancel_request(bufnr)
     local state = request_state(bufnr)
@@ -234,6 +252,7 @@ local function clear_buffer(context, bufnr)
     state.completed_signature = nil
     state.completed_changedtick = nil
     context.clear_marks(bufnr)
+    reconcile_text_change_events(context)
 end
 
 ---@param context ScrollbarProviderContext
@@ -245,6 +264,7 @@ local function clear_all(context)
         state.completed_changedtick = nil
     end
     context.clear_marks()
+    reconcile_text_change_events(context)
 end
 
 ---@param request ScrollbarSearchRequest
@@ -424,6 +444,7 @@ local function request_refresh(context, bufnr, pattern, mode, ignore_visibility)
     if pattern == "" then
         if mode == "incsearch" then
             cancel_request(bufnr)
+            reconcile_text_change_events(context)
             return false
         end
         clear_buffer(context, bufnr)
@@ -466,6 +487,9 @@ local function request_refresh(context, bufnr, pattern, mode, ignore_visibility)
     state.generation = state.generation + 1
     pending.generation = state.generation
     state.pending = pending
+    if not text_change_attached then
+        reconcile_text_change_events(context)
+    end
 
     local callback = function()
         execute_request(context, bufnr, pending.generation)
@@ -478,6 +502,27 @@ local function request_refresh(context, bufnr, pattern, mode, ignore_visibility)
         vim.defer_fn(callback, EDIT_DEBOUNCE_MS)
     end
     return true
+end
+
+---@param context ScrollbarProviderContext
+reconcile_text_change_events = function(context)
+    local needed = search_state_active()
+    if needed == text_change_attached then
+        return
+    end
+    if not needed then
+        pcall(vim.api.nvim_clear_autocmds, { group = text_change_group })
+        text_change_attached = false
+        return
+    end
+    vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI", "TextChangedP" }, {
+        group = text_change_group,
+        callback = function(args)
+            request_refresh(context, args.buf, vim.fn.getreg("/"), "edit")
+        end,
+        desc = "Refresh search marks after edits",
+    })
+    text_change_attached = true
 end
 
 ---@param context ScrollbarProviderContext
@@ -534,6 +579,8 @@ function M.setup(context)
     end
 
     local group = context.create_augroup("events")
+    text_change_group = context.create_augroup("text_change")
+    text_change_attached = false
     vim.api.nvim_create_autocmd("CmdlineEnter", {
         group = group,
         pattern = { "/", "?" },
@@ -595,12 +642,6 @@ function M.setup(context)
             request_refresh(context, args.buf, vim.fn.getreg("/"), "accepted")
         end,
     })
-    vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI", "TextChangedP" }, {
-        group = group,
-        callback = function(args)
-            request_refresh(context, args.buf, vim.fn.getreg("/"), "edit")
-        end,
-    })
     vim.api.nvim_create_autocmd({ "BufDelete", "BufWipeout" }, {
         group = group,
         callback = function(args)
@@ -609,6 +650,7 @@ function M.setup(context)
             if commandline ~= nil and commandline.bufnr == args.buf then
                 commandline = nil
             end
+            reconcile_text_change_events(context)
         end,
     })
     vim.api.nvim_create_autocmd({ "CursorMoved", "SafeState" }, {
@@ -661,6 +703,8 @@ function M.dispose(context)
     timing_hook = nil
     commandline = nil
     request_states = {}
+    text_change_group = nil
+    text_change_attached = false
 end
 
 return M

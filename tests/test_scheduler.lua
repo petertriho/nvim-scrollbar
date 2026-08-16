@@ -1082,6 +1082,7 @@ T["reconciles dynamic source-policy transitions through scheduler enumeration"] 
         local filetype_state = assert(renderer.get_state(source_win))
         vim.bo[source_buf].filetype = "blocked"
         vim.api.nvim_exec_autocmds("TextChanged", { buffer = source_buf })
+        scheduler.flush()
         local filetype_closed = closed(filetype_state)
         vim.bo[source_buf].filetype = ""
 
@@ -1089,6 +1090,7 @@ T["reconciles dynamic source-policy transitions through scheduler enumeration"] 
         local max_lines_state = assert(renderer.get_state(source_win))
         vim.api.nvim_buf_set_lines(source_buf, -1, -1, false, { "four" })
         vim.api.nvim_exec_autocmds("TextChanged", { buffer = source_buf })
+        scheduler.flush()
         local max_lines_closed = closed(max_lines_state)
         vim.api.nvim_buf_set_lines(source_buf, 3, -1, false, {})
 
@@ -1098,6 +1100,7 @@ T["reconciles dynamic source-policy transitions through scheduler enumeration"] 
         vim.api.nvim_buf_set_var(owned_buf, "scrollbar_owned", true)
         vim.api.nvim_win_set_buf(source_win, owned_buf)
         vim.api.nvim_exec_autocmds("BufWinEnter", { buffer = owned_buf })
+        scheduler.flush()
         local owned_closed = closed(owned_state)
         vim.api.nvim_win_set_buf(source_win, source_buf)
         vim.api.nvim_set_current_win(source_win)
