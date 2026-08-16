@@ -538,6 +538,16 @@ M.setup = function(options)
     text_change_subscribers = {}
     cursor_activity_subscribers = {}
     create_autocmds(augroup, events_enabled)
+    -- A pending update timer firing during nvim teardown re-enters rendering
+    -- on half-torn-down state (nvim 0.13 runs scheduled Lua callbacks in
+    -- proc_teardown; a redraw there crashes in grid_clear_line). Disposing on
+    -- VimLeavePre stops the timer and removes this augroup first.
+    vim.api.nvim_create_autocmd("VimLeavePre", {
+        group = augroup,
+        callback = function()
+            M.dispose()
+        end,
+    })
     local text_events = {}
     for _, event in ipairs({ "TextChanged", "TextChangedI", "TextChangedP", "TextChangedT" }) do
         if events_enabled[event] then

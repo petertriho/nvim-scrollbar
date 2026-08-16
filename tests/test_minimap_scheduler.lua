@@ -549,8 +549,8 @@ T["narrower update events list registers fewer autocmds"] = function()
         }
     end)
 
-    expect.equality(result.default_count, 16)
-    expect.equality(result.narrow_count, 2)
+    expect.equality(result.default_count, 17)
+    expect.equality(result.narrow_count, 3)
 end
 
 T["interval_ms coalesces repeated invalidations into one flush"] = function()
