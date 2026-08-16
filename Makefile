@@ -6,7 +6,7 @@ MINI_VERSION := v0.18.0
 MINI_DIR := deps/mini.nvim
 LUA_PATHS := lua tests scripts benchmarks
 
-.PHONY: test-deps test test-file benchmark benchmark-render benchmark-search benchmark-marks benchmark-minimap benchmark-typing benchmark-worker format format-check lint typecheck ci
+.PHONY: test-deps test test-file benchmark benchmark-render benchmark-search benchmark-marks benchmark-minimap benchmark-typing benchmark-worker benchmark-providers format format-check lint typecheck ci
 
 test-deps:
 	@if [ ! -d "$(MINI_DIR)/.git" ]; then \
@@ -46,6 +46,9 @@ benchmark-typing:
 
 benchmark-worker:
 	$(NVIM) --headless --noplugin -u NONE -l benchmarks/worker.lua
+
+benchmark-providers:
+	$(NVIM) --headless --noplugin -u NONE -l benchmarks/providers.lua
 
 format:
 	$(STYLUA) $(LUA_PATHS)
