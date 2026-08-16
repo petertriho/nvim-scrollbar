@@ -39,12 +39,14 @@ M.handle_geometry = function(viewport_start, viewport_end, total_extent, height)
     return { first_row = first_row, last_row = math.max(first_row, last_row) }
 end
 
----@param input ScrollbarNormalizedMarkGeometryInput
----@return integer[]
 -- Smallest line value whose display row is >= r under (extent, height);
 -- math.huge when unreachable. Row bands are contiguous line ranges, so a
 -- mark can only change rows when it lies in the symmetric difference of the
 -- old and new band edges — narrow bands around moved boundaries.
+---@param r number Display row
+---@param extent number Total mapped extent
+---@param height number Track height
+---@return number Smallest mapped line value, or math.huge when unreachable
 local function row_threshold(r, extent, height)
     if extent <= 1 then
         return math.huge
@@ -60,6 +62,7 @@ local function row_threshold(r, extent, height)
     return threshold
 end
 
+---@param input ScrollbarNormalizedMarkGeometryInput
 M.normalized_mark_rows = function(input)
     local total_extent = math.max(0, input.line_count)
     local marks = input.marks
