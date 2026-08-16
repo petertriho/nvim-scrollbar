@@ -29,6 +29,10 @@ for index = 1, mark_count do
         type = "Misc",
     }
 end
+require("scrollbar.providers").register({
+    name = "benchmark",
+    targets = { scrollbar = true },
+})
 assert(require("scrollbar.store").set("benchmark", source_buf, marks))
 
 local function pack(...)
@@ -246,7 +250,7 @@ local function measure_phases(geometry, name, windows, options)
     local function profiled_pass()
         local sample = instrumentation.start_sample()
         local started = vim.uv.hrtime()
-        local discovered = renderer.source_windows(source_buf)
+        local discovered = renderer.source_windows(vim.api.nvim_win_get_buf(windows[1]))
         instrumentation.record("source-window discovery", (vim.uv.hrtime() - started) / 1000000)
         assert(#discovered == #windows, "source-window fixture changed during phase measurement")
         render_pass(windows)
@@ -293,8 +297,25 @@ local first_win = vim.api.nvim_get_current_win()
 vim.api.nvim_win_set_cursor(first_win, { 1, 0 })
 vim.cmd("normal! zt")
 measure_case("line", "1 window", { first_win })
+measure_case("line", "1 window text insert", { first_win }, {
+    mutate = function()
+        vim.api.nvim_buf_set_lines(source_buf, 25000, 25000, false, { "INSERTED" })
+    end,
+})
 measure_case("screen", "1 window", { first_win })
 measure_case("screen", "1 window steady", { first_win })
+measure_case("screen", "1 window scrolled", { first_win }, {
+    mutate = function()
+        vim.api.nvim_win_call(first_win, function()
+            vim.cmd("normal! \\<C-e>")
+        end)
+    end,
+})
+measure_case("screen", "1 window text edit", { first_win }, {
+    mutate = function()
+        vim.api.nvim_buf_set_text(source_buf, 25000, 0, 25000, 8, { "CHANGED!" })
+    end,
+})
 measure_case("screen", "1 window invalidated", { first_win }, {
     mutate = function()
         vim.wo.number = not vim.wo.number
@@ -311,6 +332,49 @@ vim.api.nvim_win_set_cursor(third_win, { line_count - 100, 0 })
 vim.cmd("normal! zt")
 measure_case("line", "3 windows", { first_win, second_win, third_win })
 measure_case("screen", "3 windows", { first_win, second_win, third_win })
+
+-- Wrapped fixture: every 40th line wraps at the benchmark width, exercising
+-- the non-uniform screen-geometry pipeline (nvim's default has wrap enabled).
+local wrapped_buf = vim.api.nvim_create_buf(false, true)
+local wrapped_lines = {}
+for index = 1, line_count do
+    if index % 40 == 0 then
+        wrapped_lines[index] = string.rep("w", 200)
+    else
+        wrapped_lines[index] = "benchmark line " .. index
+    end
+end
+vim.api.nvim_buf_set_lines(wrapped_buf, 0, -1, false, wrapped_lines)
+vim.cmd("split")
+local wrapped_win = vim.api.nvim_get_current_win()
+vim.api.nvim_win_set_buf(wrapped_win, wrapped_buf)
+vim.api.nvim_win_set_width(wrapped_win, 110)
+vim.api.nvim_win_set_height(wrapped_win, 30)
+vim.wo[wrapped_win].wrap = true
+vim.api.nvim_win_set_cursor(wrapped_win, { 1, 0 })
+local wrapped_marks = {}
+for index = 1, mark_count do
+    wrapped_marks[index] = {
+        line = math.floor((index - 1) * (line_count - 1) / (mark_count - 1)),
+        text = "-",
+        type = "Misc",
+    }
+end
+assert(require("scrollbar.store").set("benchmark", wrapped_buf, wrapped_marks))
+vim.api.nvim_win_set_cursor(wrapped_win, { 1, 0 })
+measure_case("screen", "1 window wrapped steady", { wrapped_win })
+measure_case("screen", "1 window wrapped scroll", { wrapped_win }, {
+    mutate = function()
+        vim.api.nvim_win_call(wrapped_win, function()
+            vim.cmd("normal! \\<C-e>")
+        end)
+    end,
+})
+measure_case("screen", "1 window wrapped text edit", { wrapped_win }, {
+    mutate = function()
+        vim.api.nvim_buf_set_text(wrapped_buf, 25000, 0, 25000, 8, { "CHANGED!" })
+    end,
+})
 
 io.write("## End-to-end renderer\n\n")
 io.write("| Geometry | Case | Median (p50) | p95 | Maximum |\n")
@@ -349,5 +413,7 @@ for _, result in ipairs(phase_results) do
     end
 end
 
+pcall(vim.api.nvim_win_close, wrapped_win, true)
+pcall(vim.api.nvim_buf_delete, wrapped_buf, { force = true })
 require("scrollbar.renderer").dispose()
 vim.cmd("qa!")
