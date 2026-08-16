@@ -1,7 +1,8 @@
 local M = {
     NAME_PREFIX = "Scrollbar",
-    NAME_SUFFIX = "Handle",
-    BUF_VAR_KEY = "scrollbar_marks",
+    NAME_SUFFIX = "Thumb",
+    LEGACY_NAME_SUFFIX = "Handle",
+    NAME_PRESSED_SUFFIX = "Pressed",
 }
 
 return M

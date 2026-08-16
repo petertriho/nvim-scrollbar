@@ -1,40 +1,50 @@
 local const = require("scrollbar.const")
 
 local M = {}
+local GENERATED_PREFIX = const.NAME_PREFIX .. "Generated."
 
-M.throttle = function(fn, time_ms)
-    local timer = vim.loop.new_timer()
-    local running = false
+M.get_highlight_name = function(mark_type, thumb, pressed, prefix)
+    return string.format(
+        "%s%s%s%s",
+        prefix or const.NAME_PREFIX,
+        mark_type,
+        thumb and const.NAME_SUFFIX or "",
+        pressed and const.NAME_PRESSED_SUFFIX or ""
+    )
+end
 
-    return function(...)
-        if not running then
-            timer:start(time_ms, 0, function()
-                running = false
-            end)
-            running = true
-            pcall(vim.schedule_wrap(fn), select(1, ...))
-        end
+---@param active_config ScrollbarConfig
+---@param variant_id integer
+---@param automatic boolean
+---@return ScrollbarHighlightGroups
+M.get_highlight_groups = function(active_config, variant_id, automatic)
+    local prefix = automatic and variant_id > 0 and (const.NAME_PREFIX .. "Profile" .. variant_id .. ".")
+        or const.NAME_PREFIX
+    local marks = {}
+    for mark_type in pairs(active_config.marks) do
+        marks[mark_type] = {
+            mark = M.get_highlight_name(mark_type, false, false, prefix),
+            thumb = M.get_highlight_name(mark_type, true, false, prefix),
+            thumb_pressed = M.get_highlight_name(mark_type, true, true, prefix),
+        }
     end
+    return {
+        base = "ScrollbarBase",
+        track = M.get_highlight_name("Track", false, false, prefix),
+        thumb = M.get_highlight_name("", true, false, prefix),
+        thumb_pressed = M.get_highlight_name("", true, true, prefix),
+        marks = marks,
+    }
 end
 
-M.get_scrollbar_marks = function(bufnr)
-    local ok, scrollbar_marks = pcall(function()
-        return vim.api.nvim_buf_get_var(bufnr, const.BUF_VAR_KEY)
-    end)
-
-    if not ok then
-        scrollbar_marks = {}
-    end
-
-    return scrollbar_marks
-end
-
-M.set_scrollbar_marks = function(bufnr, scrollbar_marks)
-    vim.api.nvim_buf_set_var(bufnr, const.BUF_VAR_KEY, scrollbar_marks)
-end
-
-M.get_highlight_name = function(mark_type, handle)
-    return string.format("%s%s%s", const.NAME_PREFIX, mark_type, handle and const.NAME_SUFFIX or "")
+M.get_legacy_highlight_name = function(mark_type, thumb, pressed)
+    return string.format(
+        "%s%s%s%s",
+        const.NAME_PREFIX,
+        mark_type,
+        thumb and const.LEGACY_NAME_SUFFIX or "",
+        pressed and const.NAME_PRESSED_SUFFIX or ""
+    )
 end
 
 M.to_hex_color = function(rgb_color)
@@ -49,207 +59,119 @@ M.highlight_to_hex_color = function(hl, property, fallback_hl, fallback_hex)
     end
 
     local hex_color = fallback_hex
-
     if highlight_ok then
         local color = highlight[property]
-
         if color then
             local hex_ok
             hex_ok, hex_color = pcall(M.to_hex_color, color)
-
             if not hex_ok then
                 hex_color = fallback_hex
             end
         end
     end
-
     return hex_color
 end
 
+local function background_highlight(source, blend, fallback_hl, fallback_hex)
+    if type(source) == "table" then
+        local highlight = vim.deepcopy(source)
+        if blend ~= nil and highlight.blend == nil then
+            highlight.blend = blend
+        end
+        return highlight
+    end
+
+    local highlight = {
+        bg = M.highlight_to_hex_color(source, "background", fallback_hl, fallback_hex),
+    }
+    if blend ~= nil then
+        highlight.blend = blend
+    end
+    return highlight
+end
+
+local function thumb_highlight(properties)
+    return background_highlight(properties.highlight, properties.blend, "PmenuThumb", "#ffffff")
+end
+
+local function mark_highlight(properties)
+    if type(properties.highlight) == "table" then
+        return vim.deepcopy(properties.highlight)
+    end
+
+    return {
+        fg = M.highlight_to_hex_color(properties.highlight, "foreground", "Normal", "#000000"),
+    }
+end
+
+local function generated_name(public_name)
+    return GENERATED_PREFIX .. public_name:sub(#const.NAME_PREFIX + 1)
+end
+
+local function set_default_link(name, target)
+    vim.api.nvim_set_hl(0, name, { link = target, default = true })
+end
+
+local function set_root_highlight(public_name, definition)
+    local private_name = generated_name(public_name)
+    vim.api.nvim_set_hl(0, private_name, definition)
+    set_default_link(public_name, private_name)
+end
+
+---@param active_config ScrollbarConfig
+---@param root boolean
+local function set_variant_highlights(active_config, root)
+    local groups = active_config.highlights
+    local track = background_highlight(active_config.track.highlight, nil, "PmenuSbar", "#000000")
+    local thumb = thumb_highlight(active_config.thumb)
+    local pressed = background_highlight("PmenuSel", active_config.thumb.blend, "PmenuThumb", "#ffffff")
+
+    if root then
+        set_root_highlight(groups.track, track)
+        set_root_highlight(groups.thumb, thumb)
+        set_root_highlight(groups.thumb_pressed, pressed)
+    else
+        vim.api.nvim_set_hl(0, groups.track, track)
+        vim.api.nvim_set_hl(0, groups.thumb, thumb)
+        vim.api.nvim_set_hl(0, groups.thumb_pressed, pressed)
+    end
+    for mark_type, properties in pairs(active_config.marks) do
+        local mark_groups = groups.marks[mark_type]
+        local mark = mark_highlight(properties)
+        local overlap = vim.tbl_deep_extend("force", {}, thumb, mark)
+        local pressed_overlap = vim.tbl_deep_extend("force", {}, pressed, mark)
+        if root then
+            set_root_highlight(mark_groups.mark, mark)
+            set_root_highlight(mark_groups.thumb, overlap)
+            set_root_highlight(mark_groups.thumb_pressed, pressed_overlap)
+        else
+            vim.api.nvim_set_hl(0, mark_groups.mark, mark)
+            vim.api.nvim_set_hl(0, mark_groups.thumb, overlap)
+            vim.api.nvim_set_hl(0, mark_groups.thumb_pressed, pressed_overlap)
+        end
+    end
+    if root then
+        set_default_link(M.get_legacy_highlight_name("", true), groups.thumb)
+        set_default_link(M.get_legacy_highlight_name("", true, true), groups.thumb_pressed)
+        for mark_type in pairs(active_config.marks) do
+            local mark_groups = groups.marks[mark_type]
+            set_default_link(M.get_legacy_highlight_name(mark_type, true), mark_groups.thumb)
+            set_default_link(M.get_legacy_highlight_name(mark_type, true, true), mark_groups.thumb_pressed)
+        end
+    end
+end
+
 M.set_highlights = function()
-    local config = require("scrollbar.config").get()
-
-    local handle_blend = config.handle.blend or 30
-    local handle_color = config.handle.color
-        or M.highlight_to_hex_color(config.handle.highlight, "background", "CursorColumn", "#ffffff")
-    local handle_color_nr = config.handle.color_nr
-    local handle_gui = config.handle.gui or "NONE"
-    local handle_cterm = config.handle.cterm or "NONE"
-
-    -- ScrollbarHandle
-    vim.cmd(
-        string.format(
-            "highlight %s ctermfg=%s ctermbg=%s guifg=%s guibg=%s blend=%s",
-            M.get_highlight_name("", true),
-            "NONE",
-            handle_color_nr or 15,
-            "NONE",
-            handle_color or "white",
-            handle_blend
-        )
-    )
-
-    for mark_type, properties in pairs(config.marks) do
-        local type_color = properties.color
-            or M.highlight_to_hex_color(properties.highlight, "foreground", "Normal", "#000000")
-        local type_color_nr = properties.color_nr
-        local type_gui = properties.gui or "NONE"
-        local type_cterm = properties.cterm or "NONE"
-
-        -- Scrollbar<MarkType>
-        vim.cmd(
-            string.format(
-                "highlight %s cterm=%s ctermfg=%s ctermbg=%s gui=%s guifg=%s guibg=%s",
-                M.get_highlight_name(mark_type, false),
-                type_cterm,
-                type_color_nr or 0,
-                "NONE",
-                type_gui,
-                type_color or "black",
-                "NONE"
-            )
-        )
-
-        -- Scrollbar<MarkType>Handle
-        vim.cmd(
-            string.format(
-                "highlight %s cterm=%s ctermfg=%s ctermbg=%s gui=%s guifg=%s guibg=%s blend=%s",
-                M.get_highlight_name(mark_type, true),
-                type_cterm,
-                type_color_nr or 0,
-                handle_color_nr or 15,
-                type_gui,
-                type_color,
-                handle_color,
-                handle_blend
-            )
-        )
-    end
-end
-
-M.set_next_level_text = function(mark)
-    local config = require("scrollbar.config").get()
-
-    local next_level = (mark.level or 0) + 1
-    if config.marks[mark.type].text[next_level] then
-        mark.text = config.marks[mark.type].text[next_level]
-    end
-end
-
-M.toggle = function()
-    local config = require("scrollbar.config").get()
-    config.show = not config.show
-    require("scrollbar").render()
-end
-
-M.show = function()
-    local config = require("scrollbar.config").get()
-    config.show = true
-    require("scrollbar").render()
-end
-
-M.hide = function()
-    local config = require("scrollbar.config").get()
-    config.show = false
-    require("scrollbar").render()
-end
-
-M.set_commands = function()
-    vim.cmd([[
-        command! ScrollbarToggle lua require("scrollbar.utils").toggle()
-        command! ScrollbarShow lua require("scrollbar.utils").show()
-        command! ScrollbarHide lua require("scrollbar.utils").hide()
-    ]])
-end
-
-M.get_folds = function()
-    local folds = {}
-
-    if M.has_folds() then
-        local total_lines = vim.api.nvim_buf_line_count(0)
-
-        local cur_line = 0
-        while cur_line < total_lines do
-            cur_line = cur_line + 1
-
-            local fold_closed_end = vim.fn.foldclosedend(cur_line)
-
-            if fold_closed_end ~= -1 then
-                table.insert(folds, { cur_line, fold_closed_end })
-
-                cur_line = fold_closed_end
-            end
-        end
+    local config = require("scrollbar.config")
+    local active_config = config.get()
+    if not active_config.set_highlights then
+        return
     end
 
-    return folds
-end
-
-M.get_surrounding_fold = function(folds, line_nr)
-    local sur_fold = nil
-
-    if folds == nil then
-        return nil
+    set_root_highlight(active_config.highlights.base, {})
+    for _, variant in ipairs(config.get_variants()) do
+        set_variant_highlights(variant.config, variant.id == 0)
     end
-
-    for _, fold in pairs(folds) do
-        if fold[1] < line_nr and fold[2] >= line_nr then
-            return fold
-        end
-    end
-
-    return sur_fold
-end
-
-M.find_affected_folds = function(folds, end_nr)
-    local aff_folds = {}
-
-    local cur_line = vim.fn.line("w0")
-    while cur_line < end_nr do
-        cur_line = cur_line + 1
-
-        local sur_fold = M.get_surrounding_fold(folds, cur_line)
-
-        if sur_fold ~= nil then
-            table.insert(aff_folds, sur_fold)
-
-            cur_line = sur_fold[2]
-        end
-    end
-
-    return aff_folds
-end
-
-M.fix_invisible_lines = function(folds, rel_line_nr, offset)
-    local abs_line_nr = rel_line_nr + offset
-
-    for _, sur_fold in pairs(folds) do
-        -- abs_line_nr in fold
-        if sur_fold[1] < abs_line_nr and sur_fold[1] >= vim.fn.line("w0") then
-            rel_line_nr = rel_line_nr + (sur_fold[2] - sur_fold[1])
-            abs_line_nr = abs_line_nr + (sur_fold[2] - sur_fold[1])
-        end
-    end
-
-    return rel_line_nr
-end
-
-M.get_scroll_offset_diff = function(folds, abs_line_nr)
-    local aff_folds = M.find_affected_folds(folds, abs_line_nr)
-
-    local diff = 0
-    for _, sur_fold in pairs(aff_folds) do
-        -- abs_line_nr in fold
-        if sur_fold[1] < abs_line_nr then
-            diff = diff + (sur_fold[2] - sur_fold[1])
-        end
-    end
-
-    return diff
-end
-
-M.has_folds = function()
-    return vim.wo.foldenable
 end
 
 return M
