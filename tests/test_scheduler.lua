@@ -1402,18 +1402,31 @@ T["OPTION_PATTERNS list matches the mirrored copy in layout.lua"] = function()
         end
 
         local scheduler_patterns = find_upvalue_named(require("scrollbar.scheduler"), "OPTION_PATTERNS")
-        local layout_patterns = find_upvalue_named(require("scrollbar.layout"), "OPTION_PATTERNS")
+        local layout_patterns = find_upvalue_named(require("scrollbar.layout"), "EXTENT_OPTION_PATTERNS")
+
+        local scheduler_set = {}
+        for _, name in ipairs(scheduler_patterns or {}) do
+            scheduler_set[name] = true
+        end
+        local missing_in_scheduler = {}
+        for _, name in ipairs(layout_patterns or {}) do
+            if not scheduler_set[name] then
+                missing_in_scheduler[#missing_in_scheduler + 1] = name
+            end
+        end
 
         return {
             scheduler = scheduler_patterns,
             layout = layout_patterns,
-            equal = vim.deep_equal(scheduler_patterns, layout_patterns),
+            layout_covered = next(missing_in_scheduler) == nil,
         }
     end)
 
-    expect.equality(#result.scheduler, #result.layout)
-    expect.equality(result.equal, true)
-    expect.equality(result.scheduler, result.layout)
+    expect.equality(#result.scheduler > 0, true)
+    expect.equality(#result.layout > 0, true)
+    -- The scheduler autocmd patterns must stay a superset of the layout
+    -- extent-option subset so every extent-affecting change schedules a render.
+    expect.equality(result.layout_covered, true)
 end
 
 T["default update events register the complete autocmd set"] = function()

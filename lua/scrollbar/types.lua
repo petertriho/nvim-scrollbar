@@ -442,6 +442,7 @@
 ---@field source_win integer
 ---@field height integer Track height in rows
 ---@field marks ScrollbarMark[]
+---@field marks_sorted? boolean Marks already ordered per provider by (line, text); skips the dedup/sort pass
 ---@field compact_search? ScrollbarCompactSearch Private built-in search matches projected into compact_mark_rows
 
 ---@class ScrollbarGeometry
@@ -467,9 +468,11 @@
 ---@field height integer
 ---@field line_count? integer Logical line count required by compact line-mode search
 ---@field container_width? integer Placement container width; defaults to normalized layout width
----@field geometry { mark_rows: integer[] }
+---@field geometry { mark_rows: integer[], compact_mark_rows?: integer[] }
 ---@field marks ScrollbarLayoutMark[]
+---@field marks_sorted? boolean Marks already ordered per provider by (line, text); skips grouping sorts
 ---@field compact_search? ScrollbarCompactSearch Private built-in search matches
+---@field previous? { layer: table, changed: table[] } Previous layer plus the {index, old_row} shift list for incremental row rebuilds
 
 ---@class ScrollbarPlacedMark
 ---@field text string
@@ -550,6 +553,7 @@
 ---@field is_visible? fun(): boolean
 ---@field is_owned_buffer? fun(bufnr: integer): boolean
 ---@field is_owned_window? fun(winid: integer): boolean
+---@field windows_showing_buffer? fun(bufnr: integer): integer[]
 
 ---@class ScrollbarSchedulerOptions
 ---@field config? ScrollbarConfig

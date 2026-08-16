@@ -2328,17 +2328,17 @@ T["caches line mark work while keeping handle geometry current and invalidating 
         after_noop = 1,
         after_buffer_marks = 2,
         after_window_marks = 3,
-        after_line_count = 4,
-        after_container = 5,
-        after_resize = 6,
-        after_config = 7,
-        after_visual_config = 7,
-        after_mark_text = 8,
-        after_mark_priority = 9,
-        after_layout = 10,
-        after_expansion_cap = 11,
-        after_replacement = 12,
-        after_dispose = 13,
+        after_line_count = 3,
+        after_container = 4,
+        after_resize = 5,
+        after_config = 6,
+        after_visual_config = 6,
+        after_mark_text = 7,
+        after_mark_priority = 8,
+        after_layout = 9,
+        after_expansion_cap = 10,
+        after_replacement = 11,
+        after_dispose = 12,
         handle_moved = true,
         container_changed = true,
         resize_reused_flattened = true,
@@ -2434,9 +2434,11 @@ T["profile switches compare explicit cache inputs and invalidate only their sour
         priority = 5,
         cap4 = 6,
         cap5 = 7,
-        screen = 7,
-        after_screen = 8,
-        after_second = 8,
+        -- Screen geometry now flows through the same cached mark-layer path
+        -- as line geometry.
+        screen = 8,
+        after_screen = 9,
+        after_second = 9,
     })
 end
 
@@ -2526,7 +2528,7 @@ T["direct config sets validate retained line caches by selected input"] = functi
     })
 end
 
-T["screen renders reuse flattened marks but always repeat text-height measurements"] = function()
+T["screen renders reuse flattened marks and skip text-height measurements while uniform"] = function()
     local child = new_child()
     local result = child.lua_func(function(base_config)
         local lines = {}
@@ -2593,10 +2595,12 @@ T["screen renders reuse flattened marks but always repeat text-height measuremen
 
     expect.equality(result.same_marks, true)
     expect.equality(result.first_measurements > 0, true)
-    expect.equality(result.second_measurements > 0, true)
+    -- Uniform windows (no wraps, no closed folds) re-verify extents on a time
+    -- interval only, so a same-buffer scroll renders without measurements.
+    expect.equality(result.second_measurements, 0)
     expect.equality(result.compose_inputs, {
-        { container_width = result.source_width, has_mark_layer = false },
-        { container_width = result.source_width, has_mark_layer = false },
+        { container_width = result.source_width, has_mark_layer = true },
+        { container_width = result.source_width, has_mark_layer = true },
     })
 end
 

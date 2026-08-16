@@ -52,12 +52,12 @@ require("scrollbar.config").set({
 })
 require("scrollbar").setup({})
 
-local function spread(count, line_count, type, text)
+local function spread(count, total_lines, mark_type, text)
     local marks = {}
     for index = 1, count do
         marks[index] = {
-            line = math.floor((index - 1) * (line_count - 1) / math.max(1, count - 1)),
-            type = type,
+            line = math.floor((index - 1) * (total_lines - 1) / math.max(1, count - 1)),
+            type = mark_type,
             text = text,
         }
     end
