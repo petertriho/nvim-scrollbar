@@ -1504,7 +1504,9 @@ T["default update events register the complete autocmd set"] = function()
         return {
             missing = missing,
             event_count = vim.tbl_count(event_set),
-            expected_count = #expected,
+            -- VimLeavePre is registered unconditionally for shutdown
+            -- teardown, independent of update.events.
+            expected_count = #expected + 1,
         }
     end)
 
@@ -1589,9 +1591,55 @@ T["narrower update events list registers fewer autocmds"] = function()
         }
     end)
 
-    expect.equality(result.default_count, 21)
-    expect.equality(result.narrow_count, 3)
+    expect.equality(result.default_count, 22)
+    expect.equality(result.narrow_count, 4)
     expect.equality(result.narrow_count < result.default_count, true)
+end
+
+T["VimLeavePre disposes the scheduler before teardown"] = function()
+    local child = new_child()
+    local result = child.lua_func(function()
+        local config = require("scrollbar.config")
+        local scheduler = require("scrollbar.scheduler")
+        local setup_config = config.set({
+            scrollbar = {
+                excluded_buftypes = {},
+                excluded_filetypes = {},
+                update = { interval_ms = 0 },
+            },
+        })
+        scheduler.setup({
+            config = setup_config,
+            renderer = {
+                source_windows = function()
+                    return {}
+                end,
+                is_source_window = function()
+                    return false
+                end,
+                is_buffer_eligible = function()
+                    return false
+                end,
+                is_owned_buffer = function()
+                    return false
+                end,
+                is_owned_window = function()
+                    return false
+                end,
+                render = function() end,
+            },
+        })
+        local before = scheduler.status().setup
+        vim.api.nvim_exec_autocmds("VimLeavePre", {})
+        local after = scheduler.status().setup
+        return {
+            before = before,
+            after = after,
+        }
+    end)
+
+    expect.equality(result.before, true)
+    expect.equality(result.after, false)
 end
 
 return T

@@ -473,6 +473,14 @@ M.setup = function(options)
         end
     end
     create_autocmds(augroup, events_enabled)
+    -- VimLeavePre dispose: see scrollbar/scheduler.lua notes (pending update
+    -- timers firing during nvim teardown crash on re-entrant redraw).
+    vim.api.nvim_create_autocmd("VimLeavePre", {
+        group = augroup,
+        callback = function()
+            M.dispose()
+        end,
+    })
 end
 
 ---@param winid integer
