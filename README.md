@@ -3,6 +3,12 @@
   <h5>Extensible Neovim Scrollbar</h5>
 </div>
 
+> [!IMPORTANT]
+> On 2026-11-16, v2 replaces v1 on the `main` branch. v2 changes the `setup()`
+> options, removes the `scrollbar.handlers` modules, and needs Neovim 0.11 or
+> newer. To keep v1, pin the `v1` branch or the `v1.0.0` tag. See
+> [#121](https://github.com/petertriho/nvim-scrollbar/issues/121).
+
 ![diagnostics](./assets/diagnostics.gif)
 
 ## Features
