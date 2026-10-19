@@ -29,21 +29,24 @@ require("scrollbar").setup({
   the other types use the catch-all lane in the center, and diagnostics use the
   outer lane. The track and the thumb span all three columns. Marks are below
   the thumb.
-- `zed`: one compact `track -> thumb -> marks` column, so marks stay above the
-  thumb.
-- `intellij`: one track/thumb column beside a transparent stripe for diagnostic
-  and catch-all marks.
+- `zed`: the same three-lane layout as `vscode`. Zed also draws Git,
+  highlight, and diagnostic markers in three columns below the thumb.
+- `intellij`: a Git lane on the inner side, beside one track/thumb column. The
+  other marks are above the thumb in that column, and diagnostics win
+  collisions.
 - `gvim`: a solid, two-column conventional scrollbar without annotations.
-- `eclipse`: a bar with lanes for diagnostic, navigation, and catch-all
-  annotations.
-- `sublime`: a translucent thumb without a track, with all marks above it.
+- `eclipse`: one track/thumb column beside an outer overview ruler that shows
+  every mark type.
+- `sublime`: a translucent thumb without a track, with only search marks above
+  it.
 - `emacs`: a west-anchored bar at the outer edge of its own gutter reservation,
   with a diagnostic fringe on the inner side.
-- `xcode`: a compact bar with navigation and diagnostic stripes.
+- `xcode`: a translucent thumb without a track and without marks.
 
 The presets with editor names approximate the scrollbar and annotation
-structure of each editor in terminal cells. They do not configure the separate
-minimap, and they do not claim pixel-perfect GUI fidelity.
+structure of each editor in terminal cells. They do not claim pixel-perfect GUI
+fidelity. Some of them have the same layout as another preset, because each
+name also pairs with the minimap preset of the same name.
 
 ### Task-Oriented
 

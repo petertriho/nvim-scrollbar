@@ -14,6 +14,22 @@ local function get(name)
     return require("scrollbar.presets").get(name, "scrollbar.preset")
 end
 
+local GIT_TYPES = {
+    "GitAdd",
+    "GitChange",
+    "GitDelete",
+    "MiniDiffAdd",
+    "MiniDiffChange",
+    "MiniDiffDelete",
+    "SignifyAdd",
+    "SignifyChange",
+    "SignifyDelete",
+    "VGitAdd",
+    "VGitChange",
+    "VGitDelete",
+}
+local DIAGNOSTIC_TYPES = { "Error", "Warn", "Info", "Hint" }
+
 local function expect_invalid(fn, pattern)
     local ok, err = pcall(fn)
     expect.equality(ok, false)
@@ -59,18 +75,22 @@ T["returns exact isolated built-in presentation definitions"] = function()
             thumb = { blend = 20 },
         },
         zed = {
-            layout = { direction = "auto", columns = { { "track", "thumb", "marks" } } },
+            layout = {
+                direction = "auto",
+                columns = {
+                    { "track", { types = GIT_TYPES }, "thumb" },
+                    { "track", "marks", "thumb" },
+                    { "track", { types = DIAGNOSTIC_TYPES }, "thumb" },
+                },
+            },
             thumb = { blend = 20 },
         },
         intellij = {
             layout = {
                 direction = "auto",
                 columns = {
-                    { "track", "thumb" },
-                    {
-                        { types = { "Error", "Warn", "Info", "Hint" } },
-                        "marks",
-                    },
+                    { { types = GIT_TYPES } },
+                    { "track", "thumb", "marks", { types = DIAGNOSTIC_TYPES } },
                 },
             },
             thumb = { blend = 25 },
@@ -136,17 +156,15 @@ T["returns exact isolated built-in presentation definitions"] = function()
         eclipse = {
             layout = {
                 direction = "auto",
-                columns = {
-                    { "track", "thumb" },
-                    { { types = { "Error", "Warn", "Info", "Hint" } } },
-                    { { types = { "Cursor", "Search", "Mark" } } },
-                    { "marks" },
-                },
+                columns = { { "track", "thumb" }, { "marks" } },
             },
             thumb = { blend = 20 },
         },
         sublime = {
-            layout = { direction = "auto", columns = { { "thumb", "marks" } } },
+            layout = {
+                direction = "auto",
+                columns = { { "thumb", { types = { "Search" } } } },
+            },
             thumb = { blend = 60 },
         },
         emacs = {
@@ -161,14 +179,7 @@ T["returns exact isolated built-in presentation definitions"] = function()
             thumb = { blend = 0 },
         },
         xcode = {
-            layout = {
-                direction = "auto",
-                columns = {
-                    { "track", "thumb" },
-                    { { types = { "Cursor", "Search", "Mark" } } },
-                    { { types = { "Error", "Warn", "Info", "Hint" } } },
-                },
-            },
+            layout = { direction = "auto", columns = { { "thumb" } } },
             thumb = { blend = 25 },
         },
     }

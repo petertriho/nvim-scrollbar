@@ -37,17 +37,34 @@ local BUILTINS = {
         thumb = { blend = 20 },
     },
     zed = {
-        layout = { direction = "auto", columns = { { "track", "thumb", "marks" } } },
+        layout = {
+            direction = "auto",
+            columns = {
+                {
+                    "track",
+                    { types = GIT_TYPES },
+                    "thumb",
+                },
+                { "track", "marks", "thumb" },
+                {
+                    "track",
+                    { types = DIAGNOSTIC_TYPES },
+                    "thumb",
+                },
+            },
+        },
         thumb = { blend = 20 },
     },
     intellij = {
         layout = {
             direction = "auto",
             columns = {
-                { "track", "thumb" },
+                { { types = GIT_TYPES } },
                 {
-                    { types = DIAGNOSTIC_TYPES },
+                    "track",
+                    "thumb",
                     "marks",
+                    { types = DIAGNOSTIC_TYPES },
                 },
             },
         },
@@ -97,17 +114,15 @@ local BUILTINS = {
     eclipse = {
         layout = {
             direction = "auto",
-            columns = {
-                { "track", "thumb" },
-                { { types = DIAGNOSTIC_TYPES } },
-                { { types = { "Cursor", "Search", "Mark" } } },
-                { "marks" },
-            },
+            columns = { { "track", "thumb" }, { "marks" } },
         },
         thumb = { blend = 20 },
     },
     sublime = {
-        layout = { direction = "auto", columns = { { "thumb", "marks" } } },
+        layout = {
+            direction = "auto",
+            columns = { { "thumb", { types = { "Search" } } } },
+        },
         thumb = { blend = 60 },
     },
     emacs = {
@@ -122,14 +137,7 @@ local BUILTINS = {
         thumb = { blend = 0 },
     },
     xcode = {
-        layout = {
-            direction = "auto",
-            columns = {
-                { "track", "thumb" },
-                { { types = { "Cursor", "Search", "Mark" } } },
-                { { types = DIAGNOSTIC_TYPES } },
-            },
-        },
+        layout = { direction = "auto", columns = { { "thumb" } } },
         thumb = { blend = 25 },
     },
 }
