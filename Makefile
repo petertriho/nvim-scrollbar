@@ -4,9 +4,12 @@ SELENE ?= selene
 LUA_LANGUAGE_SERVER ?= lua-language-server
 MINI_VERSION := v0.18.0
 MINI_DIR := deps/mini.nvim
+TOKYONIGHT_COMMIT := cdc07ac78467a233fd62c493de29a17e0cf2b2b6
+TOKYONIGHT_DIR := deps/tokyonight.nvim
+VHS ?= vhs
 LUA_PATHS := lua tests scripts benchmarks
 
-.PHONY: test-deps test test-file benchmark benchmark-render benchmark-search benchmark-marks benchmark-minimap benchmark-typing benchmark-worker benchmark-providers format format-check lint typecheck ci
+.PHONY: test-deps test test-file benchmark benchmark-render benchmark-search benchmark-marks benchmark-minimap benchmark-typing benchmark-worker benchmark-providers demo-deps demo demo-manifest demo-issues format format-check lint typecheck ci
 
 test-deps:
 	@if [ ! -d "$(MINI_DIR)/.git" ]; then \
@@ -49,6 +52,27 @@ benchmark-worker:
 
 benchmark-providers:
 	$(NVIM) --headless --noplugin -u NONE -l benchmarks/providers.lua
+
+demo-deps: test-deps
+	@if [ ! -d "$(TOKYONIGHT_DIR)/.git" ]; then \
+		mkdir -p deps; \
+		git init --quiet "$(TOKYONIGHT_DIR)"; \
+		git -C "$(TOKYONIGHT_DIR)" remote add origin https://github.com/folke/tokyonight.nvim.git; \
+	fi
+	@if [ "$$(git -C "$(TOKYONIGHT_DIR)" rev-parse HEAD 2>/dev/null)" != "$(TOKYONIGHT_COMMIT)" ]; then \
+		git -C "$(TOKYONIGHT_DIR)" fetch --quiet --depth 1 origin "$(TOKYONIGHT_COMMIT)"; \
+		git -C "$(TOKYONIGHT_DIR)" checkout --quiet --detach FETCH_HEAD; \
+	fi
+
+demo: demo-deps
+	VHS="$(VHS)" $(NVIM) --headless --noplugin -u NONE -l scripts/demo/cli.lua build $(ONLY)
+
+demo-manifest:
+	@test -n "$(ISSUE)" || (printf '%s\n' 'Usage: make demo-manifest ISSUE=<asset issue number>' >&2; exit 2)
+	$(NVIM) --headless --noplugin -u NONE -l scripts/demo/cli.lua manifest "$(ISSUE)"
+
+demo-issues:
+	$(NVIM) --headless --noplugin -u NONE -l scripts/demo/cli.lua issues $(SHOWCASE)
 
 format:
 	$(STYLUA) $(LUA_PATHS)

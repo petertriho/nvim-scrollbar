@@ -23,6 +23,9 @@ make benchmark-minimap
 make benchmark-typing
 make benchmark-worker
 make benchmark-providers
+make demo
+make demo-manifest ISSUE=119
+make demo-issues SHOWCASE=120
 make ci
 ```
 
@@ -38,6 +41,48 @@ make ci
   minimap, typing, the minimap worker, and providers.
 - `make ci` runs the formatting check, Selene, LuaLS type checking, and the
   full test suite.
+- `make demo`, `make demo-manifest`, and `make demo-issues` generate the
+  images of the README and the docs. See [Demo Images](#demo-images).
+
+## Demo Images
+
+The README, the docs, and the
+[showcase](https://github.com/petertriho/nvim-scrollbar/issues/120) embed
+images that `make demo` generates. The images are attachments of
+[#119](https://github.com/petertriho/nvim-scrollbar/issues/119). They are not
+files in the repository.
+
+`make demo` needs [VHS](https://github.com/charmbracelet/vhs) and the
+`JetBrainsMono Nerd Font Mono` font. If `vhs` is not on your `PATH`, set
+`VHS`, for example `make demo VHS="nix shell nixpkgs#vhs -c vhs"`. `make demo`
+first runs `make demo-deps`, which prepares tokyonight.nvim at a fixed commit
+in the ignored `deps/` directory.
+
+`scripts/demo/entries.lua` lists the images. Each entry has the Lua source of
+its `setup()` call. `scripts/demo/init.lua` runs that source, and the showcase
+prints the same source. `tests/test_demo_entries.lua` checks that every source
+is a valid configuration.
+
+To replace the images:
+
+1. Run `make demo`. To build only some images, set `ONLY`, for example
+   `make demo ONLY="hero search"`.
+2. Drag the new files from `scripts/demo/out/` into a new comment on #119.
+3. Run `make demo-manifest ISSUE=119`. It downloads each attachment, matches it
+   to a file by SHA-256, and writes `scripts/demo/manifest.json`.
+4. Run `make demo-issues SHOWCASE=120`. It writes the bodies of both issues to
+   `scripts/demo/out/.work/`.
+5. Update the issues with
+   `gh issue edit 119 --body-file scripts/demo/out/.work/assets.md` and
+   `gh issue edit 120 --body-file scripts/demo/out/.work/showcase.md`.
+6. Replace the old URLs in the README and the docs with the new URLs from
+   `scripts/demo/manifest.json`.
+
+Do not run `make demo` between step 1 and step 3. A new build changes the
+bytes of the GIFs, so the attachments no longer match the files.
+
+When v2 is released, change `BRANCH` in `scripts/demo/cli.lua`, update the
+note at the top of the showcase, and update the issues again.
 
 ## Continuous Integration
 
