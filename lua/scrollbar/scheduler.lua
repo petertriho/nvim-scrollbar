@@ -61,7 +61,7 @@ local function notify_text_change_subscribers(args)
     for _, subscriber in ipairs(text_change_subscribers) do
         local ok, err = pcall(subscriber, args)
         if not ok then
-            vim.notify("[scrollbar.nvim] text-change subscriber failed: " .. tostring(err), vim.log.levels.WARN)
+            vim.notify("[nvim-scrollbar] text-change subscriber failed: " .. tostring(err), vim.log.levels.WARN)
         end
     end
 end
@@ -70,7 +70,7 @@ local function notify_cursor_activity_subscribers(args)
     for _, subscriber in ipairs(cursor_activity_subscribers) do
         local ok, err = pcall(subscriber, args)
         if not ok then
-            vim.notify("[scrollbar.nvim] cursor-activity subscriber failed: " .. tostring(err), vim.log.levels.WARN)
+            vim.notify("[nvim-scrollbar] cursor-activity subscriber failed: " .. tostring(err), vim.log.levels.WARN)
         end
     end
 end
@@ -229,7 +229,7 @@ local function restart_hide_deadline(current, winid)
             end
             local ok, err = pcall(current.renderer.conceal, winid)
             if not ok then
-                vim.notify("[scrollbar.nvim] autohide failed: " .. tostring(err), vim.log.levels.WARN)
+                vim.notify("[nvim-scrollbar] autohide failed: " .. tostring(err), vim.log.levels.WARN)
             end
         end)
     )
@@ -462,7 +462,7 @@ local function create_autocmds(group, enabled)
         end
         local ok, err = pcall(current.on_colorscheme)
         if not ok then
-            vim.notify("[scrollbar.nvim] colorscheme refresh failed: " .. tostring(err), vim.log.levels.WARN)
+            vim.notify("[nvim-scrollbar] colorscheme refresh failed: " .. tostring(err), vim.log.levels.WARN)
         end
         M.invalidate_all()
     end)
@@ -792,7 +792,7 @@ M.flush = function()
         if eligible[winid] then
             local ok, err = pcall(current.renderer.render, winid)
             if not ok then
-                vim.notify("[scrollbar.nvim] render failed: " .. tostring(err), vim.log.levels.WARN)
+                vim.notify("[nvim-scrollbar] render failed: " .. tostring(err), vim.log.levels.WARN)
             end
         end
     end

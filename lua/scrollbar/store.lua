@@ -105,7 +105,7 @@ end
 ---@return fun()
 M.subscribe = function(callback)
     if type(callback) ~= "function" then
-        error("[scrollbar.nvim] store subscriber must be a function", 2)
+        error("[nvim-scrollbar] store subscriber must be a function", 2)
     end
 
     local token = {}
@@ -258,7 +258,7 @@ local function warn_once(provider, channel, scope, target, signature)
     local output = channel == "marks" and "marks" or channel:gsub("_", " ")
     vim.notify(
         string.format(
-            "[scrollbar.nvim] provider '%s' returned invalid %s for %s %d: %s",
+            "[nvim-scrollbar] provider '%s' returned invalid %s for %s %d: %s",
             provider,
             output,
             scope,

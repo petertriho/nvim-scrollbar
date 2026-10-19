@@ -303,7 +303,7 @@ local provider_plan
 local profile_error_notifications = {}
 
 local function invalid(message)
-    error("[scrollbar.nvim] " .. message, 3)
+    error("[nvim-scrollbar] " .. message, 3)
 end
 
 local function is_integer(value)
@@ -1084,7 +1084,7 @@ M.select = function(source_win)
                     if not profile_error_notifications[notification_key] then
                         profile_error_notifications[notification_key] = true
                         vim.notify(
-                            string.format("[scrollbar.nvim] profile %d matcher failed: %s", variant.id, message),
+                            string.format("[nvim-scrollbar] profile %d matcher failed: %s", variant.id, message),
                             vim.log.levels.ERROR
                         )
                     end

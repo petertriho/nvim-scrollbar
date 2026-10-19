@@ -51,7 +51,7 @@ local BUILTINS = {
 }
 
 local function invalid(message)
-    error("[scrollbar.nvim] " .. message, 3)
+    error("[nvim-scrollbar] " .. message, 3)
 end
 
 local function path_string(path)

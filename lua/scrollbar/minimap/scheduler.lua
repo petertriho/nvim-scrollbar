@@ -176,7 +176,7 @@ local function restart_hide_deadline(current, winid)
             end
             local ok, err = pcall(current.renderer.conceal, winid)
             if not ok then
-                vim.notify("[scrollbar.nvim] minimap autohide failed: " .. tostring(err), vim.log.levels.WARN)
+                vim.notify("[nvim-scrollbar] minimap autohide failed: " .. tostring(err), vim.log.levels.WARN)
             end
         end)
     )
@@ -384,7 +384,7 @@ local function create_autocmds(group, enabled)
         end
         local ok, err = pcall(current.on_colorscheme)
         if not ok then
-            vim.notify("[scrollbar.nvim] minimap colorscheme refresh failed: " .. tostring(err), vim.log.levels.WARN)
+            vim.notify("[nvim-scrollbar] minimap colorscheme refresh failed: " .. tostring(err), vim.log.levels.WARN)
         end
         M.invalidate_all()
     end)
@@ -635,7 +635,7 @@ M.flush = function()
         if eligible[winid] then
             local ok, err = pcall(current.renderer.render, winid)
             if not ok then
-                vim.notify("[scrollbar.nvim] minimap render failed: " .. tostring(err), vim.log.levels.WARN)
+                vim.notify("[nvim-scrollbar] minimap render failed: " .. tostring(err), vim.log.levels.WARN)
             end
         end
     end

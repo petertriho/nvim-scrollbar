@@ -70,7 +70,7 @@ local function warn_once(provider, operation, signature)
 
     warned[provider][operation][signature] = true
     vim.notify(
-        string.format("[scrollbar.nvim] provider '%s' %s failed: %s", provider, operation, signature),
+        string.format("[nvim-scrollbar] provider '%s' %s failed: %s", provider, operation, signature),
         vim.log.levels.WARN
     )
 end
@@ -94,7 +94,7 @@ end
 local function guarded_callback(callback, ...)
     local ok, err = pcall(callback, ...)
     if not ok then
-        vim.notify("[scrollbar.nvim] provider manager callback failed: " .. tostring(err), vim.log.levels.WARN)
+        vim.notify("[nvim-scrollbar] provider manager callback failed: " .. tostring(err), vim.log.levels.WARN)
     end
 end
 
@@ -134,7 +134,7 @@ local function query_policy(entry, consumer, operation, callback, ...)
     if not ok then
         vim.notify(
             string.format(
-                "[scrollbar.nvim] provider '%s' %s %s lookup failed: %s",
+                "[nvim-scrollbar] provider '%s' %s %s lookup failed: %s",
                 entry.provider.name,
                 consumer,
                 operation,
@@ -206,7 +206,7 @@ local function source_windows(entry, bufnr)
             elseif ok then
                 vim.notify(
                     string.format(
-                        "[scrollbar.nvim] provider '%s' %s source window lookup failed: expected table",
+                        "[nvim-scrollbar] provider '%s' %s source window lookup failed: expected table",
                         entry.provider.name,
                         name
                     ),
@@ -667,7 +667,7 @@ local function normalize_targets(provider)
         return { scrollbar = true, minimap = false }
     end
     if type(provider.targets) ~= "table" then
-        error(string.format("[scrollbar.nvim] provider '%s' targets must be a table", provider.name), 3)
+        error(string.format("[nvim-scrollbar] provider '%s' targets must be a table", provider.name), 3)
     end
 
     local unknown_target
@@ -682,7 +682,7 @@ local function normalize_targets(provider)
     if unknown_target ~= nil then
         error(
             string.format(
-                "[scrollbar.nvim] provider '%s' targets has unknown target '%s'",
+                "[nvim-scrollbar] provider '%s' targets has unknown target '%s'",
                 provider.name,
                 unknown_target
             ),
@@ -694,7 +694,7 @@ local function normalize_targets(provider)
         local enabled = provider.targets[target]
         if enabled ~= nil and type(enabled) ~= "boolean" then
             error(
-                string.format("[scrollbar.nvim] provider '%s' targets.%s must be a boolean", provider.name, target),
+                string.format("[nvim-scrollbar] provider '%s' targets.%s must be a boolean", provider.name, target),
                 3
             )
         end
@@ -705,7 +705,7 @@ local function normalize_targets(provider)
         minimap = provider.targets.minimap == true,
     }
     if not targets.scrollbar and not targets.minimap then
-        error(string.format("[scrollbar.nvim] provider '%s' targets must enable at least one target", provider.name), 3)
+        error(string.format("[nvim-scrollbar] provider '%s' targets must enable at least one target", provider.name), 3)
     end
     return targets
 end
@@ -714,10 +714,10 @@ end
 ---@param builtin boolean
 local function register(provider, builtin)
     if type(provider) ~= "table" then
-        error("[scrollbar.nvim] provider must be a table", 3)
+        error("[nvim-scrollbar] provider must be a table", 3)
     end
     if type(provider.name) ~= "string" or provider.name == "" then
-        error("[scrollbar.nvim] provider name must be a non-empty string", 3)
+        error("[nvim-scrollbar] provider name must be a non-empty string", 3)
     end
     local targets = normalize_targets(provider)
     for _, field in ipairs({
@@ -729,11 +729,11 @@ local function register(provider, builtin)
         "dispose",
     }) do
         if provider[field] ~= nil and type(provider[field]) ~= "function" then
-            error(string.format("[scrollbar.nvim] provider '%s' %s must be a function", provider.name, field), 3)
+            error(string.format("[nvim-scrollbar] provider '%s' %s must be a function", provider.name, field), 3)
         end
     end
     if provider.refresh_owner ~= nil and type(provider.refresh_owner) ~= "table" then
-        error(string.format("[scrollbar.nvim] provider '%s' refresh_owner must be a table", provider.name), 3)
+        error(string.format("[nvim-scrollbar] provider '%s' refresh_owner must be a table", provider.name), 3)
     end
     local refresh_owner = provider.refresh_owner or {}
     local unknown_scope
@@ -748,7 +748,7 @@ local function register(provider, builtin)
     if unknown_scope ~= nil then
         error(
             string.format(
-                "[scrollbar.nvim] provider '%s' refresh_owner has unknown scope '%s'",
+                "[nvim-scrollbar] provider '%s' refresh_owner has unknown scope '%s'",
                 provider.name,
                 unknown_scope
             ),
@@ -761,7 +761,7 @@ local function register(provider, builtin)
             if owner ~= nil then
                 error(
                     string.format(
-                        "[scrollbar.nvim] provider '%s' refresh_owner.%s must be 'manager' or 'provider'",
+                        "[nvim-scrollbar] provider '%s' refresh_owner.%s must be 'manager' or 'provider'",
                         provider.name,
                         scope
                     ),
@@ -771,18 +771,18 @@ local function register(provider, builtin)
         end
     end
     if provider.refresh ~= nil and refresh_owner.buffer == nil then
-        error(string.format("[scrollbar.nvim] provider '%s' refresh requires refresh_owner.buffer", provider.name), 3)
+        error(string.format("[nvim-scrollbar] provider '%s' refresh requires refresh_owner.buffer", provider.name), 3)
     end
     if provider.refresh_window ~= nil and refresh_owner.window == nil then
         error(
-            string.format("[scrollbar.nvim] provider '%s' refresh_window requires refresh_owner.window", provider.name),
+            string.format("[nvim-scrollbar] provider '%s' refresh_window requires refresh_owner.window", provider.name),
             3
         )
     end
     if provider.refresh_minimap ~= nil and refresh_owner.minimap_buffer == nil then
         error(
             string.format(
-                "[scrollbar.nvim] provider '%s' refresh_minimap requires refresh_owner.minimap_buffer",
+                "[nvim-scrollbar] provider '%s' refresh_minimap requires refresh_owner.minimap_buffer",
                 provider.name
             ),
             3
@@ -791,25 +791,25 @@ local function register(provider, builtin)
     if provider.refresh_minimap_window ~= nil and refresh_owner.minimap_window == nil then
         error(
             string.format(
-                "[scrollbar.nvim] provider '%s' refresh_minimap_window requires refresh_owner.minimap_window",
+                "[nvim-scrollbar] provider '%s' refresh_minimap_window requires refresh_owner.minimap_window",
                 provider.name
             ),
             3
         )
     end
     if refresh_owner.buffer ~= nil and provider.refresh == nil then
-        error(string.format("[scrollbar.nvim] provider '%s' refresh_owner.buffer requires refresh", provider.name), 3)
+        error(string.format("[nvim-scrollbar] provider '%s' refresh_owner.buffer requires refresh", provider.name), 3)
     end
     if refresh_owner.window ~= nil and provider.refresh_window == nil then
         error(
-            string.format("[scrollbar.nvim] provider '%s' refresh_owner.window requires refresh_window", provider.name),
+            string.format("[nvim-scrollbar] provider '%s' refresh_owner.window requires refresh_window", provider.name),
             3
         )
     end
     if refresh_owner.minimap_buffer ~= nil and provider.refresh_minimap == nil then
         error(
             string.format(
-                "[scrollbar.nvim] provider '%s' refresh_owner.minimap_buffer requires refresh_minimap",
+                "[nvim-scrollbar] provider '%s' refresh_owner.minimap_buffer requires refresh_minimap",
                 provider.name
             ),
             3
@@ -818,7 +818,7 @@ local function register(provider, builtin)
     if refresh_owner.minimap_window ~= nil and provider.refresh_minimap_window == nil then
         error(
             string.format(
-                "[scrollbar.nvim] provider '%s' refresh_owner.minimap_window requires refresh_minimap_window",
+                "[nvim-scrollbar] provider '%s' refresh_owner.minimap_window requires refresh_minimap_window",
                 provider.name
             ),
             3
@@ -826,21 +826,21 @@ local function register(provider, builtin)
     end
     if provider.refresh_minimap ~= nil and not targets.minimap then
         error(
-            string.format("[scrollbar.nvim] provider '%s' refresh_minimap requires targets.minimap", provider.name),
+            string.format("[nvim-scrollbar] provider '%s' refresh_minimap requires targets.minimap", provider.name),
             3
         )
     end
     if provider.refresh_minimap_window ~= nil and not targets.minimap then
         error(
             string.format(
-                "[scrollbar.nvim] provider '%s' refresh_minimap_window requires targets.minimap",
+                "[nvim-scrollbar] provider '%s' refresh_minimap_window requires targets.minimap",
                 provider.name
             ),
             3
         )
     end
     if registry[provider.name] ~= nil then
-        error(string.format("[scrollbar.nvim] provider '%s' is already registered", provider.name), 3)
+        error(string.format("[nvim-scrollbar] provider '%s' is already registered", provider.name), 3)
     end
 
     local entry = {
@@ -941,7 +941,7 @@ local function validate_refresh_options(options, channels)
         return {}
     end
     if type(options) ~= "table" then
-        error("[scrollbar.nvim] provider refresh options must be a table", 3)
+        error("[nvim-scrollbar] provider refresh options must be a table", 3)
     end
     local unknown
     for key in pairs(options) do
@@ -953,17 +953,17 @@ local function validate_refresh_options(options, channels)
         end
     end
     if unknown ~= nil then
-        error(string.format("[scrollbar.nvim] provider refresh options has unknown field '%s'", unknown), 3)
+        error(string.format("[nvim-scrollbar] provider refresh options has unknown field '%s'", unknown), 3)
     end
     if options.consumer ~= nil and options.consumer ~= "scrollbar" and options.consumer ~= "minimap" then
-        error("[scrollbar.nvim] provider refresh options.consumer must be 'scrollbar' or 'minimap'", 3)
+        error("[nvim-scrollbar] provider refresh options.consumer must be 'scrollbar' or 'minimap'", 3)
     end
     if options.channel ~= nil and not channels[options.channel] then
         local allowed = vim.tbl_keys(channels)
         table.sort(allowed)
         error(
             string.format(
-                "[scrollbar.nvim] provider refresh options.channel must be one of: %s",
+                "[nvim-scrollbar] provider refresh options.channel must be one of: %s",
                 table.concat(allowed, ", ")
             ),
             3

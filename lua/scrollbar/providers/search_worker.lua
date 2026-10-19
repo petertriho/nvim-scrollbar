@@ -265,7 +265,7 @@ local function warn_once(reason)
         return
     end
     warned = true
-    vim.notify("[scrollbar.nvim] search worker failed; using synchronous fallback: " .. reason, vim.log.levels.WARN)
+    vim.notify("[nvim-scrollbar] search worker failed; using synchronous fallback: " .. reason, vim.log.levels.WARN)
 end
 
 local function detach_mirror(bufnr, notify)

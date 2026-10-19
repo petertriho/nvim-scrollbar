@@ -275,7 +275,7 @@ local function warn_once(reason)
         return
     end
     warned = true
-    vim.notify("[scrollbar.nvim] minimap worker failed; using synchronous fallback: " .. reason, vim.log.levels.WARN)
+    vim.notify("[nvim-scrollbar] minimap worker failed; using synchronous fallback: " .. reason, vim.log.levels.WARN)
 end
 
 --- Sync backend: run squash on the main thread and invoke `on_result`
