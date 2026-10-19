@@ -53,6 +53,9 @@ An empty cell is a space.
   map scrolls in proportion to the source window. At the top of the buffer,
   the float shows the top of the map. At the end of the buffer, it shows the
   end of the map.
+- A positive integer gives each dot row that number of source lines and
+  scrolls like `"fixed"`. For example, `scale = 2` shows 8 lines in each
+  minimap row. `scale = 1` is the same as `"fixed"`.
 - `scale = "fit"` shrinks the whole buffer into the float. A buffer that fits
   at the fixed scale looks the same in both scales.
 
@@ -66,7 +69,7 @@ change the other lines.
 require("scrollbar").setup({
     minimap = {
         enabled = true,
-        scale = "fit",
+        scale = 2,
         encoding = "block",
         columns_per_dot = 2,
     },

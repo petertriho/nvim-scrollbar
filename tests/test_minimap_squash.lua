@@ -90,6 +90,18 @@ T["the fixed scale gives each line one dot row"] = function()
     expect.equality(row_chars(grid, 2), braille(0x01))
 end
 
+T["a numeric scale merges that number of lines in each dot row"] = function()
+    local lines = {}
+    for line = 1, 8 do
+        lines[line] = ""
+    end
+    lines[3] = "x"
+    lines[8] = " x"
+    local grid = squash(lines, { width = 1, scale_lines = 2 })
+
+    expect.equality(row_chars(grid, 1), braille(0x02 + 0x80))
+end
+
 T["the fit scale merges the lines of each dot row"] = function()
     local lines = {}
     for line = 1, 16 do

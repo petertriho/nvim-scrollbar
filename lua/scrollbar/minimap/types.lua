@@ -5,9 +5,10 @@
 
 ---@alias ScrollbarMinimapBackend "worker"|"sync"
 
---- `fixed` maps one source line to each dot row and scrolls the map with the
---- source window. `fit` shrinks the whole buffer into the float height.
----@alias ScrollbarMinimapScale "fixed"|"fit"
+--- A positive integer maps that number of source lines to each dot row and
+--- scrolls the map with the source window. `fixed` is the same as `1`. `fit`
+--- shrinks the whole buffer into the float height.
+---@alias ScrollbarMinimapScale "fixed"|"fit"|integer
 
 --- Both encodings use cells of 2 by 4 dots. `braille` draws each dot, and
 --- `block` draws `█` for a cell with any dot.

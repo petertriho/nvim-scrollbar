@@ -171,8 +171,34 @@ T["click in the fit scale uses the rows of the fitted map"] = function()
     expect.equality(result, 11)
 end
 
+T["click with a numeric scale uses the lines of each row"] = function()
+    local child = new_child()
+    reset_modules(child)
+    configure(child, { enabled = true, width = 4, height = 4, scale = 2 })
+
+    local result = child.lua_func(function()
+        local lines = {}
+        for index = 1, 30 do
+            lines[index] = string.rep("a", index)
+        end
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        local state = assert(require("scrollbar.minimap.renderer").render(0))
+        local original_getmousepos = vim.fn.getmousepos
+        ---@diagnostic disable-next-line: duplicate-set-field
+        vim.fn.getmousepos = function()
+            return { winid = state.float_win, winrow = 3, wincol = 1, screenrow = 3, screencol = 1 }
+        end
+        require("scrollbar.minimap.mouse").press(state.float_win)
+        vim.fn.getmousepos = original_getmousepos
+        return vim.api.nvim_win_get_cursor(state.source_win)[1]
+    end)
+
+    -- Each row covers 8 lines, so row index 2 starts at 0-based line 16.
+    expect.equality(result, 17)
+end
+
 T["drag scrolls the source so that the band follows the pointer"] = function()
-    for _, scale in ipairs({ "fixed", "fit" }) do
+    for _, scale in ipairs({ "fixed", "fit", 2 }) do
         local child = new_child()
         reset_modules(child)
         configure(child, { enabled = true, width = 4, height = 16, scale = scale })
@@ -193,7 +219,7 @@ T["drag scrolls the source so that the band follows the pointer"] = function()
 end
 
 T["one drag reaches both ends of the buffer"] = function()
-    for _, scale in ipairs({ "fixed", "fit" }) do
+    for _, scale in ipairs({ "fixed", "fit", 2 }) do
         local child = new_child()
         reset_modules(child)
         configure(child, { enabled = true, width = 4, height = 16, scale = scale })

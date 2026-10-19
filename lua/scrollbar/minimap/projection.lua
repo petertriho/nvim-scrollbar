@@ -1,9 +1,10 @@
 --- Pure mapping between source lines and minimap rows for one render.
 ---
---- `scale = "fixed"` gives each dot row one source line, so a cell row covers
---- 4 lines. When the map has more rows than the float, the map scrolls in
---- proportion to the source window: the top of the file shows the top of the
---- map, and the end of the file shows the end of the map.
+--- A numeric `scale` gives each dot row that number of source lines, so a cell
+--- row covers 4 times that number. `scale = "fixed"` is the same as `1`. When
+--- the map has more rows than the float, the map scrolls in proportion to the
+--- source window: the top of the file shows the top of the map, and the end
+--- of the file shows the end of the map.
 ---
 --- `scale = "fit"` shrinks the whole buffer into the float height. A buffer
 --- that fits at the fixed scale looks the same in both scales.
@@ -43,9 +44,12 @@ M.new = function(options)
     local rows = math.max(1, options.rows)
     local dots = rows * DOT_ROWS
 
+    local scale = options.scale
     local scale_lines = 1
     local scale_dots = 1
-    if options.scale == "fit" and line_count > dots then
+    if type(scale) == "number" then
+        scale_lines = scale
+    elseif scale == "fit" and line_count > dots then
         scale_lines = line_count
         scale_dots = dots
     end

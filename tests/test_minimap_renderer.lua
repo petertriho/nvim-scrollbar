@@ -2363,6 +2363,37 @@ T["rows outside the cached slice stay blank while the next slice is pending"] = 
     end
 end
 
+T["a numeric scale draws that number of lines in each dot row"] = function()
+    local child = new_child()
+    reset_modules(child)
+    configure(child, {
+        enabled = true,
+        width = 4,
+        height = 10,
+        viewport = false,
+        encoding = "block",
+        columns_per_dot = 1,
+        scale = 2,
+    }, { set_highlights = false })
+
+    local result = child.lua_func(function()
+        local lines = {}
+        for index = 1, 400 do
+            lines[index] = ""
+        end
+        lines[8] = "x"
+        lines[9] = "  x"
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        local state = assert(require("scrollbar.minimap.renderer").render(0))
+        return { rows = state.rows, map_rows = state.projection.map_rows }
+    end)
+
+    -- Each row shows 8 lines, so line 8 ends row 1 and line 9 starts row 2.
+    expect.equality(result.map_rows, 50)
+    expect.equality(result.rows[1], "█   ")
+    expect.equality(result.rows[2], " █  ")
+end
+
 T["the fit scale shows the whole buffer"] = function()
     local child = new_child()
     reset_modules(child)

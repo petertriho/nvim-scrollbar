@@ -168,6 +168,17 @@ local function blend_or_false(value, path)
     return value
 end
 
+---@param value any
+---@param path string
+---@return ScrollbarMinimapScale
+local function scale_option(value, path)
+    if value == "fixed" or value == "fit" or (schema.is_integer(value) and value >= 1) then
+        return value
+    end
+    invalid(path .. " must be 'fixed', 'fit', or a positive integer")
+    return value
+end
+
 ---@param value table Layered options merged onto the defaults
 ---@param shared ScrollbarSharedConfig
 ---@param path string Prefix for error paths
@@ -198,7 +209,7 @@ local function normalize(value, shared, path)
         exclude = shared.exclude.minimap,
         width = schema.integer(value.width, at("width"), 1),
         height = schema.positive_or_false(value.height, at("height")),
-        scale = schema.enum(value.scale, at("scale"), { "fixed", "fit" }),
+        scale = scale_option(value.scale, at("scale")),
         encoding = schema.enum(value.encoding, at("encoding"), { "braille", "block" }),
         columns_per_dot = schema.integer(value.columns_per_dot, at("columns_per_dot"), 1),
         placement = {

@@ -57,6 +57,39 @@ T["the end of the file shows the end of the map"] = function()
     expect.equality({ projection().band(p) }, { 11, 20 })
 end
 
+T["a numeric scale gives each dot row that number of lines"] = function()
+    local p = new({ scale = 2 })
+
+    expect.equality(p.scale_lines, 2)
+    expect.equality(p.scale_dots, 1)
+    expect.equality(p.map_rows, 50)
+    expect.equality(projection().float_row(p, 7), 1)
+    expect.equality(projection().float_row(p, 8), 2)
+    expect.equality(projection().float_row(p, 159), 20)
+    expect.equality(projection().float_row(p, 160), nil)
+    expect.equality({ projection().band(p) }, { 1, 5 })
+end
+
+T["a numeric scale scrolls in proportion to the source window"] = function()
+    expect.equality(new({ scale = 2, top = 0, bottom = 39 }).offset, 0)
+    expect.equality(new({ scale = 2, top = 180, bottom = 219 }).offset, 15)
+    expect.equality(new({ scale = 2, top = 360, bottom = 399 }).offset, 30)
+
+    local last = new({ scale = 2, top = 360, bottom = 399 })
+    expect.equality(projection().float_row(last, 399), 20)
+end
+
+T["scale 1 matches the fixed scale"] = function()
+    local fixed = new({ top = 180, bottom = 219 })
+    local one = new({ scale = 1, top = 180, bottom = 219 })
+
+    expect.equality(one.offset, fixed.offset)
+    expect.equality(one.map_rows, fixed.map_rows)
+    for line = 0, 399 do
+        expect.equality(projection().float_row(one, line), projection().float_row(fixed, line))
+    end
+end
+
 T["the fit scale shows the whole buffer"] = function()
     local p = new({ scale = "fit" })
 
@@ -140,6 +173,7 @@ end
 T["a drag moves the band with the pointer"] = function()
     for _, options in ipairs({
         { top = 100, bottom = 139 },
+        { scale = 3, line_count = 2000, top = 600, bottom = 639 },
         { scale = "fit", line_count = 2000, top = 600, bottom = 639 },
         { line_count = 1000, top = 300, bottom = 339 },
     }) do
@@ -160,6 +194,7 @@ end
 T["one drag can reach both ends of the buffer"] = function()
     for _, options in ipairs({
         { top = 100, bottom = 139 },
+        { scale = 3, line_count = 2000, top = 600, bottom = 639 },
         { scale = "fit", line_count = 2000, top = 600, bottom = 639 },
     }) do
         local p = new(options)

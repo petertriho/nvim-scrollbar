@@ -28,7 +28,7 @@ require("scrollbar").setup({
         preset = nil, -- a built-in minimap preset name
         width = 16,
         height = false,
-        scale = "fixed", -- "fixed" or "fit"
+        scale = "fixed", -- "fixed", "fit", or lines per dot row
         encoding = "braille", -- "braille" or "block"
         columns_per_dot = 4,
         placement = {
@@ -75,7 +75,7 @@ You set appearance options at the root of the `minimap` block or in a
 | `preset` | `nil` | A built-in minimap preset. The options next to it win. See [Minimap presets](../presets.md#minimap-presets). |
 | `width` | `16` | Width of the minimap grid in cells. A positive integer. |
 | `height` | `false` | Height of the minimap grid. `false` uses the height of the source window. |
-| `scale` | `"fixed"` | `"fixed"` gives each dot row one source line and scrolls the map with the source window. `"fit"` shrinks the whole buffer into the float. See [The Map](README.md#the-map). |
+| `scale` | `"fixed"` | `"fixed"` gives each dot row one source line and scrolls the map with the source window. A positive integer gives each dot row that number of lines and also scrolls. `"fit"` shrinks the whole buffer into the float. See [The Map](README.md#the-map). |
 | `encoding` | `"braille"` | `"braille"` draws the 2 x 4 dots of each cell as a Braille character. `"block"` draws `█` for each cell that has a dot. |
 | `columns_per_dot` | `4` | Source display columns in each dot column. A cell covers twice this number. Columns past the minimap are clipped. A positive integer. |
 | `placement.relative` | `"window"` | Reference for the float position. `"editor"` renders only the minimap of the active source window. |
@@ -357,7 +357,8 @@ starts with `[nvim-scrollbar]` and gives the full option path.
 - `throttle_ms`: a non-negative integer.
 - `placement.row` and `placement.col`: signed integers.
 - `columns_per_dot`: a positive integer.
-- `scale`: `"fixed"` or `"fit"`. `encoding`: `"braille"` or `"block"`.
+- `scale`: `"fixed"`, `"fit"`, or a positive integer. `encoding`: `"braille"`
+  or `"block"`.
 - `preset`: the name of a built-in minimap preset. An unknown name lists the
   built-in names.
 - `glyph` is removed. Use `encoding`. The block encoding always draws `█`.

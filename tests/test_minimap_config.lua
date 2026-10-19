@@ -359,7 +359,10 @@ T["rejects invalid scalar and enum values"] = function()
     expect_invalid({ mouse = 1 }, "minimap%.mouse must be a boolean")
     expect_invalid({ mouse = { enabled = false } }, "minimap%.mouse must be a boolean")
     expect_invalid({ viewport = "yes" }, "minimap%.viewport must be a boolean")
-    expect_invalid({ scale = "scroll" }, "minimap%.scale must be one of: fit, fixed")
+    expect_invalid({ scale = "scroll" }, "minimap%.scale must be 'fixed', 'fit', or a positive integer")
+    expect_invalid({ scale = 0 }, "minimap%.scale must be 'fixed', 'fit', or a positive integer")
+    expect_invalid({ scale = 1.5 }, "minimap%.scale must be 'fixed', 'fit', or a positive integer")
+    expect_invalid({ scale = false }, "minimap%.scale must be 'fixed', 'fit', or a positive integer")
     expect_invalid({ encoding = "half" }, "minimap%.encoding must be one of: block, braille")
     expect_invalid({ columns_per_dot = 0 }, "minimap%.columns_per_dot must be a positive integer")
     expect_invalid({ columns_per_dot = 1.5 }, "minimap%.columns_per_dot must be a positive integer")
@@ -391,7 +394,7 @@ T["rejects malformed table values"] = function()
 end
 
 T["accepts every scale and encoding"] = function()
-    for _, scale in ipairs({ "fixed", "fit" }) do
+    for _, scale in ipairs({ "fixed", "fit", 1, 3 }) do
         expect.equality(set({ scale = scale }).scale, scale)
     end
     for _, encoding in ipairs({ "braille", "block" }) do
