@@ -16,7 +16,7 @@ local GIT_TYPES = {
     "VGitDelete",
 }
 
-local BUILTINS = {
+local SCROLLBAR = {
     vscode = {
         layout = {
             direction = "auto",
@@ -142,32 +142,70 @@ local BUILTINS = {
     },
 }
 
+local MINIMAP = {}
+
+local CATALOGS = {
+    scrollbar = SCROLLBAR,
+    minimap = MINIMAP,
+}
+
 local M = {}
 
---- Built-in preset names, sorted.
+---@param renderer "scrollbar"|"minimap"
+---@return table<string, table>
+local function catalog(renderer)
+    return assert(CATALOGS[renderer], "unknown preset renderer")
+end
+
+--- Built-in preset names of `renderer`, sorted.
+---@param renderer "scrollbar"|"minimap"
 ---@return string[]
-M.names = function()
-    local names = vim.tbl_keys(BUILTINS)
+M.names = function(renderer)
+    local names = vim.tbl_keys(catalog(renderer))
     table.sort(names)
     return names
 end
 
---- Return a copy of the built-in preset `name`. Presets contain only
---- appearance options and are merged like any other appearance layer.
+--- Return a copy of the built-in `renderer` preset `name`. Presets contain
+--- only appearance options and are merged like any other appearance layer.
+---@param renderer "scrollbar"|"minimap"
 ---@param name any
 ---@param path string
 ---@return table
-M.get = function(name, path)
+M.get = function(renderer, name, path)
     if type(name) ~= "string" then
         schema.invalid(path .. " must be a string")
     end
-    local preset = BUILTINS[name]
+    local preset = catalog(renderer)[name]
     if preset == nil then
-        schema.invalid(
-            string.format("%s: unknown preset '%s' (built-in presets: %s)", path, name, table.concat(M.names(), ", "))
-        )
+        local names = M.names(renderer)
+        local listed = #names > 0 and table.concat(names, ", ") or "none"
+        schema.invalid(string.format("%s: unknown preset '%s' (built-in presets: %s)", path, name, listed))
     end
     return vim.deepcopy(preset)
+end
+
+--- Layer the appearance sources in precedence order onto `defaults`: the
+--- root preset, the root options, the profile preset, and the profile
+--- options.
+---@param renderer "scrollbar"|"minimap"
+---@param defaults table
+---@param root table Root options of the renderer block
+---@param profile? { input: table, path: string }
+---@return table
+M.layered = function(renderer, defaults, root, profile)
+    local result = {}
+    if root.preset ~= nil then
+        result = schema.merge(result, M.get(renderer, root.preset, renderer .. ".preset"))
+    end
+    result = schema.merge(result, schema.without(root, { "preset", "profiles" }))
+    if profile ~= nil then
+        if profile.input.preset ~= nil then
+            result = schema.merge(result, M.get(renderer, profile.input.preset, profile.path .. ".preset"))
+        end
+        result = schema.merge(result, schema.without(profile.input, { "match", "preset" }))
+    end
+    return schema.merge(defaults, result)
 end
 
 return M

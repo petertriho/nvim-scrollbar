@@ -380,26 +380,6 @@ local function compile_profiles(value)
     return result
 end
 
---- Layer the appearance sources in precedence order: the root preset, the
---- root options, the profile preset, and the profile options.
----@param root table
----@param profile? { input: table, path: string }
----@return table
-local function layered(root, profile)
-    local result = {}
-    if root.preset ~= nil then
-        result = schema.merge(result, presets.get(root.preset, "scrollbar.preset"))
-    end
-    result = schema.merge(result, schema.without(root, { "preset", "profiles" }))
-    if profile ~= nil then
-        if profile.input.preset ~= nil then
-            result = schema.merge(result, presets.get(profile.input.preset, profile.path .. ".preset"))
-        end
-        result = schema.merge(result, schema.without(profile.input, { "match", "preset" }))
-    end
-    return schema.merge(DEFAULTS, result)
-end
-
 ---@param value table Layered options merged onto the defaults
 ---@param shared ScrollbarSharedConfig
 ---@param path string Prefix for error paths
@@ -471,7 +451,7 @@ local function compile(overrides, shared)
     schema.check_keys(overrides, ROOT_KEYS, "scrollbar", describe_root_key)
 
     local profiles = compile_profiles(overrides.profiles)
-    local root = normalize(layered(overrides), shared, "scrollbar", 0)
+    local root = normalize(presets.layered("scrollbar", DEFAULTS, overrides), shared, "scrollbar", 0)
     local compiled = {
         { id = 0, matcher = false, config = root },
     }
@@ -479,7 +459,7 @@ local function compile(overrides, shared)
         compiled[#compiled + 1] = {
             id = index,
             matcher = profile.matcher,
-            config = normalize(layered(overrides, profile), shared, profile.path, index),
+            config = normalize(presets.layered("scrollbar", DEFAULTS, overrides, profile), shared, profile.path, index),
         }
     end
     return root, compiled

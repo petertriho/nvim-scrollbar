@@ -11,7 +11,7 @@ local T = MiniTest.new_set({
 })
 
 local function get(name)
-    return require("scrollbar.presets").get(name, "scrollbar.preset")
+    return require("scrollbar.presets").get("scrollbar", name, "scrollbar.preset")
 end
 
 local GIT_TYPES = {
@@ -202,12 +202,12 @@ T["returns exact isolated built-in presentation definitions"] = function()
 
     local names = vim.tbl_keys(builtins)
     table.sort(names)
-    expect.equality(require("scrollbar.presets").names(), names)
+    expect.equality(require("scrollbar.presets").names("scrollbar"), names)
 end
 
 T["every built-in compiles as a root preset and as a profile preset"] = function()
     local config = require("scrollbar.config")
-    for _, name in ipairs(require("scrollbar.presets").names()) do
+    for _, name in ipairs(require("scrollbar.presets").names("scrollbar")) do
         local root = config.set({ scrollbar = { preset = name } })
         expect.equality(root.thumb.blend, get(name).thumb.blend)
 
