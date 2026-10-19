@@ -28,7 +28,7 @@ local function root_config(overrides)
         exclude = { buftypes = {}, filetypes = {} },
         scrollbar = {
             throttle_ms = 1000,
-            geometry = "line",
+            unit = "line",
             mouse = true,
             thumb = { text = "H", hide_if_all_visible = false },
         },

@@ -34,7 +34,7 @@ local function renderer_config(overrides)
     return require("scrollbar.schema").merge({
         show = true,
         throttle_ms = 0,
-        geometry = "line",
+        unit = "line",
         placement = { relative = "window", anchor = "NE", row = 0, col = 0 },
         layout = {
             columns = {
@@ -1570,9 +1570,9 @@ T["aligns short-buffer marks without shrinking the track"] = function()
 
         local renderer = require("scrollbar.renderer")
         local cases = {}
-        for _, mode in ipairs({ "line", "screen" }) do
+        for _, mode in ipairs({ "line", "screenline" }) do
             local active = vim.deepcopy(base_config)
-            active.geometry = mode
+            active.unit = mode
             require("scrollbar.test.set_config")(active)
             renderer.setup()
             local state = assert(renderer.render(source_win))
@@ -1591,7 +1591,7 @@ T["aligns short-buffer marks without shrinking the track"] = function()
         return cases
     end, renderer_config())
 
-    for _, mode in ipairs({ "line", "screen" }) do
+    for _, mode in ipairs({ "line", "screenline" }) do
         local case = result[mode]
         expect.equality(case.height, 10)
         expect.equality(case.float_height, case.height)
@@ -1624,9 +1624,9 @@ T["renders compact built-in search exactly and invalidates it by revision"] = fu
                 return { line = line, type = "Search" }
             end, matches)
             local cases = {}
-            for _, mode in ipairs({ "line", "screen" }) do
+            for _, mode in ipairs({ "line", "screenline" }) do
                 local active = vim.deepcopy(base_config)
-                active.geometry = mode
+                active.unit = mode
                 require("scrollbar.test.set_config")(
                     active,
                     { providers = { cursor = false, diagnostic = false, search = true } }
@@ -1671,7 +1671,7 @@ T["renders compact built-in search exactly and invalidates it by revision"] = fu
         })
     )
 
-    for _, mode in ipairs({ "line", "screen" }) do
+    for _, mode in ipairs({ "line", "screenline" }) do
         expect.equality(result[mode].equivalent, true)
         expect.equality(result[mode].revision_advanced, true)
         expect.equality(result[mode].no_op, true)
@@ -1679,7 +1679,7 @@ T["renders compact built-in search exactly and invalidates it by revision"] = fu
     expect.equality(result.changed, true)
 end
 
-T["screen-mode dense compact search renders identically to expanded marks"] = function()
+T["screenline unit renders dense compact search identically to expanded marks"] = function()
     local child = new_child()
     local result = child.lua_func(
         function(base_config)
@@ -1712,7 +1712,7 @@ T["screen-mode dense compact search renders identically to expanded marks"] = fu
             end
 
             local active = vim.deepcopy(base_config)
-            active.geometry = "screen"
+            active.unit = "screenline"
             require("scrollbar.test.set_config")(
                 active,
                 { providers = { cursor = false, diagnostic = false, search = true } }
@@ -2375,7 +2375,7 @@ T["profile switches compare explicit cache inputs and invalidate only their sour
                     },
                 },
             }),
-            profile("screen", { geometry = "screen" }),
+            profile("screen", { unit = "screenline" }),
         }
 
         require("scrollbar.test.set_config")(base_config)
@@ -2521,7 +2521,7 @@ T["screen renders reuse flattened marks and skip text-height measurements while 
         local source_win = vim.api.nvim_get_current_win()
         local source_buf = vim.api.nvim_get_current_buf()
         local active_config = vim.deepcopy(base_config)
-        active_config.geometry = "screen"
+        active_config.unit = "screenline"
         require("scrollbar.test.set_config")(active_config)
         assert(require("scrollbar.store").set("test", source_buf, {
             { line = 10, type = "Misc" },

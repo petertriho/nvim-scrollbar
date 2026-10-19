@@ -98,7 +98,7 @@ require("scrollbar").setup({
 
         -- Appearance options
         preset = nil,
-        geometry = "line", -- "line" or "screen"
+        unit = "line", -- "line" or "screenline"
         placement = {
             relative = "window", -- "window" or "editor"
             anchor = "NE", -- "NW", "NE", "SW", or "SE"
@@ -150,7 +150,7 @@ require("scrollbar").setup({
 | Option | Default | Meaning |
 | --- | --- | --- |
 | `preset` | `nil` | Name of a [built-in preset](presets.md#built-ins). |
-| `geometry` | `"line"` | `"line"` maps logical lines. `"screen"` uses display rows, so it accounts for wrapped lines and closed folds. |
+| `unit` | `"line"` | `"line"` counts buffer lines. `"screenline"` counts screen lines, so it accounts for wrapped lines and closed folds. See [Units](layout-and-geometry.md#units). |
 | `placement` | see Defaults | Position of the float. See [Layout and geometry](layout-and-geometry.md). |
 | `hide_on_cursor` | `true` | Hides the scrollbar of the active window while the cursor is inside it. |
 | `hide_if_all_visible` | `false` | Hides the whole scrollbar when the buffer fits in the window. |
@@ -432,7 +432,7 @@ overrides apply on top of the shared `marks` definitions.
 ## Validation
 
 - `visibility`: `"all"` or `"active"`.
-- `geometry`: `"line"` or `"screen"`.
+- `unit`: `"line"` or `"screenline"`.
 - `placement.relative`: `"window"` or `"editor"`.
 - `placement.anchor`: `"NW"`, `"NE"`, `"SW"`, or `"SE"`.
 - `placement.gutter`: `"inner"`, `"outer"`, or `"overlap"`.

@@ -482,7 +482,7 @@ local function configure_worker_fixture(kind, worker_test)
         scrollbar = {
             max_lines = false,
             throttle_ms = 0,
-            geometry = "line",
+            unit = "line",
             thumb = { text = "H", hide_if_all_visible = false },
         },
     })

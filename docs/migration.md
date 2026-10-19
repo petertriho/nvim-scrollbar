@@ -88,7 +88,7 @@ These options keep their names and meaning: `show`, `set_highlights`,
 | `show_in_active_only = true` | `scrollbar.visibility = "active"` |
 | `show_in_active_only = false` | `scrollbar.visibility = "all"` (the default) |
 | `excluded_buftypes`, `excluded_filetypes` | `exclude.buftypes`, `exclude.filetypes`. A list replaces the defaults. A table keyed by name, such as `{ NvimTree = true }`, adds to the defaults. See [Exclude](configuration.md#exclude). |
-| `folds` | `scrollbar.geometry`. `"screen"` accounts for closed folds and wrapped lines. `"line"` (the default) does not. There is no line-count limit. |
+| `folds` | `scrollbar.unit`. `"screenline"` accounts for closed folds and wrapped lines. `"line"` (the default) does not. There is no line-count limit. |
 | `handle` | `scrollbar.thumb` |
 | `handle.text`, `handle.blend`, `handle.hide_if_all_visible` | `scrollbar.thumb.text`, `thumb.blend`, `thumb.hide_if_all_visible` |
 | `handle.highlight` | `scrollbar.thumb.highlight` |
@@ -316,7 +316,7 @@ option to get closer to the v1 behavior.
 | Search marks | Off, needed nvim-hlslens | `providers.search = true` |
 | Native marks | None | `providers.marks = true` shows letter marks as `Mark` |
 | `GitAdd` and `GitChange` text | `┆` | `┃` |
-| Closed folds | Counted in buffers up to 1000 lines (`folds = 1000`) | Not counted (`scrollbar.geometry = "line"`) |
+| Closed folds | Counted in buffers up to 1000 lines (`folds = 1000`) | Not counted (`scrollbar.unit = "line"`) |
 | coc.nvim diagnostics | Shown by the `diagnostic` handler | `providers.coc = false` |
 
 ## New In v2

@@ -513,7 +513,7 @@ T["track_row_to_line issues zero text-height calls in uniform windows"] = functi
         local counter = wrap_win_text_height_counter()
         local function call_track(row)
             local before = counter.count()
-            layout_module.track_row_to_line(source_win, row, height, "screen", total_extent)
+            layout_module.track_row_to_line(source_win, row, height, "screenline", total_extent)
             return counter.count() - before
         end
 

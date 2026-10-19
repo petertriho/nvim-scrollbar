@@ -73,7 +73,7 @@ T["normalizes a fresh one-column default without setup-only state"] = function()
     expect.equality(second.visibility, "all")
     expect.equality(second.autohide, false)
     expect.equality(second.throttle_ms, 16)
-    expect.equality(second.geometry, "line")
+    expect.equality(second.unit, "line")
     expect.equality(second.mouse, true)
     expect.equality(second.hide_on_cursor, true)
     expect.equality(second.placement, {
@@ -221,7 +221,7 @@ T["accepts the complete typed runtime schema"] = function()
             hide_if_all_visible = true,
             autohide = { delay_ms = 750 },
             throttle_ms = 0,
-            geometry = "screen",
+            unit = "screenline",
             placement = {
                 relative = "editor",
                 anchor = "SW",
@@ -254,7 +254,7 @@ T["accepts the complete typed runtime schema"] = function()
     expect.equality(result.max_lines, 1000)
     expect.equality(result.autohide, { delay_ms = 750 })
     expect.equality(result.throttle_ms, 0)
-    expect.equality(result.geometry, "screen")
+    expect.equality(result.unit, "screenline")
     expect.equality(result.placement.row, -2)
     expect.equality(result.placement.gutter, "overlap")
     expect.equality(result.placement.zindex, 60)
@@ -393,7 +393,7 @@ end
 
 T["rejects invalid scalar provider mark and text options"] = function()
     expect_invalid({ visibility = "current" }, "scrollbar.visibility must be one of")
-    expect_invalid({ geometry = "fold" }, "scrollbar.geometry must be one of")
+    expect_invalid({ unit = "fold" }, "scrollbar.unit must be one of")
     expect_invalid({ placement = { anchor = "C" } }, "scrollbar.placement.anchor must be one of")
     expect_invalid(
         { placement = { gutter = "avoid" } },

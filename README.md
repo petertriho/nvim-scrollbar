@@ -13,9 +13,9 @@
 
 `nvim-scrollbar` shows one floating scrollbar for each source window. Each
 split window gets its own thumb. The scrollbar has typed mark lanes, optional
-screen-row geometry, and mouse navigation. An optional floating minimap shows a
-compressed view of the buffer, with a viewport tint, a cursor accent, provider
-marks, and mouse navigation.
+screen-line positions that follow wraps and folds, and mouse navigation. An
+optional floating minimap shows a compressed view of the buffer, with a
+viewport tint, a cursor accent, provider marks, and mouse navigation.
 
 ## Requirements
 
@@ -226,7 +226,7 @@ source, use the [custom provider API](docs/providers/custom.md).
 - [Visibility](docs/visibility.md): source-window visibility, autohide,
   hide-on-cursor behavior, commands, and Lua APIs
 - [Layout and geometry](docs/layout-and-geometry.md): layout lanes, placement,
-  line and screen geometry, and wide scrollbars
+  line and screen-line units, and wide scrollbars
 - [Mouse](docs/mouse.md): clicks, mark navigation, thumb dragging, and focus
   behavior
 - [Highlights](docs/highlights.md): generated groups, direct definitions,

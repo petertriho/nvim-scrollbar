@@ -26,7 +26,7 @@ local function mouse_config(overrides, top)
         scrollbar = schema.merge({
             show = true,
             throttle_ms = 0,
-            geometry = "line",
+            unit = "line",
             placement = { relative = "window", anchor = "NW", row = 0, col = 5 },
             layout = {
                 direction = "ltr",
@@ -456,10 +456,10 @@ T["uses direct screen rows when short rendered content fits"] = function()
     local setup = setup_single(child, {
         line_count = 5,
         height = 10,
-        config = mouse_config({ geometry = "screen" }),
+        config = mouse_config({ unit = "screenline" }),
     })
 
-    expect.equality(setup.geometry.mode, "screen")
+    expect.equality(setup.geometry.unit, "screenline")
     click(child, setup, 6, 1)
     expect.equality(child.api.nvim_win_get_cursor(setup.source_win)[1], 5)
 end
@@ -851,9 +851,9 @@ T["uses screen geometry when reverse-mapping an empty track click"] = function()
     local setup = setup_single(child, {
         line_count = 100,
         folds = { { 1, 80 } },
-        config = mouse_config({ geometry = "screen" }),
+        config = mouse_config({ unit = "screenline" }),
     })
-    expect.equality(setup.geometry.mode, "screen")
+    expect.equality(setup.geometry.unit, "screenline")
 
     click(child, setup, 5, 1)
     expect.equality(child.api.nvim_win_get_cursor(setup.source_win)[1] > 80, true)
@@ -1201,7 +1201,7 @@ T["keeps track interaction geometry captured at press time across profile switch
                         return screen
                     end,
                 },
-                geometry = "screen",
+                unit = "screenline",
             },
         }
 
@@ -1218,7 +1218,7 @@ T["keeps track interaction geometry captured at press time across profile switch
         package.loaded["scrollbar.test.mouse_profile_switch"] = {
             switch = function()
                 screen = true
-                return assert(renderer.render(source_win)).geometry.mode
+                return assert(renderer.render(source_win)).geometry.unit
             end,
         }
         return {
@@ -1230,7 +1230,7 @@ T["keeps track interaction geometry captured at press time across profile switch
     vim.uv.sleep(30)
 
     input_mouse(child, "press", setup.row, setup.col)
-    expect.equality(child.lua_get([[require("scrollbar.test.mouse_profile_switch").switch()]]), "screen")
+    expect.equality(child.lua_get([[require("scrollbar.test.mouse_profile_switch").switch()]]), "screenline")
     input_mouse(child, "release", setup.row, setup.col)
     expect.equality(child.api.nvim_win_get_cursor(setup.source_win)[1] < 80, true)
 end

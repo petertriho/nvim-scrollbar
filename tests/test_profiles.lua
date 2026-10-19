@@ -35,7 +35,7 @@ T["compiles profile variants with presets and settled precedence"] = function()
                 },
                 {
                     match = { buftypes = { "quickfix" } },
-                    geometry = "screen",
+                    unit = "screenline",
                 },
             },
         },
@@ -57,7 +57,7 @@ T["compiles profile variants with presets and settled precedence"] = function()
     expect.equality(variants[3].config.layout.width, 3)
     expect.equality(variants[3].config.thumb.blend, 35)
     expect.equality(variants[3].config.placement.gutter, "inner")
-    expect.equality(variants[3].config.geometry, "screen")
+    expect.equality(variants[3].config.unit, "screenline")
 
     for _, variant in ipairs(variants) do
         expect.equality(rawget(variant.config, "preset"), nil)

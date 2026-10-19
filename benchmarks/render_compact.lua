@@ -70,7 +70,7 @@ local function configure_screen()
         },
         scrollbar = {
             throttle_ms = 0,
-            geometry = "screen",
+            unit = "screenline",
             thumb = { text = "H", hide_if_all_visible = false },
             marks = { Search = { text = { "-", "=", "#" } } },
         },
@@ -232,20 +232,20 @@ local results = {}
 
 table.insert(
     results,
-    measure_phases("screen + compact blob", function(store)
+    measure_phases("screenline + compact blob", function(store)
         store._set_search_compact(source_buf, compact_blob)
     end)
 )
 
 table.insert(
     results,
-    measure_phases("screen + ordinary search marks", function(store)
+    measure_phases("screenline + ordinary search marks", function(store)
         store.set("search", source_buf, ordinary_marks)
     end)
 )
 
 io.write(string.format("match_count = %d\n\n", match_count))
-io.write("## Renderer phases (screen mode, p50 / p95 / max ms)\n\n")
+io.write("## Renderer phases (screenline unit, p50 / p95 / max ms)\n\n")
 io.write("| Case | Phase | p50 | p95 | max |\n")
 io.write("| --- | --- | ---: | ---: | ---: |\n")
 for _, result in ipairs(results) do

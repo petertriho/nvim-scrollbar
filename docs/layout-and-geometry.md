@@ -156,13 +156,17 @@ winbar and the rows already used by the tabline, the statusline, and the
 command line. The plugin derives the float width and height. The float options
 are `placement` and `hide_on_cursor`.
 
-## Geometry Modes
+## Units
 
-`geometry = "line"` (the default) maps logical lines directly.
+`unit` sets what the scrollbar counts. The thumb, the marks, and mouse
+navigation use the same unit. Neovim uses the same two terms in
+`'cursorlineopt'`.
 
-`geometry = "screen"` uses display rows. As a result, wrapping, folds,
-diff filler, virtual lines, `topfill`, and wrapped offsets affect both the
-marks and the thumb geometry.
+`unit = "line"` (the default) counts buffer lines.
+
+`unit = "screenline"` counts screen lines, the rows that Neovim draws. As a
+result, wrapping, folds, diff filler, virtual lines, `topfill`, and wrapped
+offsets affect both the marks and the thumb geometry.
 
 ## Examples
 

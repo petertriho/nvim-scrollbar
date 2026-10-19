@@ -42,7 +42,7 @@ T["root setup preserves independent floats for two views of one buffer"] = funct
             exclude = { buftypes = {}, filetypes = {} },
             scrollbar = {
                 throttle_ms = 1000,
-                geometry = "line",
+                unit = "line",
                 mouse = false,
                 thumb = { text = "H", hide_if_all_visible = false },
             },
@@ -116,7 +116,7 @@ T["same-buffer vertical splits avoid and update their own live gutters"] = funct
             exclude = { buftypes = {}, filetypes = {} },
             scrollbar = {
                 throttle_ms = 0,
-                geometry = "line",
+                unit = "line",
                 hide_on_cursor = false,
                 placement = { relative = "window", anchor = "NW", row = 0, col = 0, gutter = "inner" },
                 mouse = false,
@@ -215,7 +215,7 @@ T["cursor marks stay local to each view of one buffer"] = function()
             exclude = { buftypes = {}, filetypes = {} },
             scrollbar = {
                 throttle_ms = 0,
-                geometry = "line",
+                unit = "line",
                 layout = { direction = "ltr", columns = { { "marks" }, { "thumb" } } },
                 mouse = false,
                 thumb = { text = "H", hide_if_all_visible = false },
@@ -282,7 +282,7 @@ T["window-local mark revisions rebuild only the affected static layer"] = functi
             exclude = { buftypes = {}, filetypes = {} },
             scrollbar = {
                 throttle_ms = 0,
-                geometry = "line",
+                unit = "line",
                 layout = { direction = "ltr", columns = { { "marks" }, { "thumb" } } },
                 mouse = false,
                 thumb = { text = "H", hide_if_all_visible = false },
@@ -315,7 +315,7 @@ T["window-local mark revisions rebuild only the affected static layer"] = functi
         renderer.render(second)
         rawset(layout, "mark_layer", original_mark_layer)
         return {
-            config = active_config.geometry,
+            config = active_config.unit,
             initial_builds = initial_builds,
             after_first_change = after_first_change,
             final_builds = builds,
@@ -376,7 +376,7 @@ T["real named marks stay with their source buffer and resolve width per window h
             exclude = { buftypes = {}, filetypes = {} },
             scrollbar = {
                 throttle_ms = 0,
-                geometry = "line",
+                unit = "line",
                 hide_on_cursor = false,
                 placement = { relative = "window", anchor = "NW", row = 0, col = 0 },
                 layout = {
@@ -498,13 +498,13 @@ T["simultaneous windows render selected profile layouts geometry and filtering"]
                     {
                         match = { filetypes = { "lua" } },
                         preset = "review",
-                        geometry = "screen",
+                        unit = "screenline",
                         placement = { anchor = "NW" },
                     },
                     {
                         match = { filetypes = { "markdown" } },
                         preset = "navigate",
-                        geometry = "line",
+                        unit = "line",
                         placement = { anchor = "SE" },
                     },
                 },
@@ -531,14 +531,14 @@ T["simultaneous windows render selected profile layouts geometry and filtering"]
             first = {
                 variant_id = first_state.variant_id,
                 width = first_state.width,
-                mode = first_state.geometry.mode,
+                unit = first_state.geometry.unit,
                 anchor = first_state.float_config.anchor,
                 types = rendered_types(first_state),
             },
             second = {
                 variant_id = second_state.variant_id,
                 width = second_state.width,
-                mode = second_state.geometry.mode,
+                unit = second_state.geometry.unit,
                 anchor = second_state.float_config.anchor,
                 types = rendered_types(second_state),
             },
@@ -548,12 +548,12 @@ T["simultaneous windows render selected profile layouts geometry and filtering"]
     expect.equality(result.first, {
         variant_id = 1,
         width = 3,
-        mode = "screen",
+        unit = "screenline",
         anchor = "NW",
         types = { Error = true },
     })
     expect.equality(result.second.variant_id, 2)
-    expect.equality(result.second.mode, "line")
+    expect.equality(result.second.unit, "line")
     expect.equality(result.second.anchor, "SE")
     expect.equality(result.second.width > 2, true)
     expect.equality(result.second.types, { Mark = true })

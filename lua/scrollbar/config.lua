@@ -19,7 +19,7 @@ local DEFAULTS = {
     autohide = false,
     max_lines = false,
     throttle_ms = 16,
-    geometry = "line",
+    unit = "line",
     placement = {
         relative = "window",
         anchor = "NE",
@@ -62,7 +62,7 @@ local GLOBAL_KEYS = {
 
 local APPEARANCE_KEYS = {
     preset = true,
-    geometry = true,
+    unit = true,
     placement = {
         relative = true,
         anchor = true,
@@ -87,7 +87,7 @@ local LAYER_KEYS = { types = true, max_width = true }
 -- Replacements for the v1 options, shown in the unknown-option error.
 local REMOVED_KEYS = {
     update = "use 'throttle_ms'. The update events are fixed",
-    render = "use 'geometry'",
+    render = "use 'unit'",
     float = "use 'placement', 'placement.zindex', and 'hide_on_cursor'",
     presets = "custom presets are removed. Set the options in the block or in a profile",
     extends = "custom presets are removed. Set the options in the block or in a profile",
@@ -340,7 +340,7 @@ local function layout_config(value)
             priority = mark.priority,
         }
     end
-    return { geometry = value.geometry, layout = value.layout.cache, marks = marks }
+    return { unit = value.unit, layout = value.layout.cache, marks = marks }
 end
 
 local describe_root_key = schema.hinter(REMOVED_KEYS)
@@ -417,7 +417,7 @@ local function normalize(value, shared, path, variant_id)
         throttle_ms = schema.integer(value.throttle_ms, at("throttle_ms"), 0),
         set_highlights = shared.set_highlights,
         exclude = shared.exclude.scrollbar,
-        geometry = schema.enum(value.geometry, at("geometry"), { "line", "screen" }),
+        unit = schema.enum(value.unit, at("unit"), { "line", "screenline" }),
         placement = normalized_placement,
         hide_on_cursor = schema.boolean(value.hide_on_cursor, at("hide_on_cursor")),
         hide_if_all_visible = schema.boolean(value.hide_if_all_visible, at("hide_if_all_visible")),

@@ -52,7 +52,7 @@ local function statistics(samples)
     }
 end
 
-local function configure(geometry)
+local function configure(unit)
     require("scrollbar.config").set({
         set_highlights = false,
         exclude = { buftypes = {}, filetypes = {} },
@@ -65,7 +65,7 @@ local function configure(geometry)
             coc = false,
         },
         scrollbar = {
-            geometry = geometry,
+            unit = unit,
             throttle_ms = 0,
             thumb = { text = "H", hide_if_all_visible = false },
         },
@@ -79,9 +79,9 @@ local function render_pass(windows)
     end
 end
 
-local function measure(geometry, name, windows, options)
+local function measure(unit, name, windows, options)
     options = options or {}
-    configure(geometry)
+    configure(unit)
 
     for _ = 1, warmup_count do
         if options.mutate then
@@ -101,7 +101,7 @@ local function measure(geometry, name, windows, options)
         samples[index] = (vim.uv.hrtime() - started) / 1000000
     end
     return {
-        geometry = geometry,
+        unit = unit,
         name = name,
         statistics = statistics(samples),
     }
@@ -240,7 +240,7 @@ local phases = {
     "buffer/extmark updates",
 }
 
-local function measure_phases(geometry, name, windows, options)
+local function measure_phases(unit, name, windows, options)
     options = options or {}
     local renderer = require("scrollbar.renderer")
     local instrumentation = instrument_renderer()
@@ -281,15 +281,15 @@ local function measure_phases(geometry, name, windows, options)
     for _, phase in ipairs(phases) do
         result[phase] = statistics(samples[phase])
     end
-    return { geometry = geometry, name = name, phases = result }
+    return { unit = unit, name = name, phases = result }
 end
 
 local end_to_end = {}
 local phase_results = {}
 
-local function measure_case(geometry, name, windows, options)
-    table.insert(end_to_end, measure(geometry, name, windows, options))
-    table.insert(phase_results, measure_phases(geometry, name, windows, options))
+local function measure_case(unit, name, windows, options)
+    table.insert(end_to_end, measure(unit, name, windows, options))
+    table.insert(phase_results, measure_phases(unit, name, windows, options))
 end
 
 local first_win = vim.api.nvim_get_current_win()
@@ -301,21 +301,21 @@ measure_case("line", "1 window text insert", { first_win }, {
         vim.api.nvim_buf_set_lines(source_buf, 25000, 25000, false, { "INSERTED" })
     end,
 })
-measure_case("screen", "1 window", { first_win })
-measure_case("screen", "1 window steady", { first_win })
-measure_case("screen", "1 window scrolled", { first_win }, {
+measure_case("screenline", "1 window", { first_win })
+measure_case("screenline", "1 window steady", { first_win })
+measure_case("screenline", "1 window scrolled", { first_win }, {
     mutate = function()
         vim.api.nvim_win_call(first_win, function()
             vim.cmd("normal! \\<C-e>")
         end)
     end,
 })
-measure_case("screen", "1 window text edit", { first_win }, {
+measure_case("screenline", "1 window text edit", { first_win }, {
     mutate = function()
         vim.api.nvim_buf_set_text(source_buf, 25000, 0, 25000, 8, { "CHANGED!" })
     end,
 })
-measure_case("screen", "1 window invalidated", { first_win }, {
+measure_case("screenline", "1 window invalidated", { first_win }, {
     mutate = function()
         vim.wo.number = not vim.wo.number
     end,
@@ -330,7 +330,7 @@ local third_win = vim.api.nvim_get_current_win()
 vim.api.nvim_win_set_cursor(third_win, { line_count - 100, 0 })
 vim.cmd("normal! zt")
 measure_case("line", "3 windows", { first_win, second_win, third_win })
-measure_case("screen", "3 windows", { first_win, second_win, third_win })
+measure_case("screenline", "3 windows", { first_win, second_win, third_win })
 
 -- Wrapped fixture: every 40th line wraps at the benchmark width, exercising
 -- the non-uniform screen-geometry pipeline (nvim's default has wrap enabled).
@@ -361,29 +361,29 @@ for index = 1, mark_count do
 end
 assert(require("scrollbar.store").set("benchmark", wrapped_buf, wrapped_marks))
 vim.api.nvim_win_set_cursor(wrapped_win, { 1, 0 })
-measure_case("screen", "1 window wrapped steady", { wrapped_win })
-measure_case("screen", "1 window wrapped scroll", { wrapped_win }, {
+measure_case("screenline", "1 window wrapped steady", { wrapped_win })
+measure_case("screenline", "1 window wrapped scroll", { wrapped_win }, {
     mutate = function()
         vim.api.nvim_win_call(wrapped_win, function()
             vim.cmd("normal! \\<C-e>")
         end)
     end,
 })
-measure_case("screen", "1 window wrapped text edit", { wrapped_win }, {
+measure_case("screenline", "1 window wrapped text edit", { wrapped_win }, {
     mutate = function()
         vim.api.nvim_buf_set_text(wrapped_buf, 25000, 0, 25000, 8, { "CHANGED!" })
     end,
 })
 
 io.write("## End-to-end renderer\n\n")
-io.write("| Geometry | Case | Median (p50) | p95 | Maximum |\n")
+io.write("| Unit | Case | Median (p50) | p95 | Maximum |\n")
 io.write("| --- | --- | ---: | ---: | ---: |\n")
 for _, result in ipairs(end_to_end) do
     local stats = result.statistics
     io.write(
         string.format(
             "| %s | %s | %.3f | %.3f | %.3f |\n",
-            result.geometry,
+            result.unit,
             result.name,
             stats.median,
             stats.p95,
@@ -393,7 +393,7 @@ for _, result in ipairs(end_to_end) do
 end
 
 io.write("\n## Renderer phases\n\n")
-io.write("| Geometry | Case | Phase | Median (p50) | p95 | Maximum |\n")
+io.write("| Unit | Case | Phase | Median (p50) | p95 | Maximum |\n")
 io.write("| --- | --- | --- | ---: | ---: | ---: |\n")
 for _, result in ipairs(phase_results) do
     for _, phase in ipairs(phases) do
@@ -401,7 +401,7 @@ for _, result in ipairs(phase_results) do
         io.write(
             string.format(
                 "| %s | %s | %s | %.3f | %.3f | %.3f |\n",
-                result.geometry,
+                result.unit,
                 result.name,
                 phase,
                 stats.median,

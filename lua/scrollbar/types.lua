@@ -1,7 +1,7 @@
 ---@meta
 
 ---@alias ScrollbarVisibility "all"|"active"
----@alias ScrollbarGeometryMode "line"|"screen"
+---@alias ScrollbarUnit "line"|"screenline"
 ---@alias ScrollbarPlacementRelative "window"|"editor"
 ---@alias ScrollbarFloatAnchor "NW"|"NE"|"SW"|"SE"
 ---@alias ScrollbarGutter "inner"|"outer"|"overlap"
@@ -98,7 +98,7 @@
 
 ---@class ScrollbarUserAppearance
 ---@field preset? string Built-in preset applied below the options at the same level
----@field geometry? ScrollbarGeometryMode
+---@field unit? ScrollbarUnit
 ---@field placement? ScrollbarUserPlacement
 ---@field hide_on_cursor? boolean
 ---@field hide_if_all_visible? boolean
@@ -260,7 +260,7 @@
 ---@field throttle_ms integer
 ---@field set_highlights boolean Copied from the top-level option
 ---@field exclude ScrollbarExcludeConfig
----@field geometry ScrollbarGeometryMode
+---@field unit ScrollbarUnit
 ---@field placement ScrollbarPlacement
 ---@field hide_on_cursor boolean
 ---@field hide_if_all_visible boolean
@@ -498,7 +498,7 @@
 ---@field handle false|ScrollbarHandleGeometry
 
 ---@class ScrollbarRendererGeometry
----@field mode ScrollbarGeometryMode
+---@field unit ScrollbarUnit
 ---@field total_extent integer
 ---@field viewport_start integer
 ---@field viewport_end integer

@@ -1196,10 +1196,10 @@ end
 ---@param source_win integer
 ---@param row integer
 ---@param height integer
----@param mode ScrollbarGeometryMode
+---@param unit ScrollbarUnit
 ---@param total_extent integer
 ---@return integer
-M.track_row_to_line = function(source_win, row, height, mode, total_extent)
+M.track_row_to_line = function(source_win, row, height, unit, total_extent)
     local source_buf = vim.api.nvim_win_get_buf(source_win)
     local line_count = vim.api.nvim_buf_line_count(source_buf)
     if line_count <= 1 or height <= 1 then
@@ -1207,7 +1207,7 @@ M.track_row_to_line = function(source_win, row, height, mode, total_extent)
     end
 
     local clamped_row = clamp(row, 0, height - 1)
-    if mode == "line" then
+    if unit == "line" then
         if line_count <= height then
             return math.min(clamped_row, line_count - 1)
         end

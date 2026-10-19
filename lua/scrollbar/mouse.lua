@@ -156,7 +156,7 @@ local function track_line(current, row)
         current.source_win,
         row,
         current.height,
-        current.geometry.mode,
+        current.geometry.unit,
         current.geometry.total_extent
     )
 end

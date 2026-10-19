@@ -794,7 +794,7 @@ local function create_state(
         handle = false,
         handle_pressed = false,
         hidden_by_cursor = active_float_config.hide == true,
-        geometry = { mode = "line", total_extent = 0, viewport_start = 0, viewport_end = 0 },
+        geometry = { unit = "line", total_extent = 0, viewport_start = 0, viewport_end = 0 },
     }
     states[source_win] = state
     states_by_float[float_win] = state
@@ -982,7 +982,7 @@ end
 ---@param compact_search? ScrollbarCompactSearch
 ---@return ScrollbarGeometry
 local function geometry_for(active_config, source_win, source_buf, height, marks, line_count, mark_rows, compact_search)
-    if active_config.geometry == "screen" then
+    if active_config.unit == "screenline" then
         return layout.screen({
             source_win = source_win,
             height = height,
@@ -1344,7 +1344,7 @@ local function render_source(source_win, selection, root_config)
     end
 
     local marks, buffer_revision, window_revision, compact_search = flattened_marks(source_win, source_buf)
-    local line_count = active_config.geometry == "line" and vim.api.nvim_buf_line_count(source_buf) or nil
+    local line_count = active_config.unit == "line" and vim.api.nvim_buf_line_count(source_buf) or nil
     local west = west_anchor(active_config)
     local stack_origin, stack_zindex = stack.resolve("scrollbar", source_win, stack_placement(active_config))
     local area
@@ -1537,7 +1537,7 @@ local function render_source(source_win, selection, root_config)
     state.hitmap = output.hitmap
     state.handle = output.handle
     state.geometry = {
-        mode = active_config.geometry,
+        unit = active_config.unit,
         total_extent = geometry.total_extent,
         viewport_start = geometry.viewport_start,
         viewport_end = geometry.viewport_end,
