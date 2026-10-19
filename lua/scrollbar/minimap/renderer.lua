@@ -6,7 +6,12 @@
 --- `scrollbar.stack` resolves the origin and z-index against a scrollbar on the
 --- same side of the source window. Squash output is the only source of row
 --- text; viewport, cursor, and semantic overlays are non-destructive extmark
---- highlights.
+--- highlights. `lua/scrollbar/minimap/projection.lua` maps source lines to
+--- float rows for every layer, so all layers agree on the row of a line.
+---
+--- The worker squashes a slice of map rows around the visible rows. Scrolling
+--- inside the slice redraws from the cache; a new slice is requested when the
+--- visible rows get near the edge of the cached slice.
 ---
 --- State cache is keyed by
 --- `(source_win, source_buf, mirror_signature, viewport, width, height, overlay_signature)`
@@ -14,6 +19,7 @@
 
 local config_module = require("scrollbar.minimap.config")
 local highlight_module = require("scrollbar.minimap.highlights")
+local projection_module = require("scrollbar.minimap.projection")
 local providers = require("scrollbar.providers")
 local semantic = require("scrollbar.minimap.semantic")
 local stack = require("scrollbar.stack")
@@ -567,19 +573,12 @@ end
 
 ---Compose non-destructive viewport and point highlight layers.
 ---@param target_highlights ScrollbarMinimapHighlightSpan[][]
----@param viewport_top_row integer 1-based first row of viewport in minimap
----@param viewport_bottom_row integer 1-based last row of viewport in minimap
+---@param band_first? integer 1-based first float row of the viewport band
+---@param band_last? integer 1-based last float row of the viewport band
 ---@param points ScrollbarMinimapProjectedPoint[]
 ---@param target_width integer Minimap grid width in cells
 ---@param show_viewport boolean
-local function overlay_layers(
-    target_highlights,
-    viewport_top_row,
-    viewport_bottom_row,
-    points,
-    target_width,
-    show_viewport
-)
+local function overlay_layers(target_highlights, band_first, band_last, points, target_width, show_viewport)
     local function add_span(row, start_col, end_col, highlight, priority)
         if target_highlights[row] == nil then
             target_highlights[row] = {}
@@ -592,8 +591,8 @@ local function overlay_layers(
         })
     end
 
-    if show_viewport and viewport_top_row <= viewport_bottom_row then
-        for row = viewport_top_row, viewport_bottom_row do
+    if show_viewport and band_first ~= nil and band_last ~= nil then
+        for row = band_first, band_last do
             add_span(row, 1, target_width + 1, "ScrollbarMinimapViewport", VIEWPORT_PRIORITY)
         end
     end
@@ -610,17 +609,15 @@ end
 ---@field priority integer
 ---@field provider string
 
----Project provider-owned source byte points onto the completed squash grid.
+---Project provider-owned source byte points onto the float rows. Points on
+---rows outside the float are skipped.
 ---@param source_win integer
 ---@param source_buf integer
----@param target_height integer
----@param target_width integer
----@param v_ratio number
----@param h_ratio number
+---@param projection ScrollbarMinimapProjection
 ---@return ScrollbarMinimapProjectedPoint[] points
 ---@return integer? cursor_row
 ---@return integer? cursor_col
-local function project_points(source_win, source_buf, target_height, target_width, v_ratio, h_ratio)
+local function project_points(source_win, source_buf, projection)
     local snapshot = store._get_window_snapshot(source_win)
     local provider_names = vim.tbl_keys(snapshot.minimap_points)
     table.sort(provider_names)
@@ -632,28 +629,30 @@ local function project_points(source_win, source_buf, target_height, target_widt
     for _, provider in ipairs(provider_names) do
         if providers._consumer_enabled(provider, "minimap") then
             for _, point in ipairs(snapshot.minimap_points[provider]) do
-                local row = math.max(1, math.min(target_height, math.floor(point.line / v_ratio) + 1))
-                local source_line = source_lines[point.line]
-                if source_line == nil then
-                    source_line = vim.api.nvim_buf_get_lines(source_buf, point.line, point.line + 1, true)[1] or ""
-                    source_lines[point.line] = source_line
-                end
-                local byte_col = math.min(point.col, #source_line)
-                local ok, display_col = pcall(vim.fn.strdisplaywidth, source_line:sub(1, byte_col))
-                if not ok then
-                    display_col = 0
-                end
-                local col = math.max(1, math.min(target_width, math.floor(display_col / h_ratio) + 1))
-                points[#points + 1] = {
-                    row = row,
-                    col = col,
-                    highlight = point.highlight,
-                    priority = point.priority,
-                    provider = provider,
-                }
-                if provider == "cursor" and cursor_row == nil then
-                    cursor_row = row
-                    cursor_col = col
+                local row = projection_module.float_row(projection, point.line)
+                if row ~= nil then
+                    local source_line = source_lines[point.line]
+                    if source_line == nil then
+                        source_line = vim.api.nvim_buf_get_lines(source_buf, point.line, point.line + 1, true)[1] or ""
+                        source_lines[point.line] = source_line
+                    end
+                    local byte_col = math.min(point.col, #source_line)
+                    local ok, display_col = pcall(vim.fn.strdisplaywidth, source_line:sub(1, byte_col))
+                    if not ok then
+                        display_col = 0
+                    end
+                    local col = projection_module.cell(projection, display_col)
+                    points[#points + 1] = {
+                        row = row,
+                        col = col,
+                        highlight = point.highlight,
+                        priority = point.priority,
+                        provider = provider,
+                    }
+                    if provider == "cursor" and cursor_row == nil then
+                        cursor_row = row
+                        cursor_col = col
+                    end
                 end
             end
         end
@@ -774,39 +773,58 @@ local function semantic_input(source_buf)
     return input
 end
 
----Compose the worker request signature for a source buffer. The signature
----describes only the dimensions that drive the squash output; viewport
----and overlay composition are layered on top during render and do not
----require fresh cells from the worker.
+---Compose the cache key of a source buffer. The key describes the grid
+---shape. The slice position and the line scale are stored in the cache
+---entry, so a stale entry can still draw while a new slice is pending.
+---Viewport and overlay composition are layered on top during render and do
+---not require fresh cells from the worker.
 ---@param source_buf integer
+---@param active_config ScrollbarMinimapConfig
 ---@param target_width integer
 ---@param target_height integer
 ---@return string
-local function cell_signature(source_buf, target_width, target_height)
-    return string.format("%d:%d:%d", source_buf, target_width, target_height)
+local function cell_signature(source_buf, active_config, target_width, target_height)
+    return string.format(
+        "%d:%d:%d:%s:%s:%d",
+        source_buf,
+        target_width,
+        target_height,
+        active_config.scale,
+        active_config.encoding,
+        active_config.columns_per_dot
+    )
 end
 
----Issue a worker request for the desired grid. The sync backend completes
+---Whether cached or pending rows serve `projection`.
+---@param slice { first_row: integer, row_count: integer, scale_lines: integer, scale_dots: integer }
+---@param projection ScrollbarMinimapProjection
+---@param margin boolean
+---@return boolean
+local function slice_serves(slice, projection, margin)
+    return slice.scale_lines == projection.scale_lines
+        and slice.scale_dots == projection.scale_dots
+        and projection_module.covers(projection, slice.first_row, slice.row_count, margin)
+end
+
+---Issue a worker request for a grid slice. The sync backend completes
 ---synchronously and updates the cache via `handle_worker_result` before
 ---returning; the worker backend returns immediately and the cache is
 ---updated asynchronously.
 ---@param source_buf integer
 ---@param filetype string
----@param target_width integer
----@param target_height integer
+---@param grid ScrollbarMinimapGrid
+---@param signature string
 ---@param generation integer
 ---@param semantic_state ScrollbarMinimapSemanticInput
 ---@return boolean
-local function request_cells(source_buf, filetype, target_width, target_height, generation, semantic_state)
+local function request_cells(source_buf, filetype, grid, signature, generation, semantic_state)
     local worker = options_ref and options_ref.worker
-    if worker == nil or target_width <= 0 or target_height <= 0 then
+    if worker == nil or grid.width <= 0 or grid.row_count <= 0 then
         return false
     end
-    local signature = cell_signature(source_buf, target_width, target_height)
     return worker.request({
         bufnr = source_buf,
-        width = target_width,
-        height = target_height,
+        grid = grid,
         filetype = filetype,
         generation = generation,
         signature = signature,
@@ -849,18 +867,23 @@ local function render_source(source_win, selection, root_config)
     local viewport = source_viewport(source_win)
     local viewport_top = viewport[1]
     local viewport_bottom = viewport[2]
-    local source_line_count = line_count_of(source_buf)
-    local v_ratio = math.max(1, source_line_count / target_height)
-    local viewport_top_row = math.max(1, math.min(target_height, math.floor(viewport_top / v_ratio) + 1))
-    local viewport_bottom_row = math.max(1, math.min(target_height, math.floor(viewport_bottom / v_ratio) + 1))
+    local projection = projection_module.new({
+        scale = active_config.scale,
+        line_count = line_count_of(source_buf),
+        rows = target_height,
+        width = target_width,
+        columns_per_dot = active_config.columns_per_dot,
+        top = viewport_top,
+        bottom = viewport_bottom,
+    })
 
     local overlays = {}
     if next(active_config.marks) ~= nil and options_ref and options_ref.overlays then
-        overlays = options_ref.overlays.project_with(source_win, target_height, source_line_count, active_config.marks)
+        overlays = options_ref.overlays.project_with(source_win, projection, active_config.marks)
     end
     local overlay_sig = overlay_signature(overlays)
 
-    local desired_cells_signature = cell_signature(source_buf, target_width, target_height)
+    local desired_cells_signature = cell_signature(source_buf, active_config, target_width, target_height)
     local changedtick = vim.api.nvim_buf_get_changedtick(source_buf)
     local filetype = vim.bo[source_buf].filetype
     local semantic_state = semantic_input(source_buf)
@@ -871,6 +894,7 @@ local function render_source(source_win, selection, root_config)
         or cache.changedtick ~= changedtick
         or cache.semantic_revision ~= semantic_state.revision
         or cache.filetype ~= filetype
+        or not slice_serves(cache, projection, true)
     then
         local buffer_pending = pending_cells[source_buf]
         if buffer_pending == nil then
@@ -883,18 +907,35 @@ local function render_source(source_win, selection, root_config)
             or pending.changedtick ~= changedtick
             or pending.semantic_revision ~= semantic_state.revision
             or pending.filetype ~= filetype
+            or not slice_serves(pending.grid, projection, false)
         then
+            local first_row, row_count = projection_module.slice(projection)
             request_generation = request_generation + 1
             pending = {
                 changedtick = changedtick,
                 semantic_revision = semantic_state.revision,
                 generation = request_generation,
                 filetype = filetype,
+                grid = {
+                    width = target_width,
+                    first_row = first_row,
+                    row_count = row_count,
+                    scale_lines = projection.scale_lines,
+                    scale_dots = projection.scale_dots,
+                    columns_per_dot = active_config.columns_per_dot,
+                    encoding = active_config.encoding,
+                },
             }
             buffer_pending[desired_cells_signature] = pending
             if
-                not request_cells(source_buf, filetype, target_width, target_height, pending.generation, semantic_state)
-                and buffer_pending[desired_cells_signature] == pending
+                not request_cells(
+                    source_buf,
+                    filetype,
+                    pending.grid,
+                    desired_cells_signature,
+                    pending.generation,
+                    semantic_state
+                ) and buffer_pending[desired_cells_signature] == pending
             then
                 buffer_pending[desired_cells_signature] = nil
             end
@@ -906,17 +947,36 @@ local function render_source(source_win, selection, root_config)
         cache = {
             signature = desired_cells_signature,
             cells = {},
+            first_row = 0,
+            row_count = 0,
+            scale_lines = projection.scale_lines,
+            scale_dots = projection.scale_dots,
             revision = 0,
             changedtick = changedtick,
             semantic_revision = semantic_state.revision,
             filetype = filetype,
-            source_line_count = source_line_count,
-            max_line_width = 0,
+            source_line_count = projection.line_count,
             mirror_signature = "",
         }
     end
 
-    local cells = cache and cache.cells or {}
+    -- Rows outside the cached slice stay blank until the pending slice
+    -- arrives. Rows past the end of the map are always blank.
+    local cells = {}
+    local blank_row
+    for row = 1, target_height do
+        local cached = cache.cells[projection.offset + row - cache.first_row]
+        if cached == nil then
+            if blank_row == nil then
+                blank_row = {}
+                for col = 1, target_width do
+                    blank_row[col] = { char = " " }
+                end
+            end
+            cached = blank_row
+        end
+        cells[row] = cached
+    end
     local rows, highlights = compose_rows(cells)
     for index = #rows, target_height + 1, -1 do
         rows[index] = nil
@@ -932,10 +992,7 @@ local function render_source(source_win, selection, root_config)
         end
     end
 
-    local max_line_width = (cache and cache.max_line_width) or 0
-    local h_ratio = math.max(1, max_line_width / target_width)
-    local points, cursor_row, cursor_col =
-        project_points(source_win, source_buf, target_height, target_width, v_ratio, h_ratio)
+    local points, cursor_row, cursor_col = project_points(source_win, source_buf, projection)
 
     for _, overlay in ipairs(overlays) do
         local row = overlay.minimap_row
@@ -960,7 +1017,8 @@ local function render_source(source_win, selection, root_config)
         end
     end
 
-    overlay_layers(highlights, viewport_top_row, viewport_bottom_row, points, target_width, active_config.viewport)
+    local band_first, band_last = projection_module.band(projection)
+    overlay_layers(highlights, band_first, band_last, points, target_width, active_config.viewport)
 
     local active_winblend, active_winhighlight = window_presentation(active_config)
     local cursor_screen_row, cursor_screen_col = cursor_screen_position(source_win, active_config)
@@ -1002,6 +1060,7 @@ local function render_source(source_win, selection, root_config)
             float_config = desired,
             width = target_width,
             height = target_height,
+            projection = projection,
             rows = {},
             highlights = {},
             rendered_signature = "",
@@ -1063,6 +1122,7 @@ local function render_source(source_win, selection, root_config)
 
     state.width = target_width
     state.height = target_height
+    state.projection = projection
     state.rows = rows
     state.highlights = highlights
     state.viewport_top = viewport_top
@@ -1244,16 +1304,20 @@ M.handle_worker_result = function(payload)
         cell_cache[bufnr] = buffer_cache
     end
     local existing = buffer_cache[signature]
+    local grid = pending.grid
     if existing == nil or changedtick >= existing.changedtick then
         buffer_cache[signature] = {
             signature = signature,
             cells = payload.cells or {},
+            first_row = grid.first_row,
+            row_count = grid.row_count,
+            scale_lines = grid.scale_lines,
+            scale_dots = grid.scale_dots,
             revision = (existing and existing.revision or 0) + 1,
             changedtick = changedtick,
             semantic_revision = accepted_semantic_revision,
             filetype = filetype,
             source_line_count = line_count_of(bufnr),
-            max_line_width = payload.max_line_width or (existing and existing.max_line_width or 0),
             mirror_signature = signature,
         }
     end

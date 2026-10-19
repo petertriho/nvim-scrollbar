@@ -89,8 +89,15 @@ T["sync backend returns a cell grid for a buffer"] = function()
         vim.api.nvim_buf_set_lines(0, 0, -1, false, { "abc", "defghi" })
         require("scrollbar.minimap.worker").request({
             bufnr = 0,
-            width = 3,
-            height = 2,
+            grid = {
+                width = 4,
+                first_row = 0,
+                row_count = 2,
+                scale_lines = 1,
+                scale_dots = 1,
+                columns_per_dot = 1,
+                encoding = "block",
+            },
             filetype = "",
             generation = 1,
             signature = "test",
@@ -101,8 +108,39 @@ T["sync backend returns a cell grid for a buffer"] = function()
     expect.no_equality(result, nil)
     expect.equality(result.generation, 1)
     expect.equality(result.signature, "test")
-    expect.equality(result.max_line_width, 6)
-    expect.equality(grid_chars(result.cells), { "██ ", "███" })
+    expect.equality(grid_chars(result.cells), { "███ ", "    " })
+end
+
+T["sync backend squashes only the lines of the requested slice"] = function()
+    local child = new_child()
+    setup_worker(child, { backend = "sync" })
+
+    local result = child.lua_func(function()
+        local lines = {}
+        for index = 1, 12 do
+            lines[index] = (index > 4 and index <= 8) and "      b" or "a"
+        end
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        require("scrollbar.minimap.worker").request({
+            bufnr = 0,
+            grid = {
+                width = 4,
+                first_row = 1,
+                row_count = 1,
+                scale_lines = 1,
+                scale_dots = 1,
+                columns_per_dot = 1,
+                encoding = "block",
+            },
+            filetype = "",
+            generation = 1,
+            signature = "slice",
+        })
+        return package.loaded["scrollbar.test.minimap_worker"].results[1]
+    end)
+
+    expect.equality(grid_chars(result.cells), { "   █" })
+    expect.equality(result.grid.first_row, 1)
 end
 
 T["sync backend composes parent semantic spans and echoes their revision"] = function()
@@ -113,8 +151,15 @@ T["sync backend composes parent semantic spans and echoes their revision"] = fun
         vim.api.nvim_buf_set_lines(0, 0, -1, false, { "a😀 b" })
         require("scrollbar.minimap.worker").request({
             bufnr = 0,
-            width = 5,
-            height = 1,
+            grid = {
+                width = 3,
+                first_row = 0,
+                row_count = 1,
+                scale_lines = 1,
+                scale_dots = 1,
+                columns_per_dot = 1,
+                encoding = "block",
+            },
             filetype = "",
             generation = 1,
             signature = "semantic-sync",
@@ -130,8 +175,8 @@ T["sync backend composes parent semantic spans and echoes their revision"] = fun
     end)
 
     expect.equality(result.semantic_revision, 4)
-    expect.equality(grid_chars(result.cells), { "███ █" })
-    expect.equality(grid_highlights(result.cells), { { nil, "Emoji", "Emoji", nil, nil } })
+    expect.equality(grid_chars(result.cells), { "███" })
+    expect.equality(grid_highlights(result.cells), { { "Emoji", "Emoji", nil } })
 end
 
 T["sync backend skips all treesitter work when the provider is disabled"] = function()
@@ -163,8 +208,15 @@ T["sync backend skips all treesitter work when the provider is disabled"] = func
         vim.api.nvim_buf_set_lines(0, 0, -1, false, { "abcdef" })
         require("scrollbar.minimap.worker").request({
             bufnr = 0,
-            width = 3,
-            height = 1,
+            grid = {
+                width = 3,
+                first_row = 0,
+                row_count = 1,
+                scale_lines = 1,
+                scale_dots = 1,
+                columns_per_dot = 1,
+                encoding = "block",
+            },
             filetype = "lua",
             generation = 1,
             signature = "test",
@@ -220,8 +272,15 @@ T["worker backend renders a buffer via child RPC"] = function()
         vim.api.nvim_buf_set_lines(0, 0, -1, false, { "abc", "defghi" })
         require("scrollbar.minimap.worker").request({
             bufnr = 0,
-            width = 3,
-            height = 2,
+            grid = {
+                width = 4,
+                first_row = 0,
+                row_count = 2,
+                scale_lines = 1,
+                scale_dots = 1,
+                columns_per_dot = 1,
+                encoding = "block",
+            },
             filetype = "",
             generation = 1,
             signature = "test",
@@ -232,8 +291,7 @@ T["worker backend renders a buffer via child RPC"] = function()
     expect.equality(captured.ok, true)
     expect.no_equality(captured.payload, nil)
     expect.equality(captured.payload.generation, 1)
-    expect.equality(captured.payload.max_line_width, 6)
-    expect.equality(grid_chars(captured.payload.cells), { "██ ", "███" })
+    expect.equality(grid_chars(captured.payload.cells), { "███ ", "    " })
 end
 
 T["worker backend retains distinct same-buffer projection requests"] = function()
@@ -251,16 +309,30 @@ T["worker backend retains distinct same-buffer projection requests"] = function(
         local worker = require("scrollbar.minimap.worker")
         worker.request({
             bufnr = 0,
-            width = 4,
-            height = 2,
+            grid = {
+                width = 4,
+                first_row = 0,
+                row_count = 2,
+                scale_lines = 1,
+                scale_dots = 1,
+                columns_per_dot = 1,
+                encoding = "block",
+            },
             filetype = "",
             generation = 1,
             signature = "short",
         })
         worker.request({
             bufnr = 0,
-            width = 4,
-            height = 3,
+            grid = {
+                width = 4,
+                first_row = 0,
+                row_count = 3,
+                scale_lines = 1,
+                scale_dots = 1,
+                columns_per_dot = 1,
+                encoding = "block",
+            },
             filetype = "",
             generation = 1,
             signature = "tall",
@@ -296,8 +368,15 @@ T["worker synchronizes each parent semantic revision once per buffer mirror"] = 
         }
         worker.request({
             bufnr = 0,
-            width = 4,
-            height = 1,
+            grid = {
+                width = 4,
+                first_row = 0,
+                row_count = 1,
+                scale_lines = 1,
+                scale_dots = 1,
+                columns_per_dot = 1,
+                encoding = "block",
+            },
             filetype = "",
             generation = 1,
             signature = "wide",
@@ -306,8 +385,15 @@ T["worker synchronizes each parent semantic revision once per buffer mirror"] = 
         })
         worker.request({
             bufnr = 0,
-            width = 2,
-            height = 1,
+            grid = {
+                width = 2,
+                first_row = 0,
+                row_count = 1,
+                scale_lines = 1,
+                scale_dots = 1,
+                columns_per_dot = 1,
+                encoding = "block",
+            },
             filetype = "",
             generation = 1,
             signature = "narrow",
@@ -321,8 +407,15 @@ T["worker synchronizes each parent semantic revision once per buffer mirror"] = 
 
         worker.request({
             bufnr = 0,
-            width = 4,
-            height = 1,
+            grid = {
+                width = 4,
+                first_row = 0,
+                row_count = 1,
+                scale_lines = 1,
+                scale_dots = 1,
+                columns_per_dot = 1,
+                encoding = "block",
+            },
             filetype = "",
             generation = 2,
             signature = "wide",
@@ -383,8 +476,15 @@ T["worker and sync backends produce identical parent semantic cells"] = function
         vim.api.nvim_buf_set_lines(0, 0, -1, false, input.lines)
         require("scrollbar.minimap.worker").request({
             bufnr = 0,
-            width = 5,
-            height = 1,
+            grid = {
+                width = 5,
+                first_row = 0,
+                row_count = 1,
+                scale_lines = 1,
+                scale_dots = 1,
+                columns_per_dot = 1,
+                encoding = "block",
+            },
             filetype = "",
             generation = 1,
             signature = "semantic-equivalence",
@@ -401,8 +501,15 @@ T["worker and sync backends produce identical parent semantic cells"] = function
         vim.api.nvim_buf_set_lines(0, 0, -1, false, input.lines)
         require("scrollbar.minimap.worker").request({
             bufnr = 0,
-            width = 5,
-            height = 1,
+            grid = {
+                width = 5,
+                first_row = 0,
+                row_count = 1,
+                scale_lines = 1,
+                scale_dots = 1,
+                columns_per_dot = 1,
+                encoding = "block",
+            },
             filetype = "",
             generation = 1,
             signature = "semantic-equivalence",
@@ -434,8 +541,15 @@ T["worker backend skips language resolution and child treesitter work when disab
         vim.api.nvim_buf_set_lines(0, 0, -1, false, { "local value = 1" })
         require("scrollbar.minimap.worker").request({
             bufnr = 0,
-            width = 4,
-            height = 2,
+            grid = {
+                width = 4,
+                first_row = 0,
+                row_count = 2,
+                scale_lines = 1,
+                scale_dots = 1,
+                columns_per_dot = 1,
+                encoding = "block",
+            },
             filetype = "lua",
             generation = 1,
             signature = "mono-worker",
@@ -482,8 +596,15 @@ T["worker and sync backends produce identical cell grids for the same fixture"] 
         vim.bo.filetype = "lua"
         require("scrollbar.minimap.worker").request({
             bufnr = 0,
-            width = 8,
-            height = 4,
+            grid = {
+                width = 8,
+                first_row = 0,
+                row_count = 4,
+                scale_lines = 1,
+                scale_dots = 1,
+                columns_per_dot = 1,
+                encoding = "block",
+            },
             filetype = "lua",
             generation = 1,
             signature = "fixture",
@@ -512,8 +633,15 @@ T["worker and sync backends produce identical cell grids for the same fixture"] 
         vim.bo.filetype = "lua"
         require("scrollbar.minimap.worker").request({
             bufnr = 0,
-            width = 8,
-            height = 4,
+            grid = {
+                width = 8,
+                first_row = 0,
+                row_count = 4,
+                scale_lines = 1,
+                scale_dots = 1,
+                columns_per_dot = 1,
+                encoding = "block",
+            },
             filetype = "lua",
             generation = 1,
             signature = "fixture",
@@ -556,8 +684,15 @@ T["repeated setup resets the treesitter provider to disabled"] = function()
         vim.api.nvim_buf_set_lines(0, 0, -1, false, { "local value = 1" })
         require("scrollbar.minimap.worker").request({
             bufnr = 0,
-            width = 4,
-            height = 1,
+            grid = {
+                width = 4,
+                first_row = 0,
+                row_count = 1,
+                scale_lines = 1,
+                scale_dots = 1,
+                columns_per_dot = 1,
+                encoding = "block",
+            },
             filetype = "lua",
             generation = 1,
             signature = "reset",
@@ -581,8 +716,15 @@ T["chunked snapshot transfers large buffers and renders every source line"] = fu
         vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
         require("scrollbar.minimap.worker").request({
             bufnr = 0,
-            width = 4,
-            height = 4,
+            grid = {
+                width = 4,
+                first_row = 0,
+                row_count = 13,
+                scale_lines = 1,
+                scale_dots = 1,
+                columns_per_dot = 1,
+                encoding = "block",
+            },
             filetype = "",
             generation = 1,
             signature = "big",
@@ -591,7 +733,8 @@ T["chunked snapshot transfers large buffers and renders every source line"] = fu
 
     local captured = wait_for_result(child, 1)
     expect.equality(captured.ok, true)
-    expect.equality(#captured.payload.cells, 4)
+    expect.equality(#captured.payload.cells, 13)
+    expect.equality(grid_chars(captured.payload.cells)[13], "████")
 end
 
 T["mirror invalidation triggers a re-snapshot when buffer edits during snapshot"] = function()
@@ -608,8 +751,15 @@ T["mirror invalidation triggers a re-snapshot when buffer edits during snapshot"
         local worker = require("scrollbar.minimap.worker")
         worker.request({
             bufnr = 0,
-            width = 4,
-            height = 4,
+            grid = {
+                width = 4,
+                first_row = 0,
+                row_count = 4,
+                scale_lines = 1,
+                scale_dots = 1,
+                columns_per_dot = 1,
+                encoding = "block",
+            },
             filetype = "",
             generation = 1,
             signature = "race",
@@ -647,8 +797,15 @@ T["child mirror invalidation requeues the in-flight squash after resnapshot"] = 
         local worker = require("scrollbar.minimap.worker")
         worker.request({
             bufnr = 0,
-            width = 80,
-            height = 24,
+            grid = {
+                width = 80,
+                first_row = 0,
+                row_count = 24,
+                scale_lines = 1,
+                scale_dots = 1,
+                columns_per_dot = 1,
+                encoding = "block",
+            },
             filetype = "",
             generation = 1,
             signature = "mirror-invalid",
@@ -696,8 +853,15 @@ T["on_lines deltas update child mirror after snapshot completes"] = function()
         vim.api.nvim_buf_set_lines(0, 0, -1, false, { "abc", "def" })
         require("scrollbar.minimap.worker").request({
             bufnr = 0,
-            width = 2,
-            height = 2,
+            grid = {
+                width = 4,
+                first_row = 0,
+                row_count = 2,
+                scale_lines = 1,
+                scale_dots = 1,
+                columns_per_dot = 1,
+                encoding = "block",
+            },
             filetype = "",
             generation = 1,
             signature = "v1",
@@ -710,8 +874,15 @@ T["on_lines deltas update child mirror after snapshot completes"] = function()
         vim.api.nvim_exec_autocmds("TextChanged", { buffer = 0 })
         require("scrollbar.minimap.worker").request({
             bufnr = 0,
-            width = 2,
-            height = 2,
+            grid = {
+                width = 4,
+                first_row = 0,
+                row_count = 2,
+                scale_lines = 1,
+                scale_dots = 1,
+                columns_per_dot = 1,
+                encoding = "block",
+            },
             filetype = "",
             generation = 2,
             signature = "v2",
@@ -719,8 +890,8 @@ T["on_lines deltas update child mirror after snapshot completes"] = function()
     end)
     local captured = wait_for_result(child, 2)
     expect.equality(captured.ok, true)
-    -- The first source line owns row 1; both horizontal buckets are occupied.
-    expect.equality(grid_chars(captured.payload.cells)[1], "██")
+    -- The edited first line fills all four cells of row 1.
+    expect.equality(grid_chars(captured.payload.cells)[1], "████")
 end
 
 T["dispose cleans up child mirror buffers and tears down the worker"] = function()
@@ -786,8 +957,15 @@ T["startup failure warns once and flips to sync for the rest of the session"] = 
         vim.api.nvim_buf_set_lines(0, 0, -1, false, { "abc" })
         require("scrollbar.minimap.worker").request({
             bufnr = 0,
-            width = 1,
-            height = 1,
+            grid = {
+                width = 1,
+                first_row = 0,
+                row_count = 1,
+                scale_lines = 1,
+                scale_dots = 1,
+                columns_per_dot = 1,
+                encoding = "block",
+            },
             filetype = "",
             generation = 1,
             signature = "test",
@@ -821,7 +999,7 @@ T["worker crash flips to sync and emits exactly one warning"] = function()
     child.lua([[
         vim.api.nvim_buf_set_lines(0, 0, -1, false, { "abc" })
         require("scrollbar.minimap.worker").request({
-            bufnr = 0, width = 2, height = 1, filetype = "",
+            bufnr = 0, grid = { width = 2, first_row = 0, row_count = 1, scale_lines = 1, scale_dots = 1, columns_per_dot = 1, encoding = "block" }, filetype = "",
             generation = 1, signature = "before",
         })
     ]])
@@ -845,8 +1023,15 @@ T["worker crash flips to sync and emits exactly one warning"] = function()
         vim.api.nvim_buf_set_lines(0, 0, -1, false, { "def" })
         require("scrollbar.minimap.worker").request({
             bufnr = 0,
-            width = 1,
-            height = 1,
+            grid = {
+                width = 1,
+                first_row = 0,
+                row_count = 1,
+                scale_lines = 1,
+                scale_dots = 1,
+                columns_per_dot = 1,
+                encoding = "block",
+            },
             filetype = "",
             generation = 2,
             signature = "after",

@@ -20,6 +20,7 @@ local function reset_modules(child)
             "scrollbar.minimap.worker",
             "scrollbar.minimap.overlays",
             "scrollbar.minimap.renderer",
+            "scrollbar.minimap.projection",
             "scrollbar.minimap.mouse",
         }) do
             package.loaded[module] = nil
@@ -60,7 +61,58 @@ local function configure(child, minimap_overrides)
     end, minimap_overrides)
 end
 
-T["click at a minimap row moves the source cursor to the projected line"] = function()
+local function press_and_drag(child, rows)
+    return child.lua_func(function(drag_rows)
+        local lines = {}
+        for index = 1, 400 do
+            lines[index] = string.rep("a", index % 30)
+        end
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        local renderer = require("scrollbar.minimap.renderer")
+        local projection = require("scrollbar.minimap.projection")
+        local mouse = require("scrollbar.minimap.mouse")
+        local state = assert(renderer.render(0))
+        local source_win = state.source_win
+
+        local function at_row(row, callback)
+            local original = vim.fn.getmousepos
+            ---@diagnostic disable-next-line: duplicate-set-field
+            vim.fn.getmousepos = function()
+                return { winid = state.float_win, winrow = row + 1, wincol = 1, screenrow = row + 1, screencol = 1 }
+            end
+            callback()
+            vim.fn.getmousepos = original
+        end
+        local function view()
+            local rendered = assert(renderer.render(source_win))
+            return {
+                band = projection.band(rendered.projection),
+                top = vim.fn.line("w0", source_win),
+                bottom = vim.fn.line("w$", source_win),
+                cursor = vim.api.nvim_win_get_cursor(source_win)[1],
+            }
+        end
+
+        at_row(drag_rows[1], function()
+            mouse.press(state.float_win)
+        end)
+        local views = { view() }
+        for index = 2, #drag_rows do
+            at_row(drag_rows[index], mouse.drag)
+            views[index] = view()
+        end
+        at_row(drag_rows[#drag_rows], mouse.release)
+        return {
+            views = views,
+            released = view(),
+            current_win = vim.api.nvim_get_current_win(),
+            source_win = source_win,
+            line_count = #lines,
+        }
+    end, rows)
+end
+
+T["click at a minimap row moves the source cursor to the first line of the row"] = function()
     local child = new_child()
     reset_modules(child)
     configure(child, { enabled = true, width = 4, height = 4 })
@@ -73,8 +125,6 @@ T["click at a minimap row moves the source cursor to the projected line"] = func
         vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
         local renderer = require("scrollbar.minimap.renderer")
         local state = assert(renderer.render(0))
-        -- 20 source lines / 4 minimap rows => v_ratio = 5.
-        -- Row index 2 (0-based) maps to source line floor(2 * 5) = 10.
         local mouse = require("scrollbar.minimap.mouse")
         -- Simulate a click on row 2 by calling press directly with the
         -- state's float window; press uses getmousepos, so we stub it.
@@ -90,14 +140,14 @@ T["click at a minimap row moves the source cursor to the projected line"] = func
         }
     end)
 
-    -- Source cursor should be at line 11 (1-based), since 0-based line 10.
-    expect.equality(result.cursor[1], 11)
+    -- Each row covers 4 lines, so row index 2 starts at 0-based line 8.
+    expect.equality(result.cursor[1], 9)
 end
 
-T["drag events move the source cursor through projected lines"] = function()
+T["click in the fit scale uses the rows of the fitted map"] = function()
     local child = new_child()
     reset_modules(child)
-    configure(child, { enabled = true, width = 4, height = 4 })
+    configure(child, { enabled = true, width = 4, height = 4, scale = "fit" })
 
     local result = child.lua_func(function()
         local lines = {}
@@ -105,44 +155,54 @@ T["drag events move the source cursor through projected lines"] = function()
             lines[index] = string.rep("a", index)
         end
         vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
-        local renderer = require("scrollbar.minimap.renderer")
-        local state = assert(renderer.render(0))
-        local mouse = require("scrollbar.minimap.mouse")
-
-        local function simulate(row)
-            local original = vim.fn.getmousepos
-            ---@diagnostic disable-next-line: duplicate-set-field
-            vim.fn.getmousepos = function()
-                return { winid = state.float_win, winrow = row + 1, wincol = 1, screenrow = row + 1, screencol = 1 }
-            end
-            mouse.drag()
-            vim.fn.getmousepos = original
-        end
-
+        local state = assert(require("scrollbar.minimap.renderer").render(0))
         local original_getmousepos = vim.fn.getmousepos
         ---@diagnostic disable-next-line: duplicate-set-field
         vim.fn.getmousepos = function()
-            return { winid = state.float_win, winrow = 1, wincol = 1, screenrow = 1, screencol = 1 }
+            return { winid = state.float_win, winrow = 3, wincol = 1, screenrow = 3, screencol = 1 }
         end
-        mouse.press(state.float_win)
+        require("scrollbar.minimap.mouse").press(state.float_win)
         vim.fn.getmousepos = original_getmousepos
-
-        simulate(1)
-        local after_one = vim.api.nvim_win_get_cursor(state.source_win)[1]
-        simulate(3)
-        local after_three = vim.api.nvim_win_get_cursor(state.source_win)[1]
-
-        mouse.release()
-        return {
-            after_one = after_one,
-            after_three = after_three,
-        }
+        return vim.api.nvim_win_get_cursor(state.source_win)[1]
     end)
 
-    -- Row 1 maps to source line floor(1 * 5) = 5 → 1-based line 6.
-    expect.equality(result.after_one, 6)
-    -- Row 3 maps to source line floor(3 * 5) = 15 → 1-based line 16.
-    expect.equality(result.after_three, 16)
+    -- 20 lines in 16 dot rows: row index 2 starts at dot 8, which is line
+    -- floor(8 * 20 / 16) = 10.
+    expect.equality(result, 11)
+end
+
+T["drag scrolls the source so that the band follows the pointer"] = function()
+    for _, scale in ipairs({ "fixed", "fit" }) do
+        local child = new_child()
+        reset_modules(child)
+        configure(child, { enabled = true, width = 4, height = 16, scale = scale })
+
+        local result = press_and_drag(child, { 6, 7, 9, 8, 7 })
+        local pressed = result.views[1]
+        for index = 2, #result.views do
+            local delta = ({ 6, 7, 9, 8, 7 })[index] - 6
+            local view = result.views[index]
+            expect.equality(math.abs(view.band - (pressed.band + delta)) <= 1, true)
+            -- The cursor stays inside the visible lines.
+            expect.equality(view.cursor >= view.top and view.cursor <= view.bottom, true)
+        end
+        -- The release ends the drag without a jump.
+        expect.equality(result.released.top, result.views[#result.views].top)
+        expect.equality(result.current_win, result.source_win)
+    end
+end
+
+T["one drag reaches both ends of the buffer"] = function()
+    for _, scale in ipairs({ "fixed", "fit" }) do
+        local child = new_child()
+        reset_modules(child)
+        configure(child, { enabled = true, width = 4, height = 16, scale = scale })
+
+        local result = press_and_drag(child, { 8, 60, -60 })
+
+        expect.equality(result.views[2].bottom, result.line_count)
+        expect.equality(result.views[3].top, 1)
+    end
 end
 
 T["source window retains focus after release"] = function()

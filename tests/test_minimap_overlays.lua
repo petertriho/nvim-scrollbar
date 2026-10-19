@@ -57,12 +57,30 @@ local function source_window(bufnr)
     return winid
 end
 
-local function project(bufnr, height)
-    return overlays().project(source_window(bufnr), height)
+local function numbered(count)
+    local lines = {}
+    for line = 1, count do
+        lines[line] = "line " .. line
+    end
+    return lines
 end
 
-local function project_with(bufnr, height, line_count)
-    return overlays().project_with(source_window(bufnr), height, line_count)
+local function projection_for(bufnr, rows, options)
+    local line_count = vim.api.nvim_buf_line_count(bufnr)
+    return require("scrollbar.minimap.projection").new(vim.tbl_extend("force", {
+        scale = "fixed",
+        line_count = line_count,
+        rows = rows,
+        width = 16,
+        columns_per_dot = 4,
+        top = 0,
+        bottom = line_count - 1,
+    }, options or {}))
+end
+
+local function project(bufnr, rows, options)
+    local source_win = source_window(bufnr)
+    return overlays().project(source_win, projection_for(bufnr, rows, options))
 end
 
 T["project returns an empty list for a buffer with no marks"] = function()
@@ -74,12 +92,12 @@ end
 
 T["project returns an overlay per published mark of an allowed type"] = function()
     setup_with()
-    local bufnr = new_buffer({ "a", "b", "c", "d" })
-    store().set("diagnostic", bufnr, { { line = 1, type = "Error" } })
+    local bufnr = new_buffer(numbered(8))
+    store().set("diagnostic", bufnr, { { line = 5, type = "Error" } })
 
     local result = project(bufnr, 4)
     expect.equality(#result, 1)
-    expect.equality(result[1].source_line, 1)
+    expect.equality(result[1].source_line, 5)
     expect.equality(result[1].minimap_row, 2)
     expect.equality(result[1].mark_type, "Error")
     expect.equality(result[1].priority, 2)
@@ -87,60 +105,74 @@ T["project returns an overlay per published mark of an allowed type"] = function
     expect.equality(result[1].provider, "diagnostic")
 end
 
-T["project computes v_ratio the same way squash does"] = function()
+T["project uses the row that the squash draws the line in"] = function()
     setup_with()
-    local bufnr = new_buffer({
-        "l0",
-        "l1",
-        "l2",
-        "l3",
-        "l4",
-        "l5",
-        "l6",
-        "l7",
-    })
-    -- Eight source lines into four minimap rows: v_ratio = 2.
-    -- Line 0 -> row 1, line 1 -> row 1, line 2 -> row 2, ..., line 7 -> row 4.
-    store().set("diagnostic", bufnr, {
-        { line = 0, type = "Error" },
-        { line = 2, type = "Warn" },
-        { line = 5, type = "Info" },
-        { line = 7, type = "Hint" },
-    })
+    local squash = require("scrollbar.minimap.squash")
+    for _, case in ipairs({
+        { lines = 16, marks = { 0, 4, 9, 15 } },
+        { lines = 32, marks = { 0, 8, 20, 31 }, scale = "fit" },
+        { lines = 30, marks = { 0, 7, 16, 29 }, scale = "fit" },
+    }) do
+        local bufnr = new_buffer(numbered(case.lines))
+        local types = { "Error", "Warn", "Info", "Hint" }
+        local marks = {}
+        for index, line in ipairs(case.marks) do
+            marks[index] = { line = line, type = types[index] }
+        end
+        store().set("diagnostic", bufnr, marks)
 
-    local rows = {}
-    local by_line = {}
-    for _, overlay in ipairs(project(bufnr, 4)) do
-        table.insert(rows, overlay.minimap_row)
-        by_line[overlay.source_line] = overlay.minimap_row
+        local p = projection_for(bufnr, 4, { scale = case.scale or "fixed" })
+        local by_line = {}
+        for _, overlay in ipairs(overlays().project(source_window(bufnr), p)) do
+            by_line[overlay.source_line] = overlay.minimap_row
+        end
+        for _, line in ipairs(case.marks) do
+            expect.equality(by_line[line], math.floor(squash.line_dot(line, p) / squash.DOT_ROWS) + 1)
+        end
     end
-    table.sort(rows)
-    expect.equality(rows, { 1, 2, 3, 4 })
-    expect.equality(by_line[0], 1)
-    expect.equality(by_line[2], 2)
-    expect.equality(by_line[5], 3)
-    expect.equality(by_line[7], 4)
 end
 
-T["project clamps marks to the minimap height when source exceeds target"] = function()
+T["project skips marks on rows outside the float"] = function()
     setup_with()
-    local bufnr = new_buffer({ "a", "b", "c", "d", "e", "f", "g", "h" })
-    store().set("diagnostic", bufnr, { { line = 7, type = "Error" } })
+    local bufnr = new_buffer(numbered(40))
+    store().set("diagnostic", bufnr, {
+        { line = 8, type = "Warn" },
+        { line = 39, type = "Error" },
+    })
 
-    local result = project(bufnr, 3)
+    local result = project(bufnr, 3, { bottom = 9 })
     expect.equality(#result, 1)
+    expect.equality(result[1].source_line, 8)
     expect.equality(result[1].minimap_row, 3)
+end
+
+T["project follows the scroll offset of the projection"] = function()
+    setup_with()
+    local bufnr = new_buffer(numbered(400))
+    store().set("diagnostic", bufnr, {
+        { line = 0, type = "Warn" },
+        { line = 160, type = "Error" },
+        { line = 239, type = "Hint" },
+    })
+
+    local result = project(bufnr, 20, { top = 180, bottom = 219 })
+    expect.equality(
+        vim.tbl_map(function(overlay)
+            return { overlay.source_line, overlay.minimap_row }
+        end, result),
+        { { 160, 1 }, { 239, 20 } }
+    )
 end
 
 T["project excludes marks whose type minimap.marks hides"] = function()
     minimap_config().set({ marks = { Hint = false, Info = false } })
     setup_with()
-    local bufnr = new_buffer({ "a", "b", "c", "d" })
+    local bufnr = new_buffer(numbered(16))
     store().set("diagnostic", bufnr, {
         { line = 0, type = "Error" },
-        { line = 1, type = "Hint" },
-        { line = 2, type = "Info" },
-        { line = 3, type = "Warn" },
+        { line = 4, type = "Hint" },
+        { line = 8, type = "Info" },
+        { line = 12, type = "Warn" },
     })
 
     local result = project(bufnr, 4)
@@ -187,9 +219,9 @@ T["default types include Mark and registered custom mark types"] = function()
         minimap = { enabled = true },
     })
     setup_with()
-    local bufnr = new_buffer({ "a", "b", "c", "d" })
+    local bufnr = new_buffer(numbered(16))
     store().set("marks", bufnr, { { line = 0, type = "Mark", text = "a" } })
-    store().set("diagnostic", bufnr, { { line = 2, type = "Runtime" } })
+    store().set("diagnostic", bufnr, { { line = 8, type = "Runtime" } })
 
     local mark_types = {}
     for _, overlay in ipairs(project(bufnr, 4)) do
@@ -282,19 +314,19 @@ end
 
 T["merges buffer marks with only the current source window marks"] = function()
     setup_with()
-    local bufnr = new_buffer({ "a", "b", "c", "d" })
+    local bufnr = new_buffer(numbered(16))
     local first = source_window(bufnr)
     vim.cmd("split")
     local second = vim.api.nvim_get_current_win()
     vim.api.nvim_win_set_buf(second, bufnr)
 
-    store().set("diagnostic", bufnr, { { line = 1, type = "Error" } })
+    store().set("diagnostic", bufnr, { { line = 4, type = "Error" } })
     store().set_window("diagnostic", first, { { line = 0, type = "Warn" } })
-    store().set_window("diagnostic", second, { { line = 3, type = "Hint" } })
+    store().set_window("diagnostic", second, { { line = 12, type = "Hint" } })
 
     local function source_lines(source_win)
         local lines = {}
-        for _, overlay in ipairs(overlays().project_with(source_win, 4, 4)) do
+        for _, overlay in ipairs(overlays().project_with(source_win, projection_for(bufnr, 4))) do
             lines[#lines + 1] = overlay.source_line
         end
         table.sort(lines)
@@ -307,8 +339,8 @@ T["merges buffer marks with only the current source window marks"] = function()
     }
     vim.api.nvim_win_close(second, true)
     expect.equality(result, {
-        first = { 0, 1 },
-        second = { 1, 3 },
+        first = { 0, 4 },
+        second = { 4, 12 },
     })
 end
 
@@ -338,11 +370,11 @@ end
 
 T["project returns overlays sorted by minimap row ascending"] = function()
     setup_with()
-    local bufnr = new_buffer({ "a", "b", "c", "d", "e", "f" })
+    local bufnr = new_buffer(numbered(12))
     store().set("diagnostic", bufnr, {
-        { line = 5, type = "Hint" },
+        { line = 9, type = "Hint" },
         { line = 1, type = "Error" },
-        { line = 3, type = "Warn" },
+        { line = 5, type = "Warn" },
     })
 
     local rows = {}
@@ -367,28 +399,19 @@ T["project is read-only and does not mutate the store snapshot"] = function()
     expect.equality(store().get(bufnr), before)
 end
 
-T["project_with returns empty list for non-positive source line count"] = function()
+T["project_with returns an empty list for an empty projection"] = function()
     setup_with()
     local bufnr = new_buffer({ "a" })
-    expect.equality(project_with(bufnr, 4, 0), {})
-    expect.equality(project_with(bufnr, 0, 4), {})
-end
+    store().set("diagnostic", bufnr, { { line = 0, type = "Error" } })
 
-T["project_with reuses a caller-provided source line count"] = function()
-    setup_with()
-    local bufnr = new_buffer({ "a", "b", "c", "d", "e", "f", "g", "h" })
-    store().set("diagnostic", bufnr, { { line = 7, type = "Error" } })
-
-    local result = project_with(bufnr, 4, 8)
-    expect.equality(#result, 1)
-    expect.equality(result[1].minimap_row, 4)
+    expect.equality(project(bufnr, 4, { line_count = 0 }), {})
 end
 
 T["projects compact search by iterating it without mark expansion"] = function()
     setup_with()
-    local bufnr = new_buffer({ "a", "b", "c", "d" })
+    local bufnr = new_buffer(numbered(16))
     local compact = require("scrollbar.providers.search_compact")
-    assert(store()._set_search_compact(bufnr, compact.encode({ 1, 3 })))
+    assert(store()._set_search_compact(bufnr, compact.encode({ 1, 9 })))
 
     local each = compact.each
     local to_marks = compact.to_marks
@@ -409,7 +432,7 @@ T["projects compact search by iterating it without mark expansion"] = function()
         vim.tbl_map(function(overlay)
             return overlay.source_line
         end, result),
-        { 1, 3 }
+        { 1, 9 }
     )
 end
 

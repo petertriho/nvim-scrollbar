@@ -1,85 +1,133 @@
---- Pure vertical + horizontal squash algorithm for the minimap.
+--- Pure squash algorithm and grid math for the minimap.
 ---
---- Input: a list of source lines plus a target `(width, height)` and optional
---- per-line highlight tuples. Output: a `(height × width)` grid of cells where
---- each cell is `{ char = <canonical char>, hl_group = <string|nil> }`, plus
---- a second return value `max_line_width` (display width of the longest source
---- line).
+--- The minimap grid is a grid of dots. Each cell has 2 dot columns and 4 dot
+--- rows. One dot column covers `columns_per_dot` source display columns, and
+--- source columns past `width * 2 * columns_per_dot` are clipped. One dot row
+--- covers `scale_lines / scale_dots` source lines. Dot row `k` owns the lines
+--- `[floor(k * scale_lines / scale_dots), floor((k + 1) * scale_lines / scale_dots))`,
+--- so every line belongs to exactly one dot row. The integer ratio keeps the
+--- squash, the renderer, the overlays, and the mouse in exact agreement.
 ---
---- Single-box algorithm:
----   1. Per source line, compute a binary density array (one entry per
----      display column). Blank/whitespace columns are 0; any non-blank
----      column is 1. Run length no longer matters.
----   2. Vertical merge: `v_ratio = max(1, source_lines / height)`. Target row `r`
----      owns source lines `[floor(r * v_ratio), floor((r+1) * v_ratio))`.
----      Per column, binary OR of the merged range wins; the first ordered
----      semantic highlight among filled columns wins.
----   3. Horizontal merge: `h_ratio = max(1, max_source_line_len / width)`.
----      Target column `c` owns source columns aggregated by binary OR.
----   4. Canonical output. Empty cells emit a space and occupied cells emit `█`.
----      Ordered semantic highlights keep their priority across all merged lines;
----      legacy unordered tuples retain source and tuple order.
+--- A dot is set when any line of its dot row has a non-blank character in any
+--- of its display columns. A cell with dots draws a Braille character
+--- (`encoding = "braille"`) or `█` (`encoding = "block"`). An empty cell is a
+--- space. The cell highlight is the ordered semantic highlight with the lowest
+--- order among the filled source columns of the cell. Legacy unordered tuples
+--- keep source and tuple order.
 ---
---- Indentation is preserved as leading blank cells because whitespace columns
---- always produce density 0. The function is pure and deterministic: identical
---- inputs produce identical outputs across calls.
+--- The worker child loads this file with `loadstring`, so it must not
+--- `require` plugin modules.
 
 local M = {}
+
+M.DOT_ROWS = 4
+M.DOT_COLUMNS = 2
+
+local BLOCK = "█"
+
+-- Braille dot bits by dot column, then by dot row.
+local BRAILLE_BITS = {
+    { 0x01, 0x02, 0x04, 0x40 },
+    { 0x08, 0x10, 0x20, 0x80 },
+}
+
+---@type table<integer, string>
+local braille_chars = {}
+
+---@param mask integer 1-255
+---@return string
+local function braille(mask)
+    local char = braille_chars[mask]
+    if char == nil then
+        -- UTF-8 of U+2800 + mask.
+        char = string.char(0xE2, 0xA0 + math.floor(mask / 64), 0x80 + mask % 64)
+        braille_chars[mask] = char
+    end
+    return char
+end
+
+---@param mask integer
+---@param bit integer
+---@return integer
+local function with_bit(mask, bit)
+    if math.floor(mask / bit) % 2 == 0 then
+        return mask + bit
+    end
+    return mask
+end
+
+--- First source line (0-based) of dot row `dot`.
+---@param dot integer Zero-based dot row of the whole map
+---@param grid { scale_lines: integer, scale_dots: integer }
+---@return integer
+M.dot_first_line = function(dot, grid)
+    return math.floor(dot * grid.scale_lines / grid.scale_dots)
+end
+
+--- Dot row (0-based) that owns source line `line`.
+---@param line integer Zero-based source line
+---@param grid { scale_lines: integer, scale_dots: integer }
+---@return integer
+M.line_dot = function(line, grid)
+    return math.floor(((line + 1) * grid.scale_dots - 1) / grid.scale_lines)
+end
+
+--- Source lines that the rows of `grid` cover.
+---@param grid ScrollbarMinimapGrid
+---@param line_count integer
+---@return integer first Zero-based first line
+---@return integer last Zero-based end line, exclusive
+M.line_range = function(grid, line_count)
+    local first = math.min(line_count, M.dot_first_line(grid.first_row * M.DOT_ROWS, grid))
+    local last = math.min(line_count, M.dot_first_line((grid.first_row + grid.row_count) * M.DOT_ROWS, grid))
+    return first, math.max(first, last)
+end
 
 local function is_blank_char(ch)
     return ch == " " or ch == "\t"
 end
 
---- Compute the per-display-column binary density array for a source line.
---- Returns `(densities, width)` where `densities[col]` is 0 or 1 for col in
---- `[1, width]`. Whitespace columns are 0; every display column occupied by a
---- non-blank character is 1.
-local function line_densities(line)
-    local width = vim.fn.strdisplaywidth(line)
-    if width <= 0 then
-        return {}, 0
+--- Non-blank display columns of `line`, up to `limit`.
+---@param line string
+---@param limit integer
+---@return table<integer, true> densities One-based display columns with content
+---@return integer width Last examined display column
+local function line_densities(line, limit)
+    local densities = {}
+    if line == "" or limit <= 0 then
+        return densities, 0
     end
 
-    local densities = {}
-    for col = 1, width do
-        densities[col] = 0
+    if not line:find("[\t\128-\255]") then
+        local last = math.min(#line, limit)
+        for col = 1, last do
+            if line:byte(col) ~= 32 then
+                densities[col] = true
+            end
+        end
+        return densities, last
     end
 
     local display_col = 1
     local char_count = vim.fn.strchars(line, 1)
     for index = 0, char_count - 1 do
+        if display_col > limit then
+            break
+        end
         local ch = vim.fn.strcharpart(line, index, 1, 1)
         local ch_width = math.max(0, vim.fn.strdisplaywidth(ch, display_col - 1))
         if not is_blank_char(ch:sub(1, 1)) then
-            for col = display_col, display_col + ch_width - 1 do
-                densities[col] = 1
+            for col = display_col, math.min(display_col + ch_width - 1, limit) do
+                densities[col] = true
             end
         end
         display_col = display_col + ch_width
     end
-
-    return densities, width
+    return densities, math.min(display_col - 1, limit)
 end
 
---- Build a fully-blank target grid (all spaces / no highlight).
-local function blank_grid(width, height)
-    local grid = {}
-    for row = 1, height do
-        local cells = {}
-        for col = 1, width do
-            cells[col] = { char = " ", hl_group = nil }
-        end
-        grid[row] = cells
-    end
-    return grid
-end
-
----@class ScrollbarMinimapResolvedHighlight
----@field hl_group string
----@field order? integer
-
----@param candidate ScrollbarMinimapResolvedHighlight
----@param current ScrollbarMinimapResolvedHighlight?
+---@param candidate ScrollbarMinimapSquashHighlight
+---@param current ScrollbarMinimapSquashHighlight?
 ---@return boolean
 local function highlight_wins(candidate, current)
     if current == nil then
@@ -88,91 +136,60 @@ local function highlight_wins(candidate, current)
     if candidate.order ~= nil and current.order ~= nil then
         return candidate.order < current.order
     end
-    if candidate.order ~= nil then
-        return true
-    end
-    return false
+    return candidate.order ~= nil and current.order == nil
 end
 
---- Pure squash. `highlights` is an optional table mapping 1-indexed source
---- line number to a list of `{ hl_group, col_start, col_end }` tuples, where
---- `col_start` and `col_end` are 1-indexed display columns and `col_end` is
---- inclusive.
----
----@param source_lines string[]
----@param target_width integer
----@param target_height integer Terminal row count.
+--- Squash a slice of source lines into `grid.row_count` rows of
+--- `grid.width` cells. `lines[1]` is source line `first_line`. `highlights`
+--- maps an index of `lines` to `{ hl_group, col_start, col_end, order? }`
+--- tuples with one-based, inclusive display columns.
+---@param lines string[]
+---@param first_line integer Zero-based source line of `lines[1]`
+---@param grid ScrollbarMinimapGrid
 ---@param highlights? table<integer, ScrollbarMinimapSquashHighlight[]>
----@return ScrollbarMinimapCell[][] grid
----@return integer max_line_width Display width of the longest source line.
-M.squash = function(source_lines, target_width, target_height, highlights)
-    if target_width <= 0 or target_height <= 0 then
-        return {}, 0
+---@return ScrollbarMinimapCell[][]
+M.squash = function(lines, first_line, grid, highlights)
+    local width = grid.width
+    local row_count = grid.row_count
+    if width <= 0 or row_count <= 0 then
+        return {}
     end
-
-    local source_count = #source_lines
-    if source_count == 0 then
-        return blank_grid(target_width, target_height), 0
-    end
-
     highlights = highlights or {}
 
-    local line_density = {}
-    local max_width = 0
-    for index = 1, source_count do
-        local densities, width = line_densities(source_lines[index])
-        line_density[index] = { densities = densities, width = width }
-        if width > max_width then
-            max_width = width
-        end
-    end
+    local columns_per_dot = grid.columns_per_dot
+    local cell_columns = M.DOT_COLUMNS * columns_per_dot
+    local limit = width * cell_columns
+    local block = grid.encoding == "block"
 
-    if max_width == 0 then
-        return blank_grid(target_width, target_height), 0
-    end
-
-    local v_ratio = math.max(1, source_count / target_height)
-
-    ---@type { density: integer[], hl: (ScrollbarMinimapResolvedHighlight|nil)[] }[]
-    local merged_rows = {}
-    for row = 1, target_height do
-        local row_start = math.floor((row - 1) * v_ratio) + 1
-        local row_end_exclusive = math.floor(row * v_ratio) + 1
-
-        local merged_density = {}
-        local merged_hl = {}
-        for col = 1, max_width do
-            merged_density[col] = 0
-            merged_hl[col] = nil
-        end
-
-        for src = row_start, row_end_exclusive - 1 do
-            local data = line_density[src]
-            if data ~= nil then
-                for col = 1, data.width do
-                    if data.densities[col] == 1 then
-                        merged_density[col] = 1
+    local result = {}
+    for row = 1, row_count do
+        local masks = {}
+        local winners = {}
+        local map_row = grid.first_row + row - 1
+        for dot_row = 1, M.DOT_ROWS do
+            local dot = map_row * M.DOT_ROWS + dot_row - 1
+            local line_start = M.dot_first_line(dot, grid)
+            local line_end = M.dot_first_line(dot + 1, grid)
+            for line = line_start, line_end - 1 do
+                local index = line - first_line + 1
+                local text = lines[index]
+                if text ~= nil then
+                    local densities, line_width = line_densities(text, limit)
+                    for col = 1, line_width do
+                        if densities[col] then
+                            local dot_col = math.floor((col - 1) / columns_per_dot)
+                            local cell = math.floor(dot_col / M.DOT_COLUMNS) + 1
+                            local bit = BRAILLE_BITS[dot_col % M.DOT_COLUMNS + 1][dot_row]
+                            masks[cell] = with_bit(masks[cell] or 0, bit)
+                        end
                     end
-                end
-            end
-        end
-
-        for src = row_start, row_end_exclusive - 1 do
-            local data = line_density[src]
-            if data ~= nil then
-                local line_hls = highlights[src]
-                if line_hls ~= nil then
-                    for _, tuple in ipairs(line_hls) do
-                        local start_col = math.max(1, tuple.col_start)
-                        local end_col = math.min(data.width, tuple.col_end)
-                        local candidate = { hl_group = tuple.hl_group, order = tuple.order }
-                        for col = start_col, end_col do
-                            if
-                                data.densities[col] == 1
-                                and merged_density[col] == 1
-                                and highlight_wins(candidate, merged_hl[col])
-                            then
-                                merged_hl[col] = candidate
+                    for _, tuple in ipairs(highlights[index] or {}) do
+                        for col = math.max(1, tuple.col_start), math.min(line_width, tuple.col_end) do
+                            if densities[col] then
+                                local cell = math.floor((col - 1) / cell_columns) + 1
+                                if highlight_wins(tuple, winners[cell]) then
+                                    winners[cell] = tuple
+                                end
                             end
                         end
                     end
@@ -180,46 +197,22 @@ M.squash = function(source_lines, target_width, target_height, highlights)
             end
         end
 
-        merged_rows[row] = { density = merged_density, hl = merged_hl }
-    end
-
-    local h_ratio = math.max(1, max_width / target_width)
-
-    local grid = {}
-    for row = 1, target_height do
-        local merged = merged_rows[row]
         local cells = {}
-        for col = 1, target_width do
-            local col_start = math.floor((col - 1) * h_ratio) + 1
-            local col_end_exclusive = math.floor(col * h_ratio) + 1
-
-            local filled = false
-            for src_col = col_start, col_end_exclusive - 1 do
-                if merged.density[src_col] == 1 then
-                    filled = true
-                end
+        for cell = 1, width do
+            local mask = masks[cell]
+            if mask == nil then
+                cells[cell] = { char = " " }
+            else
+                local winner = winners[cell]
+                cells[cell] = {
+                    char = block and BLOCK or braille(mask),
+                    hl_group = winner and winner.hl_group or nil,
+                }
             end
-
-            ---@type ScrollbarMinimapResolvedHighlight?
-            local resolved_hl
-            if filled then
-                for src_col = col_start, col_end_exclusive - 1 do
-                    local candidate = merged.hl[src_col]
-                    if merged.density[src_col] == 1 and candidate ~= nil and highlight_wins(candidate, resolved_hl) then
-                        resolved_hl = candidate
-                    end
-                end
-            end
-
-            cells[col] = {
-                char = filled and "█" or " ",
-                hl_group = resolved_hl and resolved_hl.hl_group or nil,
-            }
         end
-        grid[row] = cells
+        result[row] = cells
     end
-
-    return grid, max_width
+    return result
 end
 
 return M

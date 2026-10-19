@@ -110,8 +110,34 @@
 ---@field order? integer Lower values win semantic composition; omitted preserves legacy tuple order
 
 ---@class ScrollbarMinimapCell
----@field char " "|"█" Canonical empty or occupied value from squash output
+---@field char string A space, a Braille character, or `█`
 ---@field hl_group string|nil
+
+--- Rows of the minimap grid that one squash request produces. One dot row
+--- covers `scale_lines / scale_dots` source lines.
+---@class ScrollbarMinimapGrid
+---@field width integer Cells per row
+---@field first_row integer Zero-based map row of the first produced row
+---@field row_count integer
+---@field scale_lines integer
+---@field scale_dots integer
+---@field columns_per_dot integer
+---@field encoding ScrollbarMinimapEncoding
+
+---@class ScrollbarMinimapProjection
+---@field scale ScrollbarMinimapScale
+---@field line_count integer
+---@field rows integer Float rows
+---@field width integer Float columns
+---@field columns_per_dot integer
+---@field scale_lines integer
+---@field scale_dots integer
+---@field map_rows integer Rows of the whole map
+---@field offset integer Zero-based map row at the top of the float
+---@field top integer Zero-based first visible source line
+---@field bottom integer Zero-based last visible source line
+---@field max_topline integer Largest zero-based topline for a drag
+---@field scroll_rate number Source lines for each float row of band movement
 
 ---@class ScrollbarMinimapOverlay
 ---@field source_line integer Zero-based source buffer line
@@ -168,13 +194,16 @@
 
 ---@class ScrollbarMinimapCellCache
 ---@field signature string
----@field cells ScrollbarMinimapCell[][]
+---@field cells ScrollbarMinimapCell[][] Rows of the cached slice
+---@field first_row integer Zero-based map row of `cells[1]`
+---@field row_count integer
+---@field scale_lines integer
+---@field scale_dots integer
 ---@field revision integer
 ---@field changedtick integer
 ---@field semantic_revision integer
 ---@field filetype string
 ---@field source_line_count integer
----@field max_line_width integer Display width of the longest source line
 ---@field mirror_signature string
 
 ---@class ScrollbarMinimapPendingCells
@@ -182,6 +211,7 @@
 ---@field semantic_revision integer
 ---@field generation integer
 ---@field filetype string
+---@field grid ScrollbarMinimapGrid
 
 ---@class ScrollbarMinimapSemanticInput
 ---@field revision integer
@@ -199,6 +229,7 @@
 ---@field float_config table<string, any>
 ---@field width integer
 ---@field height integer
+---@field projection ScrollbarMinimapProjection
 ---@field rows string[]
 ---@field highlights ScrollbarMinimapHighlightSpan[][]
 ---@field rendered_signature string
@@ -217,7 +248,7 @@
 ---@field request fun(request: table): boolean
 
 ---@class ScrollbarMinimapRendererOverlays
----@field project_with fun(source_win: integer, minimap_height: integer, source_line_count: integer, marks?: table<string, ScrollbarMinimapMarkSpec>): ScrollbarMinimapOverlay[]
+---@field project_with fun(source_win: integer, projection: ScrollbarMinimapProjection, marks?: table<string, ScrollbarMinimapMarkSpec>): ScrollbarMinimapOverlay[]
 
 ---@class ScrollbarMinimapRendererOptions
 ---@field config? ScrollbarMinimapConfig
@@ -245,9 +276,9 @@
 ---@field float_buf integer
 ---@field height integer
 ---@field width integer
----@field source_line_count integer
----@field v_ratio number
+---@field projection ScrollbarMinimapProjection Projection of the render before the press
 ---@field pressed_row integer 0-based minimap row at press time
+---@field pressed_topline integer 0-based source topline after the press jump
 ---@field dragging boolean
 
 return {}

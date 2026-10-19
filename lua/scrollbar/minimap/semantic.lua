@@ -47,19 +47,23 @@ local function ordered_entries(spans_by_provider)
 end
 
 ---Convert zero-based source byte spans into ordered one-based display tuples.
+---`source_lines[1]` is source line `first_line`. The result is keyed by the
+---index of `source_lines`, and spans outside the lines are skipped.
 ---@param source_lines string[]
 ---@param spans_by_provider ScrollbarMinimapSpanStoreSnapshot
+---@param first_line? integer Zero-based source line of `source_lines[1]`
 ---@return table<integer, ScrollbarMinimapSquashHighlight[]>
-M.compose = function(source_lines, spans_by_provider)
+M.compose = function(source_lines, spans_by_provider, first_line)
+    first_line = first_line or 0
     local highlights = {}
     for order, entry in ipairs(ordered_entries(spans_by_provider)) do
         local span = entry.span
-        local source_line = source_lines[span.line + 1]
+        local line = span.line - first_line + 1
+        local source_line = source_lines[line]
         if source_line ~= nil then
             local start_display = display_width_to(source_line, span.start_col)
             local end_display = display_width_to(source_line, span.end_col)
             if end_display > start_display then
-                local line = span.line + 1
                 highlights[line] = highlights[line] or {}
                 highlights[line][#highlights[line] + 1] = {
                     hl_group = span.highlight,

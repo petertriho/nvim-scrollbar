@@ -1,6 +1,10 @@
 --- Minimap mouse: click + drag handlers for the minimap float. Parallel
---- to `lua/scrollbar/mouse.lua` but independent — no shared state. Line
---- mode only: row→line projection uses `floor(minimap_row * v_ratio)`.
+--- to `lua/scrollbar/mouse.lua` but independent — no shared state.
+---
+--- A press jumps to the first line of the pressed row, which the projection
+--- of the last render gives. A drag is a slider drag: it scrolls the source
+--- window so that the viewport band follows the pointer, and it moves the
+--- cursor only when the cursor leaves the visible lines.
 ---
 --- Drag is frame-coalesced via the minimap scheduler: each `<LeftDrag>`
 --- invalidates the source window through the scheduler; the scheduler's
@@ -8,7 +12,14 @@
 --- restored after every interaction (reusing the pattern at
 --- `lua/scrollbar/mouse.lua:60-78`).
 
+local projection_module = require("scrollbar.minimap.projection")
+
 local M = {}
+
+-- Bound for the scroll corrections of one drag event. Each pass moves the
+-- topline, so a few passes reach the target unless folds or wrapped lines
+-- stop it.
+local MAX_SCROLL_PASSES = 8
 
 local AUGROUP_NAME = "ScrollbarMinimapMouse"
 local MAPPINGS = { "<LeftMouse>", "<LeftDrag>", "<LeftRelease>" }
@@ -88,24 +99,22 @@ local function restore_focus(current)
     restore_source(current.source_win)
 end
 
----Project a 0-based minimap row back to a 0-based source line using the
----line-mode v_ratio captured at press time.
 ---@param current ScrollbarMinimapMouseInteraction
----@param row integer 0-based minimap row
----@return integer source_line 0-based source line
-local function row_to_line(current, row)
-    local ratio = current.v_ratio
-    local line = math.floor(row * ratio)
-    return clamp(line, 0, math.max(0, current.source_line_count - 1))
+---@return boolean
+local function valid_source(current)
+    return valid_window(current.source_win)
+        and vim.api.nvim_buf_is_valid(current.source_buf)
+        and vim.api.nvim_win_get_buf(current.source_win) == current.source_buf
 end
 
 ---@param current ScrollbarMinimapMouseInteraction
 ---@param source_line integer 0-based source line
 local function navigate(current, source_line)
-    if not valid_window(current.source_win) or not vim.api.nvim_buf_is_valid(current.source_buf) then
+    if not valid_source(current) then
         return false
     end
-    local line = clamp(source_line, 0, math.max(0, current.source_line_count - 1))
+    local line_count = vim.api.nvim_buf_line_count(current.source_buf)
+    local line = clamp(source_line, 0, math.max(0, line_count - 1))
     local ok = pcall(vim.api.nvim_win_call, current.source_win, function()
         vim.api.nvim_win_set_cursor(current.source_win, { line + 1, 0 })
         vim.cmd("normal! zv")
@@ -115,6 +124,53 @@ local function navigate(current, source_line)
         pcall(runtime.scheduler.invalidate_window, current.source_win)
     end
     return ok
+end
+
+---Scroll the current window until its 0-based topline reaches `topline`.
+---`CTRL-E` and `CTRL-Y` count a closed fold as one line, so the scroll can
+---pass `topline`. A pass that passes `topline` or does not move ends the
+---scroll.
+---@param topline integer
+local function scroll_current(topline)
+    for _ = 1, MAX_SCROLL_PASSES do
+        local before = vim.fn.line("w0") - 1
+        local delta = topline - before
+        if delta == 0 then
+            return
+        end
+        if delta > 0 then
+            vim.cmd("normal! " .. delta .. "\5")
+        else
+            vim.cmd("normal! " .. -delta .. "\25")
+        end
+        local after = vim.fn.line("w0") - 1
+        if after == before or (delta > 0 and after >= topline) or (delta < 0 and after <= topline) then
+            return
+        end
+    end
+end
+
+---@param current ScrollbarMinimapMouseInteraction
+---@param topline integer 0-based source topline
+local function scroll_to(current, topline)
+    if not valid_source(current) then
+        return false
+    end
+    local ok = pcall(vim.api.nvim_win_call, current.source_win, function()
+        scroll_current(topline)
+    end)
+    if ok and runtime ~= nil then
+        pcall(runtime.scheduler.invalidate_window, current.source_win)
+    end
+    return ok
+end
+
+---@param source_win integer
+---@return integer topline 0-based
+local function source_topline(source_win)
+    return vim.api.nvim_win_call(source_win, function()
+        return vim.fn.line("w0") - 1
+    end)
 end
 
 ---@param float_win integer
@@ -162,8 +218,6 @@ end
 ---@param state ScrollbarMinimapRendererState
 ---@return ScrollbarMinimapMouseInteraction
 local function build_interaction(state)
-    local source_line_count = vim.api.nvim_buf_line_count(state.source_buf)
-    local v_ratio = math.max(1, source_line_count / state.height)
     return {
         source_win = state.source_win,
         source_buf = state.source_buf,
@@ -171,9 +225,9 @@ local function build_interaction(state)
         float_buf = state.float_buf,
         height = state.height,
         width = state.width,
-        source_line_count = source_line_count,
-        v_ratio = v_ratio,
+        projection = state.projection,
         pressed_row = 0,
+        pressed_topline = 0,
         dragging = false,
     }
 end
@@ -196,7 +250,7 @@ M.press = function(float_win)
         return
     end
     local _, row, col = mouse_position(state.float_win)
-    if row < 0 or row >= state.height or col < 1 or col > state.width then
+    if row < 0 or row >= state.height or col < 1 or col > state.width or state.projection == nil then
         return
     end
 
@@ -206,9 +260,13 @@ M.press = function(float_win)
     if valid_window(state.float_win) then
         pcall(vim.api.nvim_set_current_win, state.float_win)
     end
-    navigate(current, row_to_line(current, row))
+    navigate(current, projection_module.row_line(current.projection, row))
+    current.pressed_topline = source_topline(current.source_win)
 end
 
+---Scroll the source so that the band moves by the rows that the pointer
+---moved since the press. The pointer may leave the float; the topline
+---clamps at the ends of the buffer.
 M.drag = function()
     local current = interaction
     if current == nil then
@@ -219,9 +277,11 @@ M.drag = function()
         return
     end
     local _, row = mouse_position(current.float_win)
-    row = clamp(row, 0, current.height - 1)
     current.dragging = true
-    navigate(current, row_to_line(current, row))
+    scroll_to(
+        current,
+        projection_module.drag_topline(current.projection, current.pressed_topline, row - current.pressed_row)
+    )
 end
 
 M.release = function()
@@ -229,10 +289,10 @@ M.release = function()
     if current == nil then
         return
     end
-    if valid_window(current.float_win) then
+    if not current.dragging and valid_window(current.float_win) then
         local _, row = mouse_position(current.float_win)
         row = clamp(row, 0, current.height - 1)
-        navigate(current, row_to_line(current, row))
+        navigate(current, projection_module.row_line(current.projection, row))
     end
     finish_interaction(current)
 end

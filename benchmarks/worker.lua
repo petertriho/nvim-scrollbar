@@ -55,6 +55,33 @@ local function make_semantic_spans(line_count)
     return spans
 end
 
+--- Grid of a 24-row, 80-cell float whose source window starts in the middle
+--- of the buffer. `fit` squashes the whole buffer, which matches the cost of
+--- the full-buffer squash. `fixed` squashes the slice around the visible rows.
+local function request_grid(line_count, scale)
+    local projection = require("scrollbar.minimap.projection")
+    local top = math.floor(line_count / 2)
+    local view = projection.new({
+        scale = scale or "fit",
+        line_count = line_count,
+        rows = 24,
+        width = 80,
+        columns_per_dot = 4,
+        top = top,
+        bottom = math.min(line_count - 1, top + 23),
+    })
+    local first_row, row_count = projection.slice(view)
+    return {
+        width = 80,
+        first_row = first_row,
+        row_count = row_count,
+        scale_lines = view.scale_lines,
+        scale_dots = view.scale_dots,
+        columns_per_dot = 4,
+        encoding = "braille",
+    }
+end
+
 local function fresh_buffer(lines)
     local buf = vim.api.nvim_create_buf(false, true)
     vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
@@ -103,8 +130,7 @@ local function measure_sync(label, line_count)
     for _ = 1, warmup_count do
         worker.request({
             bufnr = buf,
-            width = 80,
-            height = 24,
+            grid = request_grid(line_count),
             filetype = "lua",
             generation = 1,
             signature = label,
@@ -120,8 +146,7 @@ local function measure_sync(label, line_count)
         local started = vim.uv.hrtime()
         worker.request({
             bufnr = buf,
-            width = 80,
-            height = 24,
+            grid = request_grid(line_count),
             filetype = "lua",
             generation = 1,
             signature = label,
@@ -157,8 +182,7 @@ local function measure_worker(worker, label, line_count)
         received = nil
         worker.request({
             bufnr = buf,
-            width = 80,
-            height = 24,
+            grid = request_grid(line_count),
             filetype = "lua",
             generation = 1,
             signature = label,
@@ -178,8 +202,7 @@ local function measure_worker(worker, label, line_count)
         local started = vim.uv.hrtime()
         worker.request({
             bufnr = buf,
-            width = 80,
-            height = 24,
+            grid = request_grid(line_count),
             filetype = "lua",
             generation = 1,
             signature = label,

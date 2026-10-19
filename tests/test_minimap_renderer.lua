@@ -206,10 +206,12 @@ T["renders a sync squash grid into the minimap buffer"] = function()
         width = 3,
         height = 2,
         viewport = false,
+        encoding = "block",
+        columns_per_dot = 1,
     }, { set_highlights = false })
 
     local result = child.lua_func(function()
-        vim.api.nvim_buf_set_lines(0, 0, -1, false, { "abc", "defghi" })
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, { "abc", "defghi", "", "", "x" })
         local renderer = require("scrollbar.minimap.renderer")
         local state = assert(renderer.render(0))
         return {
@@ -222,8 +224,8 @@ T["renders a sync squash grid into the minimap buffer"] = function()
     expect.no_equality(result.rows, nil)
     expect.equality(result.height, 2)
     expect.equality(result.width, 3)
-    expect.equality(result.rows[1], "██ ")
-    expect.equality(result.rows[2], "███")
+    expect.equality(result.rows[1], "███")
+    expect.equality(result.rows[2], "█  ")
 end
 
 T["highlight ranges align with complete UTF-8 content glyphs"] = function()
@@ -466,6 +468,7 @@ T["content viewport marks and points share one terminal-row projection"] = funct
         height = 4,
         viewport = true,
         marks = { Error = {} },
+        encoding = "block",
     }, { set_highlights = false })
 
     local result = child.lua_func(function()
@@ -493,7 +496,7 @@ T["content viewport marks and points share one terminal-row projection"] = funct
             ipairs(vim.api.nvim_buf_get_extmarks(state.float_buf, renderer.namespace(), 0, -1, { details = true }))
         do
             local highlight = mark[4] and mark[4].hl_group
-            if highlight ~= nil then
+            if highlight ~= nil and rows_by_highlight[highlight] == nil then
                 rows_by_highlight[highlight] = mark[2] + 1
             end
         end
@@ -512,12 +515,14 @@ T["content viewport marks and points share one terminal-row projection"] = funct
         }
     end)
 
+    -- 20 lines at 4 lines per row make 5 map rows, so the map scrolls by
+    -- one row when line 11 is at the top of the window.
     expect.equality(result, {
-        content = 3,
-        viewport = 3,
-        mark = 3,
-        point = 3,
-        cursor = 3,
+        content = 2,
+        viewport = 2,
+        mark = 2,
+        point = 2,
+        cursor = 2,
     })
 end
 
@@ -529,16 +534,17 @@ T["cursor points project exact text whitespace and end-of-line columns"] = funct
         width = 5,
         height = 3,
         viewport = false,
+        columns_per_dot = 1,
     }, { set_highlights = false })
 
     local result = child.lua_func(function()
-        local lines = { "abcd", "", "a   b", "", "abcde", "" }
+        local lines = { "abcd", "", "", "", "a   b", "", "", "", "abcdefghij", "" }
         vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
         local source_win = vim.api.nvim_get_current_win()
         require("scrollbar.store").set_minimap_points("cursor", source_win, {
             { line = 0, col = 2, highlight = "ScrollbarMinimapCursor", priority = 14 },
-            { line = 2, col = 2, highlight = "ScrollbarMinimapCursor", priority = 14 },
-            { line = 4, col = 5, highlight = "ScrollbarMinimapCursor", priority = 14 },
+            { line = 4, col = 2, highlight = "ScrollbarMinimapCursor", priority = 14 },
+            { line = 8, col = 10, highlight = "ScrollbarMinimapCursor", priority = 14 },
         })
 
         local renderer = require("scrollbar.minimap.renderer")
@@ -568,13 +574,15 @@ T["cursor points project exact text whitespace and end-of-line columns"] = funct
         }
     end)
 
+    -- Each cell covers two display columns. The end-of-line point clamps to
+    -- the last cell.
     expect.equality(result.positions, {
-        { row = 1, col = 3 },
-        { row = 2, col = 3 },
+        { row = 1, col = 2 },
+        { row = 2, col = 2 },
         { row = 3, col = 5 },
     })
     expect.equality(result.cursor_row, 1)
-    expect.equality(result.cursor_col, 3)
+    expect.equality(result.cursor_col, 2)
 end
 
 T["disabled cursor provider suppresses stored cursor points"] = function()
@@ -618,10 +626,11 @@ T["mark and point changes rerender without requesting new cells"] = function()
         width = 4,
         height = 1,
         viewport = false,
+        columns_per_dot = 1,
     }, { set_highlights = false })
 
     local result = child.lua_func(function()
-        vim.api.nvim_buf_set_lines(0, 0, -1, false, { "abcd", "" })
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, { "abcdefgh", "" })
         local source_win = vim.api.nvim_get_current_win()
         local store = require("scrollbar.store")
         local worker = require("scrollbar.minimap.worker")
@@ -642,7 +651,7 @@ T["mark and point changes rerender without requesting new cells"] = function()
         local first_col = before.cursor_col
 
         store.set_minimap_points("cursor", source_win, {
-            { line = 0, col = 3, highlight = "ScrollbarMinimapCursor", priority = 14 },
+            { line = 0, col = 7, highlight = "ScrollbarMinimapCursor", priority = 14 },
         })
         local after = assert(renderer.render(source_win))
         store.set("diagnostic", vim.api.nvim_get_current_buf(), { { line = 0, type = "Error" } })
@@ -786,10 +795,11 @@ T["parent semantic spans recolor occupied cells and invalidate once per revision
         width = 3,
         height = 1,
         viewport = false,
+        columns_per_dot = 1,
     }, { set_highlights = false, providers = { cursor = false, lsp_semantic_tokens = true } })
 
     local result = child.lua_func(function()
-        vim.api.nvim_buf_set_lines(0, 0, -1, false, { "a b", "" })
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, { "a   b", "" })
         local bufnr = vim.api.nvim_get_current_buf()
         local store = require("scrollbar.store")
         local worker = require("scrollbar.minimap.worker")
@@ -802,14 +812,14 @@ T["parent semantic spans recolor occupied cells and invalidate once per revision
         end
 
         store.set_minimap_spans("lsp_semantic_tokens", bufnr, {
-            { line = 0, start_col = 0, end_col = 3, highlight = "FirstSemantic", priority = 10 },
+            { line = 0, start_col = 0, end_col = 5, highlight = "FirstSemantic", priority = 10 },
         })
         local renderer = require("scrollbar.minimap.renderer")
         local first = assert(renderer.render(0))
         local first_requests = requests
 
         store.set_minimap_spans("lsp_semantic_tokens", bufnr, {
-            { line = 0, start_col = 0, end_col = 3, highlight = "SecondSemantic", priority = 10 },
+            { line = 0, start_col = 0, end_col = 5, highlight = "SecondSemantic", priority = 10 },
         })
         local second = assert(renderer.render(0))
         local second_requests = requests
@@ -1219,7 +1229,7 @@ T["LSP semantic spans override overlapping Treesitter spans"] = function()
                     spans.treesitter = { treesitter_span }
                     local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, true)
                     local highlights = require("scrollbar.minimap.semantic").compose(lines, spans)
-                    local cells, max_line_width = require("scrollbar.minimap.squash").squash(lines, 1, 1, highlights)
+                    local cells = require("scrollbar.minimap.squash").squash(lines, 0, request.grid, highlights)
                     renderer.handle_worker_result({
                         bufnr = bufnr,
                         generation = request.generation,
@@ -1227,7 +1237,6 @@ T["LSP semantic spans override overlapping Treesitter spans"] = function()
                         changedtick = vim.api.nvim_buf_get_changedtick(bufnr),
                         semantic_revision = request.semantic_revision,
                         cells = cells,
-                        max_line_width = max_line_width,
                         worker_spans = { treesitter_span },
                     })
                     return true
@@ -1305,6 +1314,8 @@ T["buffer edits refresh a cached projection"] = function()
         width = 4,
         height = 1,
         viewport = false,
+        encoding = "block",
+        columns_per_dot = 1,
     })
 
     local result = child.lua_func(function()
@@ -1318,7 +1329,7 @@ T["buffer edits refresh a cached projection"] = function()
         end
 
         local renderer = require("scrollbar.minimap.renderer")
-        vim.api.nvim_buf_set_lines(0, 0, -1, false, { "aaaa", "aaaa" })
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, { "aaaaaaaa", "aaaaaaaa" })
         local before = assert(renderer.render(0)).rows[1]
         vim.api.nvim_buf_set_lines(0, 0, -1, false, { "", "" })
         local after = assert(renderer.render(0)).rows[1]
@@ -1502,12 +1513,14 @@ T["viewport false suppresses the viewport tint"] = function()
         width = 4,
         height = 4,
         viewport = false,
+        encoding = "block",
+        columns_per_dot = 1,
     })
 
     local result = child.lua_func(function()
         local lines = {}
         for index = 1, 8 do
-            lines[index] = "aaaa"
+            lines[index] = "aaaaaaaa"
         end
         vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
         local renderer = require("scrollbar.minimap.renderer")
@@ -1539,10 +1552,12 @@ T["occupied cells use the monochrome content highlight by default"] = function()
         width = 4,
         height = 1,
         viewport = false,
+        encoding = "block",
+        columns_per_dot = 1,
     })
 
     local result = child.lua_func(function()
-        vim.api.nvim_buf_set_lines(0, 0, -1, false, { "a  b", "a  b" })
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, { "a     b", "a     b" })
         local renderer = require("scrollbar.minimap.renderer")
         local state = assert(renderer.render(0))
         local ranges = {}
@@ -2174,6 +2189,209 @@ T["cursor overlap state repairs external float hide mutations"] = function()
         repaired_hidden = true,
         hidden_by_cursor = true,
     })
+end
+
+local function staircase_lines(count)
+    -- Map row `r` draws one block in cell `r % 4 + 1`, so a row shows which
+    -- map row it is.
+    local lines = {}
+    for index = 1, count do
+        lines[index] = string.rep(" ", 2 * (math.floor((index - 1) / 4) % 4)) .. "x"
+    end
+    return lines
+end
+
+local function staircase_row(map_row)
+    local cells = { " ", " ", " ", " " }
+    cells[map_row % 4 + 1] = "█"
+    return table.concat(cells)
+end
+
+T["the fixed scale scrolls the map with the source window"] = function()
+    local child = new_child()
+    reset_modules(child)
+    configure(child, {
+        enabled = true,
+        width = 4,
+        height = 10,
+        viewport = false,
+        encoding = "block",
+        columns_per_dot = 1,
+    }, { set_highlights = false })
+
+    local result = child.lua_func(function(lines)
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        local renderer = require("scrollbar.minimap.renderer")
+        local top = assert(renderer.render(0))
+        local top_rows = vim.deepcopy(top.rows)
+        local top_offset = top.projection.offset
+        vim.cmd("normal! G")
+        local bottom = assert(renderer.render(0))
+        return {
+            top_rows = top_rows,
+            top_offset = top_offset,
+            bottom_rows = bottom.rows,
+            bottom_offset = bottom.projection.offset,
+            map_rows = bottom.projection.map_rows,
+        }
+    end, staircase_lines(400))
+
+    expect.equality(result.top_offset, 0)
+    expect.equality(result.map_rows, 100)
+    expect.equality(result.bottom_offset, 90)
+    for row = 1, 10 do
+        expect.equality(result.top_rows[row], staircase_row(row - 1))
+        expect.equality(result.bottom_rows[row], staircase_row(89 + row))
+    end
+end
+
+T["scrolling inside the cached slice requests no new cells"] = function()
+    local child = new_child()
+    reset_modules(child)
+    configure(child, {
+        enabled = true,
+        width = 4,
+        height = 10,
+        viewport = false,
+    }, { set_highlights = false })
+
+    local result = child.lua_func(function()
+        local lines = {}
+        for index = 1, 2000 do
+            lines[index] = "line " .. index
+        end
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        local worker = require("scrollbar.minimap.worker")
+        local grids = {}
+        local original_request = worker.request
+        ---@diagnostic disable-next-line: duplicate-set-field
+        worker.request = function(request)
+            grids[#grids + 1] = { request.grid.first_row, request.grid.row_count }
+            return original_request(request)
+        end
+        local renderer = require("scrollbar.minimap.renderer")
+        local source_win = vim.api.nvim_get_current_win()
+        local offsets = {}
+        local requests = {}
+        for _, line in ipairs({ 1, 30, 200, 1000, 2000 }) do
+            vim.api.nvim_win_set_cursor(source_win, { line, 0 })
+            local state = assert(renderer.render(source_win))
+            offsets[#offsets + 1] = state.projection.offset
+            requests[#requests + 1] = #grids
+        end
+        worker.request = original_request
+        return { offsets = offsets, requests = requests, grids = grids }
+    end)
+
+    -- 2000 lines make 500 map rows. The first slice covers rows 0-19, and
+    -- moving 1-3 rows keeps half a float height of margin.
+    expect.equality(result.offsets[1], 0)
+    expect.equality(result.offsets[2] > 0 and result.offsets[2] <= 5, true)
+    expect.equality(result.requests[1], 1)
+    expect.equality(result.requests[2], 1)
+    expect.equality(result.requests[3], 2)
+    expect.equality(result.requests[4], 3)
+    expect.equality(result.requests[5], 4)
+    expect.equality(result.offsets[5], 490)
+    expect.equality(result.grids[1], { 0, 20 })
+    expect.equality(result.grids[#result.grids], { 480, 20 })
+end
+
+T["rows outside the cached slice stay blank while the next slice is pending"] = function()
+    local child = new_child()
+    reset_modules(child)
+
+    local result = child.lua_func(function(lines)
+        require("scrollbar.config").set({
+            set_highlights = false,
+            minimap = {
+                enabled = true,
+                width = 4,
+                height = 10,
+                viewport = false,
+                encoding = "block",
+                columns_per_dot = 1,
+            },
+        })
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        local bufnr = vim.api.nvim_get_current_buf()
+        local renderer = require("scrollbar.minimap.renderer")
+        local squash = require("scrollbar.minimap.squash")
+        local requests = 0
+        renderer.setup({
+            worker = {
+                request = function(request)
+                    requests = requests + 1
+                    if requests > 1 then
+                        return true
+                    end
+                    local first, last = squash.line_range(request.grid, #lines)
+                    renderer.handle_worker_result({
+                        bufnr = bufnr,
+                        generation = request.generation,
+                        signature = request.signature,
+                        changedtick = vim.api.nvim_buf_get_changedtick(bufnr),
+                        semantic_revision = request.semantic_revision,
+                        cells = squash.squash(
+                            vim.api.nvim_buf_get_lines(bufnr, first, last, true),
+                            first,
+                            request.grid
+                        ),
+                    })
+                    return true
+                end,
+            },
+            overlays = {
+                project_with = function()
+                    return {}
+                end,
+            },
+        })
+        assert(renderer.render(0))
+        local source_win = vim.api.nvim_get_current_win()
+        vim.api.nvim_win_set_cursor(source_win, { 120, 0 })
+        vim.cmd("normal! zt")
+        local state = assert(renderer.render(0))
+        return { rows = state.rows, offset = state.projection.offset, requests = requests }
+    end, staircase_lines(400))
+
+    -- The first slice covers map rows 0-19. The pending slice is not drawn.
+    expect.equality(result.requests, 2)
+    for row = 1, 10 do
+        local map_row = result.offset + row - 1
+        expect.equality(result.rows[row], map_row < 20 and staircase_row(map_row) or "    ")
+    end
+end
+
+T["the fit scale shows the whole buffer"] = function()
+    local child = new_child()
+    reset_modules(child)
+    configure(child, {
+        enabled = true,
+        width = 4,
+        height = 10,
+        viewport = false,
+        encoding = "block",
+        columns_per_dot = 1,
+        scale = "fit",
+    }, { set_highlights = false })
+
+    local result = child.lua_func(function()
+        local lines = {}
+        for index = 1, 400 do
+            lines[index] = index == 400 and "      x" or ""
+        end
+        lines[1] = "x"
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        local renderer = require("scrollbar.minimap.renderer")
+        vim.cmd("normal! G")
+        local state = assert(renderer.render(0))
+        return { rows = state.rows, offset = state.projection.offset }
+    end)
+
+    expect.equality(result.offset, 0)
+    expect.equality(result.rows[1], "█   ")
+    expect.equality(result.rows[10], "   █")
 end
 
 return T

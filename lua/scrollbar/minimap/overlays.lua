@@ -4,6 +4,7 @@
 --- variant; collision resolution uses their priority (lowest wins).
 
 local minimap_config = require("scrollbar.minimap.config")
+local projection_module = require("scrollbar.minimap.projection")
 local providers = require("scrollbar.providers")
 local search_compact = require("scrollbar.providers.search_compact")
 local store = require("scrollbar.store")
@@ -17,31 +18,6 @@ local function reset_state()
 end
 
 reset_state()
-
---- Clamp a 1-based minimap row to `[1, height]`.
----@param row integer
----@param height integer
----@return integer
-local function clamp_row(row, height)
-    if row < 1 then
-        return 1
-    end
-    if row > height then
-        return height
-    end
-    return row
-end
-
---- Project a 0-based source line to a 1-based minimap row using the same
---- bucketing math as `lua/scrollbar/minimap/squash.lua`:
---- `floor(line / v_ratio) + 1`, clamped to the target height.
----@param line integer
----@param v_ratio number
----@param minimap_height integer
----@return integer
-local function project_line(line, v_ratio, minimap_height)
-    return clamp_row(math.floor(line / v_ratio) + 1, minimap_height)
-end
 
 ---@param _options ScrollbarMinimapOverlaysOptions
 M.setup = function(_options)
@@ -58,43 +34,31 @@ M.is_active = function()
     return active
 end
 
---- Read-only projection of all published marks for `source_win` onto a
---- minimap grid of height `minimap_height`. Returns one winning projected
---- overlay per row after filtering and collision resolution, sorted ascending
---- by `minimap_row`. The renderer separately filters each winner to occupied
---- squash cells.
+--- Read-only projection of all published marks for `source_win` onto the
+--- float rows of `projection`. Returns one winning projected overlay per row
+--- after filtering and collision resolution, sorted ascending by
+--- `minimap_row`. Marks on rows outside the float are skipped. The renderer
+--- separately filters each winner to occupied squash cells.
 ---
 --- Mark type metadata and renderer-facing highlight groups come from the
 --- selected minimap presentation. The store remains a shared read-only source.
 ---
 ---@param source_win integer
----@param minimap_height integer
+---@param projection ScrollbarMinimapProjection
 ---@return ScrollbarMinimapOverlay[]
-M.project = function(source_win, minimap_height)
-    if not active or minimap_height <= 0 then
-        return {}
-    end
-    if not vim.api.nvim_win_is_valid(source_win) then
-        return {}
-    end
-    local source_buf = vim.api.nvim_win_get_buf(source_win)
-    local source_line_count = vim.api.nvim_buf_line_count(source_buf)
-    return M.project_with(source_win, minimap_height, source_line_count)
+M.project = function(source_win, projection)
+    return M.project_with(source_win, projection)
 end
 
---- Projection core. Split from `M.project` so callers that already know the
---- source line count (e.g. the renderer caching geometry) can reuse the
---- computation. `source_line_count` is the 1-based count of source lines.
 ---@param source_win integer
----@param minimap_height integer
----@param source_line_count integer
+---@param projection ScrollbarMinimapProjection
 ---@param marks? table<string, ScrollbarMinimapMarkSpec> Shown mark types; defaults to the selected variant
 ---@return ScrollbarMinimapOverlay[]
-M.project_with = function(source_win, minimap_height, source_line_count, marks)
-    if not active or minimap_height <= 0 then
+M.project_with = function(source_win, projection, marks)
+    if not active or projection.rows <= 0 then
         return {}
     end
-    if source_line_count <= 0 or not vim.api.nvim_win_is_valid(source_win) then
+    if projection.line_count <= 0 or not vim.api.nvim_win_is_valid(source_win) then
         return {}
     end
 
@@ -123,8 +87,6 @@ M.project_with = function(source_win, minimap_height, source_line_count, marks)
     end
     table.sort(provider_names)
 
-    local v_ratio = math.max(1, source_line_count / minimap_height)
-
     ---@type table<integer, ScrollbarMinimapOverlay>
     local by_row = {}
     ---@type integer[]
@@ -136,7 +98,10 @@ M.project_with = function(source_win, minimap_height, source_line_count, marks)
             return
         end
 
-        local row = project_line(line, v_ratio, minimap_height)
+        local row = projection_module.float_row(projection, line)
+        if row == nil then
+            return
+        end
         local existing = by_row[row]
         if
             existing == nil

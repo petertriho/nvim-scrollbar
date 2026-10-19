@@ -1,7 +1,8 @@
 --- Minimap worker: mirrors source buffers into a headless child Neovim and
 --- runs `minimap/squash.lua`, optionally with treesitter captures, returning
---- the cell grid to the parent. The `"sync"` backend runs the same logic
---- inline on the main thread; output is bit-identical between backends.
+--- the cell rows of the requested grid slice to the parent. The `"sync"`
+--- backend runs the same logic inline on the main thread; output is
+--- bit-identical between backends.
 ---
 --- Parallels `lua/scrollbar/providers/search_worker.lua`. On worker failure
 --- the module emits exactly one warning and flips to the sync path for the
@@ -92,11 +93,13 @@ local function squash_payload(payload)
         return
     end
 
-    local lines = vim.api.nvim_buf_get_lines(mirror.child_buf, 0, -1, true)
+    local grid = payload.grid
+    local first, last = squash.line_range(grid, vim.api.nvim_buf_line_count(mirror.child_buf))
+    local lines = vim.api.nvim_buf_get_lines(mirror.child_buf, first, last, false)
     local worker_spans = {}
     if mirror.lang ~= nil then
         trace("capture_extract", { bufnr = payload.bufnr })
-        local ok, spans = pcall(treesitter.collect, mirror.child_buf, mirror.lang)
+        local ok, spans = pcall(treesitter.collect, mirror.child_buf, mirror.lang, first, last)
         if ok then
             worker_spans = spans or {}
         end
@@ -106,8 +109,7 @@ local function squash_payload(payload)
     if #worker_spans > 0 then
         spans_by_provider.treesitter = worker_spans
     end
-    local highlights = semantic.compose(lines, spans_by_provider)
-    local cells, max_line_width = squash.squash(lines, payload.width, payload.height, highlights)
+    local highlights = semantic.compose(lines, spans_by_provider, first)
     send("result", {
         bufnr = payload.bufnr,
         generation = payload.generation,
@@ -115,8 +117,8 @@ local function squash_payload(payload)
         mirror = payload.mirror,
         semantic_revision = payload.semantic_revision,
         filetype = payload.filetype,
-        cells = cells,
-        max_line_width = max_line_width,
+        grid = grid,
+        cells = squash.squash(lines, first, grid, highlights),
         worker_spans = worker_spans,
     })
 end
@@ -285,18 +287,20 @@ local function sync_execute(request)
     if not vim.api.nvim_buf_is_valid(bufnr) or not vim.api.nvim_buf_is_loaded(bufnr) then
         return
     end
-    local lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, true)
+    local grid = request.grid
+    local first, last = squash_module.line_range(grid, vim.api.nvim_buf_line_count(bufnr))
+    local lines = vim.api.nvim_buf_get_lines(bufnr, first, last, false)
     local spans_by_provider = vim.deepcopy(request.semantic_spans or {})
     local worker_spans = {}
     if treesitter_enabled then
         local lang = treesitter_provider.language_for(request.filetype)
-        worker_spans = treesitter_provider.collect(bufnr, lang)
+        worker_spans = treesitter_provider.collect(bufnr, lang, first, last)
         if #worker_spans > 0 then
             spans_by_provider.treesitter = worker_spans
         end
     end
-    local highlights = semantic_module.compose(lines, spans_by_provider)
-    local cells, max_line_width = squash_module.squash(lines, request.width, request.height, highlights)
+    local highlights = semantic_module.compose(lines, spans_by_provider, first)
+    local cells = squash_module.squash(lines, first, grid, highlights)
     if on_result ~= nil then
         on_result({
             bufnr = bufnr,
@@ -305,8 +309,8 @@ local function sync_execute(request)
             changedtick = vim.api.nvim_buf_get_changedtick(bufnr),
             semantic_revision = request.semantic_revision or 0,
             filetype = request.filetype or "",
+            grid = grid,
             cells = cells,
-            max_line_width = max_line_width,
             worker_spans = worker_spans,
         })
     end
@@ -666,8 +670,8 @@ local function dispatch_callback(event, payload)
             changedtick = request.mirror.changedtick,
             semantic_revision = payload.semantic_revision,
             filetype = request.filetype or "",
+            grid = request.grid,
             cells = payload.cells,
-            max_line_width = payload.max_line_width,
             worker_spans = payload.worker_spans or {},
         })
     end
@@ -676,8 +680,7 @@ end
 
 ---@class ScrollbarMinimapWorkerRequest
 ---@field bufnr integer
----@field width integer
----@field height integer
+---@field grid ScrollbarMinimapGrid Rows to squash
 ---@field filetype? string
 ---@field generation integer Caller-defined monotonic id; mismatched results are dropped
 ---@field signature string Caller-defined dedup key; mismatched results are dropped

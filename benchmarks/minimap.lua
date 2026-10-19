@@ -69,10 +69,45 @@ local function configure(minimap_overrides)
     })
 end
 
+--- Grid of a 24-row, 80-cell float whose source window starts in the middle
+--- of the buffer. `fit` squashes the whole buffer, which matches the cost of
+--- the full-buffer squash. `fixed` squashes the slice around the visible rows.
+local function request_grid(line_count, scale)
+    local projection = require("scrollbar.minimap.projection")
+    local top = math.floor(line_count / 2)
+    local view = projection.new({
+        scale = scale or "fit",
+        line_count = line_count,
+        rows = 24,
+        width = 80,
+        columns_per_dot = 4,
+        top = top,
+        bottom = math.min(line_count - 1, top + 23),
+    })
+    local first_row, row_count = projection.slice(view)
+    return {
+        width = 80,
+        first_row = first_row,
+        row_count = row_count,
+        scale_lines = view.scale_lines,
+        scale_dots = view.scale_dots,
+        columns_per_dot = 4,
+        encoding = "braille",
+    }
+end
+
 local function fresh_buffer(lines)
     local buf = vim.api.nvim_create_buf(false, true)
     vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
     return buf
+end
+
+--- The minimap skips floating windows, so the render benchmarks use a split.
+local function open_source_window(buf)
+    vim.cmd("botright vsplit")
+    local winid = vim.api.nvim_get_current_win()
+    vim.api.nvim_win_set_buf(winid, buf)
+    return winid
 end
 
 local function setup_worker(backend)
@@ -104,19 +139,21 @@ local function dispose_worker(worker)
     end
 end
 
-local function measure_squash(label, source_line_counts)
+local function measure_squash(label, source_line_counts, scale)
     local squash = require("scrollbar.minimap.squash")
     local results = {}
     for _, count in ipairs(source_line_counts) do
-        local lines = make_lines(count)
+        local grid = request_grid(count, scale)
+        local first, last = squash.line_range(grid, count)
+        local lines = vim.list_slice(make_lines(count), first + 1, last)
         local samples = {}
         for _ = 1, warmup_count do
-            squash.squash(lines, 80, 24)
+            squash.squash(lines, first, grid)
         end
         collectgarbage("collect")
         for _ = 1, iteration_count do
             local started = vim.uv.hrtime()
-            squash.squash(lines, 80, 24)
+            squash.squash(lines, first, grid)
             samples[#samples + 1] = (vim.uv.hrtime() - started) / 1000000
         end
         results[#results + 1] = { line_count = count, statistics = statistics(samples) }
@@ -129,14 +166,15 @@ local function measure_ratios(label, ratio_cases)
     local results = {}
     for _, case in ipairs(ratio_cases) do
         local lines = make_lines(case.source_lines)
+        local grid = request_grid(case.source_lines)
         local samples = {}
         for _ = 1, warmup_count do
-            squash.squash(lines, case.width, case.height)
+            squash.squash(lines, 0, grid)
         end
         collectgarbage("collect")
         for _ = 1, iteration_count do
             local started = vim.uv.hrtime()
-            squash.squash(lines, case.width, case.height)
+            squash.squash(lines, 0, grid)
             samples[#samples + 1] = (vim.uv.hrtime() - started) / 1000000
         end
         results[#results + 1] = vim.tbl_extend("keep", case, { statistics = statistics(samples) })
@@ -157,8 +195,7 @@ local function measure_backend_parity(line_count)
     end
     sync_worker.request({
         bufnr = buf,
-        width = 80,
-        height = 24,
+        grid = request_grid(line_count),
         filetype = "lua",
         generation = 1,
         signature = "parity",
@@ -177,8 +214,7 @@ local function measure_backend_parity(line_count)
     end
     worker.request({
         bufnr = buf,
-        width = 80,
-        height = 24,
+        grid = request_grid(line_count),
         filetype = "lua",
         generation = 1,
         signature = "parity",
@@ -217,7 +253,7 @@ local function measure_backend_parity(line_count)
     return identical
 end
 
-local function measure_backend_walltime(label, backend, line_count)
+local function measure_backend_walltime(label, backend, line_count, scale)
     local lines = make_lines(line_count)
     local semantic_spans = make_semantic_spans(line_count)
     local buf = fresh_buffer(lines)
@@ -238,8 +274,7 @@ local function measure_backend_walltime(label, backend, line_count)
         received = nil
         worker.request({
             bufnr = buf,
-            width = 80,
-            height = 24,
+            grid = request_grid(line_count, scale),
             filetype = "lua",
             generation = 1,
             signature = label,
@@ -260,8 +295,7 @@ local function measure_backend_walltime(label, backend, line_count)
         local started = vim.uv.hrtime()
         worker.request({
             bufnr = buf,
-            width = 80,
-            height = 24,
+            grid = request_grid(line_count, scale),
             filetype = "lua",
             generation = 1,
             signature = label,
@@ -285,19 +319,14 @@ local function measure_render(_label, line_count, options)
     options = options or {}
     local lines = make_lines(line_count)
     local buf = fresh_buffer(lines)
-    local source_win = vim.api.nvim_open_win(buf, false, {
-        relative = "editor",
-        row = 0,
-        col = 0,
-        width = 80,
-        height = 24,
-    })
+    local source_win = open_source_window(buf)
     configure({
         backend = "sync",
         width = 80,
         height = 24,
         marks = options.overlays ~= false and {} or false,
         viewport = true,
+        scale = options.scale,
     })
     local worker = setup_worker("sync")
     local overlays = require("scrollbar.minimap.overlays")
@@ -338,16 +367,59 @@ local function measure_render(_label, line_count, options)
     return stats
 end
 
+--- Render cost while the source window scrolls one page per render in the
+--- fixed scale. The renderer requests a new slice when the margin runs low.
+local function measure_scroll(line_count)
+    local lines = make_lines(line_count)
+    local buf = fresh_buffer(lines)
+    local source_win = open_source_window(buf)
+    configure({
+        backend = "sync",
+        width = 80,
+        height = 24,
+        viewport = true,
+    })
+    local worker = setup_worker("sync")
+    local overlays = require("scrollbar.minimap.overlays")
+    overlays.setup({ config = require("scrollbar.minimap.config").get() })
+    local renderer = require("scrollbar.minimap.renderer")
+    renderer.setup({ worker = worker, overlays = overlays })
+
+    local function scroll_to(topline)
+        vim.api.nvim_win_call(source_win, function()
+            vim.fn.winrestview({ topline = topline, lnum = topline })
+        end)
+    end
+
+    scroll_to(1)
+    renderer.render(source_win)
+    collectgarbage("collect")
+    local samples = {}
+    local topline = 1
+    for _ = 1, iteration_count * 5 do
+        topline = topline + 24
+        if topline > line_count - 24 then
+            topline = 1
+        end
+        scroll_to(topline)
+        local started = vim.uv.hrtime()
+        renderer.render(source_win)
+        samples[#samples + 1] = (vim.uv.hrtime() - started) / 1000000
+    end
+    local stats = statistics(samples)
+
+    renderer.dispose()
+    overlays.dispose()
+    dispose_worker(worker)
+    pcall(vim.api.nvim_win_close, source_win, true)
+    pcall(vim.api.nvim_buf_delete, buf, { force = true })
+    return stats
+end
+
 local function measure_cadence(_label)
     local lines = make_lines(10000)
     local buf = fresh_buffer(lines)
-    local source_win = vim.api.nvim_open_win(buf, false, {
-        relative = "editor",
-        row = 0,
-        col = 0,
-        width = 80,
-        height = 24,
-    })
+    local source_win = open_source_window(buf)
     configure({
         backend = "sync",
         width = 80,
@@ -393,10 +465,14 @@ local ratio_cases = {
 local parity_ok = measure_backend_parity(2000)
 local backend_worker = measure_backend_walltime("worker backend", "worker", 10000)
 local backend_sync = measure_backend_walltime("sync backend", "sync", 10000)
+local backend_sync_fixed = measure_backend_walltime("sync backend fixed", "sync", 10000, "fixed")
 local squash_size_results = measure_squash("squash by source size", source_line_counts)
+local squash_slice_results = measure_squash("squash slice by source size", source_line_counts, "fixed")
 local squash_ratio_results = measure_ratios("squash by ratio", ratio_cases)
 local render_overlays_off = measure_render("render overlays off", 10000, { overlays = false })
 local render_overlays_on = measure_render("render overlays on", 10000, { overlays = true })
+local render_fit = measure_render("render fit", 10000, { overlays = true, scale = "fit" })
+local scroll = measure_scroll(10000)
 local render_ratios = {
     { label = "ratio 1", stats = measure_render("render ratio 1", 24, { overlays = false }) },
     { label = "ratio 2", stats = measure_render("render ratio 2", 48, { overlays = false }) },
@@ -420,7 +496,7 @@ end
 
 io.write(string.format("\nMode: %s\n", semantic_enabled and "semantic-enabled" or "semantic-disabled"))
 
-io.write("\n## Squash cost by source size\n\n")
+io.write("\n## Squash cost by source size (fit, whole buffer)\n\n")
 write_table(
     { "Source lines", "Median (p50)", "p95", "Maximum" },
     vim.tbl_map(function(case)
@@ -431,6 +507,19 @@ write_table(
             string.format("%.3f", case.statistics.maximum),
         }
     end, squash_size_results.cases)
+)
+
+io.write("\n## Squash cost of the fixed-scale slice by source size\n\n")
+write_table(
+    { "Source lines", "Median (p50)", "p95", "Maximum" },
+    vim.tbl_map(function(case)
+        return {
+            tostring(case.line_count),
+            string.format("%.3f", case.statistics.median),
+            string.format("%.3f", case.statistics.p95),
+            string.format("%.3f", case.statistics.maximum),
+        }
+    end, squash_slice_results.cases)
 )
 
 io.write("\n## Squash cost by ratio\n\n")
@@ -466,6 +555,12 @@ write_table({ "Backend", "Median (p50)", "p95", "Maximum" }, {
         string.format("%.3f", backend_worker.p95),
         string.format("%.3f", backend_worker.maximum),
     },
+    {
+        "sync, fixed-scale slice",
+        string.format("%.3f", backend_sync_fixed.median),
+        string.format("%.3f", backend_sync_fixed.p95),
+        string.format("%.3f", backend_sync_fixed.maximum),
+    },
 })
 
 io.write("\n## Render cost with overlays on/off (10k lines)\n\n")
@@ -481,6 +576,22 @@ write_table({ "Overlays", "Median (p50)", "p95", "Maximum" }, {
         string.format("%.3f", render_overlays_on.median),
         string.format("%.3f", render_overlays_on.p95),
         string.format("%.3f", render_overlays_on.maximum),
+    },
+    {
+        "on, fit scale",
+        string.format("%.3f", render_fit.median),
+        string.format("%.3f", render_fit.p95),
+        string.format("%.3f", render_fit.maximum),
+    },
+})
+
+io.write("\n## Render cost while scrolling one page per render (10k lines, fixed scale)\n\n")
+write_table({ "Case", "Median (p50)", "p95", "Maximum" }, {
+    {
+        "scroll",
+        string.format("%.3f", scroll.median),
+        string.format("%.3f", scroll.p95),
+        string.format("%.3f", scroll.maximum),
     },
 })
 

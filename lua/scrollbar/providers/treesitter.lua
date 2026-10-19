@@ -25,8 +25,10 @@ end
 
 ---@param bufnr integer
 ---@param lang string?
+---@param first? integer Zero-based first line to capture
+---@param last? integer Zero-based end line, exclusive
 ---@return ScrollbarMinimapSourceSpan[]
-M.collect = function(bufnr, lang)
+M.collect = function(bufnr, lang, first, last)
     if lang == nil or lang == "" then
         return {}
     end
@@ -53,9 +55,9 @@ M.collect = function(bufnr, lang)
 
     local spans = {}
     local ok_iter = pcall(function()
-        local line_count = vim.api.nvim_buf_line_count(bufnr)
+        local stop = last or vim.api.nvim_buf_line_count(bufnr)
         ---@diagnostic disable-next-line: redundant-parameter
-        for id, node in query:iter_captures(root, bufnr, 0, line_count) do
+        for id, node in query:iter_captures(root, bufnr, first or 0, stop) do
             local capture_name = query.captures[id]
             if capture_name ~= nil then
                 local start_row, start_col, end_row, end_col = node:range()
