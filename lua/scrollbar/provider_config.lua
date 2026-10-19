@@ -31,7 +31,7 @@ local SPECS = {
     vgit = { targets = BOTH, execution = "parent", default = false },
     ale = { targets = BOTH, execution = "parent", default = false },
     coc = { targets = BOTH, execution = "parent", default = false },
-    treesitter = { targets = MINIMAP_ONLY, execution = "worker", default = false },
+    treesitter = { targets = MINIMAP_ONLY, execution = "worker", default = true },
     lsp_semantic_tokens = { targets = MINIMAP_ONLY, execution = "parent", default = false },
 }
 

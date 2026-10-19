@@ -50,9 +50,9 @@ M.set = function()
         return
     end
 
-    set_default_link("ScrollbarMinimapBase", "NormalFloat")
+    set_default_link("ScrollbarMinimapBase", "Normal")
     set_default_link("ScrollbarMinimapContent", "Comment")
-    set_default_link("ScrollbarMinimapViewport", "CursorLine")
+    set_default_link("ScrollbarMinimapViewport", "Visual")
     set_default_link("ScrollbarMinimapCursor", "Cursor")
 
     for _, variant in ipairs(config.get_variants()) do

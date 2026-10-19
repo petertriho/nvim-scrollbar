@@ -130,7 +130,7 @@ T["defaults to disabled with sensible defaults"] = function()
     end
 end
 
-T["defaults core minimap providers on and integrations and semantics off"] = function()
+T["defaults core minimap providers and treesitter on and integrations and LSP semantics off"] = function()
     top().set({ minimap = { enabled = true } })
     local plan = top().get_provider_plan()
 
@@ -139,6 +139,8 @@ T["defaults core minimap providers on and integrations and semantics off"] = fun
     end
     expect.equality(plan.search.options, { backend = "worker" })
     expect.equality(plan.marks.options, { letters = true, numbers = false })
+    expect.equality(plan.treesitter.consumers, { scrollbar = false, minimap = true })
+    expect.equality(plan.treesitter.options, true)
     for _, name in ipairs({
         "gitsigns",
         "mini_diff",
@@ -146,12 +148,17 @@ T["defaults core minimap providers on and integrations and semantics off"] = fun
         "vgit",
         "ale",
         "coc",
-        "treesitter",
         "lsp_semantic_tokens",
     }) do
         expect.equality(plan[name].consumers, { scrollbar = false, minimap = false })
         expect.equality(plan[name].options, false)
     end
+end
+
+T["treesitter = false turns off the default syntax colors"] = function()
+    top().set({ providers = { treesitter = false }, minimap = { enabled = true } })
+
+    expect.equality(top().get_provider_plan().treesitter.consumers, { scrollbar = false, minimap = false })
 end
 
 T["get lazily initializes and returns the same active config"] = function()

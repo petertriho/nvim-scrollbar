@@ -417,10 +417,10 @@ T["setup defines the minimap highlight groups with the retuned defaults"] = func
         }
     end)
 
-    expect.equality(result.base_link, "NormalFloat")
+    expect.equality(result.base_link, "Normal")
     expect.equality(result.content_link, "Comment")
     expect.equality(result.cursor_link, "Cursor")
-    expect.equality(result.viewport_link, "CursorLine")
+    expect.equality(result.viewport_link, "Visual")
     expect.equality(result.viewport_border_defined, false)
 end
 
