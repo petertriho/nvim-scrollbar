@@ -167,6 +167,68 @@ T["falls back to root config on predicate errors and notifies once per distinct 
     expect.equality(config().select(winid).variant_id, 1)
 end
 
+T["profile presets follow the settled precedence"] = function()
+    config().set({
+        preset = "vscode",
+        width = 30,
+        height = 20,
+        encoding = "block",
+        profiles = {
+            lua_profile({ preset = "zed", columns_per_dot = 2 }),
+            {
+                match = { buftypes = { "help" } },
+                preset = "minimal",
+                marks = { Error = { priority = 1 } },
+            },
+            {
+                match = { buftypes = { "quickfix" } },
+                width = 25,
+            },
+        },
+    })
+    local variants = config().get_variants()
+    local root = variants[1].config
+    local lua = variants[2].config
+    local help = variants[3].config
+    local quickfix = variants[4].config
+
+    -- Root: the root options win over the root preset.
+    expect.equality(root.width, 30)
+    expect.equality(root.encoding, "block")
+    expect.equality(root.columns_per_dot, 4)
+
+    -- Profile preset wins over the root options, and the profile options
+    -- win over the profile preset.
+    expect.equality(lua.width, 10)
+    expect.equality(lua.encoding, "braille")
+    expect.equality(lua.columns_per_dot, 2)
+    -- Root values that the profile preset does not set stay in effect.
+    expect.equality(lua.height, 20)
+
+    -- A profile marks table replaces the marks false of the profile preset.
+    expect.equality(help.width, 12)
+    expect.equality(help.marks.Error.priority, 1)
+    expect.no_equality(help.marks.Warn, nil)
+
+    -- A profile without a preset inherits the root preset and options.
+    expect.equality(quickfix.width, 25)
+    expect.equality(quickfix.encoding, "block")
+    expect.equality(quickfix.height, 20)
+end
+
+T["a profile preset can hide the marks of the root"] = function()
+    config().set({
+        profiles = {
+            lua_profile({ preset = "sublime" }),
+        },
+    })
+    local variants = config().get_variants()
+
+    expect.no_equality(next(variants[1].config.marks), nil)
+    expect.equality(variants[2].config.marks, {})
+    expect.equality(variants[2].config.columns_per_dot, 2)
+end
+
 T["validates profile schema"] = function()
     expect_invalid({ profiles = "lua" }, "minimap.profiles must be a dense list")
     expect_invalid(

@@ -142,7 +142,33 @@ local SCROLLBAR = {
     },
 }
 
-local MINIMAP = {}
+-- Minimap presets set only the grid, the width, and the viewport band. The
+-- presets without overlays also set `marks = false`. They keep the
+-- placement, the blend, the height, and the mouse of the user.
+local MINIMAP = {
+    vscode = { scale = "fixed", encoding = "braille", columns_per_dot = 4, width = 15, viewport = true },
+    sublime = {
+        scale = "fixed",
+        encoding = "braille",
+        columns_per_dot = 2,
+        width = 20,
+        viewport = true,
+        marks = false,
+    },
+    zed = { scale = "fixed", encoding = "braille", columns_per_dot = 4, width = 10, viewport = true },
+    xcode = { scale = "fixed", encoding = "block", columns_per_dot = 4, width = 12, viewport = true },
+    overview = { scale = "fit", encoding = "braille", columns_per_dot = 4, width = 10, viewport = true },
+    compact = { scale = "fixed", encoding = "braille", columns_per_dot = 8, width = 8, viewport = true },
+    minimal = {
+        scale = "fixed",
+        encoding = "braille",
+        columns_per_dot = 4,
+        width = 12,
+        viewport = true,
+        marks = false,
+    },
+    blocks = { scale = "fit", encoding = "block", columns_per_dot = 4, width = 16, viewport = true },
+}
 
 local CATALOGS = {
     scrollbar = SCROLLBAR,
