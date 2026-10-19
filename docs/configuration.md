@@ -149,7 +149,7 @@ require("scrollbar").setup({
 
 | Option | Default | Meaning |
 | --- | --- | --- |
-| `preset` | `nil` | Name of a [built-in preset](presets.md#built-ins). |
+| `preset` | `nil` | Name of a [built-in preset](presets.md#scrollbar-presets). |
 | `unit` | `"line"` | `"line"` counts buffer lines. `"screenline"` counts screen lines, so it accounts for wrapped lines and closed folds. See [Units](layout-and-geometry.md#units). |
 | `placement` | see Defaults | Position of the float. See [Layout and geometry](layout-and-geometry.md). |
 | `hide_on_cursor` | `true` | Hides the scrollbar of the active window while the cursor is inside it. |
