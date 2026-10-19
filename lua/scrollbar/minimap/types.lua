@@ -5,6 +5,14 @@
 
 ---@alias ScrollbarMinimapBackend "worker"|"sync"
 
+--- `fixed` maps one source line to each dot row and scrolls the map with the
+--- source window. `fit` shrinks the whole buffer into the float height.
+---@alias ScrollbarMinimapScale "fixed"|"fit"
+
+--- Both encodings use cells of 2 by 4 dots. `braille` draws each dot, and
+--- `block` draws `█` for a cell with any dot.
+---@alias ScrollbarMinimapEncoding "braille"|"block"
+
 --- Arrangement with a scrollbar on the same side of the source window.
 --- `inner` and `outer` place the floats side by side, with the minimap beside
 --- the text or at the window edge. `above` and `below` overlap them.
@@ -23,14 +31,17 @@
 ---@field highlight? ScrollbarHighlight Highlight source group or direct definition
 
 ---@class ScrollbarMinimapUserAppearance
+---@field preset? string Built-in minimap preset name
 ---@field width? integer
 ---@field height? false|integer
+---@field scale? ScrollbarMinimapScale
+---@field encoding? ScrollbarMinimapEncoding
+---@field columns_per_dot? integer Source display columns for each dot column
 ---@field placement? ScrollbarMinimapUserPlacement
 ---@field blend? integer Blend of the full float, 0-100
 ---@field hide_on_cursor? boolean
 ---@field mouse? boolean
 ---@field viewport? boolean
----@field glyph? string Single-width glyph used for occupied cells
 ---@field marks? false|table<string, false|ScrollbarMinimapUserMarkTypeConfig>
 
 ---@class ScrollbarMinimapUserProfile: ScrollbarMinimapUserAppearance
@@ -73,12 +84,14 @@
 ---@field exclude ScrollbarExcludeConfig
 ---@field width integer
 ---@field height false|integer
+---@field scale ScrollbarMinimapScale
+---@field encoding ScrollbarMinimapEncoding
+---@field columns_per_dot integer
 ---@field placement ScrollbarMinimapPlacement
 ---@field blend integer
 ---@field hide_on_cursor boolean
 ---@field mouse boolean
 ---@field viewport boolean
----@field glyph string
 ---@field marks table<string, ScrollbarMinimapMarkSpec> Shown mark types
 
 ---@class ScrollbarMinimapCompiledVariant

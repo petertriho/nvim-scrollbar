@@ -103,7 +103,9 @@ T["defaults to disabled with sensible defaults"] = function()
     expect.equality(result.hide_on_cursor, true)
     expect.equality(result.mouse, true)
     expect.equality(result.viewport, true)
-    expect.equality(result.glyph, "█")
+    expect.equality(result.scale, "fixed")
+    expect.equality(result.encoding, "braille")
+    expect.equality(result.columns_per_dot, 4)
     expect.equality(result.exclude, {
         buftypes = { terminal = true },
         filetypes = DEFAULT_EXCLUDED_FILETYPES,
@@ -120,6 +122,7 @@ T["defaults to disabled with sensible defaults"] = function()
         "providers",
         "show_viewport",
         "content_glyph",
+        "glyph",
         "excluded_buftypes",
         "excluded_filetypes",
     }) do
@@ -208,7 +211,9 @@ T["accepts the complete valid schema and deep copies inputs"] = function()
             hide_on_cursor = false,
             mouse = false,
             viewport = false,
-            glyph = "▌",
+            scale = "fit",
+            encoding = "block",
+            columns_per_dot = 2,
             marks = {
                 Error = { priority = 0 },
                 Hint = false,
@@ -236,7 +241,9 @@ T["accepts the complete valid schema and deep copies inputs"] = function()
     expect.equality(result.hide_on_cursor, false)
     expect.equality(result.mouse, false)
     expect.equality(result.viewport, false)
-    expect.equality(result.glyph, "▌")
+    expect.equality(result.scale, "fit")
+    expect.equality(result.encoding, "block")
+    expect.equality(result.columns_per_dot, 2)
     expect.equality(result.exclude.buftypes, { terminal = true, nofile = true })
     expect.equality(result.exclude.filetypes, DEFAULT_EXCLUDED_FILETYPES)
     expect.equality(result.marks.Error, {
@@ -283,6 +290,7 @@ T["rejects unknown and removed top-level keys"] = function()
         "overlays",
         "show_viewport",
         "content_glyph",
+        "glyph",
         "excluded_buftypes",
         "excluded_filetypes",
         "syntax_highlighting",
@@ -291,7 +299,9 @@ T["rejects unknown and removed top-level keys"] = function()
     }) do
         expect_invalid({ [key] = {} }, "unknown option 'minimap%." .. key .. "'")
     end
-    expect_invalid({ preset = "default" }, "minimap%.preset: the minimap has no presets")
+    expect_invalid({ glyph = "#" }, "unknown option 'minimap%.glyph' %(use 'encoding'")
+    expect_invalid({ preset = "default" }, "minimap%.preset: unknown preset 'default'")
+    expect_invalid({ preset = 1 }, "minimap%.preset must be a string")
 end
 
 T["rejects unknown nested keys"] = function()
@@ -342,6 +352,10 @@ T["rejects invalid scalar and enum values"] = function()
     expect_invalid({ mouse = 1 }, "minimap%.mouse must be a boolean")
     expect_invalid({ mouse = { enabled = false } }, "minimap%.mouse must be a boolean")
     expect_invalid({ viewport = "yes" }, "minimap%.viewport must be a boolean")
+    expect_invalid({ scale = "scroll" }, "minimap%.scale must be one of: fit, fixed")
+    expect_invalid({ encoding = "half" }, "minimap%.encoding must be one of: block, braille")
+    expect_invalid({ columns_per_dot = 0 }, "minimap%.columns_per_dot must be a positive integer")
+    expect_invalid({ columns_per_dot = 1.5 }, "minimap%.columns_per_dot must be a positive integer")
     expect_top_invalid({ providers = { search = "yes" } }, "providers%.search must be a boolean or table")
     expect_top_invalid({ providers = { marks = { letters = "yes" } } }, "providers%.marks%.letters must be a boolean")
     expect_top_invalid(
@@ -357,9 +371,6 @@ end
 T["rejects malformed table values"] = function()
     expect_invalid({ placement = false }, "minimap%.placement must be a table")
     expect_invalid({ marks = true }, "minimap%.marks must be false or a table")
-    expect_invalid({ glyph = false }, "minimap%.glyph must be a non%-empty string")
-    expect_invalid({ glyph = "" }, "minimap%.glyph must be a non%-empty string")
-    expect_invalid({ glyph = "ab" }, "minimap%.glyph must be a single%-width glyph")
     expect_top_invalid({ exclude = { buftypes = "terminal" } }, "exclude%.buftypes must be a dense list")
     expect_top_invalid({ exclude = { filetypes = { "lua", false } } }, "exclude%.filetypes%[2%] must be a string")
     expect_top_invalid(
@@ -372,9 +383,14 @@ T["rejects malformed table values"] = function()
     )
 end
 
-T["accepts single-width ASCII and multibyte glyphs"] = function()
-    expect.equality(set({ glyph = "#" }).glyph, "#")
-    expect.equality(set({ glyph = "▌" }).glyph, "▌")
+T["accepts every scale and encoding"] = function()
+    for _, scale in ipairs({ "fixed", "fit" }) do
+        expect.equality(set({ scale = scale }).scale, scale)
+    end
+    for _, encoding in ipairs({ "braille", "block" }) do
+        expect.equality(set({ encoding = encoding }).encoding, encoding)
+    end
+    expect.equality(set({ columns_per_dot = 1 }).columns_per_dot, 1)
 end
 
 T["rejects malformed mark override maps and specs"] = function()
@@ -605,7 +621,7 @@ T["rejects malformed profile matchers and options"] = function()
     )
     expect_invalid(
         { profiles = { { match = { when = function() end }, preset = "default" } } },
-        "minimap%.profiles%[1%]%.preset: the minimap has no presets"
+        "minimap%.profiles%[1%]%.preset: unknown preset 'default'"
     )
     expect_invalid(
         { profiles = { { match = { filetypes = { "lua" } }, width = 0 } } },
@@ -673,7 +689,9 @@ T["profiles allow display-only overrides"] = function()
                 marks = false,
                 viewport = false,
                 mouse = false,
-                glyph = "#",
+                scale = "fit",
+                encoding = "block",
+                columns_per_dot = 8,
             },
         },
     })
@@ -690,7 +708,10 @@ T["profiles allow display-only overrides"] = function()
     expect.equality(profile.marks, {})
     expect.equality(profile.viewport, false)
     expect.equality(profile.mouse, false)
-    expect.equality(profile.glyph, "#")
+    expect.equality(profile.scale, "fit")
+    expect.equality(profile.encoding, "block")
+    expect.equality(profile.columns_per_dot, 8)
+    expect.equality(result.scale, "fixed")
     expect.equality(result.width, 16)
     expect.equality(result.marks, FULL_MARKS)
 end

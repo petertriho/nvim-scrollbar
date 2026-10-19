@@ -12,8 +12,8 @@ local function new_child()
     return child
 end
 
--- The scrollbar thumb paints "S" and the minimap paints "M", so the screen
--- shows which float is on top.
+-- The scrollbar thumb paints "S" and the minimap paints block cells, which
+-- screen_row() reports as "M", so the screen shows which float is on top.
 local function setup(child, options)
     options = options or {}
     child.lua_func(function(opts)
@@ -27,7 +27,7 @@ local function setup(child, options)
             backend = "sync",
             width = 4,
             hide_on_cursor = false,
-            glyph = "M",
+            encoding = "block",
         }, opts.minimap or {})
         require("scrollbar").setup({
             set_highlights = false,
@@ -95,7 +95,8 @@ local function screen_row(child, source_win)
         local info = vim.fn.getwininfo(win)[1]
         local cells = {}
         for offset = 0, info.width - 1 do
-            cells[#cells + 1] = vim.fn.screenstring(info.winrow, info.wincol + offset)
+            local cell = vim.fn.screenstring(info.winrow, info.wincol + offset)
+            cells[#cells + 1] = cell == "█" and "M" or cell
         end
         return table.concat(cells)
     end, source_win)

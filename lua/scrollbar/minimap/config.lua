@@ -2,6 +2,7 @@
 --- (`lua/scrollbar/config.lua`) compiles it with the shared sections and
 --- commits it together with the scrollbar block.
 
+local presets = require("scrollbar.presets")
 local schema = require("scrollbar.schema")
 local shared_config = require("scrollbar.shared_config")
 
@@ -18,6 +19,9 @@ local DEFAULTS = {
     background_blend = false,
     width = 16,
     height = false,
+    scale = "fixed",
+    encoding = "braille",
+    columns_per_dot = 4,
     placement = {
         relative = "window",
         anchor = "NE",
@@ -30,7 +34,6 @@ local DEFAULTS = {
     hide_on_cursor = true,
     mouse = true,
     viewport = true,
-    glyph = "█",
     marks = {},
 }
 
@@ -48,8 +51,12 @@ local GLOBAL_KEYS = {
 }
 
 local APPEARANCE_KEYS = {
+    preset = true,
     width = true,
     height = true,
+    scale = true,
+    encoding = true,
+    columns_per_dot = true,
     placement = {
         relative = true,
         anchor = true,
@@ -62,7 +69,6 @@ local APPEARANCE_KEYS = {
     hide_on_cursor = true,
     mouse = true,
     viewport = true,
-    glyph = true,
     marks = { ["*"] = { priority = true, highlight = true } },
 }
 
@@ -98,13 +104,14 @@ end
 
 -- Replacements for the v1 options, shown in the unknown-option error.
 local REMOVED_KEYS = {
-    presets = "the minimap has no presets",
+    presets = "custom presets are removed. Set the options in the block or in a profile",
+    glyph = "use 'encoding'. The block encoding always draws █",
     update = "use 'throttle_ms'. The update events are fixed",
     float = "use 'placement', 'placement.zindex', 'blend', and 'hide_on_cursor'",
     background = "use 'background_blend'",
     overlays = "use 'marks = false' to hide the overlays",
     show_viewport = "use 'viewport'",
-    content_glyph = "use 'glyph'",
+    content_glyph = "use 'encoding'",
     excluded_buftypes = "use the top-level 'exclude' table",
     excluded_filetypes = "use the top-level 'exclude' table",
     providers = "use the top-level 'providers' table",
@@ -114,17 +121,12 @@ local REMOVED_KEYS = {
     ["placement.gutter_position"] = "the minimap always overlaps the gutter",
 }
 
-local describe_root_key = schema.hinter(REMOVED_KEYS, function(relative, path)
-    if relative == "preset" then
-        return path .. ": the minimap has no presets"
-    end
-end)
+local describe_root_key = schema.hinter(REMOVED_KEYS)
 
 local describe_profile_key = schema.hinter(REMOVED_KEYS, function(relative, path)
     if GLOBAL_KEYS[relative] ~= nil or relative == "profiles" then
         return path .. " is a global option and cannot be set in a profile"
     end
-    return describe_root_key(relative, path)
 end)
 
 ---@param value any
@@ -181,11 +183,6 @@ local function normalize(value, shared, path)
     end
 
     local placement = schema.table(value.placement, at("placement"))
-    if type(value.glyph) ~= "string" or value.glyph == "" then
-        invalid(at("glyph") .. " must be a non-empty string")
-    elseif vim.fn.strdisplaywidth(value.glyph) ~= 1 then
-        invalid(at("glyph") .. " must be a single-width glyph")
-    end
 
     ---@type ScrollbarMinimapConfig
     local result = {
@@ -201,6 +198,9 @@ local function normalize(value, shared, path)
         exclude = shared.exclude.minimap,
         width = schema.integer(value.width, at("width"), 1),
         height = schema.positive_or_false(value.height, at("height")),
+        scale = schema.enum(value.scale, at("scale"), { "fixed", "fit" }),
+        encoding = schema.enum(value.encoding, at("encoding"), { "braille", "block" }),
+        columns_per_dot = schema.integer(value.columns_per_dot, at("columns_per_dot"), 1),
         placement = {
             relative = schema.enum(placement.relative, at("placement.relative"), { "window", "editor" }),
             anchor = schema.enum(placement.anchor, at("placement.anchor"), { "NW", "NE", "SW", "SE" }),
@@ -213,7 +213,6 @@ local function normalize(value, shared, path)
         hide_on_cursor = schema.boolean(value.hide_on_cursor, at("hide_on_cursor")),
         mouse = schema.boolean(value.mouse, at("mouse")),
         viewport = schema.boolean(value.viewport, at("viewport")),
-        glyph = value.glyph,
         marks = shared_config.resolve_marks(shared.marks, value.marks, at("marks"), {
             fields = { "priority", "highlight" },
             reject = REJECTED_MARK_TYPES,
@@ -233,17 +232,15 @@ local function compile(overrides, shared)
     schema.check_keys(overrides, ROOT_KEYS, "minimap", describe_root_key)
 
     local profiles = compile_profiles(overrides.profiles)
-    local root_options = schema.without(overrides, { "profiles" })
-    local root = normalize(schema.merge(DEFAULTS, root_options), shared, "minimap")
+    local root = normalize(presets.layered("minimap", DEFAULTS, overrides), shared, "minimap")
     local compiled = {
         { id = 0, matcher = false, config = root },
     }
     for index, profile in ipairs(profiles) do
-        local options = schema.merge(root_options, schema.without(profile.input, { "match" }))
         compiled[#compiled + 1] = {
             id = index,
             matcher = profile.matcher,
-            config = normalize(schema.merge(DEFAULTS, options), shared, profile.path),
+            config = normalize(presets.layered("minimap", DEFAULTS, overrides, profile), shared, profile.path),
         }
     end
     for _, variant in ipairs(compiled) do

@@ -54,8 +54,8 @@ local function configure(child, minimap_overrides, shared)
     end, minimap_overrides, shared)
 end
 
-local function render_mark_ranges(child, content_glyph)
-    return child.lua_func(function(glyph)
+local function render_mark_ranges(child, char)
+    return child.lua_func(function(cell_char)
         require("scrollbar.config").set({
             set_highlights = false,
             minimap = {
@@ -63,7 +63,6 @@ local function render_mark_ranges(child, content_glyph)
                 width = 3,
                 height = 1,
                 viewport = false,
-                glyph = glyph,
             },
         })
         local renderer = require("scrollbar.minimap.renderer")
@@ -75,9 +74,9 @@ local function render_mark_ranges(child, content_glyph)
                     max_line_width = 3,
                     cells = {
                         {
-                            { char = "█", hl_group = "ErrorMsg" },
-                            { char = "█", hl_group = "WarningMsg" },
-                            { char = "█", hl_group = "Comment" },
+                            { char = cell_char, hl_group = "ErrorMsg" },
+                            { char = cell_char, hl_group = "WarningMsg" },
+                            { char = cell_char, hl_group = "Comment" },
                         },
                     },
                 })
@@ -103,7 +102,7 @@ local function render_mark_ranges(child, content_glyph)
             ranges[mark[4].hl_group] = { mark[3], mark[4].end_col }
         end
         return { row = state.rows[1], ranges = ranges }
-    end, content_glyph)
+    end, char)
 end
 
 local function render_overlay_marks(child, options)
@@ -115,9 +114,7 @@ local function render_overlay_marks(child, options)
             viewport = false,
             marks = { Error = {}, Search = {} },
         }
-        if opts.glyph ~= nil then
-            overrides.glyph = opts.glyph
-        end
+        local occupied = opts.char or "█"
         require("scrollbar.config").set({ set_highlights = false, minimap = overrides })
         local renderer = require("scrollbar.minimap.renderer")
         local worker = {
@@ -128,12 +125,12 @@ local function render_overlay_marks(child, options)
                     max_line_width = 6,
                     cells = {
                         {
-                            { char = "█" },
-                            { char = "█" },
+                            { char = occupied },
+                            { char = occupied },
                             { char = " " },
                             { char = " " },
-                            { char = "█" },
-                            { char = "█" },
+                            { char = occupied },
+                            { char = occupied },
                         },
                         {
                             { char = " " },
@@ -229,28 +226,6 @@ T["renders a sync squash grid into the minimap buffer"] = function()
     expect.equality(result.rows[2], "███")
 end
 
-T["glyph remaps every occupied cell"] = function()
-    local child = new_child()
-    reset_modules(child)
-    configure(child, {
-        enabled = true,
-        width = 3,
-        height = 2,
-        viewport = false,
-        glyph = "▌",
-    }, { set_highlights = false })
-
-    local result = child.lua_func(function()
-        vim.api.nvim_buf_set_lines(0, 0, -1, false, { "abc", "defghi" })
-        local renderer = require("scrollbar.minimap.renderer")
-        local state = assert(renderer.render(0))
-        return { rows = state.rows }
-    end)
-
-    expect.equality(result.rows[1], "▌▌ ")
-    expect.equality(result.rows[2], "▌▌▌")
-end
-
 T["highlight ranges align with complete UTF-8 content glyphs"] = function()
     local child = new_child()
     reset_modules(child)
@@ -263,7 +238,7 @@ T["highlight ranges align with complete UTF-8 content glyphs"] = function()
     expect.equality(result.ranges.Comment, { 6, 9 })
 end
 
-T["highlight ranges align with custom multibyte and ASCII cells"] = function()
+T["highlight ranges align with multibyte and ASCII cells"] = function()
     local child = new_child()
     reset_modules(child)
 
@@ -757,12 +732,12 @@ T["semantic overlays tint only contiguous occupied cell runs"] = function()
     expect.equality(result.projected_source_win, result.source_win)
 end
 
-T["semantic occupancy is independent of custom glyph remapping"] = function()
+T["overlay runs follow occupied cells of any character"] = function()
     local child = new_child()
     reset_modules(child)
 
     local result = render_overlay_marks(child, {
-        glyph = "a",
+        char = "a",
     })
     local ranges = {}
     for _, mark in ipairs(result.marks) do
@@ -801,49 +776,6 @@ T["cache hit skips the worker request"] = function()
 
     expect.equality(result.first, 1)
     expect.equality(result.second, 1)
-end
-
-T["content glyph changes reuse cached canonical cells"] = function()
-    local child = new_child()
-    reset_modules(child)
-    configure(child, {
-        enabled = true,
-        width = 4,
-        height = 1,
-        viewport = false,
-    }, { set_highlights = false })
-
-    local result = child.lua_func(function()
-        vim.api.nvim_buf_set_lines(0, 0, -1, false, { "abcd" })
-        local worker = require("scrollbar.minimap.worker")
-        local original_request = worker.request
-        local requests = 0
-        ---@diagnostic disable-next-line: duplicate-set-field
-        worker.request = function(request)
-            requests = requests + 1
-            return original_request(request)
-        end
-
-        local renderer = require("scrollbar.minimap.renderer")
-        local first = assert(renderer.render(0)).rows[1]
-        require("scrollbar.config").set({
-            set_highlights = false,
-            minimap = {
-                enabled = true,
-                width = 4,
-                height = 1,
-                viewport = false,
-                glyph = "#",
-            },
-        })
-        local second = assert(renderer.render(0)).rows[1]
-        worker.request = original_request
-        return { first = first, second = second, requests = requests }
-    end)
-
-    expect.equality(result.first, "████")
-    expect.equality(result.second, "####")
-    expect.equality(result.requests, 1)
 end
 
 T["parent semantic spans recolor occupied cells and invalidate once per revision"] = function()

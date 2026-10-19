@@ -521,10 +521,9 @@ end
 
 ---Translate a canonical cell grid into buffer text rows + per-row highlight spans.
 ---@param cells ScrollbarMinimapCell[][]
----@param content_glyph string Glyph used for every occupied cell
 ---@return string[] rows
 ---@return ScrollbarMinimapHighlightSpan[][] highlights
-local function compose_rows(cells, content_glyph)
+local function compose_rows(cells)
     if cells == nil then
         return {}, {}
     end
@@ -538,7 +537,7 @@ local function compose_rows(cells, content_glyph)
         for c = 1, #cells_in_row do
             local cell = cells_in_row[c]
             local occupied = cell.char ~= " "
-            local char = occupied and content_glyph or " "
+            local char = cell.char
             local width = vim.fn.strdisplaywidth(char)
             if width <= 0 then
                 width = 1
@@ -918,7 +917,7 @@ local function render_source(source_win, selection, root_config)
     end
 
     local cells = cache and cache.cells or {}
-    local rows, highlights = compose_rows(cells, active_config.glyph)
+    local rows, highlights = compose_rows(cells)
     for index = #rows, target_height + 1, -1 do
         rows[index] = nil
         highlights[index] = nil

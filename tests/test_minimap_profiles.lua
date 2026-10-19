@@ -182,11 +182,11 @@ T["validates profile schema"] = function()
     expect_invalid({ profiles = { { match = { filetypes = { "lua" }, extra = true } } } }, "unknown option")
     expect_invalid(
         { profiles = { { match = { when = function() end }, preset = 1 } } },
-        "minimap%.profiles%[1%]%.preset: the minimap has no presets"
+        "minimap%.profiles%[1%]%.preset must be a string"
     )
     expect_invalid(
         { profiles = { { match = { when = function() end }, preset = "missing" } } },
-        "minimap%.profiles%[1%]%.preset: the minimap has no presets"
+        "minimap%.profiles%[1%]%.preset: unknown preset 'missing'"
     )
 end
 
@@ -243,29 +243,33 @@ T["profiles accept cursor hiding and blend while inheriting background_blend"] =
     expect.equality(profile.hide_on_cursor, false)
 end
 
-T["profiles accept and validate glyphs"] = function()
+T["profiles accept and validate the grid options"] = function()
     config().set({
         profiles = {
-            lua_profile({ glyph = "#" }),
+            lua_profile({ encoding = "block", columns_per_dot = 2 }),
             {
                 match = { filetypes = { "markdown" } },
-                glyph = "▌",
+                scale = "fit",
             },
         },
     })
 
     local variants = config().get_variants()
-    expect.equality(variants[2].config.glyph, "#")
-    expect.equality(variants[3].config.glyph, "▌")
+    expect.equality(variants[2].config.encoding, "block")
+    expect.equality(variants[2].config.columns_per_dot, 2)
+    expect.equality(variants[2].config.scale, "fixed")
+    expect.equality(variants[3].config.scale, "fit")
+    expect.equality(variants[3].config.encoding, "braille")
 
     expect_invalid(
-        { profiles = { lua_profile({ glyph = "" }) } },
-        "minimap%.profiles%[1%]%.glyph must be a non%-empty string"
+        { profiles = { lua_profile({ encoding = "half" }) } },
+        "minimap%.profiles%[1%]%.encoding must be one of: block, braille"
     )
     expect_invalid(
-        { profiles = { lua_profile({ glyph = "ab" }) } },
-        "minimap%.profiles%[1%]%.glyph must be a single%-width glyph"
+        { profiles = { lua_profile({ columns_per_dot = 0 }) } },
+        "minimap%.profiles%[1%]%.columns_per_dot must be a positive integer"
     )
+    expect_invalid({ profiles = { lua_profile({ glyph = "#" }) } }, "unknown option 'minimap%.profiles%[1%]%.glyph'")
     expect_invalid(
         { profiles = { lua_profile({ content_glyphs = { both = "x" } }) } },
         "unknown option 'minimap%.profiles%[1%]%.content_glyphs'"

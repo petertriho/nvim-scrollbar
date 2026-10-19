@@ -330,7 +330,7 @@ T["names the replacement of a removed option"] = function()
     )
     expect_invalid_top(
         { minimap = { profiles = { vim.tbl_extend("force", lua, { content_glyph = "x" }) } } },
-        "unknown option 'minimap%.profiles%[1%]%.content_glyph' %(use 'glyph'%)$"
+        "unknown option 'minimap%.profiles%[1%]%.content_glyph' %(use 'encoding'%)$"
     )
     expect_invalid_top(
         { minimap = { placement = { gutter = "overlap" } } },
