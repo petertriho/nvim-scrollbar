@@ -42,6 +42,8 @@ With `autohide = true`, each eligible window starts concealed. The
 it. After 1000 ms of inactivity, autohide conceals that window independently.
 To change the delay, use `autohide = { delay_ms = 500 }`.
 
+![The scrollbar shows while the window scrolls and hides after one second without activity](https://github.com/user-attachments/assets/1efa7a90-fcc2-4950-b527-0853efb23760)
+
 Provider updates, option changes, resizes, colorscheme changes, and
 `:ScrollbarRefresh` can rerender a revealed scrollbar. They do not reveal a
 concealed scrollbar. A press or drag on a scrollbar pauses the deadline of that

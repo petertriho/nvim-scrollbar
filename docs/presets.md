@@ -4,6 +4,8 @@ A preset is a named set of appearance options. The scrollbar and the minimap
 each have their own catalog. You select a preset with `preset` at the root of
 the `scrollbar` or `minimap` block, or in a profile of that block. A preset
 never changes global options, providers, exclusions, or the shared mark types.
+The [showcase](https://github.com/petertriho/nvim-scrollbar/issues/120) has a
+screenshot and the setup of every preset.
 
 ## Scrollbar Presets
 

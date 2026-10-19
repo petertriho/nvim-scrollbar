@@ -4,6 +4,8 @@ The built-in search provider adds scrollbar marks for matches from the native
 `/` and `?` search of Neovim. The provider is enabled by default and has no
 optional dependency.
 
+![Search marks appear while a pattern is typed, then n jumps between the matches](https://github.com/user-attachments/assets/45b02437-b7c7-4b25-a684-c7d5244a313c)
+
 ## Configuration
 
 The default configuration uses the worker backend and the current `incsearch`

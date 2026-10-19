@@ -4,6 +4,8 @@ The Treesitter provider colors occupied minimap cells from Treesitter highlight
 captures. It targets only the minimap and is enabled by default. It runs only
 when the minimap is enabled.
 
+![A minimap with dots in the colors of the Treesitter captures](https://github.com/user-attachments/assets/511ed7bc-1e2d-4f43-9067-e7561c7a261e)
+
 ## Setup
 
 The provider needs no setup. To turn it off:

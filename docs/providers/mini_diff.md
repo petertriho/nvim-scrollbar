@@ -5,6 +5,8 @@ The `mini_diff` provider publishes marks for the hunks that
 source that is configured in mini.diff. It is disabled by default and has no
 provider-specific options.
 
+![Scrollbar marks for added, changed, and deleted mini.diff hunks](https://github.com/user-attachments/assets/9e45ec88-a6da-4225-b6e0-c5f67f7dd7f8)
+
 ## Setup
 
 Configure mini.diff before scrollbar, so that its data is available at the

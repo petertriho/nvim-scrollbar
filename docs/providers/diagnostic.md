@@ -4,6 +4,8 @@ The diagnostic provider is enabled by default. It publishes marks for the
 native Neovim diagnostics of each eligible buffer. It has no external
 dependency.
 
+![Scrollbar marks for errors, warnings, information, and hints](https://github.com/user-attachments/assets/0c0e9ce7-d8db-4e32-830a-f656cc03f2db)
+
 ## Setup And Defaults
 
 `providers.diagnostic` is a boolean, or a table that contains only the

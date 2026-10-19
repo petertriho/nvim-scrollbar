@@ -9,7 +9,7 @@
 > newer. To keep v1, pin the `v1` branch or the `v1.0.0` tag. See
 > [#121](https://github.com/petertriho/nvim-scrollbar/issues/121).
 
-![diagnostics](./assets/diagnostics.gif)
+![The default scrollbar and minimap while scrolling past diagnostics, Git hunks, and search matches](https://github.com/user-attachments/assets/4e1a6a1c-c9d1-416d-91eb-d27b4ff1a936)
 
 `nvim-scrollbar` shows one floating scrollbar for each source window. Each
 split window gets its own thumb. The scrollbar has typed mark lanes, optional
@@ -84,8 +84,11 @@ scrolling in a source window shows its scrollbar.
 
 The built-in scrollbar presets are `vscode`, `zed`, `intellij`, `minimal`,
 `review`, `search`, `navigate`, `gvim`, `eclipse`, `sublime`, `emacs`, and
-`xcode`. An ordered list of profiles can select a different appearance for each
-source window:
+`xcode`. The [showcase](https://github.com/petertriho/nvim-scrollbar/issues/120)
+has a screenshot and the setup of every scrollbar preset and minimap preset.
+
+An ordered list of profiles can select a different appearance for each source
+window:
 
 ```lua
 require("scrollbar").setup({

@@ -6,6 +6,8 @@ profiles, visibility, mouse handling, and commands. Enabling the minimap does
 not show, hide, move, or resize the scrollbar. The minimap commands never show
 or hide the scrollbar.
 
+![The minimap scrolls with the source window and tints the viewport](https://github.com/user-attachments/assets/c2844052-aa78-4896-b675-62b278d0d528)
+
 The scrollbar and the minimap share the top-level `providers`, `marks`, and
 `exclude` tables. Each built-in provider runs once, with one option set. Each
 renderer shows only the providers that target it. See

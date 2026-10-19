@@ -99,6 +99,8 @@ floats side by side or sets which one is on top. See
 - `"outer"` reserves gutter cells at the source-window edge.
 - `"overlap"` reserves no cells and covers the existing gutter.
 
+![A west scrollbar with gutter = "inner", "outer", and "overlap" in three splits](https://github.com/user-attachments/assets/5b68c860-0eb3-46a8-b9ef-29f113cfe4c5)
+
 The gutter placement depends on the relative mode and the anchor:
 
 | Relative mode | Anchor | `gutter = "inner"` or `"outer"` behavior | `gutter = "overlap"` origin |
@@ -167,6 +169,11 @@ navigation use the same unit. Neovim uses the same two terms in
 `unit = "screenline"` counts screen lines, the rows that Neovim draws. As a
 result, wrapping, folds, diff filler, virtual lines, `topfill`, and wrapped
 offsets affect both the marks and the thumb geometry.
+
+In this image, both splits have wrapped lines and a closed fold. The left split
+uses `unit = "line"`, and the right split uses `unit = "screenline"`:
+
+![Two splits with wrapped lines and a closed fold, with unit = "line" on the left and unit = "screenline" on the right](https://github.com/user-attachments/assets/2e98c0b9-b8f8-4af5-8ced-c5827f2e0f81)
 
 ## Examples
 

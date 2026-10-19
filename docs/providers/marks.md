@@ -3,6 +3,8 @@
 The marks provider is enabled by default. It emits the `Mark` type for
 supported Vim named marks in each eligible loaded buffer.
 
+![Scrollbar marks that show the letters of the named marks a to e](https://github.com/user-attachments/assets/3bb187a9-72fa-4d3e-8355-da319f4b7078)
+
 ## Collection Options
 
 ```lua
