@@ -3,6 +3,7 @@
 --- `scrollbar.minimap.config`, and builds the provider plan. Setup either
 --- commits every part or fails without changing the active configuration.
 
+local const = require("scrollbar.const")
 local minimap_config = require("scrollbar.minimap.config")
 local presets = require("scrollbar.presets")
 local provider_config = require("scrollbar.provider_config")
@@ -97,6 +98,22 @@ local REMOVED_KEYS = {
     set_highlights = "use the top-level 'set_highlights' option",
     ["autohide.enabled"] = "use 'autohide = true' or 'autohide = { delay_ms = n }'",
     ["placement.gutter_position"] = "use 'placement.gutter' with 'inner', 'outer', or 'overlap'",
+}
+
+-- Replacements for the top-level v1 options. A v1 configuration fails setup,
+-- so the error also names the migration guide and the v1 branch.
+local V1_TOP_LEVEL_KEYS = {
+    show = "use 'scrollbar.show'",
+    show_in_active_only = "use 'scrollbar.visibility'",
+    folds = "use 'scrollbar.unit'",
+    max_lines = "use 'scrollbar.max_lines'",
+    hide_if_all_visible = "use 'scrollbar.hide_if_all_visible'",
+    throttle_ms = "use 'scrollbar.throttle_ms'",
+    handle = "use 'scrollbar.thumb'",
+    excluded_buftypes = "use 'exclude.buftypes'",
+    excluded_filetypes = "use 'exclude.filetypes'",
+    autocmd = "removed. The plugin listens to a fixed set of events",
+    handlers = "use 'providers'",
 }
 
 local TOP_LEVEL_KEYS = {
@@ -518,7 +535,12 @@ M.set = function(overrides)
 
     for key in pairs(overrides) do
         if not TOP_LEVEL_KEYS[key] then
-            local hint = ROOT_KEYS[key] ~= nil and " (scrollbar options go in the 'scrollbar' block)" or ""
+            local hint = ""
+            if V1_TOP_LEVEL_KEYS[key] ~= nil then
+                hint = string.format(" (v1 option: %s. %s)", V1_TOP_LEVEL_KEYS[key], const.V1_MIGRATION)
+            elseif ROOT_KEYS[key] ~= nil then
+                hint = " (scrollbar options go in the 'scrollbar' block)"
+            end
             invalid(string.format("unknown option '%s'%s", tostring(key), hint))
         end
     end

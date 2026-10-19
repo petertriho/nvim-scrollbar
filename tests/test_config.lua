@@ -338,6 +338,24 @@ T["names the replacement of a removed option"] = function()
     )
 end
 
+T["points a v1 option to the migration guide and the v1 branch"] = function()
+    local guide = "See https://github%.com/petertriho/nvim%-scrollbar/blob/main/docs/migration%.md, "
+        .. "or pin the 'v1' branch to keep v1%)$"
+    expect_invalid_top(
+        { handle = { color = "#ffffff" } },
+        "unknown option 'handle' %(v1 option: use 'scrollbar%.thumb'%. " .. guide
+    )
+    expect_invalid_top(
+        { handlers = { gitsigns = true } },
+        "unknown option 'handlers' %(v1 option: use 'providers'%. " .. guide
+    )
+    expect_invalid_top({ show = true }, "unknown option 'show' %(v1 option: use 'scrollbar%.show'%. " .. guide)
+    expect_invalid_top(
+        { marks = { Search = { color = "#ff9e64" } } },
+        "unknown option 'marks%.Search%.color' %(v1 option: put an nvim_set_hl%(%) table in 'highlight'%. " .. guide
+    )
+end
+
 T["rejects malformed layouts and invalid lane spans"] = function()
     expect_invalid({ layout = { direction = "inside" } }, "scrollbar.layout.direction must be one of")
     expect_invalid({ layout = { columns = {} } }, "scrollbar.layout.columns must contain at least one column")

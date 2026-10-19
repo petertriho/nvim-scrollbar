@@ -1,6 +1,7 @@
 --- Top-level configuration shared by the scrollbar and the minimap: the
 --- highlight policy, the mark-type registry, and the exclusion lists.
 
+local const = require("scrollbar.const")
 local schema = require("scrollbar.schema")
 
 local M = {}
@@ -44,6 +45,13 @@ local DEFAULT_EXCLUDE = {
 }
 
 local MARK_KEYS = { text = true, priority = true, highlight = true }
+local V1_MARK_COLOR = "v1 option: put an nvim_set_hl() table in 'highlight'. " .. const.V1_MIGRATION
+local describe_mark_key = schema.hinter({
+    color = V1_MARK_COLOR,
+    color_nr = V1_MARK_COLOR,
+    gui = V1_MARK_COLOR,
+    cterm = V1_MARK_COLOR,
+})
 local TARGET_KEYS = { scrollbar = true, minimap = true }
 
 ---@param mark_type any
@@ -90,7 +98,7 @@ local function normalize_marks(value)
             end
             hidden[mark_type] = true
         elseif type(entry) == "table" then
-            schema.check_keys(entry, MARK_KEYS, path)
+            schema.check_keys(entry, MARK_KEYS, path, describe_mark_key)
             specs[mark_type] = schema.merge(specs[mark_type], entry)
         else
             schema.invalid(path .. " must be false or a table")

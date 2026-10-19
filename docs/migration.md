@@ -3,7 +3,8 @@
 This guide lists the changes from v1 to v2 that need a change in your
 configuration. v2 rejects unknown options and has no compatibility layer for
 v1 options. A v1 configuration fails setup until you migrate it. For most
-removed options, the error names the replacement. A call without options,
+removed options, the error names the replacement. The error for a top-level v1
+option or a v1 mark color also links this guide. A call without options,
 `require("scrollbar").setup()`, works in both versions.
 
 ## Stay On v1
