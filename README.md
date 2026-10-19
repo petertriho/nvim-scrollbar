@@ -3,12 +3,6 @@
   <h5>Extensible floating scrollbars for Neovim</h5>
 </div>
 
-> [!IMPORTANT]
-> On 2026-11-16, v2 replaces v1 on the `main` branch. v2 changes the `setup()`
-> options, removes the `scrollbar.handlers` modules, and needs Neovim 0.11 or
-> newer. To keep v1, pin the `v1` branch or the `v1.0.0` tag. See
-> [#121](https://github.com/petertriho/nvim-scrollbar/issues/121).
-
 ![The default scrollbar and minimap while scrolling past diagnostics, Git hunks, and search matches](https://github.com/user-attachments/assets/4e1a6a1c-c9d1-416d-91eb-d27b4ff1a936)
 
 `nvim-scrollbar` shows one floating scrollbar for each source window. Each
