@@ -34,6 +34,10 @@ drag-to-scroll, and diagnostic/gitsigns/search overlays.
 
 ## Installation
 
+If you upgrade from v1, read the [migration guide](docs/migration.md) first.
+If you are not ready to migrate, pin the `v1` branch, for example
+`{ "petertriho/nvim-scrollbar", branch = "v1" }` with lazy.nvim.
+
 [lazy.nvim](https://github.com/folke/lazy.nvim):
 
 ```lua
@@ -243,11 +247,9 @@ sources can be added through the [custom provider API](docs/providers/custom.md)
 
 ### Minimap Guides
 
-- [Minimap overview](docs/minimap/README.md)
+- [Minimap overview](docs/minimap/README.md): placement, size, overlays, and
+  mouse behavior
 - [Minimap configuration](docs/minimap/configuration.md)
-- [Minimap layout](docs/minimap/layout.md)
-- [Minimap overlays](docs/minimap/overlays.md)
-- [Minimap mouse](docs/minimap/mouse.md)
 
 ## License
 

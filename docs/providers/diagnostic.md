@@ -1,12 +1,13 @@
 # Diagnostic Provider
 
-The diagnostic provider is enabled by default and renders Neovim's native
-diagnostics for each eligible buffer. It has no external dependency.
+The diagnostic provider is enabled by default. It publishes marks for the
+native Neovim diagnostics of each eligible buffer. It has no external
+dependency.
 
 ## Setup And Defaults
 
-`providers.diagnostic` is a boolean; provider-specific table options are not
-accepted.
+`providers.diagnostic` is a boolean. Setup rejects provider-specific table
+options.
 
 ```lua
 require("scrollbar").setup({
@@ -18,7 +19,7 @@ require("scrollbar").setup({
 })
 ```
 
-Diagnostics map to configured mark types as follows:
+Each diagnostic severity maps to a configured mark type:
 
 | Neovim severity | Mark type | Text | Priority | Highlight source |
 | --- | --- | --- | --- | --- |
@@ -28,33 +29,29 @@ Diagnostics map to configured mark types as follows:
 | `HINT` | `Hint` | `{ "-", "=" }` | `5` | `DiagnosticVirtualTextHint` |
 | Unknown | `Misc` | `{ "-", "=" }` | `6` | `Normal` |
 
-The two text values are density variants:
-multiple marks of the same type compressed into one rendered row use the second
-variant. Lower numeric priorities win overlaps.
+The two text values are density variants. When multiple marks of the same type
+compress into one rendered row, the row uses the second variant. Lower numeric
+priorities win overlaps.
 
 ## Data And Scope
 
-The provider reads `vim.diagnostic.get(bufnr)`, including diagnostics from all
-native diagnostic namespaces. It emits one zero-based mark per diagnostic and
-sorts marks by source line, then mark type.
+The provider reads `vim.diagnostic.get(bufnr)`, which includes diagnostics from
+all native diagnostic namespaces. It emits one mark for each diagnostic.
 
-Marks are buffer-scoped and are shared by every source window displaying that
-buffer. Invalid, unloaded, excluded, or over-`max_lines` buffers produce no
+Marks are buffer-scoped. Every source window that shows the buffer shares
+them. Invalid, unloaded, excluded, or over-`max_lines` buffers produce no
 diagnostic marks.
 
-ALE and Coc data are not read through this provider unless those tools also
-publish into `vim.diagnostic`; their dedicated providers are separate and are
+This provider does not read ALE or Coc data, unless those tools also publish
+into `vim.diagnostic`. ALE and Coc have separate dedicated providers, which are
 disabled by default.
 
 ## Updates
 
-The provider collects existing diagnostics during setup and replaces the
-affected buffer's marks on `DiagnosticChanged`. An empty diagnostic list clears
-its marks. `:ScrollbarRefresh` performs an explicit refresh for eligible source
-buffers.
-
-Only the changed buffer is recollected, but all source windows displaying that
-buffer are rerendered from the shared result.
+The provider collects existing diagnostics during setup. On `DiagnosticChanged`,
+it replaces the marks of the affected buffer. An empty diagnostic list clears
+the marks of that buffer. `:ScrollbarRefresh` does an explicit refresh for
+eligible source buffers.
 
 ## Customization
 
@@ -85,24 +82,25 @@ require("scrollbar").setup({
 })
 ```
 
-`Error`, `Warn`, `Info`, and `Hint` are shared mark types. Changing them also
-changes enabled ALE or Coc marks of the same type. For provider-specific
-filtering or styling, disable this provider and publish distinct types from a
-[custom provider](custom.md).
+`Error`, `Warn`, `Info`, and `Hint` are shared mark types. A change to them
+also changes the enabled ALE or Coc marks of the same type. For
+provider-specific filtering or styling, disable this provider. Then publish
+distinct types from a [custom provider](custom.md).
 
 ## Limitations And Troubleshooting
 
 - There are no built-in namespace, source, severity, or message filters. The
   provider mirrors the complete result of `vim.diagnostic.get(bufnr)`.
 - Rendering can combine marks that map to the same scrollbar row. Density,
-  lanes, stack order, and priorities determine visible cells; clicking a visible mark
-  uses its exact stored source-line target.
-- To verify the source data, run
-  `:lua print(vim.inspect(vim.diagnostic.get(0)))`. If it is empty, the issue is
-  upstream of the scrollbar provider.
-- If source data exists but marks do not appear, check `providers.diagnostic`,
-  buffer exclusions, `max_lines`, layout routing and priorities, then run
-  `:ScrollbarRefresh`.
+  lanes, stack order, and priorities determine the visible cells. A click on a
+  visible mark uses its exact stored source-line target.
+- To examine the source data, run
+  `:lua print(vim.inspect(vim.diagnostic.get(0)))`. If the result is empty, the
+  cause is upstream of the scrollbar provider.
+- If source data exists but marks do not appear, do these steps:
+  1. Examine `providers.diagnostic`, buffer exclusions, `max_lines`, layout
+     routing, and priorities.
+  2. Run `:ScrollbarRefresh`.
 
 ## Related
 

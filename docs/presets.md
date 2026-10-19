@@ -1,17 +1,17 @@
 # Presets
 
-Scrollbar presets are setup-local presentation baselines. They can change
-`layout`, `track`, `thumb`, `marks`, and `float.placement`; they cannot change
-providers, visibility, geometry mode, mouse behavior, exclusions, autohide, or
-performance options.
+Scrollbar presets are setup-local baselines for presentation. A preset can
+change `layout`, `track`, `thumb`, `marks`, and `float.placement`. A preset
+cannot change providers, visibility, geometry mode, mouse behavior, exclusions,
+autohide, or performance options.
 
 ## Built-ins
 
-The catalog contains twelve colorscheme-aware layouts:
+The built-in catalog has twelve colorscheme-aware layouts:
 
 - General/editor layouts: `vscode`, `zed`, `intellij`, `gvim`, `eclipse`,
   `sublime`, `emacs`, `xcode`.
-- Task-oriented: `minimal`, `review`, `search`, `navigate`.
+- Task-oriented layouts: `minimal`, `review`, `search`, `navigate`.
 
 ```lua
 require("scrollbar").setup({
@@ -24,138 +24,37 @@ require("scrollbar").setup({
 ### General/Editor Layouts
 
 - `vscode`: three overview-ruler columns. Git-family types use the inner lane,
-  remaining types use the center catch-all, and diagnostics use the outer lane.
-  Track and thumb span all three; marks are below the thumb.
-- `zed`: one compact `track -> thumb -> marks` column, so marks remain above the
+  the other types use the catch-all lane in the center, and diagnostics use the
+  outer lane. The track and the thumb span all three columns. Marks are below
+  the thumb.
+- `zed`: one compact `track -> thumb -> marks` column, so marks stay above the
   thumb.
-- `intellij`: one track/thumb column beside a transparent diagnostic and
-  catch-all stripe.
-- `gvim`: a solid two-column conventional scrollbar without annotations.
-- `eclipse`: a bar plus diagnostic, navigation, and catch-all annotation lanes.
-- `sublime`: a trackless translucent thumb with all marks above it.
-- `emacs`: a west-anchored bar at the outer edge of a dedicated gutter
-  reservation, with an inward diagnostic fringe.
+- `intellij`: one track/thumb column beside a transparent stripe for diagnostic
+  and catch-all marks.
+- `gvim`: a solid, two-column conventional scrollbar without annotations.
+- `eclipse`: a bar with lanes for diagnostic, navigation, and catch-all
+  annotations.
+- `sublime`: a translucent thumb without a track, with all marks above it.
+- `emacs`: a west-anchored bar at the outer edge of its own gutter reservation,
+  with a diagnostic fringe on the inner side.
 - `xcode`: a compact bar with navigation and diagnostic stripes.
 
-Editor-named scrollbar presets approximate scrollbar and annotation structure
-in terminal cells. They do not configure the separate minimap or claim
-pixel-perfect GUI fidelity.
+The presets with editor names approximate the scrollbar and annotation
+structure of each editor in terminal cells. They do not configure the separate
+minimap, and they do not claim pixel-perfect GUI fidelity.
 
 ### Task-Oriented
 
-- `minimal`: a thumb-only overlay with no track or marks.
-- `review`: separate Git-family, track/thumb, and diagnostic lanes. Search,
-  cursor, named, and uncategorized marks are intentionally omitted.
+- `minimal`: a thumb-only overlay with no track and no marks.
+- `review`: separate Git-family, track/thumb, and diagnostic lanes. This preset
+  intentionally omits search, cursor, named, and uncategorized marks.
 - `search`: one compact track/thumb column with only cursor and search marks.
-- `navigate`: a track/thumb/cursor column beside an expandable named-mark lane.
-  Diagnostics, search, Git, and catch-all marks are intentionally omitted.
+- `navigate`: a track/thumb/cursor column beside an expandable lane for named
+  marks. This preset intentionally omits diagnostic, search, Git, and catch-all
+  marks.
 
-The exact tested structures are:
-
-```lua
-local DIAGNOSTICS = { "Error", "Warn", "Info", "Hint" }
-local GIT_TYPES = {
-    "GitAdd", "GitChange", "GitDelete",
-    "MiniDiffAdd", "MiniDiffChange", "MiniDiffDelete",
-    "SignifyAdd", "SignifyChange", "SignifyDelete",
-    "VGitAdd", "VGitChange", "VGitDelete",
-}
-
--- vscode
-layout = {
-    direction = "auto",
-    columns = {
-        { "track", { kind = "marks", types = GIT_TYPES }, "thumb" },
-        { "track", "marks", "thumb" },
-        { "track", { kind = "marks", types = DIAGNOSTICS }, "thumb" },
-    },
-}
-
--- zed
-layout = { direction = "auto", columns = { { "track", "thumb", "marks" } } }
-
--- intellij
-layout = {
-    direction = "auto",
-    columns = {
-        { "track", "thumb" },
-        { { kind = "marks", types = DIAGNOSTICS }, "marks" },
-    },
-}
-
--- minimal
-layout = { direction = "auto", columns = { { "thumb" } } }
-
--- review
-layout = {
-    direction = "auto",
-    columns = {
-        { { kind = "marks", types = GIT_TYPES } },
-        { "track", "thumb" },
-        { { kind = "marks", types = DIAGNOSTICS } },
-    },
-}
-
--- search
-layout = {
-    direction = "auto",
-    columns = {
-        { "track", "thumb", { kind = "marks", types = { "Cursor", "Search" } } },
-    },
-}
-
--- navigate
-layout = {
-    direction = "auto",
-    columns = {
-        { "track", "thumb", { kind = "marks", types = { "Cursor" } } },
-        { { kind = "marks", types = { "Mark" }, max_width = 8 } },
-    },
-}
-
--- gvim
-layout = {
-    direction = "auto",
-    columns = { { "track", "thumb" }, { "track", "thumb" } },
-}
-
--- eclipse
-layout = {
-    direction = "auto",
-    columns = {
-        { "track", "thumb" },
-        { { kind = "marks", types = DIAGNOSTICS } },
-        { { kind = "marks", types = { "Cursor", "Search", "Mark" } } },
-        { "marks" },
-    },
-}
-
--- sublime
-layout = { direction = "auto", columns = { { "thumb", "marks" } } }
-
--- emacs
-float = { placement = { anchor = "NW", gutter = "avoid", gutter_position = "outer" } }
-layout = {
-    direction = "auto",
-    columns = {
-        { { kind = "marks", types = DIAGNOSTICS } },
-        { "track", "thumb" },
-    },
-}
-
--- xcode
-layout = {
-    direction = "auto",
-    columns = {
-        { "track", "thumb" },
-        { { kind = "marks", types = { "Cursor", "Search", "Mark" } } },
-        { { kind = "marks", types = DIAGNOSTICS } },
-    },
-}
-```
-
-`gvim` and `emacs` use `thumb.blend = 0`, `sublime` uses `60`, `intellij`
-and `xcode` use `25`, and the other built-ins use `20`.
+[`lua/scrollbar/presets.lua`](../lua/scrollbar/presets.lua) defines the
+exact layout and `thumb.blend` value of each built-in preset.
 
 ## Local Presets
 
@@ -180,28 +79,29 @@ require("scrollbar").setup({
 })
 ```
 
-One optional `extends` parent is supported. Declaration order does not matter.
-Unknown names, unknown parents, cycles, malformed definitions, and disallowed
-fields are errors. A local entry with any built-in name overlays that built-in
-rather than erasing it.
+A local preset can have one optional `extends` parent. The order of the
+declarations does not matter. Unknown names, unknown parents, cycles, malformed
+definitions, and disallowed fields are errors. A local entry with the name of a
+built-in overlays that built-in. It does not erase the built-in.
 
-Registries do not persist across setup calls. Inputs and resolved outputs are
-deep-copied, so mutation cannot change built-ins or a later setup. Dense lists
-such as `layout.columns`, selector `types`, and mark `text` replace atomically.
+Local presets do not persist across setup calls. Dense lists, such as
+`layout.columns`, selector `types`, and mark `text`, replace atomically.
 
 ## Precedence
 
-1. Neutral plugin defaults.
-2. Selected built-in or local preset, including its parent.
-3. Root setup options.
+Later layers win:
 
-Preset `float` accepts only `placement`. Root `float.zindex` and
-`float.hide_on_cursor` remain runtime behavior and are never preset-controlled.
+1. The neutral plugin defaults.
+2. The selected built-in or local preset, including its parent.
+3. The root setup options.
+
+A preset `float` accepts only `placement`. Set `float.zindex` and
+`float.hide_on_cursor` in the root options or in a profile `config`.
 
 ## Minimap Presets
 
-The minimap has a separate setup-local preset registry. It ships one built-in
-named `default` with `width = 16`, `height = false`, window-relative north-east
+The minimap has a separate setup-local preset registry. Its one built-in preset
+is `default`, with `width = 16`, `height = false`, window-relative north-east
 placement, overlays enabled, and viewport tint enabled:
 
 ```lua
@@ -218,7 +118,7 @@ Minimap preset definitions accept only these fields:
 | Field | Allowed value |
 | --- | --- |
 | `extends` | One parent preset name. |
-| `width` | `false` or a positive integer. `false` resolves to the runtime fallback width `16`. |
+| `width` | `false` or a positive integer. `false` gives a width of `16`. |
 | `height` | `false` or a positive integer. |
 | `float.placement` | `relative`, `anchor`, `row`, `col`, `gutter`, and `gutter_position`. |
 | `overlays` | `enabled` and `types`. |
@@ -226,11 +126,12 @@ Minimap preset definitions accept only these fields:
 | `autohide` | `enabled` and `delay_ms`. |
 | `visibility` | `"all"` or `"active"`. |
 
-`background`, `float.zindex`, `float.blend`, `float.hide_on_cursor`, `providers`,
-`backend`, `mouse`, exclusions, updates, `content_glyph`, and setup enablement
-are not preset fields. `background.blend`, `visibility`, and `autohide` are root
-runtime policies. `float.blend` and `float.hide_on_cursor` may vary by profile,
-but neither policy is preset-owned.
+`background`, `float.zindex`, `float.blend`, `float.hide_on_cursor`,
+`providers`, `backend`, `mouse`, exclusions, `update`, `content_glyph`, and
+`enabled` are not preset fields. You set `background.blend` only in the root
+minimap options. A preset can set `visibility` and `autohide`, but a profile
+cannot. A profile can set `float.zindex`, `float.blend`, and
+`float.hide_on_cursor`.
 
 ```lua
 require("scrollbar").setup({
@@ -262,12 +163,11 @@ require("scrollbar").setup({
 })
 ```
 
-Minimap preset inheritance, local overrides of the built-in name, deep copies,
-and precedence match scrollbar presets: neutral defaults, then the selected
-preset chain, then root minimap options. Dense lists such as event lists remain
-atomic, while keyed `overlays.types` entries deep-merge and preserve `false`
-tombstones for later layers to re-enable. Provider demand stays setup-level and
-is applied after preset resolution.
+Minimap presets use the same rules as scrollbar presets for inheritance, local
+overrides of a built-in name, and precedence. The precedence is the neutral
+defaults, then the selected preset chain, then the root minimap options. Keyed
+`overlays.types` entries deep-merge through these layers. A later layer can
+re-enable a type that an earlier layer set to `false`.
 
 ## Related
 

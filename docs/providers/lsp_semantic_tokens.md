@@ -21,26 +21,22 @@ require("scrollbar").setup({
 buffer also needs at least one attached client with a semantic-token legend and
 support for full-document or range requests.
 
-On provider activation, every eligible loaded buffer receives an initial
-refresh. Buffers without a supporting attached client simply publish no LSP
-semantic spans.
+When the provider activates, every eligible loaded buffer gets an initial
+refresh. A buffer without a supporting attached client gets no LSP semantic
+spans.
 
 ## Requests
 
-Each refresh cycle requests every attached supporting client independently. The
-provider prefers `textDocument/semanticTokens/full`; if full is unavailable, it
-falls back to `textDocument/semanticTokens/range` with a range covering the
-whole buffer. Clients supporting neither method contribute no spans.
+Each refresh sends a request to every attached supporting client. The provider
+prefers `textDocument/semanticTokens/full`. If the full method is not
+available, the provider uses `textDocument/semanticTokens/range` with a range
+that covers the whole buffer. A client that supports neither method contributes
+no spans.
 
-The provider decodes each client's negotiated `offset_encoding`: `utf-8`,
-`utf-16`, and `utf-32` are converted to zero-based byte columns before
-publication. Unknown encodings fall back to UTF-16. Tokens crossing source
-lines are split into one span per line.
-
-Requests are debounced by 80 ms and scheduled after `LspAttach`, `TextChanged`,
+The provider schedules requests after `LspAttach`, `TextChanged`,
 `TextChangedI`, `TextChangedP`, and `LspTokenUpdate`. `LspDetach` removes only
-the detached client's spans. `:MinimapRefresh` also schedules requests for the
-current minimap source buffers without revealing hidden minimaps.
+the spans of the detached client. `:MinimapRefresh` also schedules requests for
+the current minimap source buffers. It does not show hidden minimaps.
 
 ## Layers And Priority
 
@@ -52,45 +48,35 @@ Every decoded token can publish three highlight layers:
 | Modifier | `@lsp.mod.<modifier>.<filetype>` | `201` |
 | Type plus modifier | `@lsp.typemod.<type>.<modifier>.<filetype>` | `202` |
 
-Higher numeric semantic priority wins, so type-modifier layers override
-modifier and type layers, and all LSP layers override Treesitter priority
-`100`. The groups are normal Neovim highlight groups and follow the user's LSP
-highlight configuration.
+Higher numeric semantic priority wins. Thus, the type-plus-modifier layer
+overrides the modifier and type layers. All LSP layers override the Treesitter
+priority `100`. The groups are normal Neovim highlight groups, and they follow
+the user's LSP highlight configuration.
 
 ## Stale Results
 
-Client output is retained while a replacement request is pending. Starting a
-new request cancels the prior request for that client when possible, but its
-published spans remain visible. Responses are ignored when their request
-generation, buffer `changedtick`, client attachment, or provider generation is
-stale. Errors and malformed responses also leave the last valid spans intact.
-
-Valid new output replaces only that client's cached spans. The published store
-snapshot is the concatenation of current client caches in client-ID order. A
-detach removes that client immediately; when no supported clients remain, the
-provider publishes an empty replacement.
+While a new request is pending, the spans that a client already published stay
+visible. Errors, malformed responses, and stale responses also leave the last
+valid spans intact. A detach removes the spans of that client immediately. When
+no supporting client remains for a buffer, the provider removes the spans of
+that buffer.
 
 ## Cost And Refresh Limits
 
-These are independent LSP requests made through `client.request`; the provider
-does not reuse Neovim's private semantic-token cache. If native semantic tokens
-are also active, the language server may therefore receive duplicate full or
-range requests. Enable this provider only when minimap semantic color justifies
-that server and decoding cost.
+The provider sends its own LSP requests. It does not reuse the semantic-token
+cache of Neovim. Thus, if native semantic tokens are also active, the language
+server may receive duplicate full or range requests. Enable this provider only
+when minimap semantic color justifies the server cost and the decoding cost.
 
 The provider does not replace
 `vim.lsp.handlers["workspace/semanticTokens/refresh"]` or install another global
 handler. A server refresh notification updates the minimap only if Neovim later
-emits `LspTokenUpdate` or another watched event. For servers that send only the
-workspace refresh notification, run `:MinimapRefresh` or trigger a normal edit
-or attachment refresh.
-
-No private Neovim LSP state or global handler override is required, which keeps
-the provider isolated from native semantic-token internals at the cost of the
-possible duplicate requests above.
+emits `LspTokenUpdate` or another watched event. If a server sends only the
+workspace refresh notification, run `:MinimapRefresh`. You can also trigger a
+normal edit or attachment refresh.
 
 ## Related
 
+- [Minimap](../minimap/README.md)
 - [Minimap configuration](../minimap/configuration.md)
-- [Minimap layout](../minimap/layout.md)
 - [Treesitter provider](treesitter.md)

@@ -2,11 +2,11 @@
 
 `require("scrollbar").setup()` validates unknown keys, scalar types, enums,
 dense lists, layout spans, and presentation values. Every call starts from fresh
-defaults; it does not merge with a previous setup call.
+defaults. It does not merge with a previous setup call.
 
-The top-level configuration has two blocks: `scrollbar` and `minimap`. Every
-scrollbar option lives under `scrollbar`; the optional `minimap` block is
-disabled by default and is documented separately.
+The top-level configuration has two blocks: `scrollbar` and `minimap`. All
+scrollbar options go in the `scrollbar` block. The `minimap` block is optional,
+is disabled by default, and has separate documentation.
 
 ```lua
 require("scrollbar").setup({
@@ -19,8 +19,8 @@ require("scrollbar").setup({
 })
 ```
 
-Unknown top-level keys are rejected. Pass every scrollbar option inside the
-`scrollbar` block, even when leaving `minimap` at its default.
+Setup rejects unknown top-level keys. Pass every scrollbar option inside the
+`scrollbar` block, even if you leave `minimap` at its default.
 
 ## Defaults
 
@@ -122,9 +122,10 @@ require("scrollbar").setup({
 })
 ```
 
-`search = true` normalizes to `{ backend = "worker" }`. Omitting
-`providers.search.incsearch` follows the current `vim.o.incsearch` value.
-`marks = true` normalizes to `{ letters = true, numbers = false }`.
+`search = true` normalizes to `{ backend = "worker" }`. If you omit
+`providers.search.incsearch`, the search provider follows the current
+`vim.o.incsearch` value. `marks = true` normalizes to
+`{ letters = true, numbers = false }`.
 
 The minimap has its own provider defaults:
 
@@ -148,13 +149,13 @@ minimap = {
 }
 ```
 
-When `minimap.enabled = false`, these values are still validated but contribute
-no built-in provider demand or shared-option conflicts.
+When `minimap.enabled = false`, setup still validates these values. They do not
+enable providers and do not conflict with the scrollbar provider options.
 
 ## Layout
 
-`layout.columns` is a non-empty dense list of logical display columns. Every
-column is a non-empty bottom-to-top layer list:
+`layout.columns` is a non-empty dense list of logical display columns. Each
+column is a non-empty list of layers, from bottom to top:
 
 ```lua
 layout = {
@@ -169,65 +170,67 @@ layout = {
 }
 ```
 
-String layers are `"track"`, `"thumb"`, and `"marks"`. Plain `"marks"` is
-the catch-all for types not claimed by an explicit descriptor. Descriptor
-fields are:
+The string layers are `"track"`, `"thumb"`, and `"marks"`. A plain `"marks"`
+layer is the catch-all for the mark types that no explicit descriptor selects.
+A descriptor has these fields:
 
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `kind` | `"marks"` | Required tag |
-| `types` | dense string list | Explicit mark types; unknown names are allowed |
-| `max_width` | positive integer | Total width of a lane explicitly selecting `Mark` |
+| `types` | dense string list | Explicit mark types. Unknown names are allowed. |
+| `max_width` | positive integer | Total width of a lane that explicitly selects `Mark` |
 
 Adjacent occurrences with the same selector form one lane. A catch-all lane,
-an explicitly selected type, and the thumb may each occupy only one contiguous
-span. Track layers may appear in any columns. Track, thumb, and marks are all
-optional; cells with no interactive rendered layer are transparent and inert.
+an explicitly selected type, and the thumb can each occupy only one contiguous
+span. Track layers can appear in any columns. Track, thumb, and marks are all
+optional. Cells with no interactive rendered layer are transparent and inert.
 
-`direction = "auto"` treats declarations as inner-to-outer: east anchors keep
-the declared order and west anchors mirror it. `"ltr"` and `"rtl"` force
-physical screen order. See [Layout and geometry](layout-and-geometry.md).
+`direction = "auto"` reads the declared columns from inner to outer. East
+anchors keep the declared order, and west anchors mirror it. `"ltr"` and
+`"rtl"` force the physical screen order. See
+[Layout and geometry](layout-and-geometry.md).
 
 ## Marks
 
 Each `marks.<Type>` accepts only `text`, `priority`, and `highlight`. New custom
 types must provide all three. Type names match `^[%a_][%w_]*$`.
 
-- `text` is a string or dense list of positive-display-width strings without
-  control characters. Lists are density variants. Only `marks.Mark.text` may
-  be empty, which preserves literal names from the built-in marks provider.
-- `priority` is a non-negative integer. Lower numbers win collisions within one
-  mark lane. Separate mark layers use their declared stack order instead.
+- `text` is a string or a dense list of strings. Each string must have a
+  positive display width and no control characters. A list gives density
+  variants. Only `marks.Mark.text` can be an empty list. An empty list keeps
+  the literal mark names from the built-in marks provider.
+- `priority` is a non-negative integer. In one mark lane, the lower number wins
+  a collision. Separate mark layers use their declared stack order instead.
 - `highlight` is a non-empty group name or an `nvim_set_hl()` definition table.
 
-Ordinary text is clipped to its lane without splitting multi-cell glyphs.
-Multi-cell glyphs are omitted atomically if a collision would expose only part
-of the glyph.
+Ordinary text is clipped to its lane, and multi-cell glyphs are not split. If a
+collision would show only part of a multi-cell glyph, the whole glyph is
+omitted.
 
 ## Providers
 
-`scrollbar.providers` is a strict built-in allow-list containing only `cursor`,
-`diagnostic`, `search`, `marks`, `gitsigns`, `mini_diff`, `signify`, `vgit`,
-`ale`, and `coc`. `minimap.providers` accepts those names plus `treesitter` and
-`lsp_semantic_tokens`. Unknown keys in either block are setup errors; custom
-providers are registered through the [custom provider API](providers/custom.md),
-not added to either configuration table.
+`scrollbar.providers` is a strict allow-list of built-ins. It contains only
+`cursor`, `diagnostic`, `search`, `marks`, `gitsigns`, `mini_diff`, `signify`,
+`vgit`, `ale`, and `coc`. `minimap.providers` accepts those names plus
+`treesitter` and `lsp_semantic_tokens`. Unknown keys in either block are setup
+errors. You register custom providers through the
+[custom provider API](providers/custom.md), not in either configuration table.
 
-`search` is a boolean or a table containing only `incsearch` (boolean) and
-`backend` (`"worker"` or `"sync"`). `marks` is a boolean or a table containing
-only `letters` and `numbers`, both booleans. Every other built-in option is a
-boolean. Presentation width belongs to the layout, not the provider.
+`search` is a boolean, or a table that contains only `incsearch` (boolean) and
+`backend` (`"worker"` or `"sync"`). `marks` is a boolean, or a table that
+contains only the booleans `letters` and `numbers`. Every other built-in option
+is a boolean. The layout controls the presentation width, not the provider.
 
-The two blocks compile into one effective built-in plan. If a provider is
-enabled by either renderer, the manager creates one built-in instance and the
-renderers independently filter its output. For shared `search` and `marks`:
+A built-in provider runs once when the scrollbar, the minimap, or both enable
+it. Each renderer shows only the output of the providers that it enables. The
+`search` and `marks` options are shared between the two blocks:
 
-- A table on one side and `true` on the other uses the table for the shared
-  instance.
-- Two tables are accepted when their normalized values are equal.
-- Conflicting normalized tables reject the setup. The scrollbar config,
-  minimap config, profile variants, and provider plan remain at their previous
-  values; the setup is committed atomically only after all validation succeeds.
+- If one block has a table and the other has `true`, the provider uses the
+  table.
+- If both blocks have tables, setup accepts them when their normalized values
+  are equal.
+- If the normalized tables conflict, setup fails. The previous configuration
+  stays active.
 
 Treesitter and LSP semantic tokens are minimap-only built-ins. See
 [Treesitter](providers/treesitter.md) and
@@ -235,17 +238,17 @@ Treesitter and LSP semantic tokens are minimap-only built-ins. See
 
 ## Update Cadence
 
-`update` controls autocmd-driven renderer scheduling and frame coalescing.
+`update` controls which events update the scrollbar and how often it renders.
 
-- `interval_ms` (default `16`) coalesces all queued renders into the latest
-  frame, including queues caused by provider store publication.
-- `events` (default: the full set listed in [Defaults](#defaults)) is a dense
-  list of Neovim autocmd event names. Only listed events register the
-  scrollbar scheduler's own geometry, activity, and lifecycle handlers.
-  Provider-owned subscriptions remain independent: a provider publication
-  schedules subscribed renderers even when its triggering event is absent from
-  `update.events`. This includes the built-in search provider's compact
-  publication path. The closed allow-list is:
+- `interval_ms` (default `16`) combines the renders that are queued within this
+  interval into one frame. This includes the renders that provider updates
+  queue.
+- `events` (default: the full set in [Defaults](#defaults)) is a dense list of
+  Neovim autocmd event names. Only the listed events update the scrollbar for
+  geometry, cursor activity, and window or buffer lifecycle changes. Provider
+  updates do not depend on this list. A provider update renders the scrollbar
+  even when the event that caused it is not in `update.events`. The closed
+  allow-list is:
 
   `BufEnter`, `BufWinEnter`, `WinEnter`, `TabEnter`, `TermEnter`, `CmdwinLeave`,
   `CursorMoved`, `CursorMovedI`, `TextChanged`, `TextChangedI`, `TextChangedP`,
@@ -271,16 +274,16 @@ Treesitter and LSP semantic tokens are minimap-only built-ins. See
 - Exclusion options: dense string lists.
 - Unknown keys at every schema level are errors.
 
-Dense lists replace atomically instead of merging by index. This includes
-`layout.columns`, descriptor `types`, mark `text`, and exclusion lists.
+Dense lists replace atomically. They do not merge by index. This rule applies
+to `layout.columns`, descriptor `types`, mark `text`, and exclusion lists.
 
 ## Presets
 
-`preset` and `presets` exist only during one setup call and are removed from the
-normalized runtime config. Built-ins are `vscode`, `zed`, `intellij`, `minimal`,
-`review`, `search`, `navigate`, `gvim`, `eclipse`, `sublime`, `emacs`, and
-`xcode`.
-Preset definitions may set only `layout`, `track`, `thumb`, `marks`, and
+`preset` and `presets` apply only to the setup call that contains them. The
+built-in presets are `vscode`, `zed`, `intellij`, `minimal`, `review`,
+`search`, `navigate`, `gvim`, `eclipse`, `sublime`, `emacs`, and `xcode`.
+
+A preset definition can set only `layout`, `track`, `thumb`, `marks`, and
 `float.placement`, plus one optional `extends` parent. Root setup values win over
 the selected preset. See [Presets](presets.md).
 
@@ -326,12 +329,13 @@ require("scrollbar").setup({
 - `buftypes`: non-empty dense string list.
 - `when`: predicate function.
 
-All supplied matchers are ANDed. Filetype and buftype checks run before `when`,
-so callbacks are skipped when a declarative check already fails. Profiles are
-tested in declaration order; the first match wins and profiles are never merged.
-No match selects the root normalized config with stable variant ID `0`.
+A profile matches only when all of its supplied matchers match. The `filetypes`
+and `buftypes` matchers run before `when`. If one of these declarative matchers
+fails, the `when` callback does not run. Profiles are tested in declaration
+order. The first match wins, and profiles never merge. If no profile matches,
+the root configuration applies.
 
-`when` receives exactly:
+`when` receives exactly this table:
 
 ```lua
 {
@@ -343,11 +347,14 @@ No match selects the root normalized config with stable variant ID `0`.
 }
 ```
 
-Selection is not cached. Predicates are reevaluated whenever a selection is
-needed, including before every source render, so keep them fast, side-effect
-free, and non-blocking. A callback error selects the root config for that render
-and notifies once per distinct profile-index/error-message pair. Later calls
-continue evaluating the callback, so recovery does not require another setup.
+Profile selection is not cached. The predicates run again each time a
+selection is necessary, including before every source render. Keep them fast,
+free of side effects, and non-blocking.
+
+If a callback raises an error, that render uses the root configuration. A
+notification appears once for each distinct pair of profile index and error
+message. Later calls continue to evaluate the callback. As a result, the
+profile recovers without another setup.
 
 Profile `config` accepts only:
 
@@ -357,47 +364,31 @@ Profile `config` accepts only:
 - `mouse.enabled`.
 - `hide_if_all_visible`.
 
-Every other root field is rejected, including `show`, `visibility`,
+Setup rejects every other root field, including `show`, `visibility`,
 `set_highlights`, `max_lines`, `autohide`, providers, exclusions, and setup
-registries. `preset` belongs beside `match`, never inside `config`.
+registries. `preset` goes next to `match`, never inside `config`.
 
-Each variant is validated and compiled once during setup with this precedence:
+Setup resolves each profile once, with this precedence:
 
 1. Plugin defaults.
-2. The profile preset, or the root preset when omitted.
+2. The profile preset. If the profile omits `preset`, the root preset.
 3. Root setup options, excluding `preset`, `presets`, and `profiles`.
 4. Profile `config`.
 
-Setup-local presets are available while all variants compile. The root and all
-variants are committed atomically only after every profile succeeds.
-
-Providers, provider options, exclusions, `show`, `visibility`, `max_lines`,
-autohide, render interval, scheduling, and automatic-highlight policy remain
-root-owned. Profiles control only the validated presentation, geometry,
-placement, fit-hiding, and mouse fields above.
+Profiles can use the local presets of the same setup call. If one profile is
+not valid, setup fails and the previous configuration stays active.
 
 ## Eligibility
 
 `max_lines`, `excluded_buftypes`, and `excluded_filetypes` control scrollbar
-eligibility. The minimap has an independent policy under its own root config,
-including its own `enabled`, `visibility`, exclusions, `max_lines`, profiles,
-and placement. Invalid and unloaded buffers are always excluded, as are scratch
-buffers owned by the renderer evaluating that policy.
+eligibility. The minimap has an independent policy in its own root
+configuration, with its own `enabled`, `visibility`, exclusions, `max_lines`,
+profiles, and placement. As a result, the scrollbar and the minimap can show
+in different windows. Invalid and unloaded buffers are never eligible. Each
+renderer also excludes its own float buffers. Floating windows never get a
+scrollbar or a minimap.
 
-One shared provider context exposes the union of the consumers requested by
-that provider. Ordinary buffer/window marks may publish when at least one of
-those consumers accepts the target. Minimap spans and points always use the
-minimap policy. Each renderer filters ordinary stored marks by its own provider
-set, so eligibility and visibility do not have to match between the scrollbar
-and minimap.
-
-Buffer-scoped publication does not require a currently selected window.
-Window-scoped publication requires membership in the relevant current
-source-window set: a normal non-renderer window with an eligible buffer,
-selected by that renderer's root `visibility` and effective profile placement.
-Policy changes alone do not continuously purge provider stores; rejection and
-clearing occur at the next publication or refresh attempt. Visibility and
-autohide are documented in [Visibility](visibility.md).
+Visibility and autohide are documented in [Visibility](visibility.md).
 
 ## Related
 

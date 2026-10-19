@@ -1,18 +1,18 @@
 # Signify Provider
 
-The `signify` provider renders hunks reported by
-[vim-signify](https://github.com/mhinz/vim-signify). It is disabled by default,
-reads the `Signify*` signs that vim-signify places, and has no provider-specific
-options.
+The `signify` provider publishes marks for the hunks that
+[vim-signify](https://github.com/mhinz/vim-signify) reports. It reads the
+`Signify*` signs that vim-signify places. It is disabled by default and has no
+provider-specific options.
 
 ## Setup
 
-Configure and load vim-signify before scrollbar so `g:loaded_signify` is set and
-its initial signs are placed during the first provider refresh:
+Configure and load vim-signify before scrollbar, so that its signs are
+available at the first refresh:
 
 ```lua
-" vim-signify is a Vim plugin; load it from your plugin manager first.
-" Then configure scrollbar from Lua:
+-- vim-signify is a Vim plugin. Load it from your plugin manager first.
+-- Then configure scrollbar from Lua:
 
 require("scrollbar").setup({
     scrollbar = {
@@ -32,87 +32,76 @@ With lazy.nvim:
         { "mhinz/vim-signify" },
     },
     opts = {
-        providers = { signify = true },
+        scrollbar = {
+            providers = { signify = true },
+        },
     },
 }
 ```
 
-If vim-signify loads after scrollbar, the provider picks it up on the next
-`User Signify` event or `:ScrollbarRefresh` once `g:loaded_signify = 1` is set.
-Scrollbar does not configure vim-signify itself.
+If vim-signify loads after scrollbar, the provider starts to use it at the next
+`User Signify` event or `:ScrollbarRefresh` after vim-signify sets
+`g:loaded_signify = 1`. Scrollbar does not configure vim-signify itself.
 
-## Data And Marks
+## Marks
 
-vim-signify has no `get_hunks()` API, so the provider reads the signs it places
-with `vim.fn.sign_getplaced(bufnr, { group = "*" })` (vim-signify uses the
-default sign group, so all groups must be queried). Each placed `Signify*` sign
-is mapped to one of three mark types:
-
-| vim-signify sign name | Scrollbar mark type |
+| vim-signify sign name | Mark type |
 | --- | --- |
 | `SignifyAdd` | `SignifyAdd` |
 | `SignifyChange`, `SignifyChangeDelete` | `SignifyChange` |
 | `SignifyRemoveFirstLine`, `SignifyDeleteMore`, `SignifyDelete<N>` | `SignifyDelete` |
 
-Unknown sign names are ignored. The 1-based `lnum` of each placed sign is
-converted to a zero-based mark `line`. When vim-signify is not loaded
-(`g:loaded_signify` is not `1`) or no `Signify*` signs are placed, the provider
-publishes an empty list.
-
-## Updates And Refreshes
-
-- Setup performs an initial refresh of eligible loaded buffers.
-- The provider always owns one managed `User Signify` autocmd while enabled,
-  including when vim-signify was missing during setup.
-- `User Signify` carries no buffer, so the provider refreshes every buffer shown
-  in an eligible source window (the same fan-out gitsigns uses when its event
-  omits the buffer).
-- `:ScrollbarRefresh` rereads placed signs for buffers in current source
-  windows.
-- Collection errors clear only `signify` marks for the affected buffer.
-- Disabling or reconfiguring the provider removes its autocmd and stored marks.
+The provider ignores other sign names, so the signs of other plugins do not
+create marks.
 
 ## Appearance
 
-The three default mark types use `┃` for additions and changes and `▁` for
-deletions, priority `7`, and vim-signify's sign highlights:
+The three mark types have these defaults:
 
 ```lua
-marks = {
-    SignifyAdd = { text = { "┃" }, priority = 7, highlight = "SignifySignAdd" },
-    SignifyChange = { text = { "┃" }, priority = 7, highlight = "SignifySignChange" },
-    SignifyDelete = { text = { "▁" }, priority = 7, highlight = "SignifySignDelete" },
-}
+require("scrollbar").setup({
+    scrollbar = {
+        marks = {
+            SignifyAdd = { text = { "┃" }, priority = 7, highlight = "SignifySignAdd" },
+            SignifyChange = { text = { "┃" }, priority = 7, highlight = "SignifySignChange" },
+            SignifyDelete = { text = { "▁" }, priority = 7, highlight = "SignifySignDelete" },
+        },
+    },
+})
 ```
 
-Override `text`, `priority`, or `highlight` under the top-level
-`marks` table as usual.
+To change a mark type, override its `text`, `priority`, or `highlight` in the
+`scrollbar.marks` table.
+
+## Updates
+
+- Setup does an initial refresh of the eligible loaded buffers.
+- `User Signify` names no buffer. Thus the provider refreshes the buffers in all
+  source windows.
+- `:ScrollbarRefresh` rereads the placed signs of the buffers in the current
+  source windows.
 
 ## Limitations
 
-- vim-signify places its signs in the default sign group, so the provider
-  queries `group = "*"`. Other plugins' signs are ignored because only `Signify*`
-  names are mapped.
-- `:SignifyDisable` or stale signs after an external change may not emit
-  `User Signify`, so run `:SignifyRefresh` then `:ScrollbarRefresh` to force an
-  update.
-- The first-line-delete and change+delete distinctions are collapsed into the
-  three mark types above for parity with the `gitsigns` and `mini_diff` diff
-  providers.
-- Enabling `signify` alongside `gitsigns` or `mini_diff` is supported, but their
-  diff marks can overlap. Disable one or customize typed lanes and priorities if
-  needed.
+- `:SignifyDisable`, or stale signs after an external change, may not emit
+  `User Signify`. To force an update, run `:SignifyRefresh`, then run
+  `:ScrollbarRefresh`.
+- If vim-signify is not loaded, the provider shows no marks, and scrollbar
+  setup still succeeds.
+- You can enable `signify` together with `gitsigns`, `mini_diff`, or `vgit`.
+  Each provider publishes its own marks, so the marks can overlap. If you do not
+  want the overlap, disable one provider, or put the mark types in different
+  lanes or give them different priorities.
 
 ## Troubleshooting
 
-- No marks after enabling: confirm `echo g:loaded_signify` reports `1` and that
-  `Signify*` signs are visible in the sign column, then run `:ScrollbarRefresh`.
-- vim-signify loaded late: wait for `User Signify` or run `:ScrollbarRefresh`
-  after vim-signify has attached to the buffer.
-- Marks remain after `:SignifyDisable`: run `:SignifyRefresh` then
+- No marks after you enable the provider: make sure that `echo g:loaded_signify`
+  reports `1`. Make sure that `Signify*` signs are visible in the sign column.
+  Then run `:ScrollbarRefresh`.
+- vim-signify loaded late: wait for `User Signify`. Or, after vim-signify
+  attaches to the buffer, run `:ScrollbarRefresh`.
+- Marks stay after `:SignifyDisable`: run `:SignifyRefresh`, then run
   `:ScrollbarRefresh`.
-- Duplicate diff marks: disable `gitsigns`, `mini_diff`, or `signify`, or place
-  their mark types in different lanes.
 - Unexpected colors: inspect `SignifySignAdd`, `SignifySignChange`, and
   `SignifySignDelete`, or override the mark highlights.
 
@@ -122,4 +111,5 @@ Override `text`, `priority`, or `highlight` under the top-level
 - [Provider index](README.md)
 - [Gitsigns provider](gitsigns.md)
 - [MiniDiff provider](mini_diff.md)
+- [Vgit provider](vgit.md)
 - [Highlight configuration](../highlights.md)

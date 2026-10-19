@@ -1,7 +1,7 @@
 # Marks Provider
 
-The default-on marks provider emits the `Mark` type for supported Vim named
-marks in each eligible loaded buffer.
+The marks provider is enabled by default. It emits the `Mark` type for
+supported Vim named marks in each eligible loaded buffer.
 
 ## Collection Options
 
@@ -20,12 +20,13 @@ require("scrollbar").setup({
 | `letters` | `true` | Include `a-z` and `A-Z` |
 | `numbers` | `false` | Include `0-9` |
 
-`true` uses these defaults; `false` disables the provider. Width is a layout
-policy and is not accepted under `providers.marks`.
+`true` uses these defaults. `false` disables the provider. Width is a layout
+policy, and setup rejects it under `providers.marks`.
 
-The `Mark` presentation defaults to `text = {}`, `priority = 1`, and
-`highlight = "Special"`. The empty text list displays each provider-supplied
-literal name. A non-empty list replaces names with configured density glyphs:
+The defaults for the `Mark` presentation are `text = {}`, `priority = 1`, and
+`highlight = "Special"`. The empty text list shows each literal name that the
+provider supplies. A non-empty list replaces the names with the configured
+density glyphs:
 
 ```lua
 marks = {
@@ -36,20 +37,20 @@ marks = {
 ## Scope And Ordering
 
 - Lowercase marks are buffer-local.
-- Uppercase and numbered marks are global file marks shown only on their
+- Uppercase and numbered marks are global file marks. They show only on their
   eligible loaded target buffer.
 - Numbered marks are opt-in and may come from ShaDa.
 - Special marks such as `.`, `^`, `[`, `]`, `<`, and `>` are excluded.
 
-Names are ordered by source line and then literal name. On the same line this
-places `0-9`, then `A-Z`, then `a-z`.
+The provider sorts names by source line, then by literal name. On the same
+line, this order puts `0-9` first, then `A-Z`, then `a-z`.
 
 ## Collapsed And Expanded Rendering
 
-Without a `Mark` lane `max_width`, names use ordinary collapsed composition and
-one deterministic representative owns each rendered cell.
+If the `Mark` lane has no `max_width`, names use ordinary collapsed
+composition. One deterministic representative owns each rendered cell.
 
-To expand colliding built-in names, put width on the lane:
+To expand colliding built-in names, set a width on the lane:
 
 ```lua
 require("scrollbar").setup({
@@ -65,36 +66,40 @@ require("scrollbar").setup({
 ```
 
 `max_width` is the total width of the selected lane, including declared cells.
-The effective float can grow and shrink per source window, but never beyond the
-lane cap or active placement container. Dynamic cells are marks-only and grow
-inward while declared track, thumb, and ordinary mark cells stay pinned.
+The effective float can grow and shrink for each source window. It never grows
+beyond the lane cap or the active placement container. Dynamic cells hold only
+marks. They grow inward, while declared track, thumb, and ordinary mark cells
+stay pinned.
 
-Visible names keep their ordered prefix from left to right; excess tail names
+Visible names keep their ordered prefix from left to right. Excess tail names
 are omitted. Each visible name owns its exact source line. Expansion applies
-only to `Mark` values emitted by the built-in provider named `marks`; custom
-`Mark` sources remain collapsed.
+only to `Mark` values emitted by the built-in provider named `marks`. Custom
+`Mark` sources stay collapsed.
 
 ## Mouse
 
-Clicking a visible name jumps to its exact line, opens its containing fold,
-centers the source, and restores focus. A name above the thumb clicks on release
-without movement and starts a thumb drag after movement.
+A click on a visible name jumps to its exact line and opens the fold that
+contains it. The click also centers the source and restores focus.
+
+A name in a layer above the thumb has two behaviors. A release without movement
+clicks the name. Movement starts a thumb drag.
 
 ## Updates
 
-The provider refreshes during setup, buffer entry, buffer display, and text
-changes. Neovim 0.11 through 0.12.1 uses `SafeState` reconciliation because
-mark-change events are incomplete. Neovim 0.12.2 and newer uses `MarkSet` for
-the default letter-only path. Numbered marks retain `SafeState` reconciliation.
-`:ScrollbarRefresh` always performs an explicit refresh.
+The provider refreshes during setup, on buffer entry, on buffer display, on
+text changes, and when marks change. `:ScrollbarRefresh` always does an
+explicit refresh.
 
 ## Troubleshooting
 
-- Use `:marks` to inspect source data.
-- Verify `letters` or `numbers` when a category is missing.
-- Use `marks.Mark.text = {}` to restore literal names.
-- If expansion does not occur, verify the `Mark` lane cap exceeds its base span,
-  the container has room, and multiple names map to one rendered row.
+- To inspect the source data, use `:marks`.
+- If a category is missing, examine the `letters` or `numbers` option for that
+  category.
+- To restore literal names, set `marks.Mark.text = {}`.
+- If expansion does not occur, make sure that these conditions are true:
+  - The `Mark` lane cap is larger than its base span.
+  - The container has room.
+  - Multiple names map to one rendered row.
 
 ## Related
 

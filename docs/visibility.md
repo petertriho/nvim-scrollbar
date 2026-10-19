@@ -5,88 +5,80 @@ Visibility is controlled globally, per source window, and by buffer eligibility.
 ## Source Windows
 
 - `visibility = "all"` creates an independent scrollbar for every eligible
-  normal window. Two windows showing the same buffer retain different thumbs.
-- `visibility = "active"` keeps only the active source window's scrollbar.
+  normal window. Two windows that show the same buffer keep different thumbs.
+- `visibility = "active"` keeps only the scrollbar of the active source window.
 - `float.placement.relative = "editor"` also renders only the active source
-  window, regardless of `visibility`, so editor-relative floats cannot overlap.
+  window, for every `visibility` value. As a result, editor-relative floats
+  cannot overlap.
 
-`visibility` is always root-owned. With contextual profiles and root
-`visibility = "all"`, placement is resolved per source: window-relative
-variants may remain visible together, while an editor-relative variant is
-eligible only when its own source is active. Switching a predicate reconciles
-or closes only the affected source state.
+Only the root configuration sets `visibility`. With contextual profiles and the
+root `visibility = "all"`, each source window gets the placement of its own
+profile. Window-relative profiles can stay visible together. A scrollbar with an
+editor-relative profile shows only when its source window is active. Profile
+predicates run again before each render. If a different profile starts to
+match a source window, only the scrollbar of that window changes.
 
 ## Global Visibility
 
-`show = false` starts with master visibility disabled. Calling `show()`,
-`hide()`, or `toggle()` changes this global state across all eligible windows.
+`show = false` starts with master visibility disabled. A call to `show()`,
+`hide()`, or `toggle()` changes this global state for all eligible windows.
 
 | Command | Lua API | Effect |
 | --- | --- | --- |
-| `:ScrollbarShow` | `require("scrollbar").show()` | Enable master visibility; with autohide, reveal and arm every eligible window |
-| `:ScrollbarHide` | `require("scrollbar").hide()` | Disable master visibility, hide floats, and cancel autohide deadlines and holds |
-| `:ScrollbarToggle` | `require("scrollbar").toggle()` | Toggle master visibility, even when autohide has concealed every float |
-| `:ScrollbarRefresh` | `require("scrollbar").refresh()` | Refresh providers and rerender without revealing concealed autohide windows |
+| `:ScrollbarShow` | `require("scrollbar").show()` | Enables master visibility. With autohide, shows every eligible window and starts its hide delay |
+| `:ScrollbarHide` | `require("scrollbar").hide()` | Disables master visibility, hides floats, and cancels pending autohide delays |
+| `:ScrollbarToggle` | `require("scrollbar").toggle()` | Toggles master visibility, also when autohide has concealed every float |
+| `:ScrollbarRefresh` | `require("scrollbar").refresh()` | Refreshes providers and rerenders, but does not reveal concealed autohide windows |
 
 ## Autohide
 
-With `autohide.enabled = true`, each eligible window starts concealed and is
-revealed by its own `CursorMoved`, `CursorMovedI`, or `WinScrolled` activity.
-That window is hidden independently after `autohide.delay_ms` of inactivity.
+With `autohide.enabled = true`, each eligible window starts concealed. The
+`CursorMoved`, `CursorMovedI`, or `WinScrolled` activity of that window reveals
+it. After `autohide.delay_ms` of inactivity, autohide conceals that window
+independently.
 
 Provider updates, option changes, resizes, colorscheme changes, and
-`:ScrollbarRefresh` can rerender a revealed scrollbar but do not reveal a
-concealed one. Pressing or dragging a scrollbar pauses that source window's
-deadline; release or cancellation starts a fresh full delay.
+`:ScrollbarRefresh` can rerender a revealed scrollbar. They do not reveal a
+concealed scrollbar. A press or drag on a scrollbar pauses the deadline of that
+source window. Release or cancellation starts a new full delay.
 
-Autohide, master visibility, exclusions, and `max_lines` are root-owned and
-cannot be changed by a profile.
+Autohide, master visibility, exclusions, and `max_lines` are root-owned. A
+profile cannot change them.
 
 ## Documents That Fit
 
 - `hide_if_all_visible = true` hides the entire scrollbar when the document
   fits in the source window.
 - `thumb.hide_if_all_visible = true` hides only the thumb when the document
-  fits. The track and provider marks can remain visible.
-- `max_lines` is an eligibility limit, not a visibility toggle: buffers above
-  the configured logical line count receive no scrollbar.
+  fits. The track and provider marks can stay visible.
+- `max_lines` is an eligibility limit, not a visibility toggle. A buffer with
+  more logical lines than the configured count gets no scrollbar.
 
-`hide_if_all_visible` and `thumb.hide_if_all_visible` may vary by profile;
-`max_lines` may not.
+A profile can change `hide_if_all_visible` and `thumb.hide_if_all_visible`. A
+profile cannot change `max_lines`.
 
 ## Cursor Intersection
 
-`scrollbar.float.hide_on_cursor = true` temporarily hides the active source
-window's whole scrollbar when the editing cursor enters any cell in the float's
-actual screen rectangle. Moving the cursor away restores the same float,
-buffer, rows, highlights, and mouse mappings.
+`scrollbar.float.hide_on_cursor = true` applies to the scrollbar of the active
+source window. When the editing cursor enters any cell of the float, the whole
+scrollbar hides. When the cursor moves away, the scrollbar shows again.
 
-Only the cursor in `nvim_get_current_win()` triggers this behavior. Stored
-cursor positions in inactive splits do not hide their scrollbars. The check uses
-the full effective float width, anchors, and placement offsets.
+Only the cursor of the current window triggers this behavior. Stored cursor
+positions in inactive splits do not hide their scrollbars. The check uses the
+full float rectangle, including the placement offsets. It compares only screen
+coordinates and does not examine the text.
 
-The test compares cursor and float screen coordinates only; it does not inspect
-source lines or visible text.
+While the scrollbar is hidden, it does not capture mouse input. Mouse input on
+those cells goes to the source window. To keep the scrollbar visible under the
+cursor, set `scrollbar.float.hide_on_cursor = false`.
 
-While hidden, the scrollbar does not capture mouse input, so those cells reach
-the source window. Set `scrollbar.float.hide_on_cursor = false` to keep the
-overlay visible under the cursor.
-
-The minimap has the parallel policy `minimap.float.hide_on_cursor = true` by
-default. It evaluates only the active source window and hides when the cursor's
-zero-based screen coordinate is inside the float's reported rectangle. Top and
-left edges are inclusive; bottom and right edges are exclusive. Inactive split
-minimaps are restored, and unavailable coordinates fail open.
-
-Minimap cursor yielding changes only the existing float's `hide` flag. It keeps
-the same minimap window, buffer, worker and cell caches, rendered content, and
-mouse mappings. It is independent of `minimap.providers.cursor`; disabling the
-cursor point provider does not disable overlap hiding.
-
-The minimap check runs on configured render invalidations. The default
-`CursorMoved` and `CursorMovedI` events provide immediate updates; if those
-events are removed, visibility settles on the next configured minimap event.
-Set `minimap.float.hide_on_cursor = false` to skip the coordinate work.
+The minimap has the same option, `minimap.float.hide_on_cursor`, which is also
+`true` by default. It applies only to the minimap of the active source window,
+and it does not need `minimap.providers.cursor`. The minimap does this check
+when it renders. If you remove `CursorMoved` and `CursorMovedI` from the
+minimap `update.events`, the minimap hides or shows again only on the next
+configured event. To turn off the check, set
+`minimap.float.hide_on_cursor = false`.
 
 ## Related
 

@@ -2,7 +2,7 @@
 
 Built-in providers publish ordinary typed marks, minimap semantic spans, or
 minimap points for eligible source targets. Provider configuration controls
-collection; scrollbar `layout` and minimap presentation control rendering.
+collection. Scrollbar `layout` and minimap presentation control rendering.
 
 ## Built-ins
 
@@ -57,58 +57,47 @@ require("scrollbar").setup({
 })
 ```
 
-`search` accepts `incsearch` and `backend` (`"worker"` or `"sync"`). Omitting
-`incsearch` follows `vim.o.incsearch`. `marks` accepts only `letters` and
-`numbers`. All other built-ins are booleans.
+`search` and `marks` also accept option tables. See [Search](search.md) and
+[Marks](marks.md). All other built-ins are booleans.
 
 The allow-lists are strict. `scrollbar.providers` accepts the first ten names in
-the table; `minimap.providers` accepts all twelve. Unknown keys are errors;
-register custom data sources through the [custom provider API](custom.md).
+the table. `minimap.providers` accepts all twelve. Unknown keys are errors. To
+add a custom data source, register it through the
+[custom provider API](custom.md).
 
-## Shared Built-in Plan
+## Shared Providers
 
-The two provider blocks compile into one effective built-in plan. A built-in
-requested by either renderer has one provider instance, one lifecycle, and one
-normalized option set. Ordinary marks are stored once, while each renderer
-independently filters them through its own enabled-provider set. Minimap spans
-and points are minimap-only channels.
+A built-in provider runs once when the scrollbar, the minimap, or both enable
+it. Each renderer shows only the output of the providers that it enables. The
+two blocks share the `search` and `marks` options. For the rules, see
+[Configuration](../configuration.md#providers). A disabled minimap does not
+enable providers or affect the shared options.
 
-For the table-valued `search` and `marks` options, a table on one side overrides
-`true` on the other. Two normalized tables must be equal; equal tables are
-accepted and conflicting tables reject the whole setup atomically. A disabled
-minimap contributes no demand, option selection, or conflict.
+You configure scrollbar presentation under `scrollbar.marks.<Type>` with
+`text`, `priority`, and `highlight`. Route those types into explicit or
+catch-all lanes under scrollbar `layout`. You configure ordinary minimap
+presentation independently under `minimap.overlays.types.<Type>` with
+`priority` and `highlight`. In one scrollbar lane or one minimap row, the lower
+numeric priority wins. Minimap spans and points use the opposite direction: the
+higher numeric value wins.
 
-Scrollbar presentation is configured under `scrollbar.marks.<Type>` with
-`text`, `priority`, and `highlight`; route those types into explicit or
-catch-all lanes under scrollbar `layout`. Ordinary minimap presentation is
-configured independently under `minimap.overlays.types.<Type>` with `priority`
-and `highlight`. Lower numeric priority wins within one scrollbar lane or one
-projected minimap row. Minimap spans and points use the opposite priority
-direction: higher numeric values win.
+## Refresh
 
-Providers refresh initially during setup. `:ScrollbarRefresh` refreshes ordinary
-mark callbacks only for providers consumed by the scrollbar.
-`:MinimapRefresh` refreshes ordinary mark callbacks for minimap consumers plus
-their minimap span and point callbacks. It does not refresh scrollbar-only
-providers. Both commands operate on their renderer's current source buffers and
-windows, queue rendering, and preserve hidden/autohide-concealed state.
+Providers do their first refresh during setup. `:ScrollbarRefresh` refreshes
+only the providers that the scrollbar uses. `:MinimapRefresh` refreshes only
+the providers that the minimap uses, including their minimap spans and points.
+Both commands use the current source buffers and windows of their renderer and
+queue rendering. They do not show a hidden float or a float that autohide
+concealed.
 
-Changed store publication sends provider- and channel-aware notifications.
-The scrollbar scheduler listens to ordinary marks; the minimap scheduler listens
-to ordinary marks, spans, and points. The built-in search provider may keep its
-matches in a private compact representation, but compact publication still uses
-the ordinary `marks` notification channel and is projected without expanding a
-public mark list. These notifications are independent of either renderer's
-`update.events` autocmd list.
+## Optional Integrations
 
-Optional integrations safely emit no marks when their dependency is
-unavailable. Treesitter collection runs with the minimap squash backend; LSP
-semantic-token collection runs in the parent and publishes spans for transfer
-to the minimap worker.
+If the dependency of an optional integration is unavailable, the integration
+safely emits no marks.
 
-Multiple diff providers may be enabled together. Their data remains separately
-owned but can overlap visually; use typed layout lanes, priorities, or disable
-duplicated sources.
+You can enable more than one diff provider at the same time. Each provider owns
+its data separately, but the marks can overlap visually. If they overlap, use
+typed layout lanes or priorities, or disable the duplicated sources.
 
 ## Related
 

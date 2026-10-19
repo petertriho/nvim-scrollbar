@@ -1,12 +1,12 @@
 # Coc Provider
 
-The `coc` provider renders diagnostics returned by
-[coc.nvim](https://github.com/neoclide/coc.nvim). It is disabled by default and
-has no provider-specific options.
+The `coc` provider publishes marks for the diagnostics that
+[coc.nvim](https://github.com/neoclide/coc.nvim) returns. It is disabled by
+default and has no provider-specific options.
 
 ## Setup
 
-Install coc.nvim and enable the provider:
+Install coc.nvim. Then enable the provider:
 
 ```lua
 require("scrollbar").setup({
@@ -18,40 +18,20 @@ require("scrollbar").setup({
 })
 ```
 
-The provider calls `CocActionAsync("diagnosticList", callback)` and does not
-configure Coc extensions or diagnostic production.
+The provider asks coc.nvim for its full diagnostic list. It does not configure
+Coc extensions, and it does not configure how Coc produces diagnostics.
 
-## Data And Severity Mapping
+## Marks
 
-Each successful response is treated as the complete diagnostic list across
-URIs, grouped by Neovim buffer, and published as a full replacement of the
-provider cache.
-
-| Coc severity | Scrollbar mark type |
+| Coc severity | Mark type |
 | --- | --- |
 | `Error` | `Error` |
 | `Warning` | `Warn` |
 | `Information` | `Info` |
 | `Hint` | `Hint` |
 
-Diagnostics without a supported severity, URI, range start, numeric line, or
-valid Neovim buffer are ignored.
-
-## Updates And Refreshes
-
-- Setup immediately starts one asynchronous `diagnosticList` request.
-- `User CocDiagnosticChange` starts another asynchronous full-list request.
-- A successful callback replaces all cached Coc marks. Buffers present in the
-  previous cache but absent from the new response are published with no marks.
-- Callbacks belonging to an old scrollbar setup or a disposed provider are
-  ignored.
-- No callback completion ordering is promised for multiple requests that are
-  in flight at the same time.
-
-`:ScrollbarRefresh` republishes the existing Coc cache for buffers in current
-source windows and rerenders it; it does not start a new
-`CocActionAsync("diagnosticList", ...)` request. A normal
-`CocDiagnosticChange` event starts a fresh request.
+The provider ignores a diagnostic that has no supported severity or that
+belongs to no valid Neovim buffer.
 
 ## Appearance
 
@@ -71,31 +51,33 @@ require("scrollbar").setup({
 })
 ```
 
-The normal `text`, `priority`, and `highlight` options apply. Changes
-to these shared types also affect other diagnostic providers.
+The standard `text`, `priority`, and `highlight` options apply. A change to
+these shared types also affects other diagnostic providers.
 
-## Failure And Stale-Data Behavior
+## Updates
 
-- If `CocActionAsync` is unavailable or throws while starting a request, setup
-  remains usable and the current cache is unchanged.
-- If a callback reports an error, that response is ignored and the previous
-  marks remain visible. They can therefore be stale until a later successful
-  `CocDiagnosticChange` request completes.
-- A successful non-table response is treated as an empty full list and clears
-  the previous cache.
-- Store validation can reject marks that do not fit the current buffer; only
-  this provider's marks for that buffer are cleared.
-- Disposing or reconfiguring scrollbar clears Coc's cache and marks. Late
-  callbacks from that older setup cannot restore them.
+- Setup requests the diagnostic list.
+- `User CocDiagnosticChange` requests the diagnostic list again.
+- Each successful response replaces all Coc marks. A buffer that is not in the
+  new response loses its Coc marks.
+- `:ScrollbarRefresh` shows the marks from the last response again. It does not
+  request a new diagnostic list.
+
+## Limitations
+
+- If coc.nvim is not available, scrollbar setup still succeeds, and the current
+  marks do not change.
+- If Coc reports an error, the provider ignores that response. The previous
+  marks stay visible until a later request succeeds.
 
 ## Troubleshooting
 
-- Confirm Coc is running with `:CocInfo` and that Coc reports diagnostics for
-  the file.
-- Run `:doautocmd User CocDiagnosticChange` to ask the provider to start a new
-  asynchronous list request. `:ScrollbarRefresh` is not equivalent.
-- If old marks remain after a Coc error, wait for or trigger another successful
-  diagnostic-change request.
+- Use `:CocInfo` to make sure that Coc is running and that Coc reports
+  diagnostics for the file.
+- To make the provider request a new diagnostic list, run
+  `:doautocmd User CocDiagnosticChange`. `:ScrollbarRefresh` is not equivalent.
+- If old marks stay after a Coc error, wait for another successful
+  diagnostic-change request, or start one.
 - If severity colors are unexpected, inspect or override the shared `Error`,
   `Warn`, `Info`, and `Hint` mark configurations.
 

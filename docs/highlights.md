@@ -1,11 +1,11 @@
 # Highlights
 
-Scrollbar and minimap automatic highlight generation are independent. With the
-corresponding `set_highlights = true`, setup force-refreshes private plugin-owned
-definitions and profile-internal groups after setup. It refreshes them after
-`ColorScheme` when that subsystem keeps the event in its configured update
-list. Public root groups are created only as `default = true` links, so existing
-user or colorscheme definitions are preserved.
+The scrollbar and the minimap generate automatic highlights independently. When
+a renderer has `set_highlights = true`, setup creates the highlight groups of
+that renderer. The plugin updates them after `ColorScheme` when the
+`update.events` list of that renderer contains `ColorScheme`. Public groups are
+created only as `default = true` links, so existing user or colorscheme
+definitions are kept.
 
 ## Sources
 
@@ -28,40 +28,37 @@ require("scrollbar").setup({
 })
 ```
 
-The resting thumb defaults to `PmenuThumb`. Pressed thumb backgrounds are
-derived from `PmenuSel`. `thumb.blend` is added when the resolved or direct
-definition does not already set `blend`. Mark-over-thumb groups deep-merge the
-thumb background and mark definition, with mark fields taking precedence.
+The resting thumb uses `PmenuThumb` by default. Pressed thumb backgrounds are
+derived from `PmenuSel`. When the resolved or direct definition does not
+already set `blend`, the plugin adds `thumb.blend`. Mark-over-thumb groups
+deep-merge the thumb background and the mark definition. Mark fields take
+precedence.
 
 ## Generated Groups
 
-- `ScrollbarBase`: transparent float-wide base for undeclared cells.
-- `ScrollbarTrack`: explicit declared track backgrounds.
+- `ScrollbarBase`: a transparent, float-wide base for undeclared cells.
+- `ScrollbarTrack`: backgrounds for explicitly declared tracks.
 - `ScrollbarThumb` and `ScrollbarThumbPressed`.
 - `Scrollbar<MarkType>`.
 - `Scrollbar<MarkType>Thumb` and `Scrollbar<MarkType>ThumbPressed`.
 
 Examples include `ScrollbarSearch`, `ScrollbarSearchThumb`,
 `ScrollbarSearchThumbPressed`, `ScrollbarMark`, and `ScrollbarErrorThumb`.
-Renderer extmarks use deterministic stack priorities with `hl_mode = "combine"`
-so track backgrounds and content layers compose in declared order.
+Track backgrounds and content layers combine in the declared layer order.
 
-Automatic scrollbar mode also creates legacy `Handle` names:
+In automatic mode, the scrollbar also creates the legacy `Handle` names:
 `ScrollbarHandle`, `ScrollbarHandlePressed`, `Scrollbar<MarkType>Handle`, and
-`Scrollbar<MarkType>HandlePressed`. They are default links to their canonical
-`Thumb` equivalents, not separately owned definitions.
+`Scrollbar<MarkType>HandlePressed`. These names are default links to their
+canonical `Thumb` equivalents. They are not separately owned definitions.
 
-The canonical names above belong to the root config. Each compiled profile gets
-a stable internal automatic namespace based on declaration index, for example
-`ScrollbarProfile1.Track`, `ScrollbarProfile1.Thumb`,
-`ScrollbarProfile1.ThumbPressed`, `ScrollbarProfile1.Error`, and
-`ScrollbarProfile1.ErrorThumb`. Simultaneous windows can therefore use different
-track, thumb, blend, mark, overlap, and pressed definitions. Internal profile
-names are implementation details and receive no legacy `Handle` aliases.
+The canonical names above belong to the root configuration. In automatic mode,
+each profile also gets its own internal groups. As a result, windows that are
+visible at the same time can use different track, thumb, blend, mark, overlap,
+and pressed definitions.
 
 ## Minimap Groups
 
-Static minimap groups retain these default links:
+Static minimap groups keep these default links:
 
 | Group | Default link |
 | --- | --- |
@@ -71,12 +68,12 @@ Static minimap groups retain these default links:
 | `ScrollbarMinimapCursor` | `Cursor` |
 
 Every enabled ordinary overlay type uses a distinct public group named
-`ScrollbarMinimap<Type>`, for example `ScrollbarMinimapSearch`. Automatic
-profiles use internal names such as `ScrollbarMinimapProfile1.Search` so their
-definitions can differ simultaneously. The configured source is copied; these
-groups do not link to final `Scrollbar<Type>` groups automatically.
+`ScrollbarMinimap<Type>`, for example `ScrollbarMinimapSearch`. In automatic
+mode, each minimap profile also gets its own internal groups. These groups copy
+the configured source. They do not link automatically to the final
+`Scrollbar<Type>` groups.
 
-Users who want shared manual colors can link the public names explicitly:
+To share manual colors, you can link the public names explicitly:
 
 ```lua
 vim.api.nvim_set_hl(0, "ScrollbarMinimapSearch", { link = "ScrollbarSearch" })
@@ -85,21 +82,19 @@ vim.api.nvim_set_hl(0, "ScrollbarMinimapError", { link = "ScrollbarError" })
 
 ## Manual Groups
 
-With `scrollbar.set_highlights = false`, setup and `ColorScheme` handling create
-or modify no scrollbar canonical groups, base group, private groups, profile
-groups, or legacy aliases. Manual configurations must define the canonical
-Thumb names used by renderer extmarks. Defining only old Handle names is
-insufficient.
+With `scrollbar.set_highlights = false`, the plugin creates and changes no
+scrollbar groups, including the base group and the legacy aliases. A manual
+configuration must define the canonical Thumb names. It is not sufficient to
+define only the old Handle names.
 
-Manual mode intentionally uses the same canonical groups for every profile and
-creates no `ScrollbarProfile*` groups. Profile-specific highlight sources and
-blend values therefore require `set_highlights = true`; there is no public
-profile-specific manual highlight API.
+In manual mode, every profile uses the same canonical groups. As a result,
+profile-specific highlight sources and blend values need
+`set_highlights = true`. There is no public API for profile-specific manual
+highlights.
 
-With `minimap.set_highlights = false`, setup and `ColorScheme` handling write no
-static, public, private, or profile minimap groups. Every minimap profile uses
-canonical `ScrollbarMinimap<Type>` names; define those groups manually. There is
-no public profile-specific manual API.
+With `minimap.set_highlights = false`, the plugin writes no minimap groups.
+Every minimap profile uses the canonical `ScrollbarMinimap<Type>` names. Define
+those groups manually.
 
 ## Related
 

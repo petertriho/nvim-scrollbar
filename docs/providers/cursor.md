@@ -1,12 +1,11 @@
 # Cursor Provider
 
-The cursor provider is enabled by default and publishes one mark for the cursor
+The cursor provider is enabled by default. It publishes one mark for the cursor
 position of each eligible source window.
 
 ## Setup And Defaults
 
-`providers.cursor` is a boolean; provider-specific table options are not
-accepted.
+`providers.cursor` is a boolean. Setup rejects provider-specific table options.
 
 ```lua
 require("scrollbar").setup({
@@ -18,7 +17,7 @@ require("scrollbar").setup({
 })
 ```
 
-It emits the `Cursor` mark type, whose defaults are:
+The provider emits the `Cursor` mark type. The defaults of this type are:
 
 | Option | Default |
 | --- | --- |
@@ -26,13 +25,10 @@ It emits the `Cursor` mark type, whose defaults are:
 | `marks.Cursor.priority` | `0` |
 | `marks.Cursor.highlight` | `"Normal"` |
 
-Lower numeric priorities win overlaps, so the default cursor mark takes
+Lower numeric priorities win overlaps. As a result, the default cursor mark has
 precedence over every other built-in mark type in the same display cells.
 
-## Data And Scope
-
-The source is `nvim_win_get_cursor()` for each normal source window. Lines are
-converted to the provider API's zero-based line coordinates before rendering.
+## Scope
 
 The provider is window-scoped. If two splits show the same buffer, each split
 keeps a separate cursor mark at its own cursor position. Invalid windows and
@@ -41,21 +37,17 @@ produce no cursor mark.
 
 ## Updates
 
-The mark is initialized during setup and when a source window is entered. It is
-updated for the current event window on:
+The provider initializes the mark during setup and when a source window is
+entered. It updates the mark for the current event window on these events:
 
 - `CursorMoved`
 - `CursorMovedI`
 - `BufWinEnter`
 - `WinEnter`
 
-In wired top-level setups the cursor-move events ride the scheduler's shared
-cursor-activity dispatch (one autocmd callback per move); the provider keeps
-its own registration in standalone setups.
-
-`:ScrollbarRefresh` refreshes every eligible source window explicitly. Disabling
-the provider or re-running setup clears cursor marks owned by the previous
-provider instance.
+`:ScrollbarRefresh` explicitly refreshes every eligible source window. If you
+disable the provider or run setup again, the cursor marks that the previous
+provider instance owns are cleared.
 
 ## Customization
 
@@ -75,22 +67,24 @@ require("scrollbar").setup({
 })
 ```
 
-For a separate cursor lane, explicitly select `Cursor` in `layout.columns`; see
+For a separate cursor lane, select `Cursor` explicitly in `layout.columns`. See
 [Layout and geometry](../layout-and-geometry.md).
 
 ## Limitations And Troubleshooting
 
-- This provider represents the ordinary Neovim cursor only. It does not expose
+- This provider represents only the ordinary Neovim cursor. It does not expose
   selections, remote cursors, or plugin-specific multi-cursor positions.
-- `float.hide_on_cursor = true` can hide the entire scrollbar when the active
-  editing cursor intersects its actual screen rectangle. This is overlay
-  visibility behavior, not a missing cursor mark; set it to `false` if an
-  uninterrupted overlay is preferred.
-- If no mark appears, confirm `providers.cursor = true`, check buffer exclusion
-  and `max_lines` settings, and run `:ScrollbarRefresh` after entering the
-  affected window.
-- If the mark is covered after customization, compare lane stack order and
-  priority. Lower priority numbers win within one mark lane.
+- With `float.hide_on_cursor = true`, the entire scrollbar can hide when the
+  active editing cursor intersects the actual screen rectangle of the
+  scrollbar. This is overlay visibility behavior, not a missing cursor mark. If
+  you prefer an uninterrupted overlay, set the option to `false`.
+- If no mark appears, do these steps:
+  1. Make sure that `providers.cursor = true`.
+  2. Examine the buffer exclusion options and `max_lines`.
+  3. Enter the affected window.
+  4. Run `:ScrollbarRefresh`.
+- If the mark is covered after customization, compare the lane stack order and
+  the priorities. Lower priority numbers win within one mark lane.
 
 ## Related
 

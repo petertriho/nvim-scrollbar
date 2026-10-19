@@ -16,46 +16,39 @@ require("scrollbar").setup({
 })
 ```
 
-`minimap.providers.treesitter` is a setup-level boolean. It cannot be selected
-by a minimap preset or profile.
+`minimap.providers.treesitter` is a setup-level boolean. A minimap preset or
+profile cannot select it.
 
 ## Requirements
 
 The source buffer must have a Treesitter language mapping, an installed parser,
-and a `highlights` query. The language is resolved from the filetype with
-`vim.treesitter.language.get_lang`. Missing mappings, parsers, trees, roots, or
-queries degrade to monochrome minimap content without failing setup.
+and a `highlights` query. The provider maps the filetype to a language with
+`vim.treesitter.language.get_lang`. If one of these is missing, the minimap
+content stays monochrome. Setup does not fail.
 
-Only single-line capture nodes become spans. Each span uses zero-based source
-byte columns and the capture group `@capture_name`.
+Only captures on one line color the minimap. Captures that span more than one
+line are ignored.
 
 ## Backend Behavior
 
-With the default minimap `backend = "worker"`, language resolution happens in
-the parent, while parser startup, parsing, query lookup, capture collection,
-semantic composition, and squashing happen in the embedded child Neovim. The
-child starts with `-u NONE -i NONE --noplugin`, so the parser and query files
-must still be discoverable through that Neovim's runtime paths; plugin setup
-code is not executed there.
+With the default `minimap.backend = "worker"`, Treesitter parsing and capture
+collection run in a separate headless Neovim process. This process does not
+load your configuration or plugins. The parser and query files must be on the
+runtime path of that process.
 
-With `backend = "sync"`, collection and squashing run in the parent Neovim. The
-same provider code and squash algorithm are used in both modes. Accepted worker
-captures are published to the shared `minimap_spans` store channel for the
-buffer, but that publication reuses the accepted cell result instead of
-requesting a duplicate squash.
+With `minimap.backend = "sync"`, Treesitter collection runs in the main Neovim
+process.
 
 ## Priority
 
-Treesitter spans use priority `100`. Higher numeric semantic priorities win
-inside the squash. The LSP semantic-token provider uses `200` through `202`, so
-overlapping LSP layers override Treesitter captures. Equal-priority ties use
-provider name and then publication order.
+Treesitter spans use priority `100`. The LSP semantic-token provider uses `200`
+through `202`, so overlapping LSP spans override Treesitter captures.
 
 Treesitter color applies only to occupied source columns. It does not fill
 whitespace or replace minimap glyphs.
 
 ## Related
 
+- [Minimap](../minimap/README.md)
 - [Minimap configuration](../minimap/configuration.md)
-- [Minimap layout](../minimap/layout.md)
 - [LSP semantic tokens](lsp_semantic_tokens.md)
