@@ -1,14 +1,17 @@
 # Treesitter Minimap Provider
 
 The Treesitter provider colors occupied minimap cells from Treesitter highlight
-captures. It targets only the minimap and is disabled by default.
+captures. It targets only the minimap and is enabled by default. It runs only
+when the minimap is enabled.
 
 ## Setup
+
+The provider needs no setup. To turn it off:
 
 ```lua
 require("scrollbar").setup({
     providers = {
-        treesitter = true,
+        treesitter = false,
     },
     minimap = {
         enabled = true,
@@ -29,7 +32,8 @@ and a `highlights` query. The provider maps the filetype to a language with
 content stays monochrome. Setup does not fail.
 
 Only captures on one line color the minimap. Captures that span more than one
-line are ignored.
+line are ignored. The provider captures only the lines of the map slice that
+the minimap squashes. See [Backends](../minimap/configuration.md#backends).
 
 ## Backend Behavior
 
@@ -47,7 +51,9 @@ Treesitter spans use priority `100`. The LSP semantic-token provider uses `200`
 through `202`, so overlapping LSP spans override Treesitter captures.
 
 Treesitter color applies only to occupied source columns. It does not fill
-whitespace or replace minimap glyphs.
+whitespace or change the minimap dots. When a cell covers columns with
+different captures, the capture with the highest priority wins, then the
+capture that comes first.
 
 ## Related
 

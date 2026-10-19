@@ -321,9 +321,10 @@ option to get closer to the v1 behavior.
 
 ## New In v2
 
-- A minimap. See [Minimap](minimap/README.md).
+- A minimap with Braille dots, Treesitter colors, and a scrolling or a fitted
+  scale. See [Minimap](minimap/README.md).
 - Declarative column layouts. See [Layout and geometry](layout-and-geometry.md).
-- Presets. See [Presets](presets.md).
+- Presets for the scrollbar and for the minimap. See [Presets](presets.md).
 - Contextual profiles and autohide. See [Configuration](configuration.md) and
   [Visibility](visibility.md).
 - Mouse navigation. See [Mouse](mouse.md).

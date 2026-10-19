@@ -62,9 +62,9 @@ Static minimap groups keep these default links:
 
 | Group | Default link |
 | --- | --- |
-| `ScrollbarMinimapBase` | `NormalFloat` |
+| `ScrollbarMinimapBase` | `Normal` |
 | `ScrollbarMinimapContent` | `Comment` |
-| `ScrollbarMinimapViewport` | `CursorLine` |
+| `ScrollbarMinimapViewport` | `Visual` |
 | `ScrollbarMinimapCursor` | `Cursor` |
 
 Every mark type that the minimap shows uses a distinct public group named

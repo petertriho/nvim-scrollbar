@@ -82,10 +82,10 @@ require("scrollbar").setup({
 This example enables autohide. The scrollbars start hidden. Cursor movement or
 scrolling in a source window shows its scrollbar.
 
-The built-in presets are `vscode`, `zed`, `intellij`, `minimal`, `review`,
-`search`, `navigate`, `gvim`, `eclipse`, `sublime`, `emacs`, and `xcode`. An
-ordered list of profiles can select a different appearance for each source
-window:
+The built-in scrollbar presets are `vscode`, `zed`, `intellij`, `minimal`,
+`review`, `search`, `navigate`, `gvim`, `eclipse`, `sublime`, `emacs`, and
+`xcode`. An ordered list of profiles can select a different appearance for each
+source window:
 
 ```lua
 require("scrollbar").setup({
@@ -129,19 +129,33 @@ require("scrollbar").setup({
 ```
 
 By default, each source window gets a 16-column minimap at its north-east
-corner, beside the scrollbar. Each minimap row represents a group of source
-lines. Occupied cells
-show the single-width `glyph` (`"█"` by default). Treesitter and LSP
-semantic-token colors are opt-in providers:
+corner, beside the scrollbar. The minimap draws the text as Braille dots, with
+one source line in each row of dots, and it scrolls with the source window.
+`scale = "fit"` shows the whole buffer instead, and `encoding = "block"` draws
+`█` cells. Treesitter colors the dots by default when the buffer has a parser.
+LSP semantic-token colors are an opt-in provider:
 
 ```lua
 require("scrollbar").setup({
     providers = {
-        treesitter = true,
         lsp_semantic_tokens = true,
     },
     minimap = {
         enabled = true,
+    },
+})
+```
+
+The minimap has eight presets: `vscode`, `sublime`, `zed`, `xcode`,
+`overview`, `compact`, `minimal`, and `blocks`. A minimap preset is separate
+from the scrollbar preset:
+
+```lua
+require("scrollbar").setup({
+    scrollbar = { preset = "zed" },
+    minimap = {
+        enabled = true,
+        preset = "zed",
     },
 })
 ```
@@ -172,8 +186,8 @@ The automatic minimap groups have their own public names, such as
 `ScrollbarMinimapSearch`. Setup keeps your existing definitions of the public
 scrollbar and minimap groups.
 
-See the [minimap documentation](docs/minimap/README.md) for placement, marks,
-and mouse behavior.
+See the [minimap documentation](docs/minimap/README.md) for the map, placement,
+marks, and mouse behavior.
 
 ## Providers
 
@@ -189,7 +203,7 @@ and mouse behavior.
 | [`vgit`](docs/providers/vgit.md) | off | off | vgit hunks | vgit.nvim |
 | [`ale`](docs/providers/ale.md) | off | off | ALE location list | ALE |
 | [`coc`](docs/providers/coc.md) | off | off | Coc diagnostic list | coc.nvim |
-| [`treesitter`](docs/providers/treesitter.md) | unavailable | off | Treesitter highlight captures | Installed parser |
+| [`treesitter`](docs/providers/treesitter.md) | unavailable | on | Treesitter highlight captures | Installed parser |
 | [`lsp_semantic_tokens`](docs/providers/lsp_semantic_tokens.md) | unavailable | off | LSP semantic tokens | Attached LSP client |
 
 Configure the providers in the top-level `providers` table. A provider value is
@@ -207,7 +221,8 @@ source, use the [custom provider API](docs/providers/custom.md).
 
 - [Configuration](docs/configuration.md): defaults, providers, exclusions, mark
   types, layout lanes, profiles, precedence, and validation
-- [Presets](docs/presets.md): the twelve built-in presets and their precedence
+- [Presets](docs/presets.md): the twelve scrollbar presets, the eight minimap
+  presets, and their precedence
 - [Visibility](docs/visibility.md): source-window visibility, autohide,
   hide-on-cursor behavior, commands, and Lua APIs
 - [Layout and geometry](docs/layout-and-geometry.md): layout lanes, placement,

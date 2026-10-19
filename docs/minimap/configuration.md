@@ -25,8 +25,12 @@ require("scrollbar").setup({
         background_blend = false,
 
         -- Appearance options
+        preset = nil, -- a built-in minimap preset name
         width = 16,
         height = false,
+        scale = "fixed", -- "fixed" or "fit"
+        encoding = "braille", -- "braille" or "block"
+        columns_per_dot = 4,
         placement = {
             relative = "window", -- "window" or "editor"
             anchor = "NE", -- "NW", "NE", "SW", or "SE"
@@ -39,7 +43,6 @@ require("scrollbar").setup({
         hide_on_cursor = true,
         mouse = true,
         viewport = true,
-        glyph = "█",
         marks = {}, -- overrides of the shared mark types
 
         profiles = nil,
@@ -59,18 +62,22 @@ You set global options only at the root of the `minimap` block.
 | `autohide` | `false` | `true` hides each minimap after 1000 ms without cursor or scroll activity in its window. `{ delay_ms = n }` sets the delay. |
 | `max_lines` | `false` | A buffer with more lines than this number gets no minimap. |
 | `throttle_ms` | `50` | Renders that are queued within this interval combine into one frame. `0` renders as fast as possible. |
-| `backend` | `"worker"` | Where Treesitter collection and squashing run. See [Backends](#backends). |
+| `backend` | `"worker"` | Where Treesitter collection and the squash of the source lines run. See [Backends](#backends). |
 | `background_blend` | `false` | Blend of the base surface. See [Blend](#blend). |
 
 ## Appearance Options
 
 You set appearance options at the root of the `minimap` block or in a
-[profile](#profiles). The minimap has no presets.
+[profile](#profiles).
 
 | Option | Default | Meaning |
 | --- | --- | --- |
+| `preset` | `nil` | A built-in minimap preset. The options next to it win. See [Minimap presets](../presets.md#minimap-presets). |
 | `width` | `16` | Width of the minimap grid in cells. A positive integer. |
 | `height` | `false` | Height of the minimap grid. `false` uses the height of the source window. |
+| `scale` | `"fixed"` | `"fixed"` gives each dot row one source line and scrolls the map with the source window. `"fit"` shrinks the whole buffer into the float. See [The Map](README.md#the-map). |
+| `encoding` | `"braille"` | `"braille"` draws the 2 x 4 dots of each cell as a Braille character. `"block"` draws `█` for each cell that has a dot. |
+| `columns_per_dot` | `4` | Source display columns in each dot column. A cell covers twice this number. Columns past the minimap are clipped. A positive integer. |
 | `placement.relative` | `"window"` | Reference for the float position. `"editor"` renders only the minimap of the active source window. |
 | `placement.anchor` | `"NE"` | Corner used as the origin of `row` and `col`. |
 | `placement.row` | `0` | Row offset from the anchor. |
@@ -80,8 +87,7 @@ You set appearance options at the root of the `minimap` block or in a
 | `blend` | `0` | Pseudo-transparency of the full float, `0` to `100`. |
 | `hide_on_cursor` | `true` | Hides the minimap of the active source window while the cursor is inside it. See [Cursor Yielding](#cursor-yielding). |
 | `mouse` | `true` | Adds the `<LeftMouse>`, `<LeftDrag>`, and `<LeftRelease>` mappings. |
-| `viewport` | `true` | Tints the background of the rows that the source window shows. |
-| `glyph` | `"█"` | Glyph for every occupied cell. It must be one string with a display width of exactly one. |
+| `viewport` | `true` | Tints the background of the rows that show the visible lines of the source window. |
 | `marks` | `{}` | Overrides of the shared mark types for the minimap. See [Marks](#marks). |
 
 ## Placement Beside the Scrollbar
@@ -165,7 +171,7 @@ minimap requests no providers.
 ```lua
 require("scrollbar").setup({
     providers = {
-        treesitter = true,              -- syntax colors
+        lsp_semantic_tokens = true,     -- colors from the language server
         coc = { scrollbar = false },    -- minimap only
         diagnostic = { minimap = false }, -- scrollbar only
     },
@@ -180,10 +186,11 @@ require("scrollbar").setup({
 | `search` | Search marks. |
 | `marks` | Native mark positions. |
 | `gitsigns`, `mini_diff`, `signify`, `vgit` | Git marks. |
-| `treesitter` | Syntax colors from Treesitter. Minimap only. |
+| `treesitter` | Syntax colors from Treesitter. On by default. Minimap only. |
 | `lsp_semantic_tokens` | Syntax colors from LSP semantic tokens. Minimap only. |
 
 To turn off the cursor accent, set `providers.cursor = { minimap = false }`.
+To turn off the syntax colors, set `providers.treesitter = false`.
 See [Configuration](../configuration.md#providers) for the rules, and the
 [Treesitter](../providers/treesitter.md) and
 [LSP semantic-token](../providers/lsp_semantic_tokens.md) guides.
@@ -230,7 +237,7 @@ When several marks project onto one row, the lowest `priority` wins.
   can blend while the viewport, cursor, overlay, and syntax backgrounds stay
   solid. It is a global option.
 - An explicit `blend` in a source highlight is kept. Groups that have only a
-  foreground keep their text or glyph above the base surface.
+  foreground keep their dots above the base surface.
 
 The plugin never rewrites the public `ScrollbarMinimap*` groups.
 
@@ -247,9 +254,16 @@ more information, see [Visibility](../visibility.md).
 
 ## Backends
 
-- `"worker"` (default) runs Treesitter collection and squashing in one
+- `"worker"` (default) runs Treesitter collection and the squash in one
   embedded headless child Neovim process.
 - `"sync"` runs them in the main Neovim process. It starts no child process.
+
+The backend squashes only a slice of the map: the rows in the float and one
+float height of rows above and below. Treesitter captures only the lines of
+the slice. Scrolling inside the slice uses the cached rows. When less than half
+a float height of rows is left on a side that is not an end of the buffer, the
+minimap requests a new slice. Until the new slice arrives, the rows outside the
+cached slice are blank. With `scale = "fit"`, the slice is the whole buffer.
 
 Treesitter collection runs only when the `treesitter` provider targets the
 minimap. If the worker fails, the minimap switches to the sync backend. A later
@@ -278,12 +292,19 @@ require("scrollbar").setup({
 })
 ```
 
-A global option in a profile is a setup error. Minimap profiles have no
-`preset`. Scrollbar and minimap profiles are independent. They are not paired
-by declaration index.
+A global option in a profile is a setup error. A profile can select a minimap
+preset with `preset`. Scrollbar and minimap profiles are independent. They are
+not paired by declaration index.
 
-The precedence is the plugin defaults, then the root options, then the
-profile options. Mark overrides apply on top of the shared `marks` definitions.
+Later layers win:
+
+1. The plugin defaults.
+2. The root `preset`.
+3. The root options.
+4. The profile `preset`.
+5. The profile options.
+
+Mark overrides apply on top of the shared `marks` definitions.
 If a `when` predicate raises an error, that render uses the root options. A
 notification appears once for each distinct pair of profile and error message.
 
@@ -294,9 +315,9 @@ with theme-owned default links:
 
 | Group | Default link | Role |
 | --- | --- | --- |
-| `ScrollbarMinimapBase` | `NormalFloat` | Base float surface. |
+| `ScrollbarMinimapBase` | `Normal` | Base float surface. It matches the editor background. |
 | `ScrollbarMinimapContent` | `Comment` | Monochrome highlight for occupied cells without a syntax capture. |
-| `ScrollbarMinimapViewport` | `CursorLine` | Projected viewport background tint. |
+| `ScrollbarMinimapViewport` | `Visual` | Background of the viewport band. |
 | `ScrollbarMinimapCursor` | `Cursor` | Exact projected cursor-cell accent. |
 
 Each shown mark type also gets a public `ScrollbarMinimap<Type>` group, such as
@@ -335,7 +356,11 @@ starts with `[nvim-scrollbar]` and gives the full option path.
 - `blend` and a numeric `background_blend`: integers from `0` to `100`.
 - `throttle_ms`: a non-negative integer.
 - `placement.row` and `placement.col`: signed integers.
-- `glyph`: a non-empty string with a display width of one.
+- `columns_per_dot`: a positive integer.
+- `scale`: `"fixed"` or `"fit"`. `encoding`: `"braille"` or `"block"`.
+- `preset`: the name of a built-in minimap preset. An unknown name lists the
+  built-in names.
+- `glyph` is removed. Use `encoding`. The block encoding always draws `█`.
 - `Base`, `Content`, `Viewport`, and `Cursor` are not valid minimap mark
   types, because their `ScrollbarMinimap<Name>` groups belong to the static
   layers. The minimap does not show a shared type with one of these names.
@@ -349,6 +374,7 @@ with fixed, overlap, pressed, or legacy groups.
 ## Related
 
 - [Minimap](README.md)
+- [Presets](../presets.md)
 - [Configuration](../configuration.md)
 - [Treesitter provider](../providers/treesitter.md)
 - [LSP semantic tokens](../providers/lsp_semantic_tokens.md)

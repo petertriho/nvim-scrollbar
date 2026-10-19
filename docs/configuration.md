@@ -62,7 +62,7 @@ require("scrollbar").setup({
         vgit = false,
         ale = false,
         coc = false,
-        treesitter = false,
+        treesitter = true, -- the minimap only
         lsp_semantic_tokens = false,
     },
     marks = {
@@ -182,7 +182,7 @@ providers = {
     diagnostic = { minimap = false },               -- scrollbar only
     coc = { scrollbar = false },                    -- minimap only
     search = { incsearch = true, minimap = false }, -- options and renderers
-    treesitter = true,                              -- the minimap only, because the scrollbar cannot use it
+    treesitter = false,                             -- no syntax colors in the minimap
 }
 ```
 

@@ -19,7 +19,7 @@ rendering.
 | [`vgit`](vgit.md) | off | off | Buffer `VGitAdd`, `VGitChange`, `VGitDelete` marks | vgit.nvim |
 | [`ale`](ale.md) | off | off | Buffer `Error`, `Warn` marks | ALE |
 | [`coc`](coc.md) | off | off | Buffer `Error`, `Warn`, `Info`, `Hint` marks | coc.nvim |
-| [`treesitter`](treesitter.md) | unavailable | off | Buffer minimap byte spans | Installed parser |
+| [`treesitter`](treesitter.md) | unavailable | on | Buffer minimap byte spans | Installed parser |
 | [`lsp_semantic_tokens`](lsp_semantic_tokens.md) | unavailable | off | Buffer minimap byte spans | Attached LSP client |
 
 You configure every built-in provider once, in the top-level `providers`
@@ -38,7 +38,7 @@ require("scrollbar").setup({
         vgit = false,
         ale = false,
         coc = false,
-        treesitter = false,
+        treesitter = true,
         lsp_semantic_tokens = false,
     },
 })

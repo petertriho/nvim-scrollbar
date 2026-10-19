@@ -1,7 +1,7 @@
 # Minimap
 
-The minimap shows a squashed view of the source buffer in a floating window. It
-is **disabled** by default. The minimap has its own configuration block,
+The minimap shows a scaled-down view of the source buffer in a floating window.
+It is **disabled** by default. The minimap has its own configuration block,
 profiles, visibility, mouse handling, and commands. Enabling the minimap does
 not show, hide, move, or resize the scrollbar. The minimap commands never show
 or hide the scrollbar.
@@ -22,12 +22,75 @@ require("scrollbar").setup({
 ```
 
 By default, each source window gets its own 16-column minimap at its
-north-east corner. Each minimap row represents a group of source lines.
-Occupied cells show the single-width `glyph`, which defaults to `█`.
+north-east corner. The minimap draws the text of the buffer as Braille dots.
+Each source line is one row of dots, and the map scrolls with the source
+window. See [The Map](#the-map).
 
-Occupied cells are monochrome by default. To color them with Treesitter, set
-`providers.treesitter = true`. For the full schema, see
-[Minimap configuration](configuration.md).
+When the buffer has a Treesitter parser, the dots get the colors of the
+Treesitter highlight captures. Cells without a capture use
+`ScrollbarMinimapContent`. To turn off the colors, set
+`providers.treesitter = false`.
+
+To select a ready-made look, set `preset`. See [Presets](#presets). For the
+full schema, see [Minimap configuration](configuration.md).
+
+## The Map
+
+Each cell of the minimap holds a grid of 2 x 4 dots. A dot is set when a source
+line of its dot row has a non-blank character in a source column of its dot
+column.
+
+- `encoding = "braille"` (the default) draws each cell as one Braille
+  character, which shows the dots.
+- `encoding = "block"` draws `█` for each cell that has a dot.
+
+An empty cell is a space.
+
+`scale` sets the number of source lines in each dot row:
+
+- `scale = "fixed"` (the default) gives each dot row one source line, so a
+  minimap row shows 4 lines. When the map has more rows than the float, the
+  map scrolls in proportion to the source window. At the top of the buffer,
+  the float shows the top of the map. At the end of the buffer, it shows the
+  end of the map.
+- `scale = "fit"` shrinks the whole buffer into the float. A buffer that fits
+  at the fixed scale looks the same in both scales.
+
+`columns_per_dot` (default `4`) sets the number of source display columns in
+each dot column. A cell covers `2 * columns_per_dot` columns. The default
+16-cell minimap shows the first 128 display columns of each line. Columns
+past the right edge of the minimap are clipped, so a long line does not
+change the other lines.
+
+```lua
+require("scrollbar").setup({
+    minimap = {
+        enabled = true,
+        scale = "fit",
+        encoding = "block",
+        columns_per_dot = 2,
+    },
+})
+```
+
+## Presets
+
+A minimap preset sets `scale`, `encoding`, `columns_per_dot`, `width`, and
+`viewport`. Two presets also hide the mark overlays. Select a preset with
+`preset` in the `minimap` block or in a minimap profile:
+
+```lua
+require("scrollbar").setup({
+    minimap = {
+        enabled = true,
+        preset = "vscode",
+    },
+})
+```
+
+The built-in minimap presets are `vscode`, `sublime`, `zed`, `xcode`,
+`overview`, `compact`, `minimal`, and `blocks`. The options next to `preset`
+win over the preset. See [Minimap presets](../presets.md#minimap-presets).
 
 ## User Commands
 
@@ -90,20 +153,22 @@ See [Placement Beside the Scrollbar](configuration.md#placement-beside-the-scrol
 
 ## Viewport and Cursor
 
-When `viewport = true` (the default), the rows that represent the visible
-lines of the source window get the `ScrollbarMinimapViewport` background. The
-tint spans the full minimap width and does not change the glyphs.
+When `viewport = true` (the default), the rows that show the visible lines of
+the source window get the `ScrollbarMinimapViewport` background. The band
+includes every row that shows a visible line, so a row with only some visible
+lines is in the band. The tint spans the full minimap width and does not
+change the dots.
 
 When the `cursor` provider targets the minimap (the default), the cell at the
 exact cursor position gets the `ScrollbarMinimapCursor` highlight. This group
-links to `Cursor` by default. The cursor point does not replace the glyph. To
+links to `Cursor` by default. The cursor point does not replace the dots. To
 disable the cursor point, set `providers.cursor = { minimap = false }`.
 
 ## Overlays
 
 Ordinary provider marks, such as diagnostics, search matches, and Git hunks,
 tint the occupied cells of their minimap row. A row with no occupied cells
-shows no overlay. The built-in mark types are:
+shows no overlay. A mark on a row that is outside the float does not show. The built-in mark types are:
 
 | Mark type | Source |
 | --- | --- |
@@ -190,17 +255,23 @@ enable the mouse modes that you want, for example:
 vim.o.mouse = "a"
 ```
 
-- A click moves the cursor of the source window to the first column of the line
-  that the clicked row represents. Then it opens folds (`zv`) and centers the
-  line (`zz`).
-- Each drag event moves the cursor to the line under the mouse in the same way.
-- A release does the last move and returns focus to the source window. If the
-  source window is closed, focus goes to the first available non-floating
-  window. A canceled drag does not undo the moves.
+- A click moves the cursor of the source window to the first column of the
+  first line that the clicked row shows. Then it opens folds (`zv`) and centers
+  the line (`zz`).
+- A drag scrolls the source window so that the viewport band follows the
+  pointer, like the slider of a scrollbar. The drag changes the top line of the
+  source window. The cursor moves only when it leaves the visible lines. One
+  drag can reach both ends of the buffer, in both scales.
+- A release returns focus to the source window. A release without a drag
+  moves the cursor to the released row, like a click. If the source window is
+  closed, focus goes to the first available non-floating window. A canceled
+  drag does not undo the scroll.
 
-The mapping uses logical lines. It does not account for wrapped rows, or for
-folds beyond their first line. A press on the minimap does not pause the
-autohide deadline.
+The click uses logical lines. It does not account for wrapped rows, or for
+folds beyond their first line. A drag scrolls with `CTRL-E` and `CTRL-Y`,
+which count a closed fold as one line, so a drag over closed folds can scroll
+past the band position. A press on the minimap does not pause the autohide
+deadline.
 
 With `minimap.mouse = false`, the float is not focusable and has no mappings.
 A profile that sets `mouse = false` removes the mappings when the minimap
@@ -209,6 +280,7 @@ renders with that profile.
 ## Related
 
 - [Minimap configuration](configuration.md)
+- [Presets](../presets.md)
 - [Scrollbar configuration](../configuration.md)
 - [Visibility](../visibility.md)
 - [Treesitter provider](../providers/treesitter.md)

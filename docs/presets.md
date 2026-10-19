@@ -1,15 +1,14 @@
 # Presets
 
-A preset is a named set of scrollbar appearance options. You select one with
-`preset` at the root of the `scrollbar` block or in a
-[profile](configuration.md#profiles). The built-in presets set `layout`,
-`thumb.blend`, and, for `emacs`, `placement`. A preset never changes global
-options, providers, exclusions, or the shared mark types. The minimap has no
-presets.
+A preset is a named set of appearance options. The scrollbar and the minimap
+each have their own catalog. You select a preset with `preset` at the root of
+the `scrollbar` or `minimap` block, or in a profile of that block. A preset
+never changes global options, providers, exclusions, or the shared mark types.
 
-## Built-ins
+## Scrollbar Presets
 
-The built-in catalog has twelve colorscheme-aware layouts:
+The scrollbar presets set `layout`, `thumb.blend`, and, for `emacs`,
+`placement`. The scrollbar catalog has twelve colorscheme-aware layouts:
 
 - General/editor layouts: `vscode`, `zed`, `intellij`, `gvim`, `eclipse`,
   `sublime`, `emacs`, `xcode`.
@@ -46,7 +45,8 @@ require("scrollbar").setup({
 The presets with editor names approximate the scrollbar and annotation
 structure of each editor in terminal cells. They do not claim pixel-perfect GUI
 fidelity. Some of them have the same layout as another preset, because each
-name also pairs with the minimap preset of the same name.
+name also pairs with the minimap preset of the same name. See
+[Pair the Presets](#pair-the-presets).
 
 ### Task-Oriented
 
@@ -60,6 +60,61 @@ name also pairs with the minimap preset of the same name.
 
 [`lua/scrollbar/presets.lua`](../lua/scrollbar/presets.lua) defines the
 exact layout and `thumb.blend` value of each built-in preset.
+
+## Minimap Presets
+
+The minimap presets set `scale`, `encoding`, `columns_per_dot`, `width`, and
+`viewport`. `sublime` and `minimal` also set `marks = false`, which hides the
+mark overlays. A minimap preset never sets `placement`, `blend`, `height`,
+`hide_on_cursor`, or `mouse`. See [The Map](minimap/README.md#the-map) for the
+meaning of the grid options.
+
+```lua
+require("scrollbar").setup({
+    minimap = {
+        enabled = true,
+        preset = "overview",
+    },
+})
+```
+
+| Preset | `scale` | `encoding` | `columns_per_dot` | `width` | Marks |
+| --- | --- | --- | --- | --- | --- |
+| `vscode` | `"fixed"` | `"braille"` | `4` | `15` | Shown |
+| `sublime` | `"fixed"` | `"braille"` | `2` | `20` | Hidden |
+| `zed` | `"fixed"` | `"braille"` | `4` | `10` | Shown |
+| `xcode` | `"fixed"` | `"block"` | `4` | `12` | Shown |
+| `overview` | `"fit"` | `"braille"` | `4` | `10` | Shown |
+| `compact` | `"fixed"` | `"braille"` | `8` | `8` | Shown |
+| `minimal` | `"fixed"` | `"braille"` | `4` | `12` | Hidden |
+| `blocks` | `"fit"` | `"block"` | `4` | `16` | Shown |
+
+Every minimap preset sets `viewport = true`.
+
+- General/editor looks: `vscode`, `sublime`, `zed`, `xcode`. `sublime` uses
+  narrow dot columns for a wide, detailed map without overlays. `xcode` draws
+  blocks.
+- Task-oriented looks: `overview` shows the whole buffer. `compact` is a
+  narrow map with wide dot columns. `minimal` is a map without overlays.
+  `blocks` shows the whole buffer as blocks.
+
+## Pair the Presets
+
+`vscode`, `sublime`, `zed`, `xcode`, and `minimal` are in both catalogs. Set
+both to get the scrollbar and the minimap of one editor:
+
+```lua
+require("scrollbar").setup({
+    scrollbar = { preset = "zed" },
+    minimap = {
+        enabled = true,
+        preset = "zed",
+    },
+})
+```
+
+The two `preset` options are independent. A scrollbar preset does not select
+a minimap preset.
 
 ## Customize a Preset
 
@@ -81,12 +136,25 @@ require("scrollbar").setup({
 })
 ```
 
+The same rule applies to a minimap preset. A `marks` table next to the preset
+replaces the `marks = false` of `sublime` or `minimal`, so the overlays show:
+
+```lua
+require("scrollbar").setup({
+    minimap = {
+        enabled = true,
+        preset = "minimal",
+        marks = { Hint = false },
+    },
+})
+```
+
 To reuse the same options in several places, put them in a Lua table. See
 [Profiles](configuration.md#profiles).
 
 ## Precedence
 
-Later layers win:
+The scrollbar and the minimap use the same precedence. Later layers win:
 
 1. The plugin defaults.
 2. The root `preset`.
@@ -102,5 +170,7 @@ descriptor `types`, and mark `text`, replace the earlier value. See
 ## Related
 
 - [Configuration](configuration.md)
+- [Minimap](minimap/README.md)
+- [Minimap configuration](minimap/configuration.md#profiles)
 - [Layout and geometry](layout-and-geometry.md)
 - [Migration](migration.md)
