@@ -31,13 +31,13 @@ local CONTENT_PRIORITY = 2
 ---@return integer blend
 ---@return string winhighlight
 local function window_presentation(active_config)
-    local background_blend = active_config.background.blend
+    local background_blend = active_config.background_blend
     if background_blend == false then
-        return active_config.float.blend, FLOAT_WINHIGHLIGHT
+        return active_config.blend, FLOAT_WINHIGHLIGHT
     end
 
     local base = highlight_module.resolve("ScrollbarMinimapBase", background_blend, "base")
-    return math.max(active_config.float.blend, background_blend),
+    return math.max(active_config.blend, background_blend),
         string.format("Normal:%s,NormalNC:%s,EndOfBuffer:%s", base, base, base)
 end
 
@@ -73,18 +73,6 @@ local state_callback
 
 ---@type ScrollbarMinimapRendererOptions?
 local options_ref
-
----@param value any
----@param values string[]
----@return boolean
-local function contains(values, value)
-    for _, item in ipairs(values) do
-        if item == value then
-            return true
-        end
-    end
-    return false
-end
 
 ---@param bufnr integer
 local function prune_cell_cache(bufnr)
@@ -209,10 +197,10 @@ local function buffer_eligible(bufnr, root_config)
         return false
     end
 
-    if contains(root_config.excluded_buftypes, vim.bo[bufnr].buftype) then
+    if root_config.exclude.buftypes[vim.bo[bufnr].buftype] then
         return false
     end
-    if contains(root_config.excluded_filetypes, vim.bo[bufnr].filetype) then
+    if root_config.exclude.filetypes[vim.bo[bufnr].filetype] then
         return false
     end
 
@@ -251,7 +239,7 @@ local function source_selection(source_win, root_config, active_source)
         return nil
     end
     local selection = config_module.select(source_win)
-    if selection.config.float.placement.relative == "editor" and source_win ~= active_source then
+    if selection.config.placement.relative == "editor" and source_win ~= active_source then
         return nil
     end
     return selection
@@ -311,7 +299,7 @@ local function float_config(
     target_height,
     hidden
 )
-    local placement = active_config.float.placement
+    local placement = active_config.placement
     local north = placement.anchor == "NW" or placement.anchor == "NE"
     local west = placement.anchor == "NW" or placement.anchor == "SW"
 
@@ -337,9 +325,9 @@ local function float_config(
         col = horizontal_origin + placement.col,
         width = target_width,
         height = target_height,
-        focusable = active_config.mouse.enabled,
-        mouse = active_config.mouse.enabled,
-        zindex = active_config.float.zindex,
+        focusable = active_config.mouse,
+        mouse = active_config.mouse,
+        zindex = active_config.placement.zindex,
         hide = hidden,
     }
     if placement.relative == "window" then
@@ -369,7 +357,7 @@ end
 ---@return integer? row
 ---@return integer? col
 local function cursor_screen_position(source_win, active_config)
-    if not active_config.float.hide_on_cursor or vim.api.nvim_get_current_win() ~= source_win then
+    if not active_config.hide_on_cursor or vim.api.nvim_get_current_win() ~= source_win then
         return nil, nil
     end
 
@@ -673,8 +661,8 @@ local function write_highlights(float_buf, rows, highlights, active_config)
             local end_col = cell_boundary_to_byte(rows[row], span.end_col)
             if start_col < end_col then
                 local highlight = span.highlight
-                if active_config.background.blend ~= false then
-                    highlight = highlight_module.resolve(highlight, active_config.float.blend, "layer")
+                if active_config.background_blend ~= false then
+                    highlight = highlight_module.resolve(highlight, active_config.blend, "layer")
                 end
                 vim.api.nvim_buf_set_extmark(float_buf, NAMESPACE, row - 1, start_col, {
                     end_row = row - 1,
@@ -816,7 +804,7 @@ local function render_source(source_win, selection, root_config)
         close_state(existing_state)
         existing_state = nil
     end
-    if root_config.autohide.enabled and revealed[source_win] ~= source_buf then
+    if root_config.autohide and revealed[source_win] ~= source_buf then
         conceal_source(source_win)
         return nil
     end
@@ -828,9 +816,6 @@ local function render_source(source_win, selection, root_config)
     end
     target_height = math.max(1, math.min(target_height, area_height))
     local target_width = active_config.width
-    if target_width == false then
-        target_width = 16
-    end
     if target_width <= 0 then
         close_source(source_win)
         return nil
@@ -845,9 +830,8 @@ local function render_source(source_win, selection, root_config)
     local viewport_bottom_row = math.max(1, math.min(target_height, math.floor(viewport_bottom / v_ratio) + 1))
 
     local overlays = {}
-    if active_config.overlays.enabled and options_ref and options_ref.overlays then
-        overlays =
-            options_ref.overlays.project_with(source_win, target_height, source_line_count, active_config.overlays)
+    if next(active_config.marks) ~= nil and options_ref and options_ref.overlays then
+        overlays = options_ref.overlays.project_with(source_win, target_height, source_line_count, active_config.marks)
     end
     local overlay_sig = overlay_signature(overlays)
 
@@ -908,7 +892,7 @@ local function render_source(source_win, selection, root_config)
     end
 
     local cells = cache and cache.cells or {}
-    local rows, highlights = compose_rows(cells, active_config.content_glyph)
+    local rows, highlights = compose_rows(cells, active_config.glyph)
     for index = #rows, target_height + 1, -1 do
         rows[index] = nil
         highlights[index] = nil
@@ -951,7 +935,7 @@ local function render_source(source_win, selection, root_config)
         end
     end
 
-    overlay_layers(highlights, viewport_top_row, viewport_bottom_row, points, target_width, active_config.show_viewport)
+    overlay_layers(highlights, viewport_top_row, viewport_bottom_row, points, target_width, active_config.viewport)
 
     local active_winblend, active_winhighlight = window_presentation(active_config)
     local cursor_screen_row, cursor_screen_col = cursor_screen_position(source_win, active_config)
@@ -1116,7 +1100,7 @@ M.reveal = function(source_win)
     if not visible or source_selection(source_win, root_config, active_source_window()) == nil then
         return false
     end
-    if root_config.autohide.enabled then
+    if root_config.autohide then
         revealed[source_win] = vim.api.nvim_win_get_buf(source_win)
     end
     return true
@@ -1125,7 +1109,7 @@ end
 ---@param source_win integer
 ---@return boolean
 M.conceal = function(source_win)
-    if not config_module.get().autohide.enabled then
+    if not config_module.get().autohide then
         return false
     end
     local was_revealed = revealed[source_win] ~= nil or states[source_win] ~= nil

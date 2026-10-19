@@ -7,10 +7,8 @@ supported Vim named marks in each eligible loaded buffer.
 
 ```lua
 require("scrollbar").setup({
-    scrollbar = {
-        providers = {
-            marks = { letters = true, numbers = false },
-        },
+    providers = {
+        marks = { letters = true, numbers = false },
     },
 })
 ```
@@ -20,18 +18,21 @@ require("scrollbar").setup({
 | `letters` | `true` | Include `a-z` and `A-Z` |
 | `numbers` | `false` | Include `0-9` |
 
-`true` uses these defaults. `false` disables the provider. Width is a layout
-policy, and setup rejects it under `providers.marks`.
+`true` uses these defaults. `false` disables the provider. The table also
+accepts the `scrollbar` and `minimap` target flags. Width is a layout policy,
+and setup rejects it under `providers.marks`.
 
-The defaults for the `Mark` presentation are `text = {}`, `priority = 1`, and
-`highlight = "Special"`. The empty text list shows each literal name that the
-provider supplies. A non-empty list replaces the names with the configured
-density glyphs:
+The defaults for the `Mark` type in the top-level `marks` table are
+`text = {}`, `priority = 1`, and `highlight = "Special"`. The empty text list
+shows each literal name that the provider supplies. A non-empty list replaces
+the names with the configured density glyphs:
 
 ```lua
-marks = {
-    Mark = { text = { "·", "•", "#" }, priority = 1, highlight = "Special" },
-}
+require("scrollbar").setup({
+    marks = {
+        Mark = { text = { "·", "•", "#" }, priority = 1, highlight = "Special" },
+    },
+})
 ```
 
 ## Scope And Ordering
@@ -57,7 +58,7 @@ require("scrollbar").setup({
     scrollbar = {
         layout = {
             columns = {
-                { "track", "thumb", { kind = "marks", types = { "Mark" }, max_width = 8 } },
+                { "track", "thumb", { types = { "Mark" }, max_width = 8 } },
                 { "marks" },
             },
         },

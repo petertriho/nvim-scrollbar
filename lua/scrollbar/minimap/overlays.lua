@@ -1,7 +1,7 @@
 --- Minimap overlays: project marks published to `lua/scrollbar/store.lua` onto
 --- the minimap grid. Read-only — never mutates the store. Filtering uses the
---- minimap's provider demand and keyed `overlays.types` specs; collision
---- resolution uses the selected minimap variant's priority (lowest wins).
+--- minimap's provider demand and the shown mark types of the selected minimap
+--- variant; collision resolution uses their priority (lowest wins).
 
 local minimap_config = require("scrollbar.minimap.config")
 local providers = require("scrollbar.providers")
@@ -88,9 +88,9 @@ end
 ---@param source_win integer
 ---@param minimap_height integer
 ---@param source_line_count integer
----@param presentation? ScrollbarMinimapOverlaysConfig
+---@param marks? table<string, ScrollbarMinimapMarkSpec> Shown mark types; defaults to the selected variant
 ---@return ScrollbarMinimapOverlay[]
-M.project_with = function(source_win, minimap_height, source_line_count, presentation)
+M.project_with = function(source_win, minimap_height, source_line_count, marks)
     if not active or minimap_height <= 0 then
         return {}
     end
@@ -101,8 +101,8 @@ M.project_with = function(source_win, minimap_height, source_line_count, present
     local source_buf = vim.api.nvim_win_get_buf(source_win)
     local buffer_snapshot = store._get_snapshot(source_buf)
     local window_snapshot = store._get_window_snapshot(source_win)
-    presentation = presentation or minimap_config.select(source_win).config.overlays
-    if not presentation.enabled then
+    marks = marks or minimap_config.select(source_win).config.marks
+    if next(marks) == nil then
         return {}
     end
     local provider_names = {}
@@ -131,7 +131,7 @@ M.project_with = function(source_win, minimap_height, source_line_count, present
     local occupied_rows = {}
 
     local function add_mark(provider, line, mark_type)
-        local spec = presentation.types[mark_type]
+        local spec = marks[mark_type]
         if spec == nil then
             return
         end

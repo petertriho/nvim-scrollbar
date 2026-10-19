@@ -37,7 +37,7 @@ T["setup with default config (disabled) does not spawn a worker"] = function()
     reset_modules(child)
     local result = child.lua_func(function()
         require("scrollbar").setup({
-            scrollbar = { set_highlights = false },
+            set_highlights = false,
             minimap = {},
         })
         local worker = require("scrollbar.minimap.worker")
@@ -61,10 +61,9 @@ T["setup with enabled=true spawns worker, scheduler, renderer, and commands"] = 
     reset_modules(child)
     local result = child.lua_func(function()
         require("scrollbar").setup({
-            scrollbar = { set_highlights = false },
+            set_highlights = false,
             minimap = {
                 enabled = true,
-                set_highlights = false,
                 backend = "sync",
                 width = 4,
                 height = 4,
@@ -101,12 +100,12 @@ T["reconfiguring from enabled to disabled removes minimap commands"] = function(
     local result = child.lua_func(function()
         local scrollbar = require("scrollbar")
         scrollbar.setup({
-            scrollbar = { set_highlights = false },
-            minimap = { enabled = true, set_highlights = false, backend = "sync" },
+            set_highlights = false,
+            minimap = { enabled = true, backend = "sync" },
         })
         local before = vim.fn.exists(":MinimapRefresh")
         scrollbar.setup({
-            scrollbar = { set_highlights = false },
+            set_highlights = false,
             minimap = { enabled = false },
         })
         return {
@@ -124,10 +123,9 @@ T["opening a buffer with enabled renders a minimap with viewport and cursor"] = 
     reset_modules(child)
     local result = child.lua_func(function()
         require("scrollbar").setup({
-            scrollbar = { set_highlights = false },
+            set_highlights = false,
             minimap = {
                 enabled = true,
-                set_highlights = false,
                 backend = "sync",
                 width = 4,
                 height = 4,
@@ -191,14 +189,14 @@ T["same-buffer split projections settle without a render loop"] = function()
         end
 
         require("scrollbar").setup({
-            scrollbar = { show = false, set_highlights = false },
+            set_highlights = false,
+            scrollbar = { show = false },
             minimap = {
                 enabled = true,
-                set_highlights = false,
                 backend = "sync",
                 width = 4,
                 height = false,
-                update = { interval_ms = 1 },
+                throttle_ms = 1,
             },
         })
 
@@ -246,10 +244,9 @@ T["MinimapToggle hides and shows without affecting the scrollbar"] = function()
     reset_modules(child)
     local result = child.lua_func(function()
         require("scrollbar").setup({
-            scrollbar = { set_highlights = false },
+            set_highlights = false,
             minimap = {
                 enabled = true,
-                set_highlights = false,
                 backend = "sync",
                 width = 4,
                 height = 4,
@@ -278,15 +275,58 @@ T["MinimapToggle hides and shows without affecting the scrollbar"] = function()
     expect.equality(result.scrollbar_visible, true)
 end
 
+T["minimap.show = false starts hidden until MinimapShow"] = function()
+    local child = new_child()
+    reset_modules(child)
+    local result = child.lua_func(function()
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, { "abc", "def", "ghi" })
+        require("scrollbar").setup({
+            set_highlights = false,
+            minimap = {
+                enabled = true,
+                show = false,
+                backend = "sync",
+                width = 4,
+                height = 4,
+            },
+        })
+        local renderer = require("scrollbar.minimap.renderer")
+        local scheduler = require("scrollbar.minimap.scheduler")
+        local winid = vim.api.nvim_get_current_win()
+        scheduler.invalidate_all()
+        scheduler.flush()
+        local hidden = {
+            visible = renderer.is_visible(),
+            state = renderer.get_state(winid) ~= nil,
+            has_show = vim.fn.exists(":MinimapShow"),
+        }
+
+        vim.cmd("MinimapShow")
+        scheduler.flush()
+        local state = renderer.get_state(winid)
+        return {
+            hidden = hidden,
+            shown = {
+                visible = renderer.is_visible(),
+                float_valid = state ~= nil and vim.api.nvim_win_is_valid(state.float_win),
+            },
+            scrollbar_visible = require("scrollbar.renderer").is_visible(),
+        }
+    end)
+
+    expect.equality(result.hidden, { visible = false, state = false, has_show = 2 })
+    expect.equality(result.shown, { visible = true, float_valid = true })
+    expect.equality(result.scrollbar_visible, true)
+end
+
 T["toggling scrollbar.show = false does not affect the minimap"] = function()
     local child = new_child()
     reset_modules(child)
     local result = child.lua_func(function()
         require("scrollbar").setup({
-            scrollbar = { set_highlights = false },
+            set_highlights = false,
             minimap = {
                 enabled = true,
-                set_highlights = false,
                 backend = "sync",
                 width = 4,
                 height = 4,
@@ -314,10 +354,9 @@ T["reconfigure via a second setup call disposes the previous worker and floats"]
     reset_modules(child)
     local result = child.lua_func(function()
         require("scrollbar").setup({
-            scrollbar = { set_highlights = false },
+            set_highlights = false,
             minimap = {
                 enabled = true,
-                set_highlights = false,
                 backend = "sync",
                 width = 4,
                 height = 4,
@@ -332,10 +371,9 @@ T["reconfigure via a second setup call disposes the previous worker and floats"]
         local first_float = first_state and first_state.float_win
 
         require("scrollbar").setup({
-            scrollbar = { set_highlights = false },
+            set_highlights = false,
             minimap = {
                 enabled = true,
-                set_highlights = false,
                 backend = "sync",
                 width = 4,
                 height = 4,
@@ -359,7 +397,6 @@ T["setup defines the minimap highlight groups with the retuned defaults"] = func
     reset_modules(child)
     local result = child.lua_func(function()
         require("scrollbar").setup({
-            scrollbar = { set_highlights = false },
             minimap = {
                 enabled = true,
                 backend = "sync",
@@ -393,21 +430,23 @@ T["generates overlay highlights through user-preserving public links"] = functio
     local result = child.lua_func(function()
         local scrollbar = require("scrollbar")
         local base = {
-            enabled = true,
-            backend = "sync",
-            width = 4,
-            height = 4,
-            overlays = {
-                types = {
+            marks = {
+                Direct = { text = "d", priority = 8, highlight = { fg = "#abcdef", bold = true } },
+            },
+            minimap = {
+                enabled = true,
+                backend = "sync",
+                width = 4,
+                height = 4,
+                marks = {
                     Search = { highlight = "OverlayStringSource" },
-                    Direct = { priority = 8, highlight = { fg = "#abcdef", bold = true } },
                 },
             },
         }
         vim.api.nvim_set_hl(0, "OverlayStringSource", { fg = "#123456", bg = "#010101" })
         vim.api.nvim_set_hl(0, "ScrollbarMinimapError", { fg = "#654321", italic = true })
         local preserved_before = vim.api.nvim_get_hl(0, { name = "ScrollbarMinimapError", link = true })
-        scrollbar.setup({ scrollbar = { set_highlights = false }, minimap = base })
+        scrollbar.setup(base)
 
         local link = function(name)
             return vim.api.nvim_get_hl(0, { name = name, link = true }).link
@@ -423,7 +462,7 @@ T["generates overlay highlights through user-preserving public links"] = functio
         }
 
         vim.api.nvim_set_hl(0, "OverlayStringSource", { fg = "#234567", bg = "#020202" })
-        scrollbar.setup({ scrollbar = { set_highlights = false }, minimap = base })
+        scrollbar.setup(base)
         local second = {
             search_target = link("ScrollbarMinimapSearch"),
             direct_target = link("ScrollbarMinimapDirect"),
@@ -468,21 +507,20 @@ T["generates isolated automatic overlay groups for minimap profiles"] = function
     reset_modules(child)
     local result = child.lua_func(function()
         require("scrollbar").setup({
-            scrollbar = { set_highlights = false },
             minimap = {
                 enabled = true,
                 backend = "sync",
                 width = 4,
                 height = 4,
-                overlays = { types = { Search = { highlight = { fg = "#010101" } } } },
+                marks = { Search = { highlight = { fg = "#010101" } } },
                 profiles = {
                     {
                         match = { filetypes = { "lua" } },
-                        config = { overlays = { types = { Search = { highlight = { fg = "#112233" } } } } },
+                        marks = { Search = { highlight = { fg = "#112233" } } },
                     },
                     {
                         match = { filetypes = { "text" } },
-                        config = { overlays = { types = { Search = { highlight = { fg = "#445566" } } } } },
+                        marks = { Search = { highlight = { fg = "#445566" } } },
                     },
                 },
             },
@@ -493,9 +531,9 @@ T["generates isolated automatic overlay groups for minimap profiles"] = function
         end
         return {
             groups = {
-                variants[1].config.overlays.types.Search.group,
-                variants[2].config.overlays.types.Search.group,
-                variants[3].config.overlays.types.Search.group,
+                variants[1].config.marks.Search.group,
+                variants[2].config.marks.Search.group,
+                variants[3].config.marks.Search.group,
             },
             root = get("ScrollbarMinimapSearch"),
             first = get("ScrollbarMinimapProfile1.Search"),
@@ -518,29 +556,28 @@ T["minimap internal namespaces do not capture valid custom type groups"] = funct
     reset_modules(child)
     local result = child.lua_func(function()
         require("scrollbar").setup({
-            scrollbar = { set_highlights = false },
+            marks = {
+                GeneratedSearch = { text = "g", priority = 8, highlight = { fg = "#222222" } },
+                Profile1Search = { text = "p", priority = 9, highlight = { fg = "#333333" } },
+            },
             minimap = {
                 enabled = true,
                 backend = "sync",
                 width = 4,
                 height = 4,
-                overlays = {
-                    types = {
-                        Search = { highlight = { fg = "#111111" } },
-                        GeneratedSearch = { priority = 8, highlight = { fg = "#222222" } },
-                        Profile1Search = { priority = 9, highlight = { fg = "#333333" } },
-                    },
+                marks = {
+                    Search = { highlight = { fg = "#111111" } },
                 },
                 profiles = {
                     {
                         match = { filetypes = { "lua" } },
-                        config = { overlays = { types = { Search = { highlight = { fg = "#444444" } } } } },
+                        marks = { Search = { highlight = { fg = "#444444" } } },
                     },
                 },
             },
         })
         local variants = require("scrollbar.minimap.config").get_variants()
-        local profile_search = variants[2].config.overlays.types.Search.group
+        local profile_search = variants[2].config.marks.Search.group
         local get = function(name)
             return vim.api.nvim_get_hl(0, { name = name, link = false })
         end
@@ -568,20 +605,19 @@ T["manual minimap highlight mode writes no public private or profile groups"] = 
     reset_modules(child)
     local result = child.lua_func(function()
         require("scrollbar").setup({
-            scrollbar = { set_highlights = false },
+            set_highlights = false,
+            marks = {
+                ManualOnly = { text = "m", priority = 1, highlight = "Special" },
+            },
             minimap = {
                 enabled = true,
-                set_highlights = false,
                 backend = "sync",
                 width = 4,
                 height = 4,
-                overlays = {
-                    types = { ManualOnly = { priority = 1, highlight = "Special" } },
-                },
                 profiles = {
                     {
                         match = { filetypes = { "lua" } },
-                        config = { overlays = { types = { Search = { priority = 0 } } } },
+                        marks = { Search = { priority = 0 } },
                     },
                 },
             },
@@ -597,8 +633,8 @@ T["manual minimap highlight mode writes no public private or profile groups"] = 
         local groups = {}
         for _, variant in ipairs(require("scrollbar.minimap.config").get_variants()) do
             groups[#groups + 1] = {
-                manual = variant.config.overlays.types.ManualOnly.group,
-                search = variant.config.overlays.types.Search.group,
+                manual = variant.config.marks.ManualOnly.group,
+                search = variant.config.marks.Search.group,
             }
         end
         return { names = names, groups = groups }
@@ -637,9 +673,12 @@ T["setup forwards treesitter provider demand to the worker"] = function()
             invalidate_all = function() end,
         }
 
+        local config = require("scrollbar.config")
         local minimap = require("scrollbar.minimap")
-        minimap.setup({ enabled = true, set_highlights = false, providers = { treesitter = true } })
-        minimap.setup({ enabled = true, set_highlights = false, providers = { treesitter = false } })
+        config.set({ set_highlights = false, providers = { treesitter = true }, minimap = { enabled = true } })
+        minimap.setup()
+        config.set({ set_highlights = false, providers = { treesitter = false }, minimap = { enabled = true } })
+        minimap.setup()
         return values
     end)
 
@@ -654,14 +693,13 @@ T["treesitter results publish spans once without recomputing the same cells"] = 
     reset_modules(child)
     local result = child.lua_func(function()
         require("scrollbar").setup({
-            scrollbar = { set_highlights = false },
+            set_highlights = false,
+            providers = { cursor = { minimap = false }, treesitter = true },
             minimap = {
                 enabled = true,
-                set_highlights = false,
                 backend = "sync",
                 width = 8,
                 height = 2,
-                providers = { cursor = false, treesitter = true },
             },
         })
         vim.bo.filetype = "lua"
@@ -754,13 +792,10 @@ T["MinimapRefresh recollects only minimap provider capabilities and preserves hi
         })
 
         require("scrollbar").setup({
-            scrollbar = {
-                set_highlights = false,
-                marks = { Misc = { text = "!", priority = 1, highlight = "Identifier" } },
-            },
+            set_highlights = false,
+            marks = { Misc = { text = "!", priority = 1, highlight = "Identifier" } },
             minimap = {
                 enabled = true,
-                set_highlights = false,
                 backend = "sync",
                 width = 4,
                 height = 2,
@@ -808,14 +843,14 @@ T["custom treesitter shadow stays parent-executed and keeps its spans"] = functi
             end,
         })
         require("scrollbar").setup({
-            scrollbar = { show = false, set_highlights = false },
+            set_highlights = false,
+            providers = { cursor = { minimap = false }, treesitter = true },
+            scrollbar = { show = false },
             minimap = {
                 enabled = true,
-                set_highlights = false,
                 backend = "sync",
                 width = 1,
                 height = 1,
-                providers = { cursor = false, treesitter = true },
             },
         })
         local scheduler = require("scrollbar.minimap.scheduler")

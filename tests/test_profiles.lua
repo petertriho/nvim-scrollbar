@@ -20,30 +20,22 @@ local function expect_invalid(overrides, pattern)
     expect.no_equality(tostring(err):match(pattern), nil)
 end
 
-T["compiles profile variants with setup-local presets and settled precedence"] = function()
+T["compiles profile variants with presets and settled precedence"] = function()
     local root = config().set({
         scrollbar = {
             preset = "zed",
-            presets = {
-                local_review = {
-                    extends = "review",
-                    thumb = { text = "R" },
-                },
-            },
             thumb = { blend = 35 },
             profiles = {
                 {
                     match = { filetypes = { "lua" } },
-                    preset = "local_review",
-                    config = {
-                        float = { placement = { gutter = "overlap", gutter_position = "outer" } },
-                        thumb = { blend = 10 },
-                        mouse = { enabled = false },
-                    },
+                    preset = "review",
+                    thumb = { text = "R", blend = 10 },
+                    placement = { gutter = "overlap" },
+                    mouse = false,
                 },
                 {
                     match = { buftypes = { "quickfix" } },
-                    config = { render = { geometry = "screen" } },
+                    geometry = "screen",
                 },
             },
         },
@@ -58,70 +50,90 @@ T["compiles profile variants with setup-local presets and settled precedence"] =
     expect.equality(variants[2].config.layout.width, 3)
     expect.equality(variants[2].config.thumb.text, "R")
     expect.equality(variants[2].config.thumb.blend, 10)
-    expect.equality(variants[2].config.float.placement.gutter, "overlap")
-    expect.equality(variants[2].config.float.placement.gutter_position, "outer")
-    expect.equality(variants[2].config.mouse.enabled, false)
+    expect.equality(variants[2].config.placement.gutter, "overlap")
+    expect.equality(variants[2].config.mouse, false)
     expect.equality(variants[2].config.visibility, root.visibility)
     expect.equality(variants[3].id, 2)
     expect.equality(variants[3].config.layout.width, 1)
     expect.equality(variants[3].config.thumb.blend, 35)
-    expect.equality(variants[3].config.float.placement.gutter, "avoid")
-    expect.equality(variants[3].config.float.placement.gutter_position, "inner")
-    expect.equality(variants[3].config.render.geometry, "screen")
+    expect.equality(variants[3].config.placement.gutter, "inner")
+    expect.equality(variants[3].config.geometry, "screen")
 
     for _, variant in ipairs(variants) do
         expect.equality(rawget(variant.config, "preset"), nil)
-        expect.equality(rawget(variant.config, "presets"), nil)
+        expect.equality(rawget(variant.config, "match"), nil)
         expect.equality(rawget(variant.config, "profiles"), nil)
     end
 end
 
-T["validates profile schema and the nested render-safe boundary"] = function()
-    expect_invalid({ profiles = "lua" }, "profiles must be a dense list")
+T["validates profile schema and the appearance boundary"] = function()
+    expect_invalid({ profiles = "lua" }, "scrollbar.profiles must be a dense list")
     expect_invalid({ profiles = { [2] = { match = { when = function() end } } } }, "profiles must be a dense list")
-    expect_invalid({ profiles = { {} } }, "profiles%[1%].match must be a table")
+    expect_invalid({ profiles = { "lua" } }, "scrollbar.profiles%[1%] must be a table")
+    expect_invalid({ profiles = { {} } }, "scrollbar.profiles%[1%].match is required")
+    expect_invalid({ profiles = { { match = "lua" } } }, "scrollbar.profiles%[1%].match must be a table")
     expect_invalid({ profiles = { { match = {} } } }, "profiles%[1%].match must contain at least one matcher")
     expect_invalid({ profiles = { { match = { filetypes = {} } } } }, "filetypes must contain at least one value")
     expect_invalid({ profiles = { { match = { buftypes = { "", false } } } } }, "buftypes%[2%] must be a string")
     expect_invalid({ profiles = { { match = { when = true } } } }, "when must be a function")
-    expect_invalid({ profiles = { { match = { filetypes = { "lua" }, extra = true } } } }, "unknown option")
-    expect_invalid({ profiles = { { match = { when = function() end }, extra = true } } }, "unknown option")
-    expect_invalid({ profiles = { { match = { when = function() end }, preset = 1 } } }, "preset must be a string")
+    expect_invalid(
+        { profiles = { { match = { filetypes = { "lua" }, extra = true } } } },
+        "unknown option 'scrollbar.profiles%[1%].match.extra'"
+    )
+    expect_invalid(
+        { profiles = { { match = { when = function() end }, extra = true } } },
+        "unknown option 'scrollbar.profiles%[1%].extra'"
+    )
+    expect_invalid(
+        { profiles = { { match = { when = function() end }, preset = 1 } } },
+        "scrollbar.profiles%[1%].preset must be a string"
+    )
     expect_invalid({ profiles = { { match = { when = function() end }, preset = "missing" } } }, "unknown preset")
     expect_invalid({
         profiles = {
             {
                 match = { filetypes = { "lua" } },
-                config = { float = { placement = { gutter = "inside" } } },
+                placement = { gutter = "inside" },
             },
         },
-    }, "float.placement.gutter must be one of: avoid, overlap")
+    }, "scrollbar.profiles%[1%].placement.gutter must be one of: inner, outer, overlap")
     expect_invalid({
         profiles = {
             {
                 match = { filetypes = { "lua" } },
-                config = { float = { placement = { gutter_position = "middle" } } },
+                placement = { gutter_position = "outer" },
             },
         },
-    }, "float.placement.gutter_position must be one of: inner, outer")
+    }, "unknown option 'scrollbar.profiles%[1%].placement.gutter_position'")
 
-    local rejected = {
+    local global = {
+        { enabled = false },
         { show = false },
         { visibility = "active" },
-        { set_highlights = false },
         { max_lines = 100 },
-        { autohide = { enabled = true } },
-        { providers = { cursor = false } },
-        { excluded_filetypes = { "lua" } },
-        { update = { interval_ms = 50 } },
-        { mouse = { extra = true } },
-        { float = { extra = true } },
-        { preset = "zed" },
-        { presets = {} },
+        { autohide = true },
+        { throttle_ms = 50 },
         { profiles = {} },
     }
+    for _, unsafe in ipairs(global) do
+        unsafe.match = { filetypes = { "lua" } }
+        expect_invalid({ profiles = { unsafe } }, "scrollbar.profiles%[1%]%.[%w_]+ is a global option")
+    end
+
+    local rejected = {
+        { set_highlights = false },
+        { providers = { cursor = false } },
+        { excluded_filetypes = { "lua" } },
+        { exclude = { filetypes = { "lua" } } },
+        { update = { interval_ms = 50 } },
+        { mouse = { enabled = false } },
+        { float = { zindex = 1 } },
+        { presets = {} },
+        { config = {} },
+    }
     for _, unsafe in ipairs(rejected) do
-        expect_invalid({ profiles = { { match = { filetypes = { "lua" } }, config = unsafe } } }, "profile")
+        unsafe.match = { filetypes = { "lua" } }
+        expect_invalid({ profiles = { unsafe } }, "profiles%[1%]")
     end
 end
 
@@ -140,9 +152,9 @@ T["commits root and variants atomically"] = function()
     expect_invalid({
         profiles = {
             { match = { filetypes = { "lua" } }, preset = "review" },
-            { match = { buftypes = { "nofile" } }, config = { update = { interval_ms = 1 } } },
+            { match = { buftypes = { "nofile" } }, throttle_ms = 1 },
         },
-    }, "profile")
+    }, "scrollbar.profiles%[2%].throttle_ms is a global option")
     expect.equality(module.get(), before)
     expect.equality(module.get_variants(), before_variants)
 end

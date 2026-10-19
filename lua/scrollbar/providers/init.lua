@@ -322,11 +322,9 @@ local function make_context(entry)
     assert(manager ~= nil, "provider manager is not set up")
     local provider_name = entry.provider.name
     local provider_config = vim.deepcopy(manager.config)
-    if entry.builtin then
-        local planned = manager.provider_plan[provider_name]
-        if planned ~= nil then
-            provider_config.providers[provider_name] = vim.deepcopy(planned.options)
-        end
+    provider_config.providers = {}
+    for name, planned in pairs(manager.provider_plan) do
+        provider_config.providers[name] = vim.deepcopy(planned.options)
     end
 
     return {

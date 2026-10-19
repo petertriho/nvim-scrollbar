@@ -1,10 +1,7 @@
 ---@meta
 
---- Minimap-specific type definitions. Mirrors the shape of
---- `lua/scrollbar/types.lua` but owned by the minimap subsystem so the schema
---- can evolve independently. Shared aliases (visibility, placement relative,
---- anchor, gutter modes) are reused from the scrollbar type surface since they
---- are identical enums; the minimap defines its own backend alias.
+--- Minimap-specific type definitions. Shared aliases (visibility, placement
+--- relative, anchor) come from `lua/scrollbar/types.lua`.
 
 ---@alias ScrollbarMinimapBackend "worker"|"sync"
 
@@ -13,176 +10,69 @@
 ---@field anchor? ScrollbarFloatAnchor
 ---@field row? integer
 ---@field col? integer
----@field gutter? ScrollbarGutterMode
----@field gutter_position? ScrollbarGutterPosition
-
----@class ScrollbarMinimapUserFloatConfig
 ---@field zindex? integer
----@field blend? integer
----@field hide_on_cursor? boolean
----@field placement? ScrollbarMinimapUserPlacement
 
----@class ScrollbarMinimapUserBackgroundConfig
----@field blend? false|integer
-
----@class ScrollbarMinimapUserPresetFloatConfig
----@field placement? ScrollbarMinimapUserPlacement
-
----@class ScrollbarMinimapUserAutohideConfig
----@field enabled? boolean
----@field delay_ms? integer
-
----@class ScrollbarMinimapUserUpdateConfig
----@field events? string[]
----@field interval_ms? integer
-
----@class ScrollbarMinimapUserMouseConfig
----@field enabled? boolean
-
----@class ScrollbarMinimapUserOverlaysConfig
----@field enabled? boolean
----@field types? table<string, false|ScrollbarMinimapUserOverlaySpec>
-
----@class ScrollbarMinimapUserOverlaySpec
----@field priority? integer Lower values win ordinary-overlay collisions
+---@class ScrollbarMinimapUserMarkTypeConfig
+---@field priority? integer Lower values win overlay collisions
 ---@field highlight? ScrollbarHighlight Highlight source group or direct definition
 
----@class ScrollbarMinimapUserProvidersConfig
----@field cursor? boolean
----@field diagnostic? boolean
----@field search? boolean|ScrollbarUserSearchProviderConfig
----@field marks? boolean|ScrollbarUserMarksProviderConfig
----@field gitsigns? boolean
----@field mini_diff? boolean
----@field signify? boolean
----@field vgit? boolean
----@field ale? boolean
----@field coc? boolean
----@field treesitter? boolean
----@field lsp_semantic_tokens? boolean
-
----@class ScrollbarMinimapUserPreset
----@field extends? string
----@field width? false|integer
+---@class ScrollbarMinimapUserAppearance
+---@field width? integer
 ---@field height? false|integer
----@field float? ScrollbarMinimapUserPresetFloatConfig
----@field overlays? ScrollbarMinimapUserOverlaysConfig
----@field show_viewport? boolean
----@field autohide? ScrollbarMinimapUserAutohideConfig
----@field visibility? ScrollbarVisibility
+---@field placement? ScrollbarMinimapUserPlacement
+---@field blend? integer Blend of the full float, 0-100
+---@field hide_on_cursor? boolean
+---@field mouse? boolean
+---@field viewport? boolean
+---@field glyph? string Single-width glyph used for occupied cells
+---@field marks? false|table<string, false|ScrollbarMinimapUserMarkTypeConfig>
 
----@class ScrollbarMinimapUserProfileMatcher
----@field filetypes? string[]
----@field buftypes? string[]
----@field when? fun(context: ScrollbarProfileContext): boolean
+---@class ScrollbarMinimapUserProfile: ScrollbarMinimapUserAppearance
+---@field match ScrollbarUserProfileMatcher
 
----@class ScrollbarMinimapUserProfileConfig
----@field width? false|integer
----@field height? false|integer
----@field float? ScrollbarMinimapUserFloatConfig
----@field overlays? ScrollbarMinimapUserOverlaysConfig
----@field show_viewport? boolean
----@field mouse? ScrollbarMinimapUserMouseConfig
----@field content_glyph? string Single-width glyph used for occupied cells
-
----@class ScrollbarMinimapUserProfile
----@field match ScrollbarMinimapUserProfileMatcher
----@field preset? string
----@field config? ScrollbarMinimapUserProfileConfig
-
----@class ScrollbarMinimapUserConfig
+---@class ScrollbarMinimapUserConfig: ScrollbarMinimapUserAppearance
 ---@field enabled? boolean
+---@field show? boolean
 ---@field visibility? ScrollbarVisibility
----@field set_highlights? boolean
+---@field autohide? boolean|ScrollbarUserAutohideConfig
 ---@field max_lines? false|integer
----@field autohide? ScrollbarMinimapUserAutohideConfig
----@field background? ScrollbarMinimapUserBackgroundConfig Root-only base surface policy; profiles and presets cannot override it
----@field float? ScrollbarMinimapUserFloatConfig
----@field width? false|integer
----@field height? false|integer
----@field mouse? ScrollbarMinimapUserMouseConfig
+---@field throttle_ms? integer
 ---@field backend? ScrollbarMinimapBackend
----@field update? ScrollbarMinimapUserUpdateConfig
----@field excluded_buftypes? string[]
----@field excluded_filetypes? string[]
----@field preset? string
----@field presets? table<string, ScrollbarMinimapUserPreset>
+---@field background_blend? false|integer Root-only blend of the base surface
 ---@field profiles? ScrollbarMinimapUserProfile[]
----@field overlays? ScrollbarMinimapUserOverlaysConfig
----@field providers? ScrollbarMinimapUserProvidersConfig Setup-level built-in provider demand; profiles and presets cannot override it
----@field show_viewport? boolean
----@field content_glyph? string Single-width glyph used for occupied cells
 
 ---@class ScrollbarMinimapPlacement
 ---@field relative ScrollbarPlacementRelative
 ---@field anchor ScrollbarFloatAnchor
 ---@field row integer
 ---@field col integer
----@field gutter ScrollbarGutterMode
----@field gutter_position ScrollbarGutterPosition
-
----@class ScrollbarMinimapFloatConfig
 ---@field zindex integer
----@field blend integer
----@field hide_on_cursor boolean
----@field placement ScrollbarMinimapPlacement
 
----@class ScrollbarMinimapBackgroundConfig
----@field blend false|integer
-
----@class ScrollbarMinimapAutohideConfig
----@field enabled boolean
----@field delay_ms integer
-
----@class ScrollbarMinimapUpdateConfig
----@field events string[]
----@field interval_ms integer
-
----@class ScrollbarMinimapMouseConfig
----@field enabled boolean
-
----@class ScrollbarMinimapOverlaysConfig
----@field enabled boolean
----@field types table<string, ScrollbarMinimapOverlaySpec>
-
----@class ScrollbarMinimapOverlaySpec
----@field priority integer Lower values win ordinary-overlay collisions
+---@class ScrollbarMinimapMarkSpec
+---@field priority integer Lower values win overlay collisions
 ---@field highlight ScrollbarHighlight Highlight source used by automatic generation
 ---@field group string Compiled renderer-facing minimap highlight group
 
----@class ScrollbarMinimapProvidersConfig
----@field cursor boolean
----@field diagnostic boolean
----@field search false|ScrollbarSearchProviderConfig
----@field marks false|ScrollbarMarksProviderConfig
----@field gitsigns boolean
----@field mini_diff boolean
----@field signify boolean
----@field vgit boolean
----@field ale boolean
----@field coc boolean
----@field treesitter boolean
----@field lsp_semantic_tokens boolean
-
 ---@class ScrollbarMinimapConfig
 ---@field enabled boolean
+---@field show boolean
 ---@field visibility ScrollbarVisibility
----@field set_highlights boolean
+---@field autohide false|ScrollbarAutohideConfig
 ---@field max_lines false|integer
----@field autohide ScrollbarMinimapAutohideConfig
----@field background ScrollbarMinimapBackgroundConfig
----@field float ScrollbarMinimapFloatConfig
----@field width false|integer
----@field height false|integer
----@field mouse ScrollbarMinimapMouseConfig
+---@field throttle_ms integer
 ---@field backend ScrollbarMinimapBackend
----@field update ScrollbarMinimapUpdateConfig
----@field excluded_buftypes string[]
----@field excluded_filetypes string[]
----@field overlays ScrollbarMinimapOverlaysConfig
----@field providers ScrollbarMinimapProvidersConfig
----@field show_viewport boolean
----@field content_glyph string Single-width glyph used for occupied cells
+---@field background_blend false|integer
+---@field set_highlights boolean Copied from the top-level option
+---@field exclude ScrollbarExcludeConfig
+---@field width integer
+---@field height false|integer
+---@field placement ScrollbarMinimapPlacement
+---@field blend integer
+---@field hide_on_cursor boolean
+---@field mouse boolean
+---@field viewport boolean
+---@field glyph string
+---@field marks table<string, ScrollbarMinimapMarkSpec> Shown mark types
 
 ---@class ScrollbarMinimapCompiledVariant
 ---@field id integer Root is 0; profile variants use their one-based declaration index
@@ -207,7 +97,7 @@
 ---@field source_line integer Zero-based source buffer line
 ---@field minimap_row integer 1-based target row in the minimap grid
 ---@field mark_type string Mark type (e.g. "Error", "Search")
----@field priority integer Lower wins collisions using the selected minimap overlay spec
+---@field priority integer Lower wins collisions using the selected minimap mark spec
 ---@field highlight string Compiled minimap highlight group (e.g. "ScrollbarMinimapError")
 ---@field provider string Publishing provider name; used for deterministic tiebreaks
 
@@ -247,6 +137,7 @@
 ---@field hide_timers table<integer, any>
 ---@field hide_generations table<integer, integer>
 ---@field held table<integer, true>
+---@field shows_marks boolean Whether any compiled variant shows mark types
 ---@field unsubscribe_store fun()
 
 ---@class ScrollbarMinimapHighlightSpan
@@ -305,7 +196,7 @@
 ---@field request fun(request: table): boolean
 
 ---@class ScrollbarMinimapRendererOverlays
----@field project_with fun(source_win: integer, minimap_height: integer, source_line_count: integer, presentation?: ScrollbarMinimapOverlaysConfig): ScrollbarMinimapOverlay[]
+---@field project_with fun(source_win: integer, minimap_height: integer, source_line_count: integer, marks?: table<string, ScrollbarMinimapMarkSpec>): ScrollbarMinimapOverlay[]
 
 ---@class ScrollbarMinimapRendererOptions
 ---@field config? ScrollbarMinimapConfig

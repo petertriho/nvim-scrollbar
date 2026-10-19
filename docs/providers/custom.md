@@ -9,56 +9,54 @@ custom provider can own one or more of these channels:
 
 ## Configure Mark Types
 
-You must configure every ordinary `mark.type` that a provider emits for at
-least one consumer. Scrollbar marks use `text`, `priority`, and `highlight`.
-Minimap overlay specs use only `priority` and `highlight`:
+Define every ordinary `mark.type` that a provider emits in the top-level
+`marks` table. Both renderers show the types in that table. The scrollbar uses
+`text`, `priority`, and `highlight`. The minimap uses only `priority` and
+`highlight`:
 
 ```lua
 require("scrollbar").setup({
-    scrollbar = {
-        marks = {
-            Bookmark = {
-                text = { ".", "*", "#" },
-                priority = 1,
-                highlight = "Special",
-            },
+    marks = {
+        Bookmark = {
+            text = { ".", "*", "#" },
+            priority = 1,
+            highlight = "Special",
         },
     },
     minimap = {
         enabled = true,
-        overlays = {
-            types = {
-                Bookmark = { priority = 2, highlight = "Special" },
-            },
+        marks = {
+            Bookmark = { priority = 2 },
         },
     },
 })
 ```
 
+`scrollbar.marks` and `minimap.marks` can override the fields of a defined type
+for one renderer, or hide the type with `false`. They cannot define a new type.
+A provider can still publish a hidden type, but that renderer does not draw it.
+
 Do not put custom provider names or options under `providers`. That table
-is a strict built-in allow-list in both the scrollbar and the minimap
-configuration, and it rejects unknown keys. Keep provider-specific
-configuration in your own module or closure. Register the provider through the
-manager API.
+accepts only the built-in provider names, and it rejects unknown keys. Keep
+provider-specific configuration in your own module or closure. Register the
+provider through the manager API.
 
-A new scrollbar type needs `text`, `priority`, and `highlight`. A minimap-only
-type needs `priority` and `highlight`. A partial table is valid only when a
-derived or built-in fallback supplies the missing fields.
-
-Mark type names and the `text`, `priority`, and `highlight` fields follow the
-rules in [Mark configuration](../configuration.md#marks).
+A new type needs `text`, `priority`, and `highlight`. Mark type names and the
+`text`, `priority`, and `highlight` fields follow the rules in
+[Mark configuration](../configuration.md#marks).
 
 Names must also give each public highlight group one clear owner:
 
-- The minimap names `Base`, `Content`, `Viewport`, and `Cursor` are reserved.
-- Setup rejects pairs such as scrollbar `MinimapSearch` and minimap `Search`.
-  If setup accepted the pair, both names would own `ScrollbarMinimapSearch`.
-- Setup also rejects scrollbar names such as `Track`, `Handle`, and
-  `SearchThumb` when they collide with fixed, overlap, pressed, or legacy
-  groups.
+- The minimap does not show a type named `Base`, `Content`, `Viewport`, or
+  `Cursor`. The static minimap layers own these names.
+- When the minimap is enabled, setup rejects a type such as `MinimapSearch`
+  that the scrollbar shows. Its scrollbar group and the minimap group of
+  `Search` are both `ScrollbarMinimapSearch`.
+- Setup also rejects names such as `Track`, `Handle`, and `SearchThumb` when
+  they collide with fixed, overlap, pressed, or legacy scrollbar groups.
 
 An emitted mark can supply its own non-empty `text` override. `Mark` is an
-exception. Provider text applies only while `scrollbar.marks.Mark.text = {}`. A
+exception. Provider text applies only while the `Mark` type has `text = {}`. A
 non-empty configured `Mark` list replaces the provider text.
 
 ## Registration
@@ -80,13 +78,11 @@ providers.register({
 })
 
 require("scrollbar").setup({
-    scrollbar = {
-        marks = {
-            Bookmark = {
-                text = { ".", "*", "#" },
-                priority = 1,
-                highlight = "Special",
-            },
+    marks = {
+        Bookmark = {
+            text = { ".", "*", "#" },
+            priority = 1,
+            highlight = "Special",
         },
     },
 })
@@ -123,8 +119,8 @@ providers.register({
 ```
 
 Ordinary minimap overlays still come from `refresh` or `refresh_window`. For
-these overlays, target the minimap. Also configure the type under
-`minimap.overlays.types`:
+these overlays, target the minimap. Also define the type in the top-level
+`marks` table, and do not hide it with `minimap.marks`:
 
 ```lua
 providers.register({
@@ -185,8 +181,8 @@ values are registration errors. `refresh_minimap` and
 `refresh` publishes ordinary marks that every accepted source window of a
 buffer shares. `refresh_window` publishes ordinary marks that one source window
 owns. The minimap projects these marks as row overlays only when the provider
-targets the minimap and the effective `minimap.overlays.types` map has an entry
-for the mark type that is not `false`.
+targets the minimap and the effective `minimap.marks` of the window shows the
+mark type.
 
 `refresh_minimap` publishes semantic spans that the minimap source windows of a
 buffer share. `refresh_minimap_window` publishes exact points that one minimap
@@ -344,14 +340,16 @@ An ordinary list is a dense array. Each entry contains only these fields:
 ```lua
 {
     line = 0,          -- required zero-based source line
-    type = "Bookmark", -- required configured scrollbar or minimap type
+    type = "Bookmark", -- required type from the top-level marks table
     text = "B",        -- optional printable, positive-width override
 }
 ```
 
 The collision priority of ordinary marks depends on the consumer. Scrollbar
-lanes read `scrollbar.marks.<Type>.priority`. Projected minimap rows read
-`minimap.overlays.types.<Type>.priority`. Both use lower numeric values first.
+lanes and projected minimap rows read the effective `priority` of the type for
+that renderer. `marks.<Type>.priority` applies to both renderers.
+`scrollbar.marks` and `minimap.marks` can override it. Both renderers use lower
+numeric values first.
 
 ### Minimap Span Schema
 
@@ -391,8 +389,8 @@ converts their byte columns to display columns.
 
 ### Minimap Priorities
 
-Span and point priorities are independent of the ordinary overlay priorities in
-`minimap.overlays.types`. For spans and points, higher values win:
+Span and point priorities are independent of the priorities of ordinary mark
+types. For spans and points, higher values win:
 
 - Where spans overlap, the span with the higher `priority` colors the cell. The
   Treesitter built-in uses `100`. The LSP semantic-token built-in uses `200`
@@ -425,7 +423,7 @@ malformed field on the same entry.
 
 | Context member | Behavior |
 | --- | --- |
-| `config` | Deep-copied snapshot of the normalized `scrollbar` configuration. Changes to the snapshot do not change the root configuration |
+| `config` | Deep-copied snapshot of the normalized `scrollbar` configuration. Its `providers` field holds the effective options of the built-in providers. Changes to the snapshot do not change the root configuration |
 | `set_marks(bufnr, marks)` | Apply the union policy, validate, and replace buffer-scoped ordinary marks. Return whether the publication was accepted |
 | `clear_marks(bufnr?)` | Unconditionally clear one buffer. Without `bufnr`, clear all buffer marks that this provider owns |
 | `set_window_marks(winid, marks)` | Apply the union policy, validate, and replace the ordinary marks local to one current source window |
@@ -462,9 +460,11 @@ the `refresh_window` activation events of the manager.
 the scrollbar instead of its own autocmds. A keystroke or a cursor move then
 costs one autocmd invocation, not one per provider.
 
-`fn` receives the autocmd arguments. It runs only for the events that
-`scrollbar.update.events` lists, and not for buffers that the plugin owns. To
-receive an event that `update.events` does not list, name it in `events`.
+`fn` receives the autocmd arguments. It does not run for buffers that the
+plugin owns. `on_text_change` runs for `TextChanged`, `TextChangedI`,
+`TextChangedP`, and `TextChangedT`. `on_cursor_activity` runs for
+`CursorMoved` and `CursorMovedI`. To receive another event, name it in
+`events`.
 
 These context members can be `nil`. When the shared dispatch is inactive, a
 hook can also return `false` or `nil`. In both cases, the provider gets no
@@ -527,7 +527,7 @@ or detach them during cleanup.
   every implemented refresh callback. A missing owner has no compatibility
   fallback.
 - `mark.type is not configured`: before the provider first publishes, add the
-  type under `scrollbar.marks`, `minimap.overlays.types`, or both.
+  type to the top-level `marks` table.
 - `refresh_minimap requires targets.minimap`: declare
   `targets = { minimap = true }` or a dual-target table.
 - No automatic updates with a `"provider"` owner: subscribe to the necessary
@@ -547,9 +547,9 @@ or detach them during cleanup.
 - Inactive window output does not appear later: window publication is accepted
   only for current source windows. When the window becomes selected, republish
   the output.
-- Minimap priority seems reversed: ordinary overlays use
-  `minimap.overlays.types` priority, where lower values win. Minimap spans and
-  points use integer priority, where higher values win.
+- Minimap priority seems reversed: ordinary overlays use the priority of the
+  mark type, where lower values win. Minimap spans and points use integer
+  priority, where higher values win.
 
 ## Related Links
 

@@ -11,13 +11,11 @@
 
 ![diagnostics](./assets/diagnostics.gif)
 
-`nvim-scrollbar` renders one floating scrollbar per source window, with
-independent thumbs for split windows, declarative typed mark lanes, optional
-screen-row-accurate geometry, and mouse navigation. It also ships an
-**separately rendered minimap subsystem** — a separately-enabled floating minimap
-with a monochrome code texture, independently blendable base surface, viewport
-tint, exact cursor-cell accent, cursor-overlap yielding, click-to-jump,
-drag-to-scroll, and diagnostic/gitsigns/search overlays.
+`nvim-scrollbar` shows one floating scrollbar for each source window. Each
+split window gets its own thumb. The scrollbar has typed mark lanes, optional
+screen-row geometry, and mouse navigation. An optional floating minimap shows a
+compressed view of the buffer, with a viewport tint, a cursor accent, provider
+marks, and mouse navigation.
 
 ## Requirements
 
@@ -64,31 +62,30 @@ require("scrollbar").setup()
 
 ## Quick Start
 
-The scrollbar defaults enable cursor, diagnostic, search, and named-mark
-providers for every eligible source window. A small customized setup might
-look like:
+By default, the cursor, diagnostic, search, and named-mark providers are
+enabled for every eligible source window. A small custom setup can look like
+this:
 
 ```lua
 require("scrollbar").setup({
+    providers = {
+        search = { incsearch = true },
+        marks = { numbers = true },
+    },
     scrollbar = {
         preset = "zed",
-        autohide = {
-            enabled = true,
-        },
-        providers = {
-            search = { incsearch = true },
-            marks = { numbers = true },
-        },
+        autohide = true,
     },
 })
 ```
 
-Because this example enables autohide, scrollbars begin concealed and are
-revealed by cursor movement or scrolling in the affected source window.
+This example enables autohide. The scrollbars start hidden. Cursor movement or
+scrolling in a source window shows its scrollbar.
 
-The built-in catalog includes `vscode`, `zed`, `intellij`, `minimal`, `review`,
-`search`, `navigate`, `gvim`, `eclipse`, `sublime`, `emacs`, and `xcode`.
-Ordered contextual profiles can select a precompiled variant per source window:
+The built-in presets are `vscode`, `zed`, `intellij`, `minimal`, `review`,
+`search`, `navigate`, `gvim`, `eclipse`, `sublime`, `emacs`, and `xcode`. An
+ordered list of profiles can select a different appearance for each source
+window:
 
 ```lua
 require("scrollbar").setup({
@@ -108,80 +105,74 @@ require("scrollbar").setup({
 })
 ```
 
-Profiles use first-match precedence. Providers, scheduling, exclusions,
-visibility, and autohide remain root-owned.
+The first profile that matches is used. Profiles change only appearance
+options. Providers, exclusions, visibility, autohide, and `max_lines` are
+global.
 
-Unknown keys and invalid values are rejected. See the
-[complete configuration reference](docs/configuration.md) for every default and
-accepted value.
+Setup rejects unknown keys and invalid values. See the
+[configuration reference](docs/configuration.md) for every default and accepted
+value.
 
 ## Minimap
 
-The minimap is an independent subsystem: it has its own config slice,
-scheduler, renderer, mouse handler, presets, and profiles. It defaults to
-**disabled**. Its rendering lifecycle does not control the scrollbar, although
-enabled built-in providers may be shared by both renderers.
+The minimap is disabled by default. It has its own configuration block,
+profiles, mouse handling, and commands. It does not show, hide, or move the
+scrollbar. Both renderers share the top-level `providers`, `marks`, and
+`exclude` tables.
 
 ```lua
 require("scrollbar").setup({
-    scrollbar = {},
     minimap = {
         enabled = true,
     },
 })
 ```
 
-The default placement is window-relative at the north-east corner — one solid
-16-column minimap per source window — with monochrome full-block content, a
-tint-only viewport, an exact cursor-cell accent, and store-published overlays
-on. Each terminal minimap row represents one source-line bucket, and occupied
-cells render with the configurable single-width `content_glyph` (`"█"` by
-default). Its default providers are cursor, diagnostic, search, and named marks.
-Treesitter and LSP semantic-token coloring are separate opt-in providers:
+By default, each source window gets a 16-column minimap at its north-east
+corner. Each minimap row represents a group of source lines. Occupied cells
+show the single-width `glyph` (`"█"` by default). Treesitter and LSP
+semantic-token colors are opt-in providers:
+
+```lua
+require("scrollbar").setup({
+    providers = {
+        treesitter = true,
+        lsp_semantic_tokens = true,
+    },
+    minimap = {
+        enabled = true,
+    },
+})
+```
+
+Provider marks, such as diagnostics, search matches, and Git hunks, tint the
+occupied cells of their row. `minimap.marks` changes the priority or the
+highlight of a mark type for the minimap. `false` hides a type:
 
 ```lua
 require("scrollbar").setup({
     minimap = {
         enabled = true,
-        providers = {
-            treesitter = true,
-            lsp_semantic_tokens = true,
+        marks = {
+            Search = { priority = 0, highlight = "IncSearch" },
+            Hint = false,
         },
     },
 })
 ```
 
-`minimap.float.blend` controls the full float and may vary by profile.
-Root-only `minimap.background.blend = false` inherits that setting; a numeric
-value overrides only the base surface and works independently when the
-full-float blend is zero. The default `minimap.float.hide_on_cursor = true`
-temporarily hides only the active source's existing minimap when the editing
-cursor overlaps it, then restores the same resources when the cursor leaves.
+`minimap.blend` sets the blend of the full float. `minimap.background_blend`
+sets the blend of only the base surface. See
+[Minimap configuration](docs/minimap/configuration.md#blend). By default, the
+minimap of the active source window hides while the editing cursor is inside
+it.
 
-Ordinary overlays have independent minimap priority and highlight sources. The
-keyed map deep-merges with specs derived from scrollbar marks; use `false` to
-disable one derived type:
+The automatic minimap groups have their own public names, such as
+`ScrollbarMinimapSearch`. Setup keeps your existing definitions of the public
+scrollbar and minimap groups.
 
-```lua
-require("scrollbar").setup({
-    minimap = {
-        enabled = true,
-        overlays = {
-            types = {
-                Search = { priority = 0, highlight = "IncSearch" },
-                Hint = false,
-            },
-        },
-    },
-})
-```
-
-Automatic overlay groups use distinct public names such as
-`ScrollbarMinimapSearch`; existing user definitions of public scrollbar and
-minimap groups are preserved.
-
-See the [minimap documentation](docs/minimap/README.md) for the full schema,
-layout, overlays, and mouse behavior.
+See the [minimap documentation](docs/minimap/README.md) for placement, marks,
+and mouse behavior.
 
 ## Providers
 
@@ -190,7 +181,7 @@ layout, overlays, and mouse behavior.
 | [`cursor`](docs/providers/cursor.md) | on | on | Source-window cursor | None |
 | [`diagnostic`](docs/providers/diagnostic.md) | on | on | Neovim `vim.diagnostic` | None |
 | [`search`](docs/providers/search.md) | on | on | Native `/` and `?` search | None |
-| [`marks`](docs/providers/marks.md) | on | on | Letter marks; optional numbered marks | None |
+| [`marks`](docs/providers/marks.md) | on | on | Letter marks, and optional numbered marks | None |
 | [`gitsigns`](docs/providers/gitsigns.md) | off | off | Git hunks | gitsigns.nvim |
 | [`mini_diff`](docs/providers/mini_diff.md) | off | off | mini.diff hunks | mini.diff |
 | [`signify`](docs/providers/signify.md) | off | off | vim-signify hunks | vim-signify |
@@ -200,27 +191,26 @@ layout, overlays, and mouse behavior.
 | [`treesitter`](docs/providers/treesitter.md) | unavailable | off | Treesitter highlight captures | Installed parser |
 | [`lsp_semantic_tokens`](docs/providers/lsp_semantic_tokens.md) | unavailable | off | LSP semantic tokens | Attached LSP client |
 
-The scrollbar and minimap provider tables are strict built-in allow-lists.
-When both request the same built-in, one provider instance serves their union;
-each renderer still filters the shared output through its own enabled-provider
-set. A disabled minimap contributes no built-in provider demand.
+Configure the providers in the top-level `providers` table. A provider value is
+`false`, `true`, or a table of options. In a table, the `scrollbar` and
+`minimap` flags select the renderers that show the provider. Each built-in
+provider runs once, and only when an enabled renderer uses it.
 
-See the [provider overview](docs/providers/README.md) for shared configuration
-rules, dependencies, update behavior, and links to every provider. New data
-sources can be added through the [custom provider API](docs/providers/custom.md).
+See the [provider overview](docs/providers/README.md) for the shared rules,
+dependencies, update behavior, and links to every provider. To add a new data
+source, use the [custom provider API](docs/providers/custom.md).
 
 ## Documentation
 
 ### Guides
 
-- [Configuration](docs/configuration.md): complete defaults, validation,
-  eligibility, mark presentation, layout lanes, and priorities
-- [Presets](docs/presets.md): all twelve built-ins, focused filtering, local
-  inheritance, and override precedence
+- [Configuration](docs/configuration.md): defaults, providers, exclusions, mark
+  types, layout lanes, profiles, precedence, and validation
+- [Presets](docs/presets.md): the twelve built-in presets and their precedence
 - [Visibility](docs/visibility.md): source-window visibility, autohide,
   hide-on-cursor behavior, commands, and Lua APIs
-- [Layout and geometry](docs/layout-and-geometry.md): placement, line and screen
-  geometry, rendering cadence, and wide scrollbars
+- [Layout and geometry](docs/layout-and-geometry.md): layout lanes, placement,
+  line and screen geometry, and wide scrollbars
 - [Mouse](docs/mouse.md): clicks, mark navigation, thumb dragging, and focus
   behavior
 - [Highlights](docs/highlights.md): generated groups, direct definitions,
@@ -247,8 +237,8 @@ sources can be added through the [custom provider API](docs/providers/custom.md)
 
 ### Minimap Guides
 
-- [Minimap overview](docs/minimap/README.md): placement, size, overlays, and
-  mouse behavior
+- [Minimap overview](docs/minimap/README.md): placement, size, marks, and mouse
+  behavior
 - [Minimap configuration](docs/minimap/configuration.md)
 
 ## License

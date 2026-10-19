@@ -1,5 +1,4 @@
 local config = require("scrollbar.config")
-local minimap_config = require("scrollbar.minimap.config")
 local search_compact = require("scrollbar.providers.search_compact")
 
 local M = {}
@@ -38,42 +37,10 @@ local function is_integer(value)
     return type(value) == "number" and value ~= math.huge and value ~= -math.huge and value == math.floor(value)
 end
 
--- Union of configured mark types across scrollbar and minimap variants,
--- rebuilt only when either compiled variants table is replaced. `config.set`
--- and the minimap equivalent recompile into fresh tables, so identity is the
--- invalidation signal; publications otherwise re-derived this set on every
--- call, which showed up as measurable per-publication overhead.
-local cached_mark_types
-local cached_scrollbar_variants
-local cached_minimap_variants
-
----@return table<string, true>
+-- Providers can publish every registered type, including the types that a
+-- renderer hides.
 local function configured_mark_types()
-    local scrollbar_variants = config.get_variants()
-    local minimap_variants = minimap_config.get_variants()
-    if
-        cached_mark_types ~= nil
-        and cached_scrollbar_variants == scrollbar_variants
-        and cached_minimap_variants == minimap_variants
-    then
-        return cached_mark_types
-    end
-
-    local mark_types = {}
-    for _, variant in ipairs(scrollbar_variants) do
-        for mark_type in pairs(variant.config.marks) do
-            mark_types[mark_type] = true
-        end
-    end
-    for _, variant in ipairs(minimap_variants) do
-        for mark_type in pairs(variant.config.overlays.types) do
-            mark_types[mark_type] = true
-        end
-    end
-    cached_mark_types = mark_types
-    cached_scrollbar_variants = scrollbar_variants
-    cached_minimap_variants = minimap_variants
-    return mark_types
+    return config.get_mark_types()
 end
 
 ---@param changed table<integer, true>

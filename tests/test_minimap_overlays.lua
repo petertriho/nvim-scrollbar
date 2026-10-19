@@ -132,8 +132,8 @@ T["project clamps marks to the minimap height when source exceeds target"] = fun
     expect.equality(result[1].minimap_row, 3)
 end
 
-T["project excludes marks whose type is not in overlays.types"] = function()
-    minimap_config().set({ overlays = { types = { Hint = false, Info = false } } })
+T["project excludes marks whose type minimap.marks hides"] = function()
+    minimap_config().set({ marks = { Hint = false, Info = false } })
     setup_with()
     local bufnr = new_buffer({ "a", "b", "c", "d" })
     store().set("diagnostic", bufnr, {
@@ -152,7 +152,7 @@ T["project excludes marks whose type is not in overlays.types"] = function()
     expect.equality(result[2].mark_type, "Warn")
 end
 
-T["project applies the overlay type filter selected for the source window"] = function()
+T["project applies the mark type filter selected for the source window"] = function()
     require("scrollbar.config").set({
         scrollbar = {},
         minimap = {
@@ -160,7 +160,7 @@ T["project applies the overlay type filter selected for the source window"] = fu
             profiles = {
                 {
                     match = { filetypes = { "lua" } },
-                    config = { overlays = { types = { Error = false } } },
+                    marks = { Error = false },
                 },
             },
         },
@@ -179,12 +179,10 @@ T["project applies the overlay type filter selected for the source window"] = fu
     expect.equality(result[1].highlight, "ScrollbarMinimapProfile1.Hint")
 end
 
-T["default types include Mark and configured custom mark types"] = function()
+T["default types include Mark and registered custom mark types"] = function()
     require("scrollbar.config").set({
-        scrollbar = {
-            marks = {
-                Runtime = { text = "R", priority = 3, highlight = "String" },
-            },
+        marks = {
+            Runtime = { text = "R", priority = 3, highlight = "String" },
         },
         minimap = { enabled = true },
     })
@@ -200,8 +198,8 @@ T["default types include Mark and configured custom mark types"] = function()
     expect.equality(mark_types, { Mark = true, Runtime = true })
 end
 
-T["overlays.enabled false suppresses otherwise eligible marks"] = function()
-    minimap_config().set({ overlays = { enabled = false } })
+T["marks false suppresses otherwise eligible marks"] = function()
+    minimap_config().set({ marks = false })
     setup_with()
     local bufnr = new_buffer({ "a", "b" })
     store().set("diagnostic", bufnr, { { line = 0, type = "Error" } })
@@ -209,17 +207,15 @@ T["overlays.enabled false suppresses otherwise eligible marks"] = function()
     expect.equality(project(bufnr, 2), {})
 end
 
-T["projects a fully specified minimap-only custom type"] = function()
+T["projects a registered custom type that the scrollbar hides"] = function()
     require("scrollbar.config").set({
-        scrollbar = {},
-        minimap = {
-            enabled = true,
-            overlays = {
-                types = {
-                    MinimapOnly = { priority = 0, highlight = "Special" },
-                },
-            },
+        marks = {
+            MinimapOnly = { text = "m", priority = 0, highlight = "Special" },
         },
+        scrollbar = {
+            marks = { MinimapOnly = false },
+        },
+        minimap = { enabled = true },
     })
     setup_with()
     local bufnr = new_buffer({ "a", "b" })
@@ -235,19 +231,15 @@ end
 
 T["project resolves collisions using minimap priorities"] = function()
     require("scrollbar.config").set({
-        scrollbar = {
-            marks = {
-                Error = { text = "!", priority = 0, highlight = "ErrorMsg" },
-                Hint = { text = "?", priority = 9, highlight = "Question" },
-            },
+        marks = {
+            Error = { text = "!", priority = 0, highlight = "ErrorMsg" },
+            Hint = { text = "?", priority = 9, highlight = "Question" },
         },
         minimap = {
             enabled = true,
-            overlays = {
-                types = {
-                    Error = { priority = 8 },
-                    Hint = { priority = 1 },
-                },
+            marks = {
+                Error = { priority = 8 },
+                Hint = { priority = 1 },
             },
         },
     })
@@ -322,24 +314,8 @@ end
 
 T["filters providers disabled for the minimap"] = function()
     require("scrollbar.config").set({
-        scrollbar = { providers = { diagnostic = true } },
-        minimap = {
-            enabled = true,
-            providers = {
-                cursor = false,
-                diagnostic = false,
-                search = false,
-                marks = false,
-                gitsigns = false,
-                mini_diff = false,
-                signify = false,
-                vgit = false,
-                ale = false,
-                coc = false,
-                treesitter = false,
-                lsp_semantic_tokens = false,
-            },
-        },
+        providers = { diagnostic = { minimap = false } },
+        minimap = { enabled = true },
     })
     setup_with()
     local bufnr = new_buffer({ "a", "b" })

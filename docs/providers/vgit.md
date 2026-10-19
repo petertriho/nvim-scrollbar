@@ -12,10 +12,8 @@ Configure and load vgit before scrollbar:
 require("vgit").setup()
 
 require("scrollbar").setup({
-    scrollbar = {
-        providers = {
-            vgit = true,
-        },
+    providers = {
+        vgit = true,
     },
 })
 ```
@@ -33,9 +31,7 @@ With lazy.nvim:
         },
     },
     opts = {
-        scrollbar = {
-            providers = { vgit = true },
-        },
+        providers = { vgit = true },
     },
 }
 ```
@@ -61,18 +57,17 @@ The three mark types have these defaults:
 
 ```lua
 require("scrollbar").setup({
-    scrollbar = {
-        marks = {
-            VGitAdd = { text = { "┃" }, priority = 7, highlight = "GitSignsAdd" },
-            VGitChange = { text = { "┃" }, priority = 7, highlight = "GitSignsChange" },
-            VGitDelete = { text = { "▁" }, priority = 7, highlight = "GitSignsDelete" },
-        },
+    marks = {
+        VGitAdd = { text = { "┃" }, priority = 7, highlight = "GitSignsAdd" },
+        VGitChange = { text = { "┃" }, priority = 7, highlight = "GitSignsChange" },
+        VGitDelete = { text = { "▁" }, priority = 7, highlight = "GitSignsDelete" },
     },
 })
 ```
 
 To change a mark type, override its `text`, `priority`, or `highlight` in the
-`scrollbar.marks` table.
+top-level `marks` table. To change it in one renderer only, use
+`scrollbar.marks` or `minimap.marks`.
 
 ## Updates
 

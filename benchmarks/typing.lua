@@ -107,11 +107,8 @@ local baseline = measure_scenario("baseline (no plugins)", { setup = function() 
 local scrollbar_only = measure_scenario("scrollbar only", {
     setup = function()
         require("scrollbar").setup({
-            scrollbar = {
-                set_highlights = false,
-                excluded_buftypes = {},
-                excluded_filetypes = {},
-            },
+            set_highlights = false,
+            exclude = { buftypes = {}, filetypes = {} },
             minimap = { enabled = false },
         })
     end,
@@ -126,19 +123,15 @@ local scrollbar_and_minimap = measure_scenario("scrollbar + minimap (enabled)", 
             vim.bo[buf].filetype = "lua"
         end
         require("scrollbar").setup({
-            scrollbar = {
-                set_highlights = false,
-                excluded_buftypes = {},
-                excluded_filetypes = {},
+            set_highlights = false,
+            exclude = { buftypes = {}, filetypes = {} },
+            providers = {
+                treesitter = semantic_enabled,
+                lsp_semantic_tokens = semantic_enabled,
             },
             minimap = {
                 enabled = true,
-                set_highlights = false,
                 backend = "sync",
-                providers = {
-                    treesitter = semantic_enabled,
-                    lsp_semantic_tokens = semantic_enabled,
-                },
             },
         })
         if semantic_enabled then

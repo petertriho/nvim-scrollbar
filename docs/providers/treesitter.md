@@ -7,17 +7,19 @@ captures. It targets only the minimap and is disabled by default.
 
 ```lua
 require("scrollbar").setup({
+    providers = {
+        treesitter = true,
+    },
     minimap = {
         enabled = true,
-        providers = {
-            treesitter = true,
-        },
     },
 })
 ```
 
-`minimap.providers.treesitter` is a setup-level boolean. A minimap preset or
-profile cannot select it.
+`providers.treesitter` is a boolean, or a table that contains only the
+`scrollbar` and `minimap` target flags. The provider runs only when the minimap
+is enabled. Setup rejects `scrollbar = true`. A minimap profile cannot select
+the provider.
 
 ## Requirements
 

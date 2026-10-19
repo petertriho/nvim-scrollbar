@@ -1,195 +1,175 @@
 # Minimap Configuration
 
-You configure the minimap in the top-level `minimap` block that you pass to
-`require("scrollbar").setup`. The `minimap` block is independent of the
-`scrollbar` block. Each block has its own schema, presets, and profiles. The
-two blocks share the built-in providers. For an overview of the minimap, see
-[Minimap](README.md).
+You configure the minimap in the `minimap` block of
+`require("scrollbar").setup()`. The minimap uses the shared `set_highlights`,
+`exclude`, `providers`, and `marks` sections, which
+[Configuration](../configuration.md) documents. For an overview of the
+minimap, see [Minimap](README.md).
 
 The minimap defaults to `enabled = false`. If you omit the block, the scrollbar
 behavior does not change.
 
-## Schema
+## Defaults
 
 ```lua
 require("scrollbar").setup({
-    scrollbar = {},
     minimap = {
+        -- Global options
         enabled = false,
-        visibility = "all",
-        set_highlights = true,
+        show = true,
+        visibility = "all", -- "all" or "active"
+        autohide = false, -- true, or { delay_ms = 1000 }
         max_lines = false,
-        autohide = { enabled = false, delay_ms = 1000 },
-        background = { blend = false },
-        float = {
-            zindex = 50,
-            blend = 0,
-            hide_on_cursor = true,
-            placement = {
-                relative = "window",
-                anchor = "NE",
-                row = 0,
-                col = 0,
-                gutter = "overlap",
-                gutter_position = "inner",
-            },
-        },
+        throttle_ms = 50,
+        backend = "worker", -- "worker" or "sync"
+        background_blend = false,
+
+        -- Appearance options
         width = 16,
         height = false,
-        mouse = { enabled = true },
-        backend = "worker",
-        update = {
-            events = {
-                "BufEnter", "BufWinEnter", "WinEnter", "WinScrolled",
-                "WinResized", "VimResized", "CursorMoved", "CursorMovedI",
-                "TextChanged", "TextChangedI", "TextChangedP", "TextChangedT",
-                "WinClosed", "BufDelete", "BufWipeout", "ColorScheme",
-            },
-            interval_ms = 50,
+        placement = {
+            relative = "window", -- "window" or "editor"
+            anchor = "NE", -- "NW", "NE", "SW", or "SE"
+            row = 0,
+            col = 0,
+            zindex = 50,
         },
-        excluded_buftypes = {},
-        excluded_filetypes = {},
-        overlays = {
-            enabled = true,
-            types = {}, -- derived from configured scrollbar marks except Cursor
-        },
-        providers = {
-            cursor = true,
-            diagnostic = true,
-            search = { backend = "worker" },
-            marks = { letters = true, numbers = false },
-            gitsigns = false,
-            mini_diff = false,
-            signify = false,
-            vgit = false,
-            ale = false,
-            coc = false,
-            treesitter = false,
-            lsp_semantic_tokens = false,
-        },
-        show_viewport = true,
-        content_glyph = "█",
+        blend = 0,
+        hide_on_cursor = true,
+        mouse = true,
+        viewport = true,
+        glyph = "█",
+        marks = {}, -- overrides of the shared mark types
+
+        profiles = nil,
     },
 })
 ```
 
-### Fields
+## Global Options
 
-| Field | Type | Default | Description |
-| --- | --- | --- | --- |
-| `enabled` | boolean | `false` | Main toggle. When `false`, the minimap does not render, and setup creates no minimap commands. |
-| `visibility` | `"all"` \| `"active"` | `"all"` | Uses the same visibility rules as the scrollbar. |
-| `set_highlights` | boolean | `true` | Creates the static minimap groups and the ordinary `ScrollbarMinimap<Type>` overlay groups as default links, so user definitions are kept. The groups refresh on setup, and on `ColorScheme` when that event is in `update.events`. |
-| `max_lines` | false \| integer | `false` | Skips rendering for buffers that have more than this number of lines. |
-| `autohide.enabled` | boolean | `false` | Shows the minimaps of source windows on configured cursor or scroll activity. Then hides each minimap after its inactivity deadline. |
-| `autohide.delay_ms` | integer | `1000` | Delay before the minimap hides, after the last activity in a source window. |
-| `background.blend` | false \| integer | `false` | Blend policy for the base surface. Only the root configuration accepts it. `false` uses the selected `float.blend`. A value in `0..100` overrides only the `ScrollbarMinimapBase` surface. |
-| `float.zindex` | integer | `50` | `nvim_open_win` z-index. |
-| `float.blend` | integer | `0` | Profile-aware pseudo-transparency for the full float, 0-100. It stays the default blend for the base and for all layers with a background, unless `background.blend` or an explicit highlight blend overrides it. |
-| `float.hide_on_cursor` | boolean | `true` | Temporarily hides the minimap of the active source window while the editing cursor overlaps the screen rectangle of the minimap. Profiles can override this option. Presets cannot. |
-| `float.placement.relative` | `"window"` \| `"editor"` | `"window"` | Reference for the float position. `"editor"` renders only the minimap of the active source window (one editor-wide float that tracks focus). |
-| `float.placement.anchor` | `"NW"` \| `"NE"` \| `"SW"` \| `"SE"` | `"NE"` | Corner used as the row/col origin. |
-| `float.placement.row` | integer | `0` | Row offset from the anchor. |
-| `float.placement.col` | integer | `0` | Column offset from the anchor. |
-| `float.placement.gutter` | `"avoid"` \| `"overlap"` | `"overlap"` | Reserved for parity with the scrollbar. The minimap does not reserve `statuscolumn` cells. |
-| `float.placement.gutter_position` | `"inner"` \| `"outer"` | `"inner"` | Reserved for parity with the scrollbar. |
-| `width` | false \| integer | `16` | Width of the minimap grid in cells. `false` falls back to 16 columns. |
-| `height` | false \| integer | `false` | Height of the minimap grid. `false` uses the height of the source window. |
-| `mouse.enabled` | boolean | `true` | When `true`, attaches the `<LeftMouse>`, `<LeftDrag>`, and `<LeftRelease>` keymaps. |
-| `backend` | `"worker"` \| `"sync"` | `"worker"` | Selects where Treesitter collection and squashing run: in a child Neovim process, or in the main Neovim process. It does not change provider-specific backends such as `providers.search.backend`. |
-| `update.events` | string[] | See below | Closed allow-list of Neovim autocmds that schedule a re-render. |
-| `update.interval_ms` | integer | `50` | Coalescing interval between renders. `0` flushes as fast as possible. |
-| `excluded_buftypes` | string[] | `{}` | Skips buffers whose `buftype` matches. |
-| `excluded_filetypes` | string[] | `{}` | Skips buffers whose `filetype` matches. |
-| `overlays.enabled` | boolean | `true` | Controls whether ordinary provider marks show on the minimap. |
-| `overlays.types` | table<string, false \| `{ priority?, highlight? }`> | derived scrollbar specs except `Cursor` | Ordinary overlay specs, keyed by type. Entries deep-merge with the derived defaults. `false` disables one type. A minimap-only custom type must supply both fields. |
-| `providers` | table | See below | Built-in provider demand for the minimap, at setup level. Presets and profiles cannot override this table. |
-| `show_viewport` | boolean | `true` | Applies a non-destructive background tint to the projected viewport rows. |
-| `content_glyph` | string | `"█"` | Glyph shown for every occupied canonical cell. It must be non-empty and have a display width of exactly one. Setup accepts single-width ASCII, Unicode, and Nerd Font glyphs. This option changes only the presentation. |
-| `preset` | string | — | Name of a preset to apply (built-in or user-defined). |
-| `presets` | table | — | User-defined preset definitions. |
-| `profiles` | table[] | — | Ordered profile variants. The first match wins. |
+You set global options only at the root of the `minimap` block.
 
-## Blend Layers
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `enabled` | `false` | Main toggle. When `false`, the minimap requests no providers, shows no floats, and creates no `:Minimap*` commands. |
+| `show` | `true` | Initial visibility. `false` starts hidden. `:MinimapShow` shows it. |
+| `visibility` | `"all"` | Uses the same rules as the scrollbar. See [Visibility](../visibility.md). |
+| `autohide` | `false` | `true` hides each minimap after 1000 ms without cursor or scroll activity in its window. `{ delay_ms = n }` sets the delay. |
+| `max_lines` | `false` | A buffer with more lines than this number gets no minimap. |
+| `throttle_ms` | `50` | Renders that are queued within this interval combine into one frame. `0` renders as fast as possible. |
+| `backend` | `"worker"` | Where Treesitter collection and squashing run. See [Backends](#backends). |
+| `background_blend` | `false` | Blend of the base surface. See [Blend](#blend). |
 
-`float.blend` and `background.blend` control different layers:
+## Appearance Options
 
-- `float.blend` is the profile-aware blend for the full float. If
-  `background.blend = false`, the float uses the selected `float.blend`.
-- Only the root configuration accepts a numeric `background.blend`. It
-  changes only the base surface that comes from `ScrollbarMinimapBase`. It
-  works even when `float.blend = 0`. As a result, the base can blend while the
-  viewport, cursor, overlay, and semantic backgrounds stay solid.
+You set appearance options at the root of the `minimap` block or in a
+[profile](#profiles). The minimap has no presets.
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `width` | `16` | Width of the minimap grid in cells. A positive integer. |
+| `height` | `false` | Height of the minimap grid. `false` uses the height of the source window. |
+| `placement.relative` | `"window"` | Reference for the float position. `"editor"` renders only the minimap of the active source window. |
+| `placement.anchor` | `"NE"` | Corner used as the origin of `row` and `col`. |
+| `placement.row` | `0` | Row offset from the anchor. |
+| `placement.col` | `0` | Column offset from the anchor. |
+| `placement.zindex` | `50` | `nvim_open_win()` z-index. |
+| `blend` | `0` | Pseudo-transparency of the full float, `0` to `100`. |
+| `hide_on_cursor` | `true` | Hides the minimap of the active source window while the cursor is inside it. See [Cursor Yielding](#cursor-yielding). |
+| `mouse` | `true` | Adds the `<LeftMouse>`, `<LeftDrag>`, and `<LeftRelease>` mappings. |
+| `viewport` | `true` | Tints the background of the rows that the source window shows. |
+| `glyph` | `"█"` | Glyph for every occupied cell. It must be one string with a display width of exactly one. |
+| `marks` | `{}` | Overrides of the shared mark types for the minimap. See [Marks](#marks). |
+
+## Providers
+
+The shared `providers` table controls the minimap data sources. A provider
+that targets the minimap runs once, also when the scrollbar uses it. A disabled
+minimap requests no providers.
+
+```lua
+require("scrollbar").setup({
+    providers = {
+        treesitter = true,              -- syntax colors
+        coc = { scrollbar = false },    -- minimap only
+        diagnostic = { minimap = false }, -- scrollbar only
+    },
+    minimap = { enabled = true },
+})
+```
+
+| Provider | Minimap output |
+| --- | --- |
+| `cursor` | The cursor-cell accent. |
+| `diagnostic`, `ale`, `coc` | Diagnostic marks. |
+| `search` | Search marks. |
+| `marks` | Native mark positions. |
+| `gitsigns`, `mini_diff`, `signify`, `vgit` | Git marks. |
+| `treesitter` | Syntax colors from Treesitter. Minimap only. |
+| `lsp_semantic_tokens` | Syntax colors from LSP semantic tokens. Minimap only. |
+
+To turn off the cursor accent, set `providers.cursor = { minimap = false }`.
+See [Configuration](../configuration.md#providers) for the rules, and the
+[Treesitter](../providers/treesitter.md) and
+[LSP semantic-token](../providers/lsp_semantic_tokens.md) guides.
+
+## Marks
+
+The minimap shows the shared mark types from the top-level `marks` table as
+overlays. It uses their `priority` and `highlight`. It does not use `text`.
+
+`minimap.marks` overrides the shared types for the minimap only:
+
+```lua
+require("scrollbar").setup({
+    minimap = {
+        enabled = true,
+        marks = {
+            Search = { priority = 0, highlight = "IncSearch" },
+            Hint = false,
+        },
+    },
+})
+```
+
+- A table merges with the shared definition. It accepts only `priority` and
+  `highlight`.
+- `false` hides one type. `marks = false` hides all overlays.
+- An override can name only a registered type. To add a type, add it to the
+  top-level `marks` table. To show a new type only in the minimap, also set
+  `scrollbar.marks.<Type> = false`.
+- `Cursor` is not an overlay type. The minimap draws the cursor with the
+  `ScrollbarMinimapCursor` group. `marks.Cursor` is a setup error.
+
+When several marks project onto one row, the lowest `priority` wins.
+
+## Blend
+
+`blend` and `background_blend` control different layers:
+
+- `blend` is the pseudo-transparency of the full float. Profiles can change
+  it.
+- `background_blend = false` uses `blend` for the base surface. A number from
+  `0` to `100` changes only the base surface that comes from
+  `ScrollbarMinimapBase`. It works even when `blend = 0`. As a result, the base
+  can blend while the viewport, cursor, overlay, and syntax backgrounds stay
+  solid. It is a global option.
 - An explicit `blend` in a source highlight is kept. Groups that have only a
   foreground keep their text or glyph above the base surface.
 
-The plugin never rewrites the public `ScrollbarMinimap*` groups. A profile can
-change `float.blend`, but not `background.blend`.
+The plugin never rewrites the public `ScrollbarMinimap*` groups.
 
 Neovim implements `winblend` and highlight `blend` as UI pseudo-transparency,
 not as per-pixel alpha. The result depends on the active colorscheme and UI.
 
 ## Cursor Yielding
 
-With `float.hide_on_cursor = true`, the minimap of the active source window
-hides while the editing cursor is inside its screen rectangle. The minimap
-shows again when the cursor leaves. Stored cursor positions in inactive splits
-do not hide their minimaps. This option is independent of
-`minimap.providers.cursor`. For more information, see
-[Visibility](../visibility.md).
-
-The check runs when the minimap renders. If you remove `CursorMoved` and
-`CursorMovedI` from `update.events`, the hidden state changes only at the next
-configured event. To skip the check, set `float.hide_on_cursor = false`.
-
-## Provider Defaults
-
-`minimap.providers` uses the same built-in providers as the scrollbar. A
-built-in provider is active when the scrollbar or the minimap requests it. A
-disabled minimap requests no providers. Each renderer applies its own
-eligibility rules and shows only the providers that it enables.
-
-| Provider | Default | Minimap output |
-| --- | --- | --- |
-| `cursor` | `true` | Cursor point. |
-| `diagnostic` | `true` | Diagnostic marks. |
-| `search` | `{ backend = "worker" }` | Search marks. `true` normalizes to the same backend. |
-| `marks` | `{ letters = true, numbers = false }` | Native mark positions. |
-| `gitsigns` | `false` | Git marks from gitsigns.nvim. |
-| `mini_diff` | `false` | Git marks from mini.diff. |
-| `signify` | `false` | Git marks from vim-signify. |
-| `vgit` | `false` | Git marks from vgit.nvim. |
-| `ale` | `false` | ALE diagnostic marks. |
-| `coc` | `false` | coc.nvim diagnostic marks. |
-| `treesitter` | `false` | Syntax colors from Treesitter. |
-| `lsp_semantic_tokens` | `false` | Syntax colors from LSP semantic tokens. |
-
-`search` and `marks` are the only entries that accept a table. If both
-renderers request one of these providers with explicit tables, the tables must
-normalize to equal options. Conflicting scrollbar and minimap options are setup
-errors. All other built-ins are booleans. For more information, see the
-[Treesitter](../providers/treesitter.md) and
-[LSP semantic-token](../providers/lsp_semantic_tokens.md) guides.
-
-## Update Events
-
-Most scrollbar-specific events do not change the minimap content. For this
-reason, the default event list is shorter than the scrollbar event list:
-
-```
-BufEnter, BufWinEnter, WinEnter, WinScrolled, WinResized, VimResized,
-CursorMoved, CursorMovedI, TextChanged, TextChangedI, TextChangedP,
-TextChangedT, WinClosed, BufDelete, BufWipeout, ColorScheme
-```
-
-`update.events` accepts the same closed allow-list as the scrollbar. See
-[Configuration](../configuration.md#update-cadence). An unknown or duplicate
-event name is a setup error.
-
-If you remove `CursorMoved`, cursor movement no longer starts a minimap render,
-a cursor-hiding check, or autohide activity. Provider events stay active. As a
-result, the cursor provider still updates the cursor point until you set
-`minimap.providers.cursor = false`.
+With `hide_on_cursor = true`, the minimap of the active source window hides
+while the editing cursor is inside its screen rectangle. The minimap shows
+again when the cursor leaves. Stored cursor positions in inactive splits do not
+hide their minimaps. This option is independent of the `cursor` provider. For
+more information, see [Visibility](../visibility.md).
 
 ## Backends
 
@@ -197,62 +177,17 @@ result, the cursor provider still updates the cursor point until you set
   embedded headless child Neovim process.
 - `"sync"` runs them in the main Neovim process. It starts no child process.
 
-Treesitter collection runs only when `minimap.providers.treesitter = true`. If
-the worker fails, the minimap switches to the sync backend. A later `setup()`
-may try to start a new worker. LSP semantic-token requests always run in the
-main process, for both backends.
-
-## Presets
-
-The minimap includes a starter preset named `default`:
-
-```lua
-require("scrollbar").setup({
-    minimap = {
-        enabled = true,
-        preset = "default",
-    },
-})
-```
-
-Custom presets use the same `extends` inheritance rules as the scrollbar.
-Keyed overlay entries deep-merge through the preset chain and the root options:
-
-```lua
-require("scrollbar").setup({
-    minimap = {
-        enabled = true,
-        preset = "narrow",
-        presets = {
-            narrow = {
-                extends = "default",
-                width = 10,
-                overlays = {
-                    types = {
-                        Error = { priority = 0 },
-                        Hint = false,
-                    },
-                },
-                show_viewport = false,
-            },
-        },
-        providers = {
-            treesitter = true,
-        },
-    },
-})
-```
-
-`providers`, `background.blend`, and `content_glyph` stay at the minimap root,
-but a profile can override `content_glyph`. Presets cannot set the background
-policy, `content_glyph`, or `float.hide_on_cursor`. For the exact allow-list,
-see [Presets](../presets.md#minimap-presets).
+Treesitter collection runs only when the `treesitter` provider targets the
+minimap. If the worker fails, the minimap switches to the sync backend. A later
+`setup()` may try to start a new worker. LSP semantic-token requests always run
+in the main process, for both backends. `backend` does not change the
+`search` provider backend, which is `providers.search.backend`.
 
 ## Profiles
 
-Minimap profiles work like scrollbar profiles. They match on `filetypes`,
-`buftypes`, and `when` predicates, and the first match wins. Each variant can
-set `preset` and `config`:
+Minimap profiles work like [scrollbar profiles](../configuration.md#profiles).
+They match on `filetypes`, `buftypes`, and `when`, and the first match wins.
+Each profile has a required `match` and any appearance options:
 
 ```lua
 require("scrollbar").setup({
@@ -261,33 +196,22 @@ require("scrollbar").setup({
         profiles = {
             {
                 match = { filetypes = { "lua" } },
-                config = { width = 60 },
+                width = 60,
+                marks = { Hint = false },
             },
         },
     },
 })
 ```
 
-If a `when` predicate raises an error, that render uses the root
-configuration. A notification appears once for each distinct pair of profile
-and error message.
+A global option in a profile is a setup error. Minimap profiles have no
+`preset`. Scrollbar and minimap profiles are independent. They are not paired
+by declaration index.
 
-Profile `config` accepts only `width`, `height`, `float` (`zindex`, `blend`,
-`hide_on_cursor`, and `placement`), `overlays`, `show_viewport`, `mouse`, and
-`content_glyph`. Setup rejects every other field, including `background` and
-`providers`. The root `background.blend` and the root providers apply to every
-window.
-
-Overlay specs resolve in this order:
-
-1. Derived scrollbar defaults.
-2. The selected minimap preset.
-3. Root minimap entries.
-4. The matching minimap profile.
-
-If a derived default exists, a later `{}` or partial spec can re-enable an
-earlier `false` entry. Scrollbar and minimap profiles are independent. They are
-not paired by declaration index.
+The precedence is the plugin defaults, then the root options, then the
+profile options. Mark overrides apply on top of the shared `marks` definitions.
+If a `when` predicate raises an error, that render uses the root options. A
+notification appears once for each distinct pair of profile and error message.
 
 ## Highlights
 
@@ -301,8 +225,8 @@ with theme-owned default links:
 | `ScrollbarMinimapViewport` | `CursorLine` | Projected viewport background tint. |
 | `ScrollbarMinimapCursor` | `Cursor` | Exact projected cursor-cell accent. |
 
-Each enabled ordinary type also gets a public `ScrollbarMinimap<Type>` group,
-such as `ScrollbarMinimapError`, `ScrollbarMinimapSearch`, or
+Each shown mark type also gets a public `ScrollbarMinimap<Type>` group, such as
+`ScrollbarMinimapError`, `ScrollbarMinimapSearch`, or
 `ScrollbarMinimapGitAdd`. A string source contributes its resolved foreground.
 A direct table is copied. A public definition that already exists is not
 overwritten. In automatic mode, each profile gets its own internal groups, so
@@ -328,34 +252,30 @@ vim.api.nvim_create_autocmd("ColorScheme", { callback = set_minimap_highlights }
 
 ## Validation
 
-The validator applies the same strict allow-list rules as the scrollbar, at
-every level. These inputs fail setup with an error that starts with
-`[nvim-scrollbar]`:
+The minimap uses the same strict validation as the scrollbar. Unknown keys,
+invalid values, and global options in profiles fail setup with an error that
+starts with `[nvim-scrollbar]` and gives the full option path.
 
-- Unknown top-level keys or built-in provider keys.
-- Unknown nested keys.
-- Invalid enum values.
-- Event lists that are not dense.
-- Duplicate events.
-- Numeric overlay keys.
-- Malformed type names.
-- Unknown spec fields.
-- Invalid priorities or highlights.
-- Incomplete minimap-only specs.
+- `width`, `placement.zindex`, `autohide.delay_ms`, a numeric `height`, and a
+  numeric `max_lines`: positive integers.
+- `blend` and a numeric `background_blend`: integers from `0` to `100`.
+- `throttle_ms`: a non-negative integer.
+- `placement.row` and `placement.col`: signed integers.
+- `glyph`: a non-empty string with a display width of one.
+- `Base`, `Content`, `Viewport`, and `Cursor` are not valid minimap mark
+  types, because their `ScrollbarMinimap<Name>` groups belong to the static
+  layers. The minimap does not show a shared type with one of these names.
 
-`content_glyph` must be a non-empty string with a display width of one. `Base`,
-`Content`, `Viewport`, and `Cursor` are reserved, because their canonical names
-belong to the static minimap layers.
-
-Setup also rejects a scrollbar and minimap type pair that claims the same
-public highlight group, such as scrollbar `MinimapSearch` and minimap `Search`.
-The same ownership check rejects scrollbar names such as `Track`, `Handle`, or
-`SearchThumb` when they collide with fixed, overlap, pressed, or legacy groups.
+When the minimap is enabled, setup also rejects a scrollbar and minimap type
+pair that claims the same public highlight group, such as a scrollbar type
+`MinimapSearch` and the minimap type `Search`. The same ownership check rejects
+scrollbar names such as `Track`, `Handle`, or `SearchThumb` when they collide
+with fixed, overlap, pressed, or legacy groups.
 
 ## Related
 
 - [Minimap](README.md)
-- [Presets](../presets.md)
+- [Configuration](../configuration.md)
 - [Treesitter provider](../providers/treesitter.md)
 - [LSP semantic tokens](../providers/lsp_semantic_tokens.md)
 - [Migration](../migration.md)

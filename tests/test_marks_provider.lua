@@ -10,11 +10,13 @@ local T = MiniTest.new_set({
             package.loaded["scrollbar.providers"] = nil
             package.loaded["scrollbar.providers.marks"] = nil
             require("scrollbar.config").set({
+                exclude = {
+                    buftypes = {},
+                    filetypes = { "scrollbar-excluded" },
+                },
+                providers = { marks = true },
                 scrollbar = {
                     max_lines = false,
-                    excluded_buftypes = {},
-                    excluded_filetypes = { "scrollbar-excluded" },
-                    providers = { marks = true },
                 },
             })
             for byte = string.byte("A"), string.byte("Z") do
@@ -120,11 +122,13 @@ T["collects numbered marks independently from letter marks"] = function()
     vim.api.nvim_buf_set_mark(target, "A", 2, 0, {})
     vim.api.nvim_buf_set_mark(target, "1", 3, 0, {})
     local active_config = config.set({
+        exclude = {
+            buftypes = {},
+            filetypes = {},
+        },
+        providers = { marks = { letters = false, numbers = true } },
         scrollbar = {
             max_lines = false,
-            excluded_buftypes = {},
-            excluded_filetypes = {},
-            providers = { marks = { letters = false, numbers = true } },
         },
     })
 
@@ -169,11 +173,13 @@ T["owned buffer events clear excluded and oversized state"] = function()
     local target = new_buffer({ "one", "two", "three" })
     vim.api.nvim_buf_set_mark(target, "a", 2, 0, {})
     local active_config = config.set({
+        exclude = {
+            buftypes = {},
+            filetypes = { "scrollbar-excluded" },
+        },
+        providers = { marks = true },
         scrollbar = {
             max_lines = 3,
-            excluded_buftypes = {},
-            excluded_filetypes = { "scrollbar-excluded" },
-            providers = { marks = true },
         },
     })
     setup_provider({ config = active_config })
@@ -237,11 +243,13 @@ T["mark reconciliation moves and deletes numbered marks across source buffers"] 
     vim.api.nvim_set_current_win(first_win)
     vim.api.nvim_buf_set_mark(first, "1", 2, 0, {})
     local active_config = config.set({
+        exclude = {
+            buftypes = {},
+            filetypes = {},
+        },
+        providers = { marks = { letters = false, numbers = true } },
         scrollbar = {
             max_lines = false,
-            excluded_buftypes = {},
-            excluded_filetypes = {},
-            providers = { marks = { letters = false, numbers = true } },
         },
     })
     setup_provider({ config = active_config })
@@ -327,11 +335,13 @@ end
 T["numbered mark tracking retains SafeState reconciliation for ShaDa changes"] = function()
     local config = require("scrollbar.config")
     local active_config = config.set({
+        exclude = {
+            buftypes = {},
+            filetypes = {},
+        },
+        providers = { marks = { letters = false, numbers = true } },
         scrollbar = {
             max_lines = false,
-            excluded_buftypes = {},
-            excluded_filetypes = {},
-            providers = { marks = { letters = false, numbers = true } },
         },
     })
     setup_provider({ config = active_config })

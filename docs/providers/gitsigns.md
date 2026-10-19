@@ -12,10 +12,8 @@ Load and configure gitsigns before you call `require("scrollbar").setup()`:
 require("gitsigns").setup()
 
 require("scrollbar").setup({
-    scrollbar = {
-        providers = {
-            gitsigns = true,
-        },
+    providers = {
+        gitsigns = true,
     },
 })
 ```
@@ -28,9 +26,7 @@ scrollbar refresh:
     "petertriho/nvim-scrollbar",
     dependencies = { "lewis6991/gitsigns.nvim" },
     opts = {
-        scrollbar = {
-            providers = { gitsigns = true },
-        },
+        providers = { gitsigns = true },
     },
 }
 ```
@@ -55,18 +51,17 @@ The three mark types have these defaults:
 
 ```lua
 require("scrollbar").setup({
-    scrollbar = {
-        marks = {
-            GitAdd = { text = { "┃" }, priority = 7, highlight = "GitSignsAdd" },
-            GitChange = { text = { "┃" }, priority = 7, highlight = "GitSignsChange" },
-            GitDelete = { text = { "▁" }, priority = 7, highlight = "GitSignsDelete" },
-        },
+    marks = {
+        GitAdd = { text = { "┃" }, priority = 7, highlight = "GitSignsAdd" },
+        GitChange = { text = { "┃" }, priority = 7, highlight = "GitSignsChange" },
+        GitDelete = { text = { "▁" }, priority = 7, highlight = "GitSignsDelete" },
     },
 })
 ```
 
 To change a mark type, override its `text`, `priority`, or `highlight` in the
-`scrollbar.marks` table.
+top-level `marks` table. To change it in one renderer only, use
+`scrollbar.marks` or `minimap.marks`.
 
 ## Updates
 

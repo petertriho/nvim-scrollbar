@@ -56,7 +56,7 @@ M.set = function()
     set_default_link("ScrollbarMinimapCursor", "Cursor")
 
     for _, variant in ipairs(config.get_variants()) do
-        for _, spec in pairs(variant.config.overlays.types) do
+        for _, spec in pairs(variant.config.marks) do
             local resolved = definition(spec.highlight)
             if variant.id == 0 then
                 local private_name = generated_name(spec.group)

@@ -13,12 +13,8 @@ local function new_child()
 end
 
 local function root_config(overrides)
-    return require("scrollbar.presets").merge({
+    return require("scrollbar.schema").merge({
         set_highlights = false,
-        update = { interval_ms = 1000 },
-        render = { geometry = "line" },
-        mouse = { enabled = true },
-        thumb = { text = "H", hide_if_all_visible = false },
         providers = {
             cursor = false,
             diagnostic = false,
@@ -29,8 +25,13 @@ local function root_config(overrides)
             ale = false,
             coc = false,
         },
-        excluded_buftypes = {},
-        excluded_filetypes = {},
+        exclude = { buftypes = {}, filetypes = {} },
+        scrollbar = {
+            throttle_ms = 1000,
+            geometry = "line",
+            mouse = true,
+            thumb = { text = "H", hide_if_all_visible = false },
+        },
     }, overrides or {})
 end
 
@@ -38,7 +39,7 @@ T["exposes only the public root orchestration API"] = function()
     local child = new_child()
     local result = child.lua_func(function(config)
         local scrollbar = require("scrollbar")
-        scrollbar.setup({ scrollbar = config })
+        scrollbar.setup(config)
         local keys = vim.tbl_keys(scrollbar)
         table.sort(keys)
         return {
@@ -68,11 +69,11 @@ T["validates before disposing the active runtime"] = function()
         vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
 
         local scrollbar = require("scrollbar")
-        scrollbar.setup({ scrollbar = config })
+        scrollbar.setup(config)
         require("scrollbar.scheduler").flush()
         local source_win = vim.api.nvim_get_current_win()
         local before = assert(require("scrollbar.renderer").get_state(source_win))
-        local ok = pcall(scrollbar.setup, { scrollbar = { update = { interval_ms = -1 } } })
+        local ok = pcall(scrollbar.setup, { scrollbar = { throttle_ms = -1 } })
         local after = require("scrollbar.renderer").get_state(source_win)
         return {
             ok = ok,
@@ -119,7 +120,7 @@ T["preserves custom providers while reconciling only root-owned built-ins"] = fu
         providers.register(custom_cursor)
 
         local scrollbar = require("scrollbar")
-        scrollbar.setup({ scrollbar = config })
+        scrollbar.setup(config)
         local after = {
             name = "after",
             refresh_owner = { buffer = "provider" },
@@ -131,7 +132,7 @@ T["preserves custom providers while reconciling only root-owned built-ins"] = fu
             end,
         }
         providers.register(after)
-        scrollbar.setup({ scrollbar = config })
+        scrollbar.setup(config)
 
         local first = {
             before = providers.get("before") == before,
@@ -142,7 +143,7 @@ T["preserves custom providers while reconciling only root-owned built-ins"] = fu
 
         local disabled = vim.deepcopy(config)
         disabled.providers.cursor = false
-        scrollbar.setup({ scrollbar = disabled })
+        scrollbar.setup(disabled)
         first.cursor_after_disable = providers.get("cursor") == custom_cursor
         first.cursor_calls_after_disable = calls.cursor
         return first
@@ -163,17 +164,17 @@ T["registers configured built-ins once and removes disabled root-owned providers
     local result = child.lua_func(function(config)
         local scrollbar = require("scrollbar")
         local providers = require("scrollbar.providers")
-        scrollbar.setup({ scrollbar = config })
+        scrollbar.setup(config)
         local first_cursor = providers.get("cursor")
         local first_diagnostic = providers.get("diagnostic")
-        scrollbar.setup({ scrollbar = config })
+        scrollbar.setup(config)
         local repeated_cursor = providers.get("cursor")
         local cursor_autocmds = vim.api.nvim_get_autocmds({ group = "ScrollbarProvider_cursor_events" })
         local diagnostic_autocmds = vim.api.nvim_get_autocmds({ group = "ScrollbarProvider_diagnostic_events" })
 
         local disabled = vim.deepcopy(config)
         disabled.providers.cursor = false
-        scrollbar.setup({ scrollbar = disabled })
+        scrollbar.setup(disabled)
         return {
             cursor_registered = first_cursor ~= nil,
             diagnostic_registered = first_diagnostic ~= nil,
@@ -198,68 +199,39 @@ end
 
 T["reconciles shared and reserved builtins from union demand"] = function()
     local child = new_child()
-    local result = child.lua_func(function(scrollbar_config)
+    local result = child.lua_func(function(config)
         local scrollbar = require("scrollbar")
         local providers = require("scrollbar.providers")
 
-        local function minimap_config(enabled, requested)
-            return {
-                enabled = enabled,
-                set_highlights = false,
-                backend = "sync",
-                width = 4,
-                height = 4,
-                providers = vim.tbl_extend("force", {
-                    cursor = false,
-                    diagnostic = false,
-                    search = false,
-                    marks = false,
-                    gitsigns = false,
-                    mini_diff = false,
-                    signify = false,
-                    vgit = false,
-                    ale = false,
-                    coc = false,
-                    treesitter = false,
-                    lsp_semantic_tokens = false,
-                }, requested or {}),
-            }
+        local function setup(enabled, requested)
+            local options = vim.deepcopy(config)
+            options.providers = vim.tbl_extend("force", options.providers, requested)
+            options.minimap = { enabled = enabled, backend = "sync", width = 4, height = 4 }
+            scrollbar.setup(options)
         end
 
-        scrollbar.setup({
-            scrollbar = scrollbar_config,
-            minimap = minimap_config(true, { diagnostic = true }),
-        })
+        setup(true, { diagnostic = { scrollbar = false } })
         local minimap_only = providers.get("diagnostic")
+        local minimap_only_plan = vim.deepcopy(require("scrollbar.config").get_provider_plan().diagnostic.consumers)
 
-        local both = vim.deepcopy(scrollbar_config)
-        both.providers.diagnostic = true
-        scrollbar.setup({
-            scrollbar = both,
-            minimap = minimap_config(true, { diagnostic = true }),
-        })
+        setup(true, { diagnostic = true })
         local shared = providers.get("diagnostic")
         local diagnostic_autocmds = vim.api.nvim_get_autocmds({ group = "ScrollbarProvider_diagnostic_events" })
 
-        scrollbar.setup({
-            scrollbar = scrollbar_config,
-            minimap = minimap_config(true, { treesitter = true, lsp_semantic_tokens = true }),
-        })
+        setup(true, { treesitter = true, lsp_semantic_tokens = true })
         local treesitter = providers.get("treesitter")
         local lsp = providers.get("lsp_semantic_tokens")
         local spans = require("scrollbar.store").get_minimap_spans(vim.api.nvim_get_current_buf())
 
-        scrollbar.setup({
-            scrollbar = scrollbar_config,
-            minimap = minimap_config(false, {
-                diagnostic = true,
-                treesitter = true,
-                lsp_semantic_tokens = true,
-            }),
+        setup(false, {
+            diagnostic = { scrollbar = false },
+            treesitter = true,
+            lsp_semantic_tokens = true,
         })
         return {
             minimap_only_registered = minimap_only ~= nil,
             minimap_target = minimap_only and minimap_only.targets and minimap_only.targets.minimap,
+            minimap_only_plan = minimap_only_plan,
             shared_reused = shared == minimap_only,
             diagnostic_autocmds = #diagnostic_autocmds,
             treesitter_targets = treesitter and treesitter.targets,
@@ -274,6 +246,7 @@ T["reconciles shared and reserved builtins from union demand"] = function()
     expect.equality(result, {
         minimap_only_registered = true,
         minimap_target = true,
+        minimap_only_plan = { scrollbar = false, minimap = true },
         shared_reused = true,
         diagnostic_autocmds = 1,
         treesitter_targets = { scrollbar = false, minimap = true },
@@ -287,7 +260,7 @@ end
 
 T["activates providers after both store consumers are ready"] = function()
     local child = new_child()
-    local result = child.lua_func(function(scrollbar_config)
+    local result = child.lua_func(function(config)
         local bufnr = vim.api.nvim_get_current_buf()
         local winid = vim.api.nvim_get_current_win()
         vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "one", "two" })
@@ -314,30 +287,9 @@ T["activates providers after both store consumers are ready"] = function()
             end,
         })
 
-        require("scrollbar").setup({
-            scrollbar = scrollbar_config,
-            minimap = {
-                enabled = true,
-                set_highlights = false,
-                backend = "sync",
-                width = 4,
-                height = 4,
-                providers = {
-                    cursor = false,
-                    diagnostic = false,
-                    search = false,
-                    marks = false,
-                    gitsigns = false,
-                    mini_diff = false,
-                    signify = false,
-                    vgit = false,
-                    ale = false,
-                    coc = false,
-                    treesitter = false,
-                    lsp_semantic_tokens = false,
-                },
-            },
-        })
+        local options = vim.deepcopy(config)
+        options.minimap = { enabled = true, backend = "sync", width = 4, height = 4 }
+        require("scrollbar").setup(options)
         observed.winid = winid
         return observed
     end, root_config())
@@ -356,35 +308,15 @@ end
 
 T["repeated setup keeps one store callback and disabled minimap installs none"] = function()
     local child = new_child()
-    local result = child.lua_func(function(scrollbar_config)
+    local result = child.lua_func(function(config)
         local bufnr = vim.api.nvim_get_current_buf()
         local winid = vim.api.nvim_get_current_win()
         vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "one", "two" })
-        scrollbar_config.providers.cursor = true
+        config.providers.cursor = true
+        config.minimap = { enabled = true, backend = "sync", width = 4, height = 4 }
         local scrollbar = require("scrollbar")
-        local minimap_config = {
-            enabled = true,
-            set_highlights = false,
-            backend = "sync",
-            width = 4,
-            height = 4,
-            providers = {
-                cursor = true,
-                diagnostic = false,
-                search = false,
-                marks = false,
-                gitsigns = false,
-                mini_diff = false,
-                signify = false,
-                vgit = false,
-                ale = false,
-                coc = false,
-                treesitter = false,
-                lsp_semantic_tokens = false,
-            },
-        }
-        scrollbar.setup({ scrollbar = scrollbar_config, minimap = minimap_config })
-        scrollbar.setup({ scrollbar = scrollbar_config, minimap = minimap_config })
+        scrollbar.setup(config)
+        scrollbar.setup(config)
 
         local scrollbar_scheduler = require("scrollbar.scheduler")
         local minimap_scheduler = require("scrollbar.minimap.scheduler")
@@ -404,9 +336,9 @@ T["repeated setup keeps one store callback and disabled minimap installs none"] 
         store.set("cursor", bufnr, { { line = 0, type = "Cursor" } })
         local repeated = vim.deepcopy(calls)
 
-        local disabled = vim.deepcopy(minimap_config)
-        disabled.enabled = false
-        scrollbar.setup({ scrollbar = scrollbar_config, minimap = disabled })
+        local disabled = vim.deepcopy(config)
+        disabled.minimap.enabled = false
+        scrollbar.setup(disabled)
         calls = { scrollbar = 0, minimap = 0 }
         store.set("cursor", bufnr, { { line = 1, type = "Cursor" } })
         return {
@@ -434,23 +366,23 @@ T["registers both marks modes and fully removes the disabled builtin"] = functio
         local providers = require("scrollbar.providers")
         local store = require("scrollbar.store")
         local disabled_by_default = vim.deepcopy(config)
-        scrollbar.setup({ scrollbar = disabled_by_default })
+        scrollbar.setup(disabled_by_default)
         local default_registered = providers.get("marks") ~= nil
         local default_group_exists = pcall(vim.api.nvim_get_autocmds, { group = "ScrollbarProvider_marks_events" })
         local default_marks = store.get(vim.api.nvim_get_current_buf()).marks
 
         local collapsed = vim.deepcopy(config)
         collapsed.providers.marks = true
-        scrollbar.setup({ scrollbar = collapsed })
+        scrollbar.setup(collapsed)
         local first = providers.get("marks")
         local collapsed_marks = store.get(vim.api.nvim_get_current_buf()).marks
 
         local expanded = vim.deepcopy(config)
         expanded.providers.marks = { numbers = true }
-        scrollbar.setup({ scrollbar = expanded })
+        scrollbar.setup(expanded)
         local repeated = providers.get("marks")
 
-        scrollbar.setup({ scrollbar = disabled_by_default })
+        scrollbar.setup(disabled_by_default)
         local group_exists = pcall(vim.api.nvim_get_autocmds, { group = "ScrollbarProvider_marks_events" })
         return {
             default_registered = default_registered,
@@ -486,7 +418,7 @@ T["scheduler-hosted text-change subscription reconciles marks through the defaul
         local scrollbar = require("scrollbar")
         local wired = vim.deepcopy(config)
         wired.providers.marks = true
-        scrollbar.setup({ scrollbar = wired })
+        scrollbar.setup(wired)
         local store = require("scrollbar.store")
         local bufnr = vim.api.nvim_get_current_buf()
         vim.api.nvim_exec_autocmds("BufEnter", { buffer = bufnr })
@@ -528,7 +460,7 @@ T["configured cursor and diagnostics publish only through the central store"] = 
         vim.api.nvim_buf_set_lines(0, 0, -1, false, { "one", "two", "three" })
         vim.api.nvim_win_set_cursor(0, { 2, 0 })
         local bufnr = vim.api.nvim_get_current_buf()
-        require("scrollbar").setup({ scrollbar = config })
+        require("scrollbar").setup(config)
 
         local namespace = vim.api.nvim_create_namespace("ScrollbarRootDiagnosticTest")
         vim.diagnostic.set(namespace, bufnr, {
@@ -577,13 +509,13 @@ T["repeated setup replaces all owned runtime resources without duplication"] = f
         vim.api.nvim_win_set_var(orphan_win, "scrollbar_owned", true)
 
         local scrollbar = require("scrollbar")
-        scrollbar.setup({ scrollbar = config })
+        scrollbar.setup(config)
         require("scrollbar.scheduler").flush()
         local source_win = vim.api.nvim_get_current_win()
         local first = assert(require("scrollbar.renderer").get_state(source_win))
         local first_group = require("scrollbar.scheduler").status().augroup_id
 
-        scrollbar.setup({ scrollbar = config })
+        scrollbar.setup(config)
         require("scrollbar.scheduler").flush()
         local second = assert(require("scrollbar.renderer").get_state(source_win))
         local second_group = require("scrollbar.scheduler").status().augroup_id
@@ -649,7 +581,7 @@ T["public commands change visibility globally across every owned window"] = func
         vim.cmd("split")
         local second = vim.api.nvim_get_current_win()
 
-        require("scrollbar").setup({ scrollbar = config })
+        require("scrollbar").setup(config)
         require("scrollbar.scheduler").flush()
         local renderer = require("scrollbar.renderer")
         local initially_visible = renderer.get_state(first) ~= nil and renderer.get_state(second) ~= nil
@@ -697,7 +629,7 @@ T["autohide commands preserve global master visibility and temporary reveals"] =
         vim.cmd("split")
         local second = vim.api.nvim_get_current_win()
 
-        require("scrollbar").setup({ scrollbar = config })
+        require("scrollbar").setup(config)
         local scheduler = require("scrollbar.scheduler")
         local renderer = require("scrollbar.renderer")
         scheduler.flush()
@@ -761,7 +693,7 @@ T["autohide commands preserve global master visibility and temporary reveals"] =
             toggle_revealed = toggle_revealed,
             refresh_hidden = refresh_hidden,
         }
-    end, root_config({ autohide = { enabled = true, delay_ms = 30 } }))
+    end, root_config({ scrollbar = { autohide = { delay_ms = 30 } } }))
 
     expect.equality(result, {
         startup_hidden = true,
@@ -787,7 +719,7 @@ T["show defers exactly one render per source window to the scheduler"] = functio
         vim.cmd("split")
 
         local scrollbar = require("scrollbar")
-        scrollbar.setup({ scrollbar = config })
+        scrollbar.setup(config)
         local scheduler = require("scrollbar.scheduler")
         scheduler.flush()
         scrollbar.hide()
@@ -867,7 +799,7 @@ T["public refresh recollects displayed buffers through providers and schedules r
         })
 
         local scrollbar = require("scrollbar")
-        scrollbar.setup({ scrollbar = config })
+        scrollbar.setup(config)
         require("scrollbar.scheduler").flush()
         refreshes = 0
         window_refreshes = 0
@@ -919,7 +851,7 @@ T["root setup enables both diff providers and refresh clears disabled mini.diff 
             }
         end)
 
-        require("scrollbar").setup({ scrollbar = config })
+        require("scrollbar").setup(config)
         local bufnr = vim.api.nvim_get_current_buf()
         local before = require("scrollbar.store").get(bufnr)
         mini_data = nil
@@ -937,6 +869,123 @@ T["root setup enables both diff providers and refresh clears disabled mini.diff 
     expect.equality(result.after.gitsigns, { { line = 0, type = "GitAdd" } })
     expect.equality(result.after.mini_diff, {})
     expect.equality(result.mini_registered, true)
+end
+
+T["disabled scrollbar creates no floats or commands and show keeps it hidden"] = function()
+    local child = new_child()
+    local result = child.lua_func(function(config)
+        local lines = {}
+        for index = 1, 100 do
+            lines[index] = "line " .. index
+        end
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        local source_win = vim.api.nvim_get_current_win()
+        local scrollbar = require("scrollbar")
+        local renderer = require("scrollbar.renderer")
+        local scheduler = require("scrollbar.scheduler")
+
+        local function commands()
+            return {
+                hide = vim.fn.exists(":ScrollbarHide"),
+                refresh = vim.fn.exists(":ScrollbarRefresh"),
+                show = vim.fn.exists(":ScrollbarShow"),
+                toggle = vim.fn.exists(":ScrollbarToggle"),
+            }
+        end
+
+        local function owned_windows()
+            local count = 0
+            for _, winid in ipairs(vim.api.nvim_list_wins()) do
+                if renderer.is_owned_window(winid) then
+                    count = count + 1
+                end
+            end
+            return count
+        end
+
+        local disabled = vim.deepcopy(config)
+        disabled.scrollbar.enabled = false
+        scrollbar.setup(disabled)
+        scheduler.flush()
+        local fresh = {
+            commands = commands(),
+            state = renderer.get_state(source_win) ~= nil,
+            owned_windows = owned_windows(),
+            eligible = renderer.is_buffer_eligible(vim.api.nvim_get_current_buf()),
+        }
+
+        scrollbar.setup(config)
+        scheduler.flush()
+        local enabled = {
+            commands = commands(),
+            state = renderer.get_state(source_win) ~= nil,
+        }
+
+        scrollbar.setup(disabled)
+        scheduler.flush()
+        local after_enabled = {
+            commands = commands(),
+            state = renderer.get_state(source_win) ~= nil,
+            owned_windows = owned_windows(),
+        }
+
+        scrollbar.show()
+        scheduler.flush()
+        scrollbar.toggle()
+        scheduler.flush()
+        return {
+            fresh = fresh,
+            enabled = enabled,
+            after_enabled = after_enabled,
+            after_show = {
+                visible = renderer.is_visible(),
+                state = renderer.get_state(source_win) ~= nil,
+                owned_windows = owned_windows(),
+            },
+        }
+    end, root_config())
+
+    local none = { hide = 0, refresh = 0, show = 0, toggle = 0 }
+    expect.equality(result.fresh, { commands = none, state = false, owned_windows = 0, eligible = false })
+    expect.equality(result.enabled, { commands = { hide = 2, refresh = 2, show = 2, toggle = 2 }, state = true })
+    expect.equality(result.after_enabled, { commands = none, state = false, owned_windows = 0 })
+    expect.equality(result.after_show, { visible = false, state = false, owned_windows = 0 })
+end
+
+T["minimap-only setup renders the minimap without a scrollbar"] = function()
+    local child = new_child()
+    local result = child.lua_func(function(config)
+        local lines = {}
+        for index = 1, 100 do
+            lines[index] = "line " .. index
+        end
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        local source_win = vim.api.nvim_get_current_win()
+        config.providers.cursor = true
+        config.scrollbar.enabled = false
+        config.minimap = { enabled = true, backend = "sync", width = 4, height = 4 }
+        require("scrollbar").setup(config)
+        require("scrollbar.scheduler").flush()
+        require("scrollbar.minimap.scheduler").flush()
+        local consumers = require("scrollbar.config").get_provider_plan().cursor.consumers
+        return {
+            scrollbar_state = require("scrollbar.renderer").get_state(source_win) ~= nil,
+            minimap_state = require("scrollbar.minimap.renderer").get_state(source_win) ~= nil,
+            cursor_consumers = consumers,
+            cursor_registered = require("scrollbar.providers").get("cursor") ~= nil,
+            minimap_command = vim.fn.exists(":MinimapToggle"),
+            scrollbar_command = vim.fn.exists(":ScrollbarToggle"),
+        }
+    end, root_config())
+
+    expect.equality(result, {
+        scrollbar_state = false,
+        minimap_state = true,
+        cursor_consumers = { scrollbar = false, minimap = true },
+        cursor_registered = true,
+        minimap_command = 2,
+        scrollbar_command = 0,
+    })
 end
 
 return T

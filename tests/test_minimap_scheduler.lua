@@ -74,7 +74,7 @@ T["coalesces repeated invalidations and renders the latest state"] = function()
         local rendered = {}
         local scheduler = require("scrollbar.minimap.scheduler")
         scheduler.setup({
-            config = require("scrollbar.minimap.config").set({ update = { interval_ms = 10 } }),
+            config = require("scrollbar.minimap.config").set({ throttle_ms = 10 }),
             renderer = {
                 source_windows = function()
                     return { winid }
@@ -124,7 +124,7 @@ T["requeues work arriving during a flush without losing the final state"] = func
         local rendered = {}
         local scheduler = require("scrollbar.minimap.scheduler")
         scheduler.setup({
-            config = require("scrollbar.minimap.config").set({ update = { interval_ms = 5 } }),
+            config = require("scrollbar.minimap.config").set({ throttle_ms = 5 }),
             renderer = {
                 source_windows = function()
                     return { winid }
@@ -173,7 +173,7 @@ T["routes mark span and point store events and unsubscribes on dispose"] = funct
 
         local scheduler = require("scrollbar.minimap.scheduler")
         scheduler.setup({
-            config = require("scrollbar.minimap.config").set({ update = { interval_ms = 1000 } }),
+            config = require("scrollbar.minimap.config").set({ throttle_ms = 1000 }),
             renderer = {
                 source_windows = function(target_buf)
                     if target_buf == nil or target_buf == bufnr then
@@ -280,7 +280,7 @@ T["store publications invalidate matching buffer windows and only the published 
         local sources = { first, second, other }
         local scheduler = require("scrollbar.minimap.scheduler")
         scheduler.setup({
-            config = require("scrollbar.minimap.config").set({ update = { interval_ms = 1000 } }),
+            config = require("scrollbar.minimap.config").set({ throttle_ms = 1000 }),
             renderer = {
                 source_windows = function(bufnr)
                     if bufnr == nil then
@@ -335,6 +335,67 @@ T["store publications invalidate matching buffer windows and only the published 
     expect.equality(vim.tbl_contains(result.after_buffer, result.other), false)
 end
 
+T["mark events invalidate windows when only a profile shows marks"] = function()
+    local child = new_child()
+    reset_config(child)
+    local result = child.lua_func(function()
+        local bufnr = vim.api.nvim_get_current_buf()
+        local winid = vim.api.nvim_get_current_win()
+        vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "one", "two" })
+        vim.bo[bufnr].filetype = "lua"
+        require("scrollbar.providers").register({ name = "diagnostic", targets = { minimap = true } })
+        local store = require("scrollbar.store")
+        local scheduler = require("scrollbar.minimap.scheduler")
+
+        local function dirty_after_mark_event(overrides)
+            scheduler.setup({
+                config = require("scrollbar.minimap.config").set(overrides),
+                renderer = {
+                    source_windows = function(target_buf)
+                        if target_buf == nil or target_buf == bufnr then
+                            return { winid }
+                        end
+                        return {}
+                    end,
+                    is_source_window = function(source_win)
+                        return source_win == winid
+                    end,
+                    is_buffer_eligible = function(target_buf)
+                        return target_buf == bufnr
+                    end,
+                    is_owned_buffer = function()
+                        return false
+                    end,
+                    is_owned_window = function()
+                        return false
+                    end,
+                    render = function() end,
+                },
+            })
+            store.set("diagnostic", bufnr, { { line = 0, type = "Error" } })
+            local dirty = scheduler.status().dirty_windows
+            scheduler.dispose()
+            store.clear("diagnostic", bufnr)
+            return dirty
+        end
+
+        return {
+            winid = winid,
+            root_hidden = dirty_after_mark_event({ throttle_ms = 1000, marks = false }),
+            profile_shown = dirty_after_mark_event({
+                throttle_ms = 1000,
+                marks = false,
+                profiles = {
+                    { match = { filetypes = { "lua" } }, marks = { Error = { priority = 0 } } },
+                },
+            }),
+        }
+    end)
+
+    expect.equality(result.root_hidden, {})
+    expect.equality(result.profile_shown, { result.winid })
+end
+
 T["flush enumerates source windows once and renders all eligible dirty windows"] = function()
     local child = new_child()
     reset_config(child)
@@ -349,7 +410,7 @@ T["flush enumerates source windows once and renders all eligible dirty windows"]
         local rendered = {}
         local scheduler = require("scrollbar.minimap.scheduler")
         scheduler.setup({
-            config = require("scrollbar.minimap.config").set({ update = { interval_ms = 1000 } }),
+            config = require("scrollbar.minimap.config").set({ throttle_ms = 1000 }),
             renderer = {
                 source_windows = function()
                     enumerations = enumerations + 1
@@ -390,7 +451,7 @@ T["flush enumerates source windows once and renders all eligible dirty windows"]
     expect.equality(result.rendered, result.sources)
 end
 
-T["default update events register the minimap autocmd set"] = function()
+T["setup registers the fixed minimap autocmd set"] = function()
     local child = new_child()
     reset_config(child)
     local result = child.lua_func(function()
@@ -431,7 +492,7 @@ T["default update events register the minimap autocmd set"] = function()
         end
         scheduler.dispose()
 
-        -- Defaults from minimap config: drops OptionSet, TabEnter, TermEnter, CmdwinLeave.
+        -- The minimap omits OptionSet, TabEnter, TermEnter, CmdwinLeave, and TabClosed.
         local expected = {
             "BufEnter",
             "BufWinEnter",
@@ -479,81 +540,7 @@ T["default update events register the minimap autocmd set"] = function()
     expect.equality(result.present_unexpected, {})
 end
 
-T["narrower update events list registers fewer autocmds"] = function()
-    local child = new_child()
-    reset_config(child)
-    local result = child.lua_func(function()
-        local scheduler = require("scrollbar.minimap.scheduler")
-
-        local function count_events(events)
-            local config = require("scrollbar.minimap.config").set({ update = { events = events } })
-            scheduler.setup({
-                config = config,
-                renderer = {
-                    source_windows = function()
-                        return {}
-                    end,
-                    is_source_window = function()
-                        return false
-                    end,
-                    is_buffer_eligible = function()
-                        return false
-                    end,
-                    is_owned_buffer = function()
-                        return false
-                    end,
-                    is_owned_window = function()
-                        return false
-                    end,
-                    render = function() end,
-                },
-            })
-            local augroup_id = scheduler.status().augroup_id
-            local autocmds = vim.api.nvim_get_autocmds({ group = augroup_id })
-            local event_set = {}
-            for _, autocmd in ipairs(autocmds) do
-                local evt = autocmd.event
-                if type(evt) == "string" then
-                    evt = { evt }
-                end
-                for _, e in ipairs(evt) do
-                    event_set[e] = true
-                end
-            end
-            scheduler.dispose()
-            return vim.tbl_count(event_set)
-        end
-
-        local default_count = count_events({
-            "BufEnter",
-            "BufWinEnter",
-            "WinEnter",
-            "WinScrolled",
-            "WinResized",
-            "VimResized",
-            "CursorMoved",
-            "CursorMovedI",
-            "TextChanged",
-            "TextChangedI",
-            "TextChangedP",
-            "TextChangedT",
-            "WinClosed",
-            "BufDelete",
-            "BufWipeout",
-            "ColorScheme",
-        })
-        local narrow_count = count_events({ "BufEnter", "CursorMoved" })
-        return {
-            default_count = default_count,
-            narrow_count = narrow_count,
-        }
-    end)
-
-    expect.equality(result.default_count, 17)
-    expect.equality(result.narrow_count, 3)
-end
-
-T["interval_ms coalesces repeated invalidations into one flush"] = function()
+T["throttle_ms coalesces repeated invalidations into one flush"] = function()
     local child = new_child()
     reset_config(child)
     local result = child.lua_func(function()
@@ -561,7 +548,7 @@ T["interval_ms coalesces repeated invalidations into one flush"] = function()
         local renders = 0
         local scheduler = require("scrollbar.minimap.scheduler")
         scheduler.setup({
-            config = require("scrollbar.minimap.config").set({ update = { interval_ms = 50 } }),
+            config = require("scrollbar.minimap.config").set({ throttle_ms = 50 }),
             renderer = {
                 source_windows = function()
                     return { winid }
@@ -598,7 +585,7 @@ T["interval_ms coalesces repeated invalidations into one flush"] = function()
     expect.equality(result, 1)
 end
 
-T["autohide hide-timer restarts on activity when minimap.autohide.enabled = true"] = function()
+T["autohide hide-timer restarts on activity when minimap.autohide is enabled"] = function()
     local child = new_child()
     reset_config(child)
     local result = child.lua_func(function()
@@ -632,8 +619,8 @@ T["autohide hide-timer restarts on activity when minimap.autohide.enabled = true
         local scheduler = require("scrollbar.minimap.scheduler")
         scheduler.setup({
             config = require("scrollbar.minimap.config").set({
-                autohide = { enabled = true, delay_ms = 50 },
-                update = { interval_ms = 1000 },
+                autohide = { delay_ms = 50 },
+                throttle_ms = 1000,
             }),
             renderer = {
                 source_windows = function()
@@ -726,8 +713,8 @@ T["dispose stops all timers including pending hide timers"] = function()
         local scheduler = require("scrollbar.minimap.scheduler")
         scheduler.setup({
             config = require("scrollbar.minimap.config").set({
-                autohide = { enabled = true, delay_ms = 100 },
-                update = { interval_ms = 1000 },
+                autohide = { delay_ms = 100 },
+                throttle_ms = 1000,
             }),
             renderer = {
                 source_windows = function()
@@ -802,7 +789,7 @@ T["invalidate_buffer walks source windows for the buffer"] = function()
         local first_dirty = {}
         local second_dirty = {}
         scheduler.setup({
-            config = require("scrollbar.minimap.config").set({ update = { interval_ms = 1000 } }),
+            config = require("scrollbar.minimap.config").set({ throttle_ms = 1000 }),
             renderer = {
                 source_windows = function(bufnr)
                     if bufnr == nil then
@@ -891,7 +878,7 @@ T["scheduler augroup is independent of the scrollbar scheduler augroup"] = funct
         local minimap_augroup = minimap_scheduler.status().augroup_id
 
         scrollbar_scheduler.setup({
-            config = require("scrollbar.config").set({ scrollbar = { set_highlights = false } }),
+            config = require("scrollbar.config").set({ set_highlights = false }),
             renderer = minimap_renderer,
         })
         local scrollbar_augroup = scrollbar_scheduler.status().augroup_id

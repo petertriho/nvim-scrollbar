@@ -3,9 +3,9 @@
 --- the user commands `MinimapShow`, `MinimapHide`, `MinimapToggle`,
 --- `MinimapRefresh`. Mirrors `lua/scrollbar/init.lua` at a smaller scale.
 ---
---- The top-level dispatcher (`lua/scrollbar/init.lua`) calls
---- `require("scrollbar.minimap").setup(opts.minimap or {})` after the
---- scrollbar setup, and disposes both on reconfigure.
+--- The top-level dispatcher (`lua/scrollbar/init.lua`) commits the minimap
+--- configuration, calls `require("scrollbar.minimap").setup()`, and disposes
+--- both subsystems on reconfigure.
 ---
 --- Default `minimap.enabled = false` means the dispatcher must early-return
 --- without spawning the worker or creating floats when disabled.
@@ -66,7 +66,8 @@ M.setup = function(overrides, wiring)
 
     worker.setup({
         backend = root_config.backend,
-        treesitter = root_config.providers.treesitter and providers._execution_mode("treesitter") == "worker",
+        treesitter = providers._consumer_enabled("treesitter", "minimap")
+            and providers._execution_mode("treesitter") == "worker",
         on_result = function(payload)
             renderer.handle_worker_result(payload)
             scheduler.invalidate_buffer(payload.bufnr)
@@ -79,6 +80,7 @@ M.setup = function(overrides, wiring)
         config = root_config,
     })
     renderer.setup({
+        visible = root_config.show,
         worker = worker,
         overlays = overlays,
         on_dirty = function(source_win)
@@ -103,7 +105,7 @@ end
 
 M.show = function()
     renderer.show()
-    if active_config and active_config.autohide.enabled then
+    if active_config and active_config.autohide then
         scheduler.reveal_all()
     else
         scheduler.invalidate_all()

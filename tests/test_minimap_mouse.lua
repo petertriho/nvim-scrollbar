@@ -179,7 +179,7 @@ end
 T["disabled config does not attach keymaps to the float buffer"] = function()
     local child = new_child()
     reset_modules(child)
-    configure(child, { enabled = true, width = 4, height = 4, mouse = { enabled = false } })
+    configure(child, { enabled = true, width = 4, height = 4, mouse = false })
 
     local result = child.lua_func(function()
         vim.api.nvim_buf_set_lines(0, 0, -1, false, { "a", "b", "c", "d" })

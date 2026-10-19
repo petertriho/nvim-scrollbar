@@ -10,10 +10,8 @@ Install coc.nvim. Then enable the provider:
 
 ```lua
 require("scrollbar").setup({
-    scrollbar = {
-        providers = {
-            coc = true,
-        },
+    providers = {
+        coc = true,
     },
 })
 ```
@@ -39,20 +37,20 @@ Coc uses the shared diagnostic mark types:
 
 ```lua
 require("scrollbar").setup({
-    scrollbar = {
-        providers = { coc = true },
-        marks = {
-            Error = { text = "E" },
-            Warn = { text = "W" },
-            Info = { text = "I" },
-            Hint = { text = "H" },
-        },
+    providers = { coc = true },
+    marks = {
+        Error = { text = "E" },
+        Warn = { text = "W" },
+        Info = { text = "I" },
+        Hint = { text = "H" },
     },
 })
 ```
 
 The standard `text`, `priority`, and `highlight` options apply. A change to
-these shared types also affects other diagnostic providers.
+these shared types also affects other diagnostic providers. To show Coc marks
+in only one renderer, use a provider target, for example
+`coc = { scrollbar = false }`.
 
 ## Updates
 

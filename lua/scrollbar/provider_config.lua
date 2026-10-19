@@ -1,3 +1,5 @@
+local schema = require("scrollbar.schema")
+
 local M = {}
 
 M.ORDER = {
@@ -15,216 +17,145 @@ M.ORDER = {
     "lsp_semantic_tokens",
 }
 
-M.SCROLLBAR_NAMES = {
-    "cursor",
-    "diagnostic",
-    "search",
-    "marks",
-    "gitsigns",
-    "mini_diff",
-    "signify",
-    "vgit",
-    "ale",
-    "coc",
-}
-
-M.MINIMAP_NAMES = vim.deepcopy(M.ORDER)
-
-local OPTION_KIND = {
-    search = "search",
-    marks = "marks",
-}
+local BOTH = { scrollbar = true, minimap = true }
+local MINIMAP_ONLY = { scrollbar = false, minimap = true }
 
 local SPECS = {
-    cursor = { targets = { scrollbar = true, minimap = true }, execution = "parent" },
-    diagnostic = { targets = { scrollbar = true, minimap = true }, execution = "parent" },
-    search = { targets = { scrollbar = true, minimap = true }, execution = "parent" },
-    marks = { targets = { scrollbar = true, minimap = true }, execution = "parent" },
-    gitsigns = { targets = { scrollbar = true, minimap = true }, execution = "parent" },
-    mini_diff = { targets = { scrollbar = true, minimap = true }, execution = "parent" },
-    signify = { targets = { scrollbar = true, minimap = true }, execution = "parent" },
-    vgit = { targets = { scrollbar = true, minimap = true }, execution = "parent" },
-    ale = { targets = { scrollbar = true, minimap = true }, execution = "parent" },
-    coc = { targets = { scrollbar = true, minimap = true }, execution = "parent" },
-    treesitter = { targets = { scrollbar = false, minimap = true }, execution = "worker" },
-    lsp_semantic_tokens = { targets = { scrollbar = false, minimap = true }, execution = "parent" },
+    cursor = { targets = BOTH, execution = "parent", default = true },
+    diagnostic = { targets = BOTH, execution = "parent", default = true },
+    search = { targets = BOTH, execution = "parent", default = true },
+    marks = { targets = BOTH, execution = "parent", default = true },
+    gitsigns = { targets = BOTH, execution = "parent", default = false },
+    mini_diff = { targets = BOTH, execution = "parent", default = false },
+    signify = { targets = BOTH, execution = "parent", default = false },
+    vgit = { targets = BOTH, execution = "parent", default = false },
+    ale = { targets = BOTH, execution = "parent", default = false },
+    coc = { targets = BOTH, execution = "parent", default = false },
+    treesitter = { targets = MINIMAP_ONLY, execution = "worker", default = false },
+    lsp_semantic_tokens = { targets = MINIMAP_ONLY, execution = "parent", default = false },
 }
 
-local NESTED_KEYS = {
-    search = { incsearch = true, backend = true },
-    marks = { letters = true, numbers = true },
+local TARGET_KEYS = { scrollbar = true, minimap = true }
+
+local KEYS = {
+    search = { incsearch = true, backend = true, scrollbar = true, minimap = true },
+    marks = { letters = true, numbers = true, scrollbar = true, minimap = true },
 }
 
-local function invalid(message)
-    error("[nvim-scrollbar] " .. message, 3)
-end
-
-local function validate_boolean(value, path)
-    if type(value) ~= "boolean" then
-        invalid(path .. " must be a boolean")
-    end
-end
-
-local function name_lookup(names)
-    local result = {}
-    for _, name in ipairs(names) do
-        result[name] = true
-    end
-    return result
-end
-
----@param providers any
----@param names string[]
+---@param name string
+---@param value table Provider options without renderer keys
 ---@param path string
-M.validate_shape = function(providers, names, path)
-    if type(providers) ~= "table" then
-        return
+---@return ScrollbarProviderOption
+local function normalize_options(name, value, path)
+    if name == "search" then
+        local result = { backend = value.backend == nil and "worker" or value.backend }
+        schema.enum(result.backend, path .. ".backend", { "sync", "worker" })
+        if value.incsearch ~= nil then
+            result.incsearch = schema.boolean(value.incsearch, path .. ".incsearch")
+        end
+        return result
     end
+    if name == "marks" then
+        local result = {
+            letters = value.letters == nil or value.letters,
+            numbers = value.numbers == true,
+        }
+        if value.letters ~= nil then
+            schema.boolean(value.letters, path .. ".letters")
+        end
+        if value.numbers ~= nil then
+            schema.boolean(value.numbers, path .. ".numbers")
+        end
+        return result
+    end
+    return true
+end
 
-    local allowed = name_lookup(names)
-    for name in pairs(providers) do
-        if not allowed[name] then
-            invalid(string.format("unknown option '%s.%s'", path, tostring(name)))
+---@param spec table
+---@param value any
+---@param target "scrollbar"|"minimap"
+---@param path string
+---@param name string
+---@return boolean
+local function target_flag(spec, value, target, path, name)
+    if value == nil then
+        return spec.targets[target]
+    end
+    schema.boolean(value, path)
+    if value and not spec.targets[target] then
+        schema.invalid(string.format("%s: provider '%s' does not support the %s", path, name, target))
+    end
+    return value
+end
+
+--- Normalize the top-level `providers` table into one request per built-in.
+---@param value any
+---@return table<string, ScrollbarProviderRequest>
+M.normalize = function(value)
+    if value == nil then
+        value = {}
+    end
+    schema.table(value, "providers")
+    for name in pairs(value) do
+        if SPECS[name] == nil then
+            schema.invalid(string.format("unknown option '%s'", schema.join("providers", name)))
         end
     end
 
-    for name, allowed_keys in pairs(NESTED_KEYS) do
-        local value = providers[name]
-        if type(value) == "table" then
-            for key in pairs(value) do
-                if not allowed_keys[key] then
-                    invalid(string.format("unknown option '%s.%s.%s'", path, name, tostring(key)))
-                end
+    local result = {}
+    for _, name in ipairs(M.ORDER) do
+        local spec = SPECS[name]
+        local path = "providers." .. name
+        local entry = value[name]
+        if entry == nil then
+            entry = spec.default
+        end
+
+        ---@type ScrollbarProviderRequest
+        local request
+        if entry == false then
+            request = { options = false, scrollbar = false, minimap = false }
+        elseif entry == true then
+            request = {
+                options = normalize_options(name, {}, path),
+                scrollbar = spec.targets.scrollbar,
+                minimap = spec.targets.minimap,
+            }
+        elseif type(entry) == "table" then
+            schema.check_keys(entry, KEYS[name] or TARGET_KEYS, path)
+            local scrollbar = target_flag(spec, entry.scrollbar, "scrollbar", path .. ".scrollbar", name)
+            local minimap = target_flag(spec, entry.minimap, "minimap", path .. ".minimap", name)
+            local options = normalize_options(name, schema.without(entry, { "scrollbar", "minimap" }), path)
+            if not scrollbar and not minimap then
+                options = false
             end
-        end
-    end
-end
-
-local function normalize_search(value, path)
-    if value == false then
-        return false
-    end
-    if value == true then
-        return { backend = "worker" }
-    end
-    if type(value) ~= "table" then
-        invalid(path .. " must be a boolean or table")
-    end
-
-    local result = vim.deepcopy(value)
-    if result.backend == nil then
-        result.backend = "worker"
-    end
-    if result.incsearch ~= nil then
-        validate_boolean(result.incsearch, path .. ".incsearch")
-    end
-    if result.backend ~= "sync" and result.backend ~= "worker" then
-        invalid(path .. ".backend must be one of: sync, worker")
-    end
-    return result
-end
-
-local function normalize_marks(value, path)
-    if value == false then
-        return false
-    end
-    if value == true then
-        return { letters = true, numbers = false }
-    end
-    if type(value) ~= "table" then
-        invalid(path .. " must be a boolean or table")
-    end
-
-    local result = vim.deepcopy(value)
-    if result.letters == nil then
-        result.letters = true
-    end
-    if result.numbers == nil then
-        result.numbers = false
-    end
-    validate_boolean(result.letters, path .. ".letters")
-    validate_boolean(result.numbers, path .. ".numbers")
-    return result
-end
-
----@param providers table
----@param names string[]
----@param path string
----@return table, table<string, "boolean"|"table">
-M.normalize = function(providers, names, path)
-    if type(providers) ~= "table" then
-        invalid(path .. " must be a table")
-    end
-    M.validate_shape(providers, names, path)
-
-    local result = {}
-    local requests = {}
-    for _, name in ipairs(names) do
-        local value = providers[name]
-        requests[name] = type(value) == "table" and "table" or "boolean"
-        if OPTION_KIND[name] == "search" then
-            result[name] = normalize_search(value, path .. "." .. name)
-        elseif OPTION_KIND[name] == "marks" then
-            result[name] = normalize_marks(value, path .. "." .. name)
+            request = { options = options, scrollbar = scrollbar, minimap = minimap }
         else
-            validate_boolean(value, path .. "." .. name)
-            result[name] = value
+            schema.invalid(path .. " must be a boolean or table")
         end
+        result[name] = request
     end
-    return result, requests
+    return result
 end
 
-local function enabled(value)
-    return value ~= nil and value ~= false
-end
-
----@param scrollbar table
----@param scrollbar_requests table<string, "boolean"|"table">
----@param minimap table
----@param minimap_requests table<string, "boolean"|"table">
+--- Combine provider requests with renderer enablement. A provider is active
+--- when at least one enabled renderer requests it.
+---@param requests table<string, ScrollbarProviderRequest>
+---@param scrollbar_enabled boolean
+---@param minimap_enabled boolean
 ---@return ScrollbarEffectiveProviderPlan
-M.compile_plan = function(scrollbar, scrollbar_requests, minimap, minimap_requests)
+M.compile_plan = function(requests, scrollbar_enabled, minimap_enabled)
     local plan = {}
     for _, name in ipairs(M.ORDER) do
         local spec = SPECS[name]
-        local scrollbar_enabled = spec.targets.scrollbar and enabled(scrollbar.providers[name])
-        local minimap_enabled = minimap.enabled and spec.targets.minimap and enabled(minimap.providers[name])
-        local options = false
-
-        if OPTION_KIND[name] ~= nil then
-            if
-                scrollbar_enabled
-                and minimap_enabled
-                and scrollbar_requests[name] == "table"
-                and minimap_requests[name] == "table"
-                and not vim.deep_equal(scrollbar.providers[name], minimap.providers[name])
-            then
-                invalid(
-                    string.format(
-                        "conflicting provider options at 'scrollbar.providers.%s' and 'minimap.providers.%s'",
-                        name,
-                        name
-                    )
-                )
-            end
-            local selected
-            local use_scrollbar = scrollbar_enabled
-                and (scrollbar_requests[name] == "table" or not (minimap_enabled and minimap_requests[name] == "table"))
-            if use_scrollbar then
-                selected = scrollbar.providers[name]
-            elseif minimap_enabled then
-                selected = minimap.providers[name]
-            end
-            if selected ~= nil then
-                options = vim.deepcopy(selected)
-            end
-        elseif scrollbar_enabled or minimap_enabled then
-            options = true
-        end
-
+        local request = requests[name]
+        local consumers = {
+            scrollbar = scrollbar_enabled and request.options ~= false and request.scrollbar,
+            minimap = minimap_enabled and request.options ~= false and request.minimap,
+        }
         plan[name] = {
-            consumers = { scrollbar = scrollbar_enabled, minimap = minimap_enabled },
-            options = options,
+            consumers = consumers,
+            options = (consumers.scrollbar or consumers.minimap) and vim.deepcopy(request.options) or false,
             targets = vim.deepcopy(spec.targets),
             execution = spec.execution,
         }

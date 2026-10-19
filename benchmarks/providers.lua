@@ -37,16 +37,15 @@ for _, name in ipairs({ "diagnostic", "gitsigns", "marks", "cursor", "treesitter
 end
 
 require("scrollbar.config").set({
+    set_highlights = false,
+    exclude = { buftypes = {}, filetypes = {} },
+    providers = {
+        search = false,
+        ale = false,
+        coc = false,
+    },
     scrollbar = {
-        set_highlights = false,
-        excluded_buftypes = {},
-        excluded_filetypes = {},
-        update = { interval_ms = 0 },
-        providers = {
-            search = false,
-            ale = false,
-            coc = false,
-        },
+        throttle_ms = 0,
     },
     minimap = { enabled = false },
 })

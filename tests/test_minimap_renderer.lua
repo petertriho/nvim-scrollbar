@@ -31,9 +31,11 @@ local function reset_modules(child)
     ]])
 end
 
-local function configure(child, minimap_overrides)
-    child.lua_func(function(overrides)
-        require("scrollbar.config").set({ scrollbar = {}, minimap = overrides or {} })
+local function configure(child, minimap_overrides, shared)
+    child.lua_func(function(overrides, top_level)
+        local options = vim.deepcopy(top_level or {})
+        options.minimap = overrides or {}
+        require("scrollbar.config").set(options)
         local minimap_config = require("scrollbar.minimap.config")
         local worker = require("scrollbar.minimap.worker")
         worker.setup({
@@ -49,20 +51,19 @@ local function configure(child, minimap_overrides)
             worker = worker,
             overlays = require("scrollbar.minimap.overlays"),
         })
-    end, minimap_overrides)
+    end, minimap_overrides, shared)
 end
 
 local function render_mark_ranges(child, content_glyph)
     return child.lua_func(function(glyph)
         require("scrollbar.config").set({
-            scrollbar = {},
+            set_highlights = false,
             minimap = {
                 enabled = true,
                 width = 3,
                 height = 1,
-                set_highlights = false,
-                show_viewport = false,
-                content_glyph = glyph,
+                viewport = false,
+                glyph = glyph,
             },
         })
         local renderer = require("scrollbar.minimap.renderer")
@@ -111,14 +112,13 @@ local function render_overlay_marks(child, options)
             enabled = true,
             width = 6,
             height = 2,
-            set_highlights = false,
-            show_viewport = false,
-            overlays = { enabled = true, types = { Error = {}, Search = {} } },
+            viewport = false,
+            marks = { Error = {}, Search = {} },
         }
         if opts.glyph ~= nil then
-            overrides.content_glyph = opts.glyph
+            overrides.glyph = opts.glyph
         end
-        require("scrollbar.config").set({ scrollbar = {}, minimap = overrides })
+        require("scrollbar.config").set({ set_highlights = false, minimap = overrides })
         local renderer = require("scrollbar.minimap.renderer")
         local worker = {
             request = function(request)
@@ -208,9 +208,8 @@ T["renders a sync squash grid into the minimap buffer"] = function()
         enabled = true,
         width = 3,
         height = 2,
-        set_highlights = false,
-        show_viewport = false,
-    })
+        viewport = false,
+    }, { set_highlights = false })
 
     local result = child.lua_func(function()
         vim.api.nvim_buf_set_lines(0, 0, -1, false, { "abc", "defghi" })
@@ -230,17 +229,16 @@ T["renders a sync squash grid into the minimap buffer"] = function()
     expect.equality(result.rows[2], "███")
 end
 
-T["content_glyph remaps every occupied cell"] = function()
+T["glyph remaps every occupied cell"] = function()
     local child = new_child()
     reset_modules(child)
     configure(child, {
         enabled = true,
         width = 3,
         height = 2,
-        set_highlights = false,
-        show_viewport = false,
-        content_glyph = "▌",
-    })
+        viewport = false,
+        glyph = "▌",
+    }, { set_highlights = false })
 
     local result = child.lua_func(function()
         vim.api.nvim_buf_set_lines(0, 0, -1, false, { "abc", "defghi" })
@@ -323,7 +321,7 @@ T["placement NW window relative puts the float at top-left of source window"] = 
         enabled = true,
         width = 4,
         height = 4,
-        float = { placement = { relative = "window", anchor = "NW", row = 0, col = 0 } },
+        placement = { relative = "window", anchor = "NW", row = 0, col = 0 },
     })
 
     local result = child.lua_func(function()
@@ -349,7 +347,7 @@ T["placement NE window relative follows each source window right edge"] = functi
         enabled = true,
         width = 4,
         height = 4,
-        float = { placement = { relative = "window", anchor = "NE", row = 0, col = 0 } },
+        placement = { relative = "window", anchor = "NE", row = 0, col = 0 },
     })
 
     local result = child.lua_func(function()
@@ -397,7 +395,7 @@ T["placement SE editor relative anchors to bottom-right of the editor"] = functi
         enabled = true,
         width = 5,
         height = 5,
-        float = { placement = { relative = "editor", anchor = "SE", row = 0, col = 0 } },
+        placement = { relative = "editor", anchor = "SE", row = 0, col = 0 },
     })
 
     local result = child.lua_func(function()
@@ -491,10 +489,9 @@ T["content viewport marks and points share one terminal-row projection"] = funct
         enabled = true,
         width = 1,
         height = 4,
-        set_highlights = false,
-        show_viewport = true,
-        overlays = { enabled = true, types = { Error = {} } },
-    })
+        viewport = true,
+        marks = { Error = {} },
+    }, { set_highlights = false })
 
     local result = child.lua_func(function()
         local lines = {}
@@ -556,9 +553,8 @@ T["cursor points project exact text whitespace and end-of-line columns"] = funct
         enabled = true,
         width = 5,
         height = 3,
-        set_highlights = false,
-        show_viewport = false,
-    })
+        viewport = false,
+    }, { set_highlights = false })
 
     local result = child.lua_func(function()
         local lines = { "abcd", "", "a   b", "", "abcde", "" }
@@ -613,10 +609,8 @@ T["disabled cursor provider suppresses stored cursor points"] = function()
         enabled = true,
         width = 4,
         height = 1,
-        set_highlights = false,
-        show_viewport = false,
-        providers = { cursor = false },
-    })
+        viewport = false,
+    }, { set_highlights = false, providers = { cursor = false } })
 
     local result = child.lua_func(function()
         vim.api.nvim_buf_set_lines(0, 0, -1, false, { "abcd", "" })
@@ -648,9 +642,8 @@ T["mark and point changes rerender without requesting new cells"] = function()
         enabled = true,
         width = 4,
         height = 1,
-        set_highlights = false,
-        show_viewport = false,
-    })
+        viewport = false,
+    }, { set_highlights = false })
 
     local result = child.lua_func(function()
         vim.api.nvim_buf_set_lines(0, 0, -1, false, { "abcd", "" })
@@ -701,8 +694,8 @@ T["overlay cells highlight projected rows when overlays are enabled"] = function
         enabled = true,
         width = 4,
         height = 4,
-        show_viewport = false,
-        overlays = { enabled = true, types = { Error = {} } },
+        viewport = false,
+        marks = { Error = {} },
     })
 
     local result = child.lua_func(function()
@@ -817,9 +810,8 @@ T["content glyph changes reuse cached canonical cells"] = function()
         enabled = true,
         width = 4,
         height = 1,
-        set_highlights = false,
-        show_viewport = false,
-    })
+        viewport = false,
+    }, { set_highlights = false })
 
     local result = child.lua_func(function()
         vim.api.nvim_buf_set_lines(0, 0, -1, false, { "abcd" })
@@ -835,14 +827,13 @@ T["content glyph changes reuse cached canonical cells"] = function()
         local renderer = require("scrollbar.minimap.renderer")
         local first = assert(renderer.render(0)).rows[1]
         require("scrollbar.config").set({
-            scrollbar = {},
+            set_highlights = false,
             minimap = {
                 enabled = true,
                 width = 4,
                 height = 1,
-                set_highlights = false,
-                show_viewport = false,
-                content_glyph = "#",
+                viewport = false,
+                glyph = "#",
             },
         })
         local second = assert(renderer.render(0)).rows[1]
@@ -862,10 +853,8 @@ T["parent semantic spans recolor occupied cells and invalidate once per revision
         enabled = true,
         width = 3,
         height = 1,
-        set_highlights = false,
-        show_viewport = false,
-        providers = { cursor = false, lsp_semantic_tokens = true },
-    })
+        viewport = false,
+    }, { set_highlights = false, providers = { cursor = false, lsp_semantic_tokens = true } })
 
     local result = child.lua_func(function()
         vim.api.nvim_buf_set_lines(0, 0, -1, false, { "a b", "" })
@@ -925,14 +914,13 @@ T["hide and show keep worker semantic revisions monotonic"] = function()
 
     local result = child.lua_func(function()
         require("scrollbar.config").set({
-            scrollbar = {},
+            set_highlights = false,
+            providers = { cursor = false, lsp_semantic_tokens = true },
             minimap = {
                 enabled = true,
                 width = 1,
                 height = 1,
-                set_highlights = false,
-                show_viewport = false,
-                providers = { cursor = false, lsp_semantic_tokens = true },
+                viewport = false,
             },
         })
         vim.api.nvim_buf_set_lines(0, 0, -1, false, { "a" })
@@ -991,14 +979,13 @@ T["semantic input skips empty providers and mark-point recomputation"] = functio
 
     local result = child.lua_func(function()
         require("scrollbar.config").set({
-            scrollbar = {},
+            set_highlights = false,
+            providers = { cursor = true, lsp_semantic_tokens = true },
             minimap = {
                 enabled = true,
                 width = 1,
                 height = 1,
-                set_highlights = false,
-                show_viewport = false,
-                providers = { cursor = true, lsp_semantic_tokens = true },
+                viewport = false,
             },
         })
         vim.api.nvim_buf_set_lines(0, 0, -1, false, { "a" })
@@ -1072,10 +1059,8 @@ T["semantic revisions refresh every active dimension once"] = function()
         enabled = true,
         width = 4,
         height = false,
-        set_highlights = false,
-        show_viewport = false,
-        providers = { cursor = false, lsp_semantic_tokens = true },
-    })
+        viewport = false,
+    }, { set_highlights = false, providers = { cursor = false, lsp_semantic_tokens = true } })
 
     local result = child.lua_func(function()
         local lines = {}
@@ -1128,14 +1113,13 @@ T["renderer rejects stale semantic results without clearing newer pending work"]
 
     local result = child.lua_func(function()
         require("scrollbar.config").set({
-            scrollbar = {},
+            set_highlights = false,
+            providers = { cursor = false, lsp_semantic_tokens = true },
             minimap = {
                 enabled = true,
                 width = 1,
                 height = 1,
-                set_highlights = false,
-                show_viewport = false,
-                providers = { cursor = false, lsp_semantic_tokens = true },
+                viewport = false,
             },
         })
         vim.api.nvim_buf_set_lines(0, 0, -1, false, { "a" })
@@ -1205,14 +1189,13 @@ T["worker-native span publication reuses the accepted cell result"] = function()
 
     local result = child.lua_func(function()
         require("scrollbar.config").set({
-            scrollbar = {},
+            set_highlights = false,
+            providers = { cursor = false, treesitter = true },
             minimap = {
                 enabled = true,
                 width = 1,
                 height = 1,
-                set_highlights = false,
-                show_viewport = false,
-                providers = { cursor = false, treesitter = true },
+                viewport = false,
             },
         })
         vim.api.nvim_buf_set_lines(0, 0, -1, false, { "a" })
@@ -1266,14 +1249,13 @@ T["LSP semantic spans override overlapping Treesitter spans"] = function()
 
     local result = child.lua_func(function()
         require("scrollbar.config").set({
-            scrollbar = {},
+            set_highlights = false,
+            providers = { cursor = false, treesitter = true, lsp_semantic_tokens = true },
             minimap = {
                 enabled = true,
                 width = 1,
                 height = 1,
-                set_highlights = false,
-                show_viewport = false,
-                providers = { cursor = false, treesitter = true, lsp_semantic_tokens = true },
+                viewport = false,
             },
         })
         vim.api.nvim_buf_set_lines(0, 0, -1, false, { "a" })
@@ -1390,7 +1372,7 @@ T["buffer edits refresh a cached projection"] = function()
         enabled = true,
         width = 4,
         height = 1,
-        show_viewport = false,
+        viewport = false,
     })
 
     local result = child.lua_func(function()
@@ -1424,14 +1406,13 @@ T["filetype changes recollect Treesitter and invalidate cached cells"] = functio
 
     local result = child.lua_func(function()
         require("scrollbar.config").set({
-            scrollbar = {},
+            set_highlights = false,
+            providers = { cursor = false, treesitter = true },
             minimap = {
                 enabled = true,
                 width = 1,
                 height = 1,
-                set_highlights = false,
-                show_viewport = false,
-                providers = { cursor = false, treesitter = true },
+                viewport = false,
             },
         })
         vim.api.nvim_buf_set_lines(0, 0, -1, false, { "a" })
@@ -1551,7 +1532,7 @@ T["viewport layers never mutate composed rows"] = function()
         enabled = true,
         width = 4,
         height = 4,
-        show_viewport = false,
+        viewport = false,
     })
 
     local content_only = child.lua_func(function()
@@ -1567,7 +1548,7 @@ T["viewport layers never mutate composed rows"] = function()
         enabled = true,
         width = 4,
         height = 4,
-        show_viewport = true,
+        viewport = true,
     })
     local with_layers = child.lua_func(function()
         return assert(require("scrollbar.minimap.renderer").render(0)).rows
@@ -1581,14 +1562,14 @@ T["viewport layers never mutate composed rows"] = function()
     end
 end
 
-T["show_viewport false suppresses the viewport tint"] = function()
+T["viewport false suppresses the viewport tint"] = function()
     local child = new_child()
     reset_modules(child)
     configure(child, {
         enabled = true,
         width = 4,
         height = 4,
-        show_viewport = false,
+        viewport = false,
     })
 
     local result = child.lua_func(function()
@@ -1625,7 +1606,7 @@ T["occupied cells use the monochrome content highlight by default"] = function()
         enabled = true,
         width = 4,
         height = 1,
-        show_viewport = false,
+        viewport = false,
     })
 
     local result = child.lua_func(function()
@@ -1649,14 +1630,13 @@ T["occupied cells use the monochrome content highlight by default"] = function()
     expect.equality(result.ranges, { { 0, 3 }, { 5, 8 } })
 end
 
-T["width false uses the 16-column renderer fallback"] = function()
+T["default width renders 16 columns"] = function()
     local child = new_child()
     reset_modules(child)
     configure(child, {
         enabled = true,
-        width = false,
         height = 1,
-        show_viewport = false,
+        viewport = false,
     })
 
     local result = child.lua_func(function()
@@ -1676,10 +1656,10 @@ T["background inheritance keeps direct groups and uses full-float winblend"] = f
         enabled = true,
         width = 1,
         height = 1,
-        set_highlights = false,
-        show_viewport = false,
-        float = { blend = 35, hide_on_cursor = false },
-    })
+        viewport = false,
+        blend = 35,
+        hide_on_cursor = false,
+    }, { set_highlights = false })
 
     local result = child.lua_func(function()
         vim.api.nvim_buf_set_lines(0, 0, -1, false, { "a" })
@@ -1709,16 +1689,16 @@ T["numeric background blend isolates base and background-bearing layers"] = func
 
     local result = child.lua_func(function()
         require("scrollbar.config").set({
-            scrollbar = {},
+            set_highlights = false,
             minimap = {
                 enabled = true,
                 width = 4,
                 height = 1,
-                set_highlights = false,
-                background = { blend = 60 },
-                float = { blend = 0, hide_on_cursor = false },
-                overlays = { enabled = true, types = { Error = {} } },
-                show_viewport = true,
+                background_blend = 60,
+                blend = 0,
+                hide_on_cursor = false,
+                marks = { Error = {} },
+                viewport = true,
             },
         })
         vim.api.nvim_set_hl(0, "ScrollbarMinimapBase", { bg = "#101010" })
@@ -1812,19 +1792,19 @@ T["profile full-float blend transitions reuse resources and refresh wrappers"] =
 
     local result = child.lua_func(function()
         require("scrollbar.config").set({
-            scrollbar = {},
+            set_highlights = false,
             minimap = {
                 enabled = true,
                 width = 1,
                 height = 1,
-                set_highlights = false,
-                background = { blend = 20 },
-                float = { blend = 0, hide_on_cursor = false },
-                show_viewport = false,
+                background_blend = 20,
+                blend = 0,
+                hide_on_cursor = false,
+                viewport = false,
                 profiles = {
                     {
                         match = { filetypes = { "lua" } },
-                        config = { float = { blend = 60 } },
+                        blend = 60,
                     },
                 },
             },
@@ -1884,7 +1864,7 @@ T["profile full-float blend transitions reuse resources and refresh wrappers"] =
                 winblend = vim.api.nvim_get_option_value("winblend", { win = second.float_win }),
                 layer = vim.api.nvim_get_hl(0, { name = second_group, link = false }),
                 base = vim.api.nvim_get_hl(0, { name = base, link = false }),
-                background_blend = second.config.background.blend,
+                background_blend = second.config.background_blend,
             },
         }
     end)
@@ -1906,9 +1886,8 @@ T["cursor overlap hides and restores the same minimap only on transitions"] = fu
         enabled = true,
         width = 4,
         height = 4,
-        set_highlights = false,
-        show_viewport = false,
-    })
+        viewport = false,
+    }, { set_highlights = false })
 
     local result = child.lua_func(function()
         vim.api.nvim_buf_set_lines(0, 0, -1, false, { "one", "two", "three", "four" })
@@ -2016,10 +1995,8 @@ T["cursor hiding uses inclusive top-left and exclusive bottom-right bounds"] = f
         enabled = true,
         width = 4,
         height = 3,
-        set_highlights = false,
-        show_viewport = false,
-        providers = { cursor = false },
-    })
+        viewport = false,
+    }, { set_highlights = false, providers = { cursor = false } })
 
     local result = child.lua_func(function()
         vim.api.nvim_buf_set_lines(0, 0, -1, false, { "one", "two", "three" })
@@ -2079,10 +2056,9 @@ T["disabled cursor hiding skips coordinate work and unavailable coordinates fail
         enabled = true,
         width = 4,
         height = 3,
-        set_highlights = false,
-        show_viewport = false,
-        float = { hide_on_cursor = false },
-    })
+        viewport = false,
+        hide_on_cursor = false,
+    }, { set_highlights = false })
 
     local result = child.lua_func(function()
         vim.api.nvim_buf_set_lines(0, 0, -1, false, { "one", "two", "three" })
@@ -2110,14 +2086,13 @@ T["disabled cursor hiding skips coordinate work and unavailable coordinates fail
         local disabled_hide = vim.api.nvim_win_get_config(disabled.float_win).hide
 
         require("scrollbar.config").set({
-            scrollbar = {},
+            set_highlights = false,
             minimap = {
                 enabled = true,
                 width = 4,
                 height = 3,
-                set_highlights = false,
-                show_viewport = false,
-                float = { hide_on_cursor = true },
+                viewport = false,
+                hide_on_cursor = true,
             },
         })
         renderer.setup({
@@ -2154,10 +2129,9 @@ T["focus transfer restores inactive minimaps and hides the newly active source"]
         enabled = true,
         width = 4,
         height = 3,
-        set_highlights = false,
-        show_viewport = false,
-        update = { interval_ms = 0 },
-    })
+        viewport = false,
+        throttle_ms = 0,
+    }, { set_highlights = false })
 
     local result = child.lua_func(function()
         vim.api.nvim_buf_set_lines(0, 0, -1, false, { "one", "two", "three" })
@@ -2217,9 +2191,8 @@ T["cursor overlap state repairs external float hide mutations"] = function()
         enabled = true,
         width = 4,
         height = 3,
-        set_highlights = false,
-        show_viewport = false,
-    })
+        viewport = false,
+    }, { set_highlights = false })
 
     local result = child.lua_func(function()
         vim.api.nvim_buf_set_lines(0, 0, -1, false, { "one", "two", "three" })

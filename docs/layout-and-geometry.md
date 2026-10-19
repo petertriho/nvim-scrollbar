@@ -23,14 +23,15 @@ resolved glyphs. A later track can replace the background without replacing a
 lower content glyph. Marks above the thumb stay visible. The thumb hides the
 marks below it.
 
-Plain `"marks"` receives every type that no explicit descriptor claims:
+Plain `"marks"` receives every type that no explicit descriptor claims. A
+descriptor is a table with a required `types` list:
 
 ```lua
 layout = {
     columns = {
         { "track", "thumb" },
         {
-            { kind = "marks", types = { "Error", "Warn", "Info", "Hint" } },
+            { types = { "Error", "Warn", "Info", "Hint" } },
             "marks",
         },
     },
@@ -61,7 +62,7 @@ Only a descriptor that explicitly selects `Mark` can set `max_width`:
 layout = {
     columns = {
         { "track", "thumb" },
-        { { kind = "marks", types = { "Mark" }, max_width = 8 } },
+        { { types = { "Mark" }, max_width = 8 } },
         { "marks" },
     },
 }
@@ -81,16 +82,21 @@ sufficient, the ordered prefix stays and the tail is omitted. Marks with
 
 ## Placement
 
-`float.placement.relative = "window"` creates one float per eligible source
-window. `"editor"` uses editor coordinates and renders only for the active
-source window. `anchor` selects `NW`, `NE`, `SW`, or `SE`. The signed `row` and
-`col` offsets apply literally. `gutter` selects `"avoid"` (the default) or
-`"overlap"`. Within an avoided west gutter, `gutter_position` selects `"inner"`
-(the default, beside the buffer text) or `"outer"` (at the source-window edge).
+`placement.relative = "window"` creates one float per eligible source window.
+`"editor"` uses editor coordinates and renders only for the active source
+window. `anchor` selects `NW`, `NE`, `SW`, or `SE`. The signed `row` and `col`
+offsets apply literally. `zindex` sets the `nvim_open_win` z-index (default
+`50`).
+
+`gutter` selects how a west scrollbar uses the gutter:
+
+- `"inner"` (the default) reserves gutter cells beside the buffer text.
+- `"outer"` reserves gutter cells at the source-window edge.
+- `"overlap"` reserves no cells and covers the existing gutter.
 
 The gutter placement depends on the relative mode and the anchor:
 
-| Relative mode | Anchor | `gutter = "avoid"` behavior | `gutter = "overlap"` origin |
+| Relative mode | Anchor | `gutter = "inner"` or `"outer"` behavior | `gutter = "overlap"` origin |
 | --- | --- | --- | --- |
 | `"window"` | `NW` or `SW` | Reserves blank gutter cells and places the float inside them | Source window edge |
 | `"window"` | `NE` or `SE` | Existing east edge | Existing east edge |
@@ -103,11 +109,11 @@ For a window-relative west anchor, these names apply:
 - `W` is the rendered float width.
 - `C` is the configured `col`.
 
-In `avoid` mode, the renderer reserves `max(0, W + C)` blank cells. With
-`gutter_position = "inner"`, the reservation follows the existing gutter. The
-float starts at `G + C`, beside the shifted edge of the buffer text. With
-`gutter_position = "outer"`, the reservation precedes the existing gutter. The
-float starts at `C`, beside the source-window edge.
+With `"inner"` or `"outer"`, the renderer reserves `max(0, W + C)` blank
+cells. With `"inner"`, the reservation follows the existing gutter. The float
+starts at `G + C`, beside the shifted edge of the buffer text. With `"outer"`,
+the reservation precedes the existing gutter. The float starts at `C`, beside
+the source-window edge.
 
 A positive offset leaves a gap before the float, within its reservation. A
 negative offset stays literal. It can deliberately extend outside or overlap
@@ -142,14 +148,14 @@ that profile.
 
 The float covers the buffer-text rows of the source. It excludes the source
 winbar and the rows already used by the tabline, the statusline, and the
-command line. The plugin derives the float width and height. The public float
-options are `zindex`, `hide_on_cursor`, and `placement`.
+command line. The plugin derives the float width and height. The float options
+are `placement` and `hide_on_cursor`.
 
 ## Geometry Modes
 
-`render.geometry = "line"` maps logical lines directly.
+`geometry = "line"` (the default) maps logical lines directly.
 
-`render.geometry = "screen"` uses display rows. As a result, wrapping, folds,
+`geometry = "screen"` uses display rows. As a result, wrapping, folds,
 diff filler, virtual lines, `topfill`, and wrapped offsets affect both the
 marks and the thumb geometry.
 
@@ -166,9 +172,9 @@ Wide typed ruler:
 ```lua
 layout = {
     columns = {
-        { "track", { kind = "marks", types = { "GitAdd", "GitChange", "GitDelete" } } },
+        { "track", { types = { "GitAdd", "GitChange", "GitDelete" } } },
         { "track", "thumb" },
-        { { kind = "marks", types = { "Error", "Warn", "Info", "Hint" } }, "marks" },
+        { { types = { "Error", "Warn", "Info", "Hint" } }, "marks" },
     },
 }
 ```
@@ -178,7 +184,7 @@ Expanded named marks:
 ```lua
 layout = {
     columns = {
-        { "track", "thumb", { kind = "marks", types = { "Mark" }, max_width = 8 } },
+        { "track", "thumb", { types = { "Mark" }, max_width = 8 } },
         { "marks" },
     },
 }

@@ -121,14 +121,16 @@ assert(
     "event-loop timer did not start"
 )
 
+-- TextChanged attaches lazily to its own group while a search is active.
+local CALLBACK_GROUPS = { "ScrollbarProvider_search_events", "ScrollbarProvider_search_text_change" }
+
 local function callback(event)
-    local autocmds = vim.api.nvim_get_autocmds({
-        group = "ScrollbarProvider_search_events",
-        event = event,
-    })
-    for _, autocmd in ipairs(autocmds) do
-        if type(autocmd.callback) == "function" then
-            return autocmd.callback
+    for _, group in ipairs(CALLBACK_GROUPS) do
+        local ok, autocmds = pcall(vim.api.nvim_get_autocmds, { group = group, event = event })
+        for _, autocmd in ipairs(ok and autocmds or {}) do
+            if type(autocmd.callback) == "function" then
+                return autocmd.callback
+            end
         end
     end
     error("search callback is unavailable")
@@ -146,17 +148,17 @@ local function setup_fixture(kind)
     vim.api.nvim_win_set_cursor(0, { 1, 0 })
 
     local active_config = config.set({
+        set_highlights = false,
+        providers = {
+            cursor = false,
+            diagnostic = false,
+            gitsigns = false,
+            search = { incsearch = true },
+            ale = false,
+            coc = false,
+        },
         scrollbar = {
-            set_highlights = false,
             max_lines = false,
-            providers = {
-                cursor = false,
-                diagnostic = false,
-                gitsigns = false,
-                search = { incsearch = true },
-                ale = false,
-                coc = false,
-            },
         },
     })
     providers.setup({
@@ -468,20 +470,20 @@ local function configure_worker_fixture(kind, worker_test)
     vim.api.nvim_win_set_cursor(0, { 1, 0 })
 
     local active_config = config.set({
+        set_highlights = false,
+        providers = {
+            cursor = false,
+            diagnostic = false,
+            gitsigns = false,
+            search = { incsearch = true },
+            ale = false,
+            coc = false,
+        },
         scrollbar = {
-            set_highlights = false,
             max_lines = false,
-            update = { interval_ms = 0 },
-            render = { geometry = "line" },
+            throttle_ms = 0,
+            geometry = "line",
             thumb = { text = "H", hide_if_all_visible = false },
-            providers = {
-                cursor = false,
-                diagnostic = false,
-                gitsigns = false,
-                search = { incsearch = true },
-                ale = false,
-                coc = false,
-            },
         },
     })
     renderer.setup()

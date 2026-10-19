@@ -9,10 +9,8 @@ local T = MiniTest.new_set({
             package.loaded["scrollbar.store"] = nil
             package.loaded["scrollbar.providers"] = nil
             require("scrollbar.config").set({
-                scrollbar = {
-                    marks = {
-                        Custom = { text = "!", priority = 1, highlight = "WarningMsg" },
-                    },
+                marks = {
+                    Custom = { text = "!", priority = 1, highlight = "WarningMsg" },
                 },
             })
         end,
@@ -1578,6 +1576,7 @@ T["provides isolated config, store, window, and invalidation context operations"
     expect.equality(root_config.layout.columns[1][1].priority, 1)
     expect.equality(rawget(root_config, "preset"), nil)
     expect.equality(rawget(root_config, "presets"), nil)
+    expect.equality(rawget(root_config, "providers"), nil)
     expect.equality(source_result, { 22, 11 })
     expect.equality(require("scrollbar.store").get(target), {})
     expect.equality(invalidated_buffers, { target, target, target })
@@ -1797,6 +1796,181 @@ T["guards private compact search publication with buffer policy"] = function()
     expect.equality(invalidated, { target, target })
     expect.equality(store.get(target), {})
     expect.equality(store._get_snapshot(target).compact_search, nil)
+end
+
+local function consumers(plan, name)
+    return { plan[name].consumers.scrollbar, plan[name].consumers.minimap }
+end
+
+T["compiles the provider plan from top-level renderer flags"] = function()
+    local config = require("scrollbar.config")
+    config.set({
+        providers = {
+            cursor = true,
+            diagnostic = { minimap = false },
+            coc = { scrollbar = false },
+            gitsigns = false,
+            search = { incsearch = true, minimap = false },
+            marks = { numbers = true, scrollbar = false, minimap = false },
+            treesitter = true,
+            lsp_semantic_tokens = { scrollbar = false },
+        },
+        minimap = { enabled = true },
+    })
+    local plan = config.get_provider_plan()
+
+    expect.equality(consumers(plan, "cursor"), { true, true })
+    expect.equality(plan.cursor.options, true)
+    expect.equality(consumers(plan, "diagnostic"), { true, false })
+    expect.equality(plan.diagnostic.options, true)
+    expect.equality(consumers(plan, "coc"), { false, true })
+    expect.equality(plan.coc.options, true)
+    expect.equality(consumers(plan, "gitsigns"), { false, false })
+    expect.equality(plan.gitsigns.options, false)
+    expect.equality(consumers(plan, "search"), { true, false })
+    expect.equality(plan.search.options, { backend = "worker", incsearch = true })
+    expect.equality(consumers(plan, "marks"), { false, false })
+    expect.equality(plan.marks.options, false)
+    expect.equality(consumers(plan, "treesitter"), { false, true })
+    expect.equality(plan.treesitter.options, true)
+    expect.equality(plan.treesitter.execution, "worker")
+    expect.equality(plan.treesitter.targets, { scrollbar = false, minimap = true })
+    expect.equality(consumers(plan, "lsp_semantic_tokens"), { false, true })
+    expect.equality(consumers(plan, "ale"), { false, false })
+    expect.equality(plan.ale.targets, { scrollbar = true, minimap = true })
+end
+
+T["drops the provider demand of disabled renderers"] = function()
+    local config = require("scrollbar.config")
+
+    config.set({ providers = { coc = { scrollbar = false }, treesitter = true } })
+    local plan = config.get_provider_plan()
+    expect.equality(consumers(plan, "cursor"), { true, false })
+    expect.equality(plan.marks.options, { letters = true, numbers = false })
+    expect.equality(consumers(plan, "coc"), { false, false })
+    expect.equality(plan.coc.options, false)
+    expect.equality(plan.treesitter.options, false)
+
+    config.set({
+        providers = { coc = true },
+        scrollbar = { enabled = false },
+        minimap = { enabled = true },
+    })
+    plan = config.get_provider_plan()
+    expect.equality(consumers(plan, "cursor"), { false, true })
+    expect.equality(consumers(plan, "coc"), { false, true })
+    expect.equality(plan.search.options, { backend = "worker" })
+
+    config.set({ scrollbar = { enabled = false } })
+    plan = config.get_provider_plan()
+    for _, name in ipairs(require("scrollbar.provider_config").ORDER) do
+        expect.equality(consumers(plan, name), { false, false })
+        expect.equality(plan[name].options, false)
+    end
+end
+
+T["validates top-level provider entries"] = function()
+    local config = require("scrollbar.config")
+    local function expect_error(providers, message)
+        local ok, err = pcall(config.set, { providers = providers })
+        expect.equality(ok, false)
+        expect.no_equality(tostring(err):find(message, 1, true), nil)
+    end
+
+    expect_error({ nope = true }, "unknown option 'providers.nope'")
+    expect_error({ cursor = { incsearch = true } }, "unknown option 'providers.cursor.incsearch'")
+    expect_error({ search = { backend = "fast" } }, "providers.search.backend must be one of: sync, worker")
+    expect_error({ search = { incsearch = 1 } }, "providers.search.incsearch must be a boolean")
+    expect_error({ marks = { letters = "yes" } }, "providers.marks.letters must be a boolean")
+    expect_error({ diagnostic = "yes" }, "providers.diagnostic must be a boolean or table")
+    expect_error({ diagnostic = { minimap = 1 } }, "providers.diagnostic.minimap must be a boolean")
+    expect_error(
+        { treesitter = { scrollbar = true } },
+        "providers.treesitter.scrollbar: provider 'treesitter' does not support the scrollbar"
+    )
+    expect_error({ scrollbar = { gitsigns = true } }, "unknown option 'providers.scrollbar'")
+
+    config.set({ providers = { treesitter = { scrollbar = false }, lsp_semantic_tokens = { minimap = true } } })
+    local plan = config.get_provider_plan()
+    expect.equality(plan.treesitter.options, false)
+    expect.equality(consumers(plan, "treesitter"), { false, false })
+end
+
+T["refreshes a built-in only for the renderers that request it"] = function()
+    local providers = require("scrollbar.providers")
+    local scrollbar_buffer = new_buffer({ "scrollbar" })
+    local minimap_buffer = new_buffer({ "minimap" })
+    local refreshed = {}
+    local options
+    local policies = {
+        scrollbar = {
+            is_buffer_eligible = function(bufnr)
+                return bufnr == scrollbar_buffer
+            end,
+            source_windows = function()
+                return {}
+            end,
+            is_source_window = function()
+                return false
+            end,
+        },
+        minimap = {
+            is_buffer_eligible = function(bufnr)
+                return bufnr == minimap_buffer
+            end,
+            source_windows = function()
+                return {}
+            end,
+            is_source_window = function()
+                return false
+            end,
+        },
+    }
+    local builtin = {
+        name = "gitsigns",
+        targets = { scrollbar = true, minimap = true },
+        refresh_owner = { buffer = "provider" },
+        setup = function(context)
+            options = context.config.providers
+        end,
+        refresh = function(bufnr)
+            table.insert(refreshed, bufnr)
+            return {}
+        end,
+    }
+
+    require("scrollbar.config").set({
+        marks = { Custom = { text = "!", priority = 1, highlight = "WarningMsg" } },
+        providers = { gitsigns = { scrollbar = false } },
+        minimap = { enabled = true },
+    })
+    providers._register_builtin(builtin)
+    providers.setup({ consumer_policies = policies })
+
+    expect.equality(refreshed, { minimap_buffer })
+    expect.equality(providers._consumer_enabled("gitsigns", "scrollbar"), false)
+    expect.equality(providers._consumer_enabled("gitsigns", "minimap"), true)
+    expect.equality(options.gitsigns, true)
+    expect.equality(options.search, { backend = "worker" })
+    expect.equality(options.coc, false)
+    expect.equality(providers.refresh(scrollbar_buffer, { consumer = "scrollbar" }), false)
+    expect.equality(refreshed, { minimap_buffer })
+    providers.refresh(minimap_buffer, { consumer = "minimap" })
+    expect.equality(refreshed, { minimap_buffer, minimap_buffer })
+
+    refreshed = {}
+    require("scrollbar.config").set({
+        marks = { Custom = { text = "!", priority = 1, highlight = "WarningMsg" } },
+        providers = { gitsigns = { minimap = false } },
+        minimap = { enabled = true },
+    })
+    providers.setup({ consumer_policies = policies })
+
+    expect.equality(refreshed, { scrollbar_buffer })
+    expect.equality(providers._consumer_enabled("gitsigns", "scrollbar"), true)
+    expect.equality(providers._consumer_enabled("gitsigns", "minimap"), false)
+    expect.equality(providers.refresh(minimap_buffer, { consumer = "minimap" }), false)
+    expect.equality(refreshed, { scrollbar_buffer })
 end
 
 return T

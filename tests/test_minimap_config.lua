@@ -4,8 +4,8 @@ local expect = MiniTest.expect
 local T = MiniTest.new_set({
     hooks = {
         pre_case = function()
+            package.loaded["scrollbar.config"] = nil
             package.loaded["scrollbar.minimap.config"] = nil
-            package.loaded["scrollbar.minimap.presets"] = nil
         end,
     },
 })
@@ -14,14 +14,26 @@ local function minimap()
     return require("scrollbar.minimap.config")
 end
 
+local function top()
+    return require("scrollbar.config")
+end
+
 local function set(overrides)
     return minimap().set(overrides)
 end
 
-local function expect_invalid(overrides, pattern)
-    local ok, err = pcall(set, overrides)
+local function expect_error(fn, overrides, pattern)
+    local ok, err = pcall(fn, overrides)
     expect.equality(ok, false)
     expect.no_equality(tostring(err):match(pattern), nil)
+end
+
+local function expect_invalid(overrides, pattern)
+    expect_error(set, overrides, pattern)
+end
+
+local function expect_top_invalid(overrides, pattern)
+    expect_error(top().set, overrides, pattern)
 end
 
 local function with_groups(specs)
@@ -31,7 +43,7 @@ local function with_groups(specs)
     return specs
 end
 
-local FULL_OVERLAY_TYPES = with_groups({
+local FULL_MARKS = with_groups({
     Error = { priority = 2, highlight = "DiagnosticVirtualTextError" },
     GitAdd = { priority = 7, highlight = "GitSignsAdd" },
     GitChange = { priority = 7, highlight = "GitSignsChange" },
@@ -53,60 +65,89 @@ local FULL_OVERLAY_TYPES = with_groups({
     Warn = { priority = 3, highlight = "DiagnosticVirtualTextWarn" },
 })
 
+local DEFAULT_EXCLUDED_FILETYPES = {
+    ["blink-cmp-menu"] = true,
+    dropbar_menu = true,
+    dropbar_menu_fzf = true,
+    DressingInput = true,
+    cmp_docs = true,
+    cmp_menu = true,
+    noice = true,
+    prompt = true,
+    TelescopePrompt = true,
+}
+
 T["defaults to disabled with sensible defaults"] = function()
     local result = set()
 
     expect.equality(result.enabled, false)
+    expect.equality(result.show, true)
     expect.equality(result.visibility, "all")
     expect.equality(result.set_highlights, true)
     expect.equality(result.max_lines, false)
-    expect.equality(result.autohide.enabled, false)
-    expect.equality(result.autohide.delay_ms, 1000)
-    expect.equality(result.background.blend, false)
-    expect.equality(result.float.zindex, 50)
-    expect.equality(result.float.blend, 0)
-    expect.equality(result.float.hide_on_cursor, true)
-    expect.equality(result.float.placement.relative, "window")
-    expect.equality(result.float.placement.anchor, "NE")
-    expect.equality(result.float.placement.row, 0)
-    expect.equality(result.float.placement.col, 0)
-    expect.equality(result.float.placement.gutter, "overlap")
-    expect.equality(result.float.placement.gutter_position, "inner")
+    expect.equality(result.autohide, false)
+    expect.equality(result.throttle_ms, 50)
+    expect.equality(result.backend, "worker")
+    expect.equality(result.background_blend, false)
     expect.equality(result.width, 16)
     expect.equality(result.height, false)
-    expect.equality(result.mouse.enabled, true)
-    expect.equality(result.backend, "worker")
-    expect.equality(result.update.interval_ms, 50)
-    expect.equality(result.update.events[1], "BufEnter")
-    expect.equality(#result.update.events, 16)
-    expect.equality(result.excluded_buftypes, {})
-    expect.equality(result.excluded_filetypes, {})
-    expect.equality(result.overlays.enabled, true)
-    expect.equality(result.overlays.types, FULL_OVERLAY_TYPES)
-    expect.equality(result.show_viewport, true)
-    expect.equality(result.content_glyph, "█")
-    expect.equality(rawget(result, "preset"), nil)
-    expect.equality(rawget(result, "presets"), nil)
-    expect.equality(rawget(result, "profiles"), nil)
-    expect.equality(rawget(result, "syntax_highlighting"), nil)
-    expect.equality(rawget(result, "show_cursor_row"), nil)
+    expect.equality(result.placement, {
+        relative = "window",
+        anchor = "NE",
+        row = 0,
+        col = 0,
+        zindex = 50,
+    })
+    expect.equality(result.blend, 0)
+    expect.equality(result.hide_on_cursor, true)
+    expect.equality(result.mouse, true)
+    expect.equality(result.viewport, true)
+    expect.equality(result.glyph, "█")
+    expect.equality(result.exclude, {
+        buftypes = { terminal = true },
+        filetypes = DEFAULT_EXCLUDED_FILETYPES,
+    })
+    expect.equality(result.marks, FULL_MARKS)
+    for _, removed in ipairs({
+        "preset",
+        "presets",
+        "profiles",
+        "update",
+        "float",
+        "background",
+        "overlays",
+        "providers",
+        "show_viewport",
+        "content_glyph",
+        "excluded_buftypes",
+        "excluded_filetypes",
+    }) do
+        expect.equality(rawget(result, removed), nil)
+    end
 end
 
 T["defaults core minimap providers on and integrations and semantics off"] = function()
-    local providers = set().providers
+    top().set({ minimap = { enabled = true } })
+    local plan = top().get_provider_plan()
 
-    expect.equality(providers.cursor, true)
-    expect.equality(providers.diagnostic, true)
-    expect.equality(providers.search, { backend = "worker" })
-    expect.equality(providers.marks, { letters = true, numbers = false })
-    expect.equality(providers.gitsigns, false)
-    expect.equality(providers.mini_diff, false)
-    expect.equality(providers.signify, false)
-    expect.equality(providers.vgit, false)
-    expect.equality(providers.ale, false)
-    expect.equality(providers.coc, false)
-    expect.equality(providers.treesitter, false)
-    expect.equality(providers.lsp_semantic_tokens, false)
+    for _, name in ipairs({ "cursor", "diagnostic", "search", "marks" }) do
+        expect.equality(plan[name].consumers.minimap, true)
+    end
+    expect.equality(plan.search.options, { backend = "worker" })
+    expect.equality(plan.marks.options, { letters = true, numbers = false })
+    for _, name in ipairs({
+        "gitsigns",
+        "mini_diff",
+        "signify",
+        "vgit",
+        "ale",
+        "coc",
+        "treesitter",
+        "lsp_semantic_tokens",
+    }) do
+        expect.equality(plan[name].consumers, { scrollbar = false, minimap = false })
+        expect.equality(plan[name].options, false)
+    end
 end
 
 T["get lazily initializes and returns the same active config"] = function()
@@ -118,41 +159,16 @@ T["get lazily initializes and returns the same active config"] = function()
 end
 
 T["accepts the complete valid schema and deep copies inputs"] = function()
-    local excluded_buftypes = { "terminal" }
-    local excluded_filetypes = { "TelescopePrompt" }
-    local result = set({
-        enabled = true,
-        visibility = "active",
+    local excluded_filetypes = { TelescopePrompt = { scrollbar = false } }
+    local custom_highlight = { fg = "#abcdef" }
+    top().set({
         set_highlights = false,
-        max_lines = 5000,
-        autohide = { enabled = true, delay_ms = 250 },
-        background = { blend = 65 },
-        float = {
-            zindex = 90,
-            blend = 35,
-            hide_on_cursor = false,
-            placement = {
-                relative = "window",
-                anchor = "SW",
-                row = -1,
-                col = 2,
-                gutter = "avoid",
-                gutter_position = "outer",
-            },
+        exclude = {
+            buftypes = { nofile = { scrollbar = false } },
+            filetypes = excluded_filetypes,
         },
-        width = 120,
-        height = 40,
-        mouse = { enabled = false },
-        backend = "sync",
-        update = { events = { "BufEnter", "CursorMoved" }, interval_ms = 0 },
-        excluded_buftypes = excluded_buftypes,
-        excluded_filetypes = excluded_filetypes,
-        overlays = {
-            enabled = false,
-            types = {
-                Error = { priority = 0 },
-                CustomReview = { priority = 8, highlight = "Special" },
-            },
+        marks = {
+            CustomReview = { text = "!", priority = 8, highlight = custom_highlight },
         },
         providers = {
             cursor = false,
@@ -168,294 +184,328 @@ T["accepts the complete valid schema and deep copies inputs"] = function()
             treesitter = true,
             lsp_semantic_tokens = true,
         },
-        show_viewport = false,
-        content_glyph = "▌",
+        minimap = {
+            enabled = true,
+            show = false,
+            visibility = "active",
+            max_lines = 5000,
+            autohide = { delay_ms = 250 },
+            throttle_ms = 0,
+            backend = "sync",
+            background_blend = 65,
+            width = 120,
+            height = 40,
+            placement = {
+                relative = "window",
+                anchor = "SW",
+                row = -1,
+                col = 2,
+                zindex = 90,
+            },
+            blend = 35,
+            hide_on_cursor = false,
+            mouse = false,
+            viewport = false,
+            glyph = "▌",
+            marks = {
+                Error = { priority = 0 },
+                Hint = false,
+            },
+        },
     })
+    local result = top().get_minimap()
 
     expect.equality(result.enabled, true)
+    expect.equality(result.show, false)
     expect.equality(result.visibility, "active")
     expect.equality(result.set_highlights, false)
     expect.equality(result.max_lines, 5000)
-    expect.equality(result.autohide.delay_ms, 250)
-    expect.equality(result.background.blend, 65)
-    expect.equality(result.float.zindex, 90)
-    expect.equality(result.float.blend, 35)
-    expect.equality(result.float.hide_on_cursor, false)
-    expect.equality(result.float.placement.anchor, "SW")
-    expect.equality(result.float.placement.gutter, "avoid")
-    expect.equality(result.float.placement.gutter_position, "outer")
+    expect.equality(result.autohide, { delay_ms = 250 })
+    expect.equality(result.throttle_ms, 0)
+    expect.equality(result.backend, "sync")
+    expect.equality(result.background_blend, 65)
     expect.equality(result.width, 120)
     expect.equality(result.height, 40)
-    expect.equality(result.mouse.enabled, false)
-    expect.equality(result.backend, "sync")
-    expect.equality(result.update.events, { "BufEnter", "CursorMoved" })
-    expect.equality(result.update.interval_ms, 0)
-    expect.equality(result.excluded_buftypes, { "terminal" })
-    expect.equality(result.excluded_filetypes, { "TelescopePrompt" })
-    expect.equality(result.overlays.enabled, false)
-    expect.equality(result.overlays.types.Error, {
+    expect.equality(result.placement, { relative = "window", anchor = "SW", row = -1, col = 2, zindex = 90 })
+    expect.equality(result.blend, 35)
+    expect.equality(result.hide_on_cursor, false)
+    expect.equality(result.mouse, false)
+    expect.equality(result.viewport, false)
+    expect.equality(result.glyph, "▌")
+    expect.equality(result.exclude.buftypes, { terminal = true, nofile = true })
+    expect.equality(result.exclude.filetypes, DEFAULT_EXCLUDED_FILETYPES)
+    expect.equality(result.marks.Error, {
         priority = 0,
         highlight = "DiagnosticVirtualTextError",
         group = "ScrollbarMinimapError",
     })
-    expect.equality(result.overlays.types.Warn, FULL_OVERLAY_TYPES.Warn)
-    expect.equality(result.overlays.types.CustomReview, {
+    expect.equality(result.marks.Hint, nil)
+    expect.equality(result.marks.Warn, {
+        priority = 3,
+        highlight = "DiagnosticVirtualTextWarn",
+        group = "ScrollbarMinimapWarn",
+    })
+    expect.equality(result.marks.CustomReview, {
         priority = 8,
-        highlight = "Special",
+        highlight = { fg = "#abcdef" },
         group = "ScrollbarMinimapCustomReview",
     })
-    expect.equality(result.providers.search, { incsearch = true, backend = "sync" })
-    expect.equality(result.providers.marks, { letters = false, numbers = true })
-    expect.equality(result.providers.treesitter, true)
-    expect.equality(result.providers.lsp_semantic_tokens, true)
-    expect.equality(result.show_viewport, false)
-    expect.equality(result.content_glyph, "▌")
 
-    excluded_buftypes[1] = "mutated"
-    excluded_filetypes[1] = "mutated"
-    expect.equality(result.excluded_buftypes, { "terminal" })
-    expect.equality(result.excluded_filetypes, { "TelescopePrompt" })
+    local plan = top().get_provider_plan()
+    expect.equality(plan.search.options, { incsearch = true, backend = "sync" })
+    expect.equality(plan.marks.options, { letters = false, numbers = true })
+    expect.equality(plan.treesitter.consumers, { scrollbar = false, minimap = true })
+    expect.equality(plan.lsp_semantic_tokens.consumers, { scrollbar = false, minimap = true })
+    expect.equality(plan.cursor.options, false)
+
+    excluded_filetypes.TelescopePrompt = false
+    custom_highlight.fg = "#000000"
+    expect.equality(result.exclude.filetypes.TelescopePrompt, true)
+    expect.equality(result.marks.CustomReview.highlight, { fg = "#abcdef" })
 end
 
-T["rejects unknown top-level keys"] = function()
-    expect_invalid({ unknown = true }, "unknown option 'minimap%.unknown'")
-    expect_invalid({ handle = {} }, "unknown option 'minimap%.handle'")
-    expect_invalid({ layout = {} }, "unknown option 'minimap%.layout'")
-    expect_invalid({ marks = {} }, "unknown option 'minimap%.marks'")
-end
-
-T["rejects removed minimap options and unknown provider names"] = function()
-    expect_invalid({ syntax_highlighting = true }, "unknown option 'minimap%.syntax_highlighting'")
-    expect_invalid({ show_cursor_row = true }, "unknown option 'minimap%.show_cursor_row'")
-    expect_invalid(
-        { content_glyphs = { top = "x", bottom = "x", both = "x" } },
-        "unknown option 'minimap%.content_glyphs'"
-    )
-    expect_invalid({ providers = { custom = true } }, "unknown option 'minimap%.providers%.custom'")
+T["rejects unknown and removed top-level keys"] = function()
+    for _, key in ipairs({
+        "unknown",
+        "handle",
+        "layout",
+        "presets",
+        "providers",
+        "set_highlights",
+        "update",
+        "float",
+        "background",
+        "overlays",
+        "show_viewport",
+        "content_glyph",
+        "excluded_buftypes",
+        "excluded_filetypes",
+        "syntax_highlighting",
+        "show_cursor_row",
+        "content_glyphs",
+    }) do
+        expect_invalid({ [key] = {} }, "unknown option 'minimap%." .. key .. "'")
+    end
+    expect_invalid({ preset = "default" }, "minimap%.preset: the minimap has no presets")
 end
 
 T["rejects unknown nested keys"] = function()
     expect_invalid({ autohide = { extra = true } }, "unknown option 'minimap%.autohide%.extra'")
-    expect_invalid({ background = { extra = true } }, "unknown option 'minimap%.background%.extra'")
-    expect_invalid({ update = { extra = true } }, "unknown option 'minimap%.update%.extra'")
-    expect_invalid({ float = { extra = true } }, "unknown option 'minimap%.float%.extra'")
-    expect_invalid({ float = { placement = { extra = true } } }, "unknown option 'minimap%.float%.placement%.extra'")
-    expect_invalid({ mouse = { extra = true } }, "unknown option 'minimap%.mouse%.extra'")
-    expect_invalid({ overlays = { extra = true } }, "unknown option 'minimap%.overlays%.extra'")
-    expect_invalid({ providers = { search = { extra = true } } }, "unknown option 'minimap%.providers%.search%.extra'")
+    expect_invalid({ placement = { extra = true } }, "unknown option 'minimap%.placement%.extra'")
+    expect_invalid({ placement = { gutter = "overlap" } }, "unknown option 'minimap%.placement%.gutter'")
+    expect_invalid(
+        { placement = { gutter_position = "inner" } },
+        "unknown option 'minimap%.placement%.gutter_position'"
+    )
+    expect_invalid({ marks = { Error = { text = "!" } } }, "unknown option 'minimap%.marks%.Error%.text'")
+    expect_top_invalid({ providers = { custom = true } }, "unknown option 'providers%.custom'")
+    expect_top_invalid({ providers = { search = { extra = true } } }, "unknown option 'providers%.search%.extra'")
 end
 
 T["rejects invalid scalar and enum values"] = function()
     expect_invalid({ enabled = "yes" }, "minimap%.enabled must be a boolean")
+    expect_invalid({ show = 1 }, "minimap%.show must be a boolean")
     expect_invalid({ visibility = "current" }, "minimap%.visibility must be one of")
-    expect_invalid({ set_highlights = 1 }, "minimap%.set_highlights must be a boolean")
     expect_invalid({ max_lines = 0 }, "minimap%.max_lines must be false or a positive integer")
     expect_invalid({ max_lines = -1 }, "minimap%.max_lines must be false or a positive integer")
-    expect_invalid({ width = 0 }, "minimap%.width must be false or a positive integer")
-    expect_invalid({ width = "wide" }, "minimap%.width must be false or a positive integer")
+    expect_invalid({ width = 0 }, "minimap%.width must be a positive integer")
+    expect_invalid({ width = "wide" }, "minimap%.width must be a positive integer")
+    expect_invalid({ width = false }, "minimap%.width must be a positive integer")
     expect_invalid({ height = -5 }, "minimap%.height must be false or a positive integer")
     expect_invalid({ backend = "remote" }, "minimap%.backend must be one of")
-    expect_invalid({ autohide = { enabled = "yes" } }, "minimap%.autohide%.enabled must be a boolean")
+    expect_invalid({ throttle_ms = -1 }, "minimap%.throttle_ms must be a non%-negative integer")
+    expect_invalid({ autohide = "yes" }, "minimap%.autohide must be a boolean or table")
     expect_invalid({ autohide = { delay_ms = 0 } }, "minimap%.autohide%.delay_ms must be a positive integer")
-    expect_invalid({ background = { blend = true } }, "minimap%.background%.blend must be false or an integer")
-    expect_invalid({ background = { blend = -1 } }, "minimap%.background%.blend must be false or an integer")
-    expect_invalid({ background = { blend = 1.5 } }, "minimap%.background%.blend must be false or an integer")
-    expect_invalid({ background = { blend = 101 } }, "minimap%.background%.blend must be at most 100")
-    expect_invalid({ float = { zindex = 0 } }, "minimap%.float%.zindex must be a positive integer")
-    expect_invalid({ float = { blend = -1 } }, "minimap%.float%.blend must be a non%-negative integer")
-    expect_invalid({ float = { blend = 101 } }, "minimap%.float%.blend must be at most 100")
-    expect_invalid({ float = { hide_on_cursor = 1 } }, "minimap%.float%.hide_on_cursor must be a boolean")
-    expect_invalid({ float = { placement = { anchor = "C" } } }, "minimap%.float%.placement%.anchor must be one of")
-    expect_invalid(
-        { float = { placement = { relative = "screen" } } },
-        "minimap%.float%.placement%.relative must be one of"
+    for _, blend in ipairs({ true, -1, 1.5, 101 }) do
+        expect_invalid(
+            { background_blend = blend },
+            "minimap%.background_blend must be false or an integer between 0 and 100"
+        )
+    end
+    expect_invalid({ placement = { zindex = 0 } }, "minimap%.placement%.zindex must be a positive integer")
+    expect_invalid({ blend = -1 }, "minimap%.blend must be an integer between 0 and 100")
+    expect_invalid({ blend = 101 }, "minimap%.blend must be an integer between 0 and 100")
+    expect_invalid({ hide_on_cursor = 1 }, "minimap%.hide_on_cursor must be a boolean")
+    expect_invalid({ placement = { anchor = "C" } }, "minimap%.placement%.anchor must be one of")
+    expect_invalid({ placement = { relative = "screen" } }, "minimap%.placement%.relative must be one of")
+    expect_invalid({ placement = { row = 1.5 } }, "minimap%.placement%.row must be an integer")
+    expect_invalid({ mouse = 1 }, "minimap%.mouse must be a boolean")
+    expect_invalid({ mouse = { enabled = false } }, "minimap%.mouse must be a boolean")
+    expect_invalid({ viewport = "yes" }, "minimap%.viewport must be a boolean")
+    expect_top_invalid({ providers = { search = "yes" } }, "providers%.search must be a boolean or table")
+    expect_top_invalid({ providers = { marks = { letters = "yes" } } }, "providers%.marks%.letters must be a boolean")
+    expect_top_invalid(
+        { providers = { treesitter = { minimap = 1 } } },
+        "providers%.treesitter%.minimap must be a boolean"
     )
-    expect_invalid(
-        { float = { placement = { gutter = "inside" } } },
-        "minimap%.float%.placement%.gutter must be one of"
+    expect_top_invalid(
+        { providers = { treesitter = { scrollbar = true } } },
+        "providers%.treesitter%.scrollbar: provider 'treesitter' does not support the scrollbar"
     )
-    expect_invalid(
-        { float = { placement = { gutter_position = "middle" } } },
-        "minimap%.float%.placement%.gutter_position must be one of"
-    )
-    expect_invalid({ float = { placement = { row = 1.5 } } }, "minimap%.float%.placement%.row must be an integer")
-    expect_invalid({ mouse = { enabled = 1 } }, "minimap%.mouse%.enabled must be a boolean")
-    expect_invalid({ overlays = { enabled = 1 } }, "minimap%.overlays%.enabled must be a boolean")
-    expect_invalid({ providers = { search = "yes" } }, "minimap%.providers%.search must be a boolean or table")
-    expect_invalid(
-        { providers = { marks = { letters = "yes" } } },
-        "minimap%.providers%.marks%.letters must be a boolean"
-    )
-    expect_invalid({ providers = { treesitter = {} } }, "minimap%.providers%.treesitter must be a boolean")
-    expect_invalid({ show_viewport = "yes" }, "minimap%.show_viewport must be a boolean")
 end
 
 T["rejects malformed table values"] = function()
-    expect_invalid({ autohide = false }, "minimap%.autohide must be a table")
-    expect_invalid({ background = false }, "minimap%.background must be a table")
-    expect_invalid({ update = false }, "minimap%.update must be a table")
-    expect_invalid({ float = false }, "minimap%.float must be a table")
-    expect_invalid({ float = { placement = false } }, "minimap%.float%.placement must be a table")
-    expect_invalid({ mouse = false }, "minimap%.mouse must be a table")
-    expect_invalid({ overlays = false }, "minimap%.overlays must be a table")
-    expect_invalid({ excluded_buftypes = "terminal" }, "minimap%.excluded_buftypes must be a dense list")
-    expect_invalid({ excluded_filetypes = { "lua", false } }, "minimap%.excluded_filetypes%[2%] must be a string")
-    expect_invalid(
-        { excluded_buftypes = { [1] = "terminal", [3] = "nofile" } },
-        "minimap%.excluded_buftypes must be a dense list"
+    expect_invalid({ placement = false }, "minimap%.placement must be a table")
+    expect_invalid({ marks = true }, "minimap%.marks must be false or a table")
+    expect_invalid({ glyph = false }, "minimap%.glyph must be a non%-empty string")
+    expect_invalid({ glyph = "" }, "minimap%.glyph must be a non%-empty string")
+    expect_invalid({ glyph = "ab" }, "minimap%.glyph must be a single%-width glyph")
+    expect_top_invalid({ exclude = { buftypes = "terminal" } }, "exclude%.buftypes must be a dense list")
+    expect_top_invalid({ exclude = { filetypes = { "lua", false } } }, "exclude%.filetypes%[2%] must be a string")
+    expect_top_invalid(
+        { exclude = { buftypes = { [1] = "terminal", [3] = "nofile" } } },
+        "exclude%.buftypes must be a dense list"
     )
-    expect_invalid({ content_glyph = false }, "minimap%.content_glyph must be a non%-empty string")
-    expect_invalid({ content_glyph = "" }, "minimap%.content_glyph must be a non%-empty string")
-    expect_invalid({ content_glyph = "ab" }, "minimap%.content_glyph must be a single%-width glyph")
-end
-
-T["accepts single-width ASCII and multibyte content glyphs"] = function()
-    expect.equality(set({ content_glyph = "#" }).content_glyph, "#")
-    expect.equality(set({ content_glyph = "▌" }).content_glyph, "▌")
-end
-
-T["rejects malformed update events lists"] = function()
-    expect_invalid({ update = { events = {} } }, "minimap%.update%.events must contain at least one event")
-    expect_invalid({ update = { events = "BufEnter" } }, "minimap%.update%.events must be a dense list")
-    expect_invalid({ update = { events = { "BufEnter", false } } }, "minimap%.update%.events%[2%] must be a string")
-    expect_invalid(
-        { update = { events = { "NotAnEvent" } } },
-        "minimap%.update%.events%[1%] unknown event 'NotAnEvent'"
-    )
-    expect_invalid(
-        { update = { events = { "BufEnter", "BufEnter" } } },
-        "minimap%.update%.events%[2%] duplicate event 'BufEnter'"
-    )
-    expect_invalid({ update = { interval_ms = -1 } }, "minimap%.update%.interval_ms must be a non%-negative integer")
-end
-
-T["accepts scrollbar-shared events outside the minimap default set"] = function()
-    local result = set({ update = { events = { "OptionSet", "TabEnter" } } })
-    expect.equality(result.update.events, { "OptionSet", "TabEnter" })
-end
-
-T["rejects malformed overlay type maps and specs"] = function()
-    expect_invalid({ overlays = { types = { "Error" } } }, "minimap%.overlays%.types keys must be valid mark types")
-    expect_invalid({ overlays = { types = { [1] = false } } }, "minimap%.overlays%.types keys must be valid mark types")
-    expect_invalid(
-        { overlays = { types = { ["not-a-type"] = false } } },
-        "minimap%.overlays%.types keys must be valid mark types"
-    )
-    expect_invalid({ overlays = { types = "Error" } }, "minimap%.overlays%.types must be a table")
-    expect_invalid(
-        { overlays = { types = { Error = true } } },
-        "minimap%.overlays%.types%.Error must be false or a table"
-    )
-    expect_invalid(
-        { overlays = { types = { Error = { text = "!" } } } },
-        "unknown option 'minimap%.overlays%.types%.Error%.text'"
-    )
-    expect_invalid(
-        { overlays = { types = { Error = { priority = -1 } } } },
-        "minimap%.overlays%.types%.Error%.priority must be a non%-negative integer"
-    )
-    expect_invalid(
-        { overlays = { types = { Error = { priority = 1.5 } } } },
-        "minimap%.overlays%.types%.Error%.priority must be a non%-negative integer"
-    )
-    expect_invalid(
-        { overlays = { types = { Error = { priority = math.huge } } } },
-        "minimap%.overlays%.types%.Error%.priority must be a non%-negative integer"
-    )
-    expect_invalid(
-        { overlays = { types = { Error = { highlight = "" } } } },
-        "minimap%.overlays%.types%.Error%.highlight must be a non%-empty string or table"
-    )
-    expect_invalid(
-        { overlays = { types = { Error = { highlight = false } } } },
-        "minimap%.overlays%.types%.Error%.highlight must be a non%-empty string or table"
+    expect_top_invalid(
+        { exclude = { filetypes = { lua = { minimap = 1 } } } },
+        "exclude%.filetypes%.lua%.minimap must be a boolean"
     )
 end
 
-T["requires complete specs only for custom overlay types without fallbacks"] = function()
+T["accepts single-width ASCII and multibyte glyphs"] = function()
+    expect.equality(set({ glyph = "#" }).glyph, "#")
+    expect.equality(set({ glyph = "▌" }).glyph, "▌")
+end
+
+T["rejects malformed mark override maps and specs"] = function()
+    expect_invalid({ marks = { "Error" } }, "minimap%.marks has invalid mark type 1")
+    expect_invalid({ marks = { [1] = false } }, "minimap%.marks has invalid mark type 1")
+    expect_invalid({ marks = { ["not-a-type"] = false } }, 'minimap%.marks has invalid mark type "not%-a%-type"')
+    expect_invalid({ marks = "Error" }, "minimap%.marks must be false or a table")
+    expect_invalid({ marks = { Error = true } }, "minimap%.marks%.Error must be false or a table")
+    for _, priority in ipairs({ -1, 1.5, math.huge }) do
+        expect_invalid(
+            { marks = { Error = { priority = priority } } },
+            "minimap%.marks%.Error%.priority must be a non%-negative integer"
+        )
+    end
     expect_invalid(
-        { overlays = { types = { CustomReview = { priority = 8 } } } },
-        "minimap%.overlays%.types%.CustomReview%.highlight is required"
+        { marks = { Error = { highlight = "" } } },
+        "minimap%.marks%.Error%.highlight must be a non%-empty string or table"
     )
     expect_invalid(
-        { overlays = { types = { CustomReview = { highlight = "Special" } } } },
-        "minimap%.overlays%.types%.CustomReview%.priority is required"
+        { marks = { Error = { highlight = false } } },
+        "minimap%.marks%.Error%.highlight must be a non%-empty string or table"
+    )
+    expect_invalid(
+        { marks = { CustomReview = { priority = 8, highlight = "Special" } } },
+        "minimap%.marks%.CustomReview: unknown mark type 'CustomReview'%. Define it in the top%-level marks table"
+    )
+end
+
+T["custom mark types come from the top-level registry with complete specs"] = function()
+    expect_top_invalid(
+        { marks = { CustomReview = { priority = 8, highlight = "Special" } } },
+        "marks%.CustomReview%.text is required for a new mark type"
+    )
+    expect_top_invalid(
+        { marks = { CustomReview = { text = "!", highlight = "Special" } } },
+        "marks%.CustomReview%.priority is required for a new mark type"
     )
 
-    local result = set({
-        overlays = {
-            types = {
-                CustomReview = { priority = 8, highlight = "Special" },
-                Future_mark = { priority = 9, highlight = { fg = "#abcdef" } },
-            },
+    top().set({
+        marks = {
+            CustomReview = { text = "!", priority = 8, highlight = "Special" },
+            Future_mark = { text = "f", priority = 9, highlight = { fg = "#abcdef" } },
         },
     })
-    expect.equality(result.overlays.types.CustomReview, {
+    local result = top().get_minimap()
+    expect.equality(result.marks.CustomReview, {
         priority = 8,
         highlight = "Special",
         group = "ScrollbarMinimapCustomReview",
     })
-    expect.equality(result.overlays.types.Future_mark, {
+    expect.equality(result.marks.Future_mark, {
         priority = 9,
         highlight = { fg = "#abcdef" },
         group = "ScrollbarMinimapFuture_mark",
     })
 end
 
-T["rejects overlay types that collide with static minimap groups"] = function()
-    for _, mark_type in ipairs({ "Base", "Content", "Viewport", "Cursor" }) do
-        expect_invalid({
-            overlays = {
-                types = {
-                    [mark_type] = { priority = 1, highlight = "Special" },
-                },
-            },
-        }, "conflicts with the static ScrollbarMinimap" .. mark_type .. " group")
+T["rejects mark overrides for static minimap groups and the cursor"] = function()
+    for _, mark_type in ipairs({ "Base", "Content", "Viewport" }) do
+        expect_invalid(
+            { marks = { [mark_type] = { priority = 1, highlight = "Special" } } },
+            "minimap%.marks%." .. mark_type .. ": conflicts with the static ScrollbarMinimap" .. mark_type .. " group"
+        )
     end
+    expect_invalid(
+        { marks = { Cursor = false } },
+        "minimap%.marks%.Cursor: the minimap draws the cursor with ScrollbarMinimapCursor"
+    )
+    expect_invalid({ marks = { Cursor = {} } }, "providers%.cursor = { minimap = false }")
+
+    -- A registered type with a static minimap name stays out of the minimap only.
+    top().set({ marks = { Content = { text = "c", priority = 1, highlight = "Special" } } })
+    expect.equality(top().get_minimap().marks.Content, nil)
+    expect.no_equality(top().get().marks.Content, nil)
 end
 
-T["partial overrides inherit fallbacks and false removes only selected types"] = function()
+T["partial overrides inherit registry specs and false hides only selected types"] = function()
     local result = set({
-        overlays = {
-            types = {
-                Error = { priority = 0 },
-                Hint = false,
-            },
+        marks = {
+            Error = { priority = 0 },
+            Hint = false,
         },
     })
 
-    expect.equality(result.overlays.types.Error, {
+    expect.equality(result.marks.Error, {
         priority = 0,
         highlight = "DiagnosticVirtualTextError",
         group = "ScrollbarMinimapError",
     })
-    expect.equality(result.overlays.types.Hint, nil)
-    expect.equality(result.overlays.types.Warn, FULL_OVERLAY_TYPES.Warn)
+    expect.equality(result.marks.Hint, nil)
+    expect.equality(result.marks.Warn, FULL_MARKS.Warn)
+    expect.equality(result.marks.Cursor, nil)
 end
 
-T["root and profile layers can re-enable preset tombstones"] = function()
-    local root = set({
-        preset = "disabled",
-        presets = {
-            disabled = { overlays = { types = { Search = false, Hint = false } } },
-        },
-        overlays = { types = { Search = {} } },
-        profiles = {
-            {
-                match = { filetypes = { "lua" } },
-                config = { overlays = { types = { Hint = {} } } },
+T["false hides every mark type"] = function()
+    expect.equality(set({ marks = false }).marks, {})
+end
+
+T["root and profile overrides can re-show types that the registry hides"] = function()
+    top().set({
+        marks = { Search = false, Hint = false },
+        minimap = {
+            marks = { Search = {} },
+            profiles = {
+                {
+                    match = { filetypes = { "lua" } },
+                    marks = { Hint = {} },
+                },
             },
         },
     })
+    local root = top().get_minimap()
     local profile = minimap().get_variants()[2].config
 
-    expect.equality(root.overlays.types.Search, FULL_OVERLAY_TYPES.Search)
-    expect.equality(root.overlays.types.Hint, nil)
-    expect.equality(profile.overlays.types.Hint, {
+    expect.equality(root.marks.Search, FULL_MARKS.Search)
+    expect.equality(root.marks.Hint, nil)
+    expect.equality(profile.marks.Hint, {
         priority = 5,
         highlight = "DiagnosticVirtualTextHint",
         group = "ScrollbarMinimapProfile1.Hint",
     })
+    expect.equality(profile.marks.Search.priority, 1)
+end
+
+T["a profile table re-shows a type that the root hid"] = function()
+    set({
+        marks = { Warn = false },
+        profiles = {
+            { match = { filetypes = { "lua" } }, marks = { Warn = {} } },
+            { match = { filetypes = { "text" } }, width = 20 },
+        },
+    })
+    local variants = minimap().get_variants()
+
+    expect.equality(variants[1].config.marks.Warn, nil)
+    expect.equality(variants[2].config.marks.Warn, {
+        priority = 3,
+        highlight = "DiagnosticVirtualTextWarn",
+        group = "ScrollbarMinimapProfile1.Warn",
+    })
+    expect.equality(variants[3].config.marks.Warn, nil)
 end
 
 T["failed setup preserves active config"] = function()
@@ -473,9 +523,9 @@ T["normalizes fresh state without leaking prior setup-only values"] = function()
         enabled = true,
         width = 100,
         backend = "sync",
-        overlays = { types = { Error = { priority = 0 } } },
+        marks = { Error = { priority = 0 } },
         profiles = {
-            { match = { filetypes = { "lua" } }, config = { width = 60 } },
+            { match = { filetypes = { "lua" } }, width = 60 },
         },
     })
 
@@ -483,66 +533,9 @@ T["normalizes fresh state without leaking prior setup-only values"] = function()
     expect.equality(result.enabled, false)
     expect.equality(result.width, 16)
     expect.equality(result.backend, "worker")
-    expect.equality(result.overlays.types, FULL_OVERLAY_TYPES)
-    expect.equality(rawget(result, "preset"), nil)
-    expect.equality(rawget(result, "presets"), nil)
+    expect.equality(result.marks, FULL_MARKS)
+    expect.equality(#minimap().get_variants(), 1)
     expect.equality(rawget(result, "profiles"), nil)
-end
-
-T["presets resolve and merge with root overrides"] = function()
-    local result = set({
-        preset = "compact",
-        presets = {
-            compact = {
-                width = 40,
-                overlays = { enabled = false },
-                float = { placement = { anchor = "NW" } },
-            },
-        },
-        height = 20,
-    })
-
-    expect.equality(result.width, 40)
-    expect.equality(result.height, 20)
-    expect.equality(result.overlays.enabled, false)
-    expect.equality(result.float.placement.anchor, "NW")
-    expect.equality(result.float.placement.relative, "window")
-end
-
-T["presets support extends chains"] = function()
-    local result = set({
-        preset = "child",
-        presets = {
-            parent = { width = 50, show_viewport = false },
-            child = { extends = "parent", height = 25 },
-        },
-    })
-
-    expect.equality(result.width, 50)
-    expect.equality(result.height, 25)
-    expect.equality(result.show_viewport, false)
-end
-
-T["presets reject unknown fields and invalid values"] = function()
-    expect_invalid({
-        preset = "bad",
-        presets = { bad = { enabled = true } },
-    }, "minimap preset 'bad' cannot set 'enabled'")
-    expect_invalid({
-        preset = "bad",
-        presets = { bad = { width = 0 } },
-    }, "minimap preset 'bad'%.width must be false or a positive integer")
-    expect_invalid({
-        preset = "bad",
-        presets = { bad = { float = { zindex = "high" } } },
-    }, "minimap preset 'bad' cannot set 'float%.zindex'")
-    expect_invalid({
-        preset = "missing",
-    }, "unknown minimap preset 'missing'")
-    expect_invalid({
-        preset = "bad",
-        presets = { bad = "not a table" },
-    }, "minimap preset 'bad' must be a table")
 end
 
 T["compiles profile variants with first-match precedence"] = function()
@@ -552,11 +545,12 @@ T["compiles profile variants with first-match precedence"] = function()
         profiles = {
             {
                 match = { filetypes = { "lua" } },
-                config = { width = 60, height = 30 },
+                width = 60,
+                height = 30,
             },
             {
                 match = { buftypes = { "nofile" } },
-                config = { width = 40 },
+                width = 40,
             },
         },
     })
@@ -574,19 +568,20 @@ T["compiles profile variants with first-match precedence"] = function()
     expect.equality(variants[3].config.height, false)
 
     for _, variant in ipairs(variants) do
-        expect.equality(rawget(variant.config, "preset"), nil)
-        expect.equality(rawget(variant.config, "presets"), nil)
+        expect.equality(rawget(variant.config, "match"), nil)
         expect.equality(rawget(variant.config, "profiles"), nil)
     end
 end
 
-T["rejects malformed profile matchers and configs"] = function()
+T["rejects malformed profile matchers and options"] = function()
     expect_invalid({ profiles = "lua" }, "minimap%.profiles must be a dense list")
     expect_invalid(
         { profiles = { [2] = { match = { when = function() end } } } },
         "minimap%.profiles must be a dense list"
     )
-    expect_invalid({ profiles = { {} } }, "minimap%.profiles%[1%]%.match must be a table")
+    expect_invalid({ profiles = { "lua" } }, "minimap%.profiles%[1%] must be a table")
+    expect_invalid({ profiles = { {} } }, "minimap%.profiles%[1%]%.match is required")
+    expect_invalid({ profiles = { { match = "lua" } } }, "minimap%.profiles%[1%]%.match must be a table")
     expect_invalid({ profiles = { { match = {} } } }, "minimap%.profiles%[1%]%.match must contain at least one matcher")
     expect_invalid(
         { profiles = { { match = { filetypes = {} } } } },
@@ -599,95 +594,125 @@ T["rejects malformed profile matchers and configs"] = function()
         "unknown option 'minimap%.profiles%[1%]%.match%.extra'"
     )
     expect_invalid(
-        { profiles = { { match = { when = function() end }, preset = 1 } } },
-        "minimap%.profiles%[1%]%.preset must be a string"
+        { profiles = { { match = { when = function() end }, preset = "default" } } },
+        "minimap%.profiles%[1%]%.preset: the minimap has no presets"
     )
     expect_invalid(
-        { profiles = { { match = { filetypes = { "lua" } }, config = { width = 0 } } } },
-        "minimap%.width must be false or a positive integer"
+        { profiles = { { match = { filetypes = { "lua" } }, width = 0 } } },
+        "minimap%.profiles%[1%]%.width must be a positive integer"
     )
 end
 
-T["profile config whitelist rejects behavior and eligibility fields"] = function()
-    local rejected = {
+T["profiles reject global options with a dedicated error"] = function()
+    for _, global in ipairs({
         { enabled = false },
-        { set_highlights = false },
-        { max_lines = 100 },
-        { autohide = { enabled = true } },
-        { backend = "sync" },
-        { syntax_highlighting = true },
-        { update = { interval_ms = 50 } },
-        { excluded_filetypes = { "lua" } },
+        { show = false },
         { visibility = "active" },
-        { preset = "compact" },
-        { presets = {} },
+        { autohide = true },
+        { max_lines = 100 },
+        { throttle_ms = 50 },
+        { backend = "sync" },
+        { background_blend = 40 },
         { profiles = {} },
-    }
-    for _, unsafe in ipairs(rejected) do
-        expect_invalid({ profiles = { { match = { filetypes = { "lua" } }, config = unsafe } } }, "profile")
+    }) do
+        local key = next(global)
+        local profile = vim.tbl_extend("error", { match = { filetypes = { "lua" } } }, global)
+        expect_invalid(
+            { profiles = { profile } },
+            "minimap%.profiles%[1%]%." .. key .. " is a global option and cannot be set in a profile"
+        )
     end
 end
 
-T["profile config whitelist allows display-only overrides"] = function()
+T["profiles reject removed and shared options"] = function()
+    for _, key in ipairs({
+        "config",
+        "set_highlights",
+        "exclude",
+        "providers",
+        "update",
+        "float",
+        "background",
+        "overlays",
+        "excluded_filetypes",
+        "syntax_highlighting",
+    }) do
+        expect_invalid(
+            { profiles = { { match = { filetypes = { "lua" } }, [key] = {} } } },
+            "unknown option 'minimap%.profiles%[1%]%." .. key .. "'"
+        )
+    end
+end
+
+T["profiles allow display-only overrides"] = function()
     local result = set({
         profiles = {
             {
                 match = { filetypes = { "lua" } },
-                config = {
-                    width = 60,
-                    height = 30,
-                    float = { placement = { anchor = "NW" } },
-                    overlays = { enabled = false },
-                    show_viewport = false,
-                    mouse = { enabled = false },
-                    content_glyph = "#",
-                },
+                width = 60,
+                height = 30,
+                placement = { anchor = "NW", zindex = 70 },
+                blend = 20,
+                hide_on_cursor = false,
+                marks = false,
+                viewport = false,
+                mouse = false,
+                glyph = "#",
             },
         },
     })
-    local variants = minimap().get_variants()
-    expect.equality(variants[2].config.width, 60)
-    expect.equality(variants[2].config.height, 30)
-    expect.equality(variants[2].config.float.placement.anchor, "NW")
-    expect.equality(variants[2].config.overlays.enabled, false)
-    expect.equality(variants[2].config.show_viewport, false)
-    expect.equality(variants[2].config.mouse.enabled, false)
-    expect.equality(variants[2].config.content_glyph, "#")
+    local profile = minimap().get_variants()[2].config
+    expect.equality(profile.width, 60)
+    expect.equality(profile.height, 30)
+    expect.equality(profile.placement, { relative = "window", anchor = "NW", row = 0, col = 0, zindex = 70 })
+    expect.equality(profile.blend, 20)
+    expect.equality(profile.hide_on_cursor, false)
+    expect.equality(profile.marks, {})
+    expect.equality(profile.viewport, false)
+    expect.equality(profile.mouse, false)
+    expect.equality(profile.glyph, "#")
     expect.equality(result.width, 16)
+    expect.equality(result.marks, FULL_MARKS)
 end
 
-T["profile variants preserve setup-level providers"] = function()
+T["profile variants inherit root global options"] = function()
     local root = set({
-        providers = { cursor = false, search = { backend = "sync" } },
+        visibility = "active",
+        autohide = { delay_ms = 300 },
+        throttle_ms = 5,
+        background_blend = 35,
         profiles = {
             {
                 match = { filetypes = { "lua" } },
-                config = { width = 40 },
+                width = 40,
             },
         },
     })
-    local variants = minimap().get_variants()
+    local profile = minimap().get_variants()[2].config
 
-    expect.equality(root.providers.cursor, false)
-    expect.equality(root.providers.search, { backend = "sync" })
-    expect.equality(variants[2].config.providers, root.providers)
+    expect.equality(profile.visibility, "active")
+    expect.equality(profile.autohide, { delay_ms = 300 })
+    expect.equality(profile.throttle_ms, 5)
+    expect.equality(profile.background_blend, 35)
+    expect.equality(profile.exclude, root.exclude)
+    expect.equality(profile.width, 40)
 end
 
 T["commits root and variants atomically on profile failure"] = function()
     local before = set({
         width = 100,
         profiles = {
-            { match = { filetypes = { "lua" } }, config = { width = 60 } },
+            { match = { filetypes = { "lua" } }, width = 60 },
         },
     })
     local before_variants = minimap().get_variants()
 
     expect_invalid({
         profiles = {
-            { match = { filetypes = { "lua" } }, config = { width = 0 } },
-            { match = { buftypes = { "nofile" } }, config = { height = -1 } },
+            { match = { filetypes = { "lua" } }, width = 0 },
+            { match = { buftypes = { "nofile" } }, height = -1 },
         },
-    }, "minimap%.width must be false or a positive integer")
+    }, "minimap%.profiles%[1%]%.width must be a positive integer")
     expect.equality(minimap().get(), before)
     expect.equality(minimap().get_variants(), before_variants)
 end
@@ -702,12 +727,12 @@ T["selects first matching profile with AND semantics"] = function()
 
     set({
         profiles = {
-            { match = { filetypes = { "markdown" } }, config = { width = 10 } },
+            { match = { filetypes = { "markdown" } }, width = 10 },
             {
                 match = { filetypes = { "lua" }, buftypes = { "nofile" } },
-                config = { width = 50 },
+                width = 50,
             },
-            { match = { filetypes = { "lua" } }, config = { width = 70 } },
+            { match = { filetypes = { "lua" } }, width = 70 },
         },
     })
 
@@ -750,7 +775,7 @@ T["predicate errors fall back to root and rate-limit notifications"] = function(
                         return true
                     end,
                 },
-                config = { width = 40 },
+                width = 40,
             },
         },
     })
@@ -758,6 +783,7 @@ T["predicate errors fall back to root and rate-limit notifications"] = function(
     expect.equality(minimap().select(winid).variant_id, 0)
     expect.equality(minimap().select(winid).variant_id, 0)
     expect.equality(#notifications, 1)
+    expect.no_equality(notifications[1][1]:match("minimap profile 1 matcher failed"), nil)
     failure = "second"
     expect.equality(minimap().select(winid).variant_id, 0)
     expect.equality(#notifications, 2)
@@ -767,19 +793,17 @@ T["predicate errors fall back to root and rate-limit notifications"] = function(
 end
 
 T["integrates with the top-level scrollbar dispatcher"] = function()
-    package.loaded["scrollbar.config"] = nil
-    package.loaded["scrollbar.presets"] = nil
-    local config = require("scrollbar.config")
+    local config = top()
 
     config.set({})
     expect.equality(config.get_minimap().enabled, false)
     expect.equality(config.get_minimap().width, 16)
     expect.equality(config.get_minimap().backend, "worker")
 
-    config.set({ minimap = { enabled = true, width = 100, providers = { treesitter = true } } })
+    config.set({ providers = { treesitter = true }, minimap = { enabled = true, width = 100 } })
     expect.equality(config.get_minimap().enabled, true)
     expect.equality(config.get_minimap().width, 100)
-    expect.equality(config.get_minimap().providers.treesitter, true)
+    expect.equality(config.get_provider_plan().treesitter.consumers, { scrollbar = false, minimap = true })
 
     config.set({ minimap = { enabled = false } })
     expect.equality(config.get_minimap().enabled, false)
@@ -796,9 +820,7 @@ T["integrates with the top-level scrollbar dispatcher"] = function()
 end
 
 T["top-level validation commits both config slices atomically"] = function()
-    package.loaded["scrollbar.config"] = nil
-    package.loaded["scrollbar.presets"] = nil
-    local config = require("scrollbar.config")
+    local config = top()
     local before_scrollbar = config.set({
         scrollbar = {
             visibility = "active",
@@ -810,7 +832,7 @@ T["top-level validation commits both config slices atomically"] = function()
             enabled = true,
             width = 80,
             profiles = {
-                { match = { filetypes = { "lua" } }, config = { width = 40 } },
+                { match = { filetypes = { "lua" } }, width = 40 },
             },
         },
     })
@@ -835,50 +857,40 @@ T["top-level validation commits both config slices atomically"] = function()
     expect.equality(minimap().get_variants(), before_minimap_variants)
 end
 
-T["provider plan unions consumers and lets one table beat true"] = function()
-    package.loaded["scrollbar.config"] = nil
-    package.loaded["scrollbar.presets"] = nil
-    local config = require("scrollbar.config")
+T["provider plan applies per-renderer targets from one table"] = function()
+    local config = top()
     config.set({
-        scrollbar = {
-            providers = {
-                cursor = false,
-                search = true,
-            },
+        providers = {
+            cursor = { scrollbar = false },
+            diagnostic = { minimap = false },
+            search = { incsearch = true, backend = "sync" },
         },
-        minimap = {
-            enabled = true,
-            providers = {
-                cursor = true,
-                search = { incsearch = true, backend = "sync" },
-            },
-        },
+        minimap = { enabled = true },
     })
 
     local plan = config.get_provider_plan()
     expect.equality(plan.cursor.consumers, { scrollbar = false, minimap = true })
+    expect.equality(plan.cursor.options, true)
+    expect.equality(plan.diagnostic.consumers, { scrollbar = true, minimap = false })
     expect.equality(plan.search.consumers, { scrollbar = true, minimap = true })
     expect.equality(plan.search.options, { incsearch = true, backend = "sync" })
     expect.equality(plan.search.targets, { scrollbar = true, minimap = true })
     expect.equality(plan.search.execution, "parent")
 end
 
-T["provider plan accepts equal tables and atomically rejects conflicting tables"] = function()
-    package.loaded["scrollbar.config"] = nil
-    package.loaded["scrollbar.presets"] = nil
-    local config = require("scrollbar.config")
+T["invalid provider options fail setup atomically"] = function()
+    local config = top()
     local before_scrollbar = config.set({
+        providers = { search = { backend = "worker" } },
         scrollbar = {
-            providers = { search = {} },
             profiles = {
                 { match = { filetypes = { "lua" } }, preset = "minimal" },
             },
         },
         minimap = {
             enabled = true,
-            providers = { search = { backend = "worker" } },
             profiles = {
-                { match = { filetypes = { "lua" } }, config = { width = 40 } },
+                { match = { filetypes = { "lua" } }, width = 40 },
             },
         },
     })
@@ -889,20 +901,14 @@ T["provider plan accepts equal tables and atomically rejects conflicting tables"
     expect.equality(before_plan.search.options, { backend = "worker" })
 
     local ok, err = pcall(config.set, {
-        scrollbar = {
-            visibility = "active",
-            providers = { search = { backend = "sync" } },
-        },
-        minimap = {
-            enabled = true,
-            width = 80,
-            providers = { search = { backend = "worker" } },
-        },
+        ---@diagnostic disable-next-line: assign-type-mismatch
+        providers = { search = { backend = "remote" } },
+        scrollbar = { visibility = "active" },
+        minimap = { enabled = true, width = 80 },
     })
 
     expect.equality(ok, false)
-    expect.no_equality(tostring(err):match("scrollbar%.providers%.search"), nil)
-    expect.no_equality(tostring(err):match("minimap%.providers%.search"), nil)
+    expect.no_equality(tostring(err):match("providers%.search%.backend must be one of"), nil)
     expect.equality(config.get(), before_scrollbar)
     expect.equality(config.get_variants(), before_scrollbar_variants)
     expect.equality(config.get_minimap(), before_minimap)
@@ -911,23 +917,13 @@ T["provider plan accepts equal tables and atomically rejects conflicting tables"
 end
 
 T["disabled minimap contributes no provider demand"] = function()
-    package.loaded["scrollbar.config"] = nil
-    package.loaded["scrollbar.presets"] = nil
-    local config = require("scrollbar.config")
+    local config = top()
     local ok = pcall(config.set, {
-        scrollbar = {
-            providers = {
-                cursor = false,
-                search = { backend = "sync" },
-            },
+        providers = {
+            cursor = { scrollbar = false },
+            search = { backend = "sync" },
         },
-        minimap = {
-            enabled = false,
-            providers = {
-                cursor = true,
-                search = { backend = "worker" },
-            },
-        },
+        minimap = { enabled = false },
     })
 
     expect.equality(ok, true)
@@ -938,65 +934,42 @@ T["disabled minimap contributes no provider demand"] = function()
     expect.equality(plan.search.options, { backend = "sync" })
 end
 
-T["default overlay specs use a root-first deep-copied scrollbar union without Cursor"] = function()
-    package.loaded["scrollbar.config"] = nil
-    package.loaded["scrollbar.presets"] = nil
-    local config = require("scrollbar.config")
-    local root_highlight = { fg = "#123456", bold = true }
-    local profile_highlight = { fg = "#abcdef" }
+T["minimap marks resolve from the deep-copied registry independently of scrollbar overrides"] = function()
+    local config = top()
+    local registry_highlight = { fg = "#123456", bold = true }
     config.set({
+        marks = {
+            CustomReview = { text = "!", priority = 8, highlight = registry_highlight },
+        },
         scrollbar = {
             marks = {
-                CustomReview = { text = "!", priority = 8, highlight = root_highlight },
+                CustomReview = { priority = 99, highlight = "Ignored" },
+                Search = false,
             },
             profiles = {
                 {
                     match = { filetypes = { "lua" } },
-                    config = {
-                        marks = {
-                            CustomReview = { text = "?", priority = 99, highlight = "Ignored" },
-                            ProfileOnly = { text = "?", priority = 9, highlight = profile_highlight },
-                        },
-                    },
-                },
-                {
-                    match = { filetypes = { "text" } },
-                    config = {
-                        marks = {
-                            ProfileOnly = { text = "x", priority = 19, highlight = "IgnoredAgain" },
-                            SecondOnly = { text = "s", priority = 10, highlight = "Question" },
-                        },
-                    },
+                    marks = { CustomReview = false },
                 },
             },
         },
     })
 
-    root_highlight.fg = "#000000"
-    profile_highlight.fg = "#000000"
-    local types = config.get_minimap().overlays.types
-    expect.equality(types.Cursor, nil)
-    expect.equality(types.CustomReview, {
+    registry_highlight.fg = "#000000"
+    local marks = config.get_minimap().marks
+    expect.equality(marks.Cursor, nil)
+    expect.equality(marks.CustomReview, {
         priority = 8,
         highlight = { fg = "#123456", bold = true },
         group = "ScrollbarMinimapCustomReview",
     })
-    expect.equality(types.ProfileOnly, {
-        priority = 9,
-        highlight = { fg = "#abcdef" },
-        group = "ScrollbarMinimapProfileOnly",
-    })
-    expect.equality(types.SecondOnly, {
-        priority = 10,
-        highlight = "Question",
-        group = "ScrollbarMinimapSecondOnly",
-    })
+    expect.equality(marks.Search, FULL_MARKS.Search)
+    expect.equality(config.get().marks.CustomReview.priority, 99)
+    expect.equality(config.get().marks.Search, nil)
 end
 
-T["top-level overlay validation is atomic"] = function()
-    package.loaded["scrollbar.config"] = nil
-    package.loaded["scrollbar.presets"] = nil
-    local config = require("scrollbar.config")
+T["top-level mark validation is atomic"] = function()
+    local config = top()
     local before_scrollbar = config.set({
         scrollbar = { visibility = "active" },
         minimap = { enabled = true, width = 80 },
@@ -1005,18 +978,16 @@ T["top-level overlay validation is atomic"] = function()
 
     local ok, err = pcall(config.set, {
         scrollbar = { visibility = "all" },
-        minimap = { overlays = { types = { CustomReview = { priority = 1 } } } },
+        minimap = { marks = { CustomReview = { priority = 1 } } },
     })
     expect.equality(ok, false)
-    expect.no_equality(tostring(err):match("CustomReview%.highlight is required"), nil)
+    expect.no_equality(tostring(err):match("unknown mark type 'CustomReview'"), nil)
     expect.equality(config.get(), before_scrollbar)
     expect.equality(config.get_minimap(), before_minimap)
 end
 
 T["top-level validation rejects cross-subsystem public group collisions atomically"] = function()
-    package.loaded["scrollbar.config"] = nil
-    package.loaded["scrollbar.presets"] = nil
-    local config = require("scrollbar.config")
+    local config = top()
     local before_scrollbar = config.set({
         scrollbar = { visibility = "active" },
         minimap = { enabled = true },
@@ -1025,10 +996,8 @@ T["top-level validation rejects cross-subsystem public group collisions atomical
 
     for _, mark_type in ipairs({ "Track", "Handle", "SearchThumb", "MinimapSearch" }) do
         local ok, err = pcall(config.set, {
-            scrollbar = {
-                marks = {
-                    [mark_type] = { text = "!", priority = 1, highlight = "Special" },
-                },
+            marks = {
+                [mark_type] = { text = "!", priority = 1, highlight = "Special" },
             },
             minimap = { enabled = true },
         })
@@ -1037,6 +1006,17 @@ T["top-level validation rejects cross-subsystem public group collisions atomical
         expect.equality(config.get(), before_scrollbar)
         expect.equality(config.get_minimap(), before_minimap)
     end
+end
+
+T["a disabled minimap claims no public groups"] = function()
+    local config = top()
+    local ok, err = pcall(config.set, {
+        marks = {
+            MinimapSearch = { text = "!", priority = 1, highlight = "Special" },
+        },
+    })
+    expect.equality(ok, true, tostring(err))
+    expect.no_equality(config.get().marks.MinimapSearch, nil)
 end
 
 return T

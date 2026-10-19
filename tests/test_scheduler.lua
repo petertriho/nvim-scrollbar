@@ -22,9 +22,9 @@ T["coalesces repeated invalidations and renders the latest state"] = function()
 
         scheduler.setup({
             config = require("scrollbar.config").set({
+                set_highlights = false,
                 scrollbar = {
-                    set_highlights = false,
-                    update = { interval_ms = 10 },
+                    throttle_ms = 10,
                 },
             }),
             renderer = {
@@ -77,9 +77,9 @@ T["requeues work arriving during a flush without losing the final state"] = func
 
         scheduler.setup({
             config = require("scrollbar.config").set({
+                set_highlights = false,
                 scrollbar = {
-                    set_highlights = false,
-                    update = { interval_ms = 5 },
+                    throttle_ms = 5,
                 },
             }),
             renderer = {
@@ -130,9 +130,9 @@ T["subscribes only to mark store events and unsubscribes on dispose"] = function
         local scheduler = require("scrollbar.scheduler")
         scheduler.setup({
             config = require("scrollbar.config").set({
+                set_highlights = false,
                 scrollbar = {
-                    set_highlights = false,
-                    update = { interval_ms = 1000 },
+                    throttle_ms = 1000,
                 },
             }),
             renderer = {
@@ -239,9 +239,9 @@ T["uses one source-window snapshot to validate every pending window in a flush"]
 
         scheduler.setup({
             config = require("scrollbar.config").set({
+                set_highlights = false,
                 scrollbar = {
-                    set_highlights = false,
-                    update = { interval_ms = 1000 },
+                    throttle_ms = 1000,
                 },
             }),
             renderer = {
@@ -295,9 +295,9 @@ T["delegates targeted membership and owned-buffer events to renderer policy"] = 
         local scheduler = require("scrollbar.scheduler")
         scheduler.setup({
             config = require("scrollbar.config").set({
+                set_highlights = false,
                 scrollbar = {
-                    set_highlights = false,
-                    update = { interval_ms = 1000 },
+                    throttle_ms = 1000,
                 },
             }),
             renderer = {
@@ -382,12 +382,11 @@ T["ignores closed and floating windows and scopes buffer invalidation"] = functi
         vim.api.nvim_win_set_var(float_win, "scrollbar_owned", true)
 
         local active_config = require("scrollbar.config").set({
+            set_highlights = false,
+            exclude = { buftypes = {}, filetypes = {} },
             scrollbar = {
-                set_highlights = false,
-                update = { interval_ms = 1000 },
-                mouse = { enabled = false },
-                excluded_buftypes = {},
-                excluded_filetypes = {},
+                throttle_ms = 1000,
+                mouse = false,
             },
         })
         local renderer = require("scrollbar.renderer")
@@ -460,10 +459,10 @@ T["reveals only navigation sources and keeps other invalidations render-only"] =
         local scheduler = require("scrollbar.scheduler")
         scheduler.setup({
             config = require("scrollbar.config").set({
+                set_highlights = false,
                 scrollbar = {
-                    set_highlights = false,
-                    autohide = { enabled = true, delay_ms = 1000 },
-                    update = { interval_ms = 1000 },
+                    autohide = { delay_ms = 1000 },
+                    throttle_ms = 1000,
                 },
             }),
             renderer = {
@@ -605,10 +604,10 @@ T["keeps independent deadlines and rejects stale callbacks"] = function()
         local scheduler = require("scrollbar.scheduler")
         scheduler.setup({
             config = require("scrollbar.config").set({
+                set_highlights = false,
                 scrollbar = {
-                    set_highlights = false,
-                    autohide = { enabled = true, delay_ms = 50 },
-                    update = { interval_ms = 1000 },
+                    autohide = { delay_ms = 50 },
+                    throttle_ms = 1000,
                 },
             }),
             renderer = {
@@ -718,10 +717,10 @@ T["holds deadlines and closes source timers with their lifecycle"] = function()
         local scheduler = require("scrollbar.scheduler")
         scheduler.setup({
             config = require("scrollbar.config").set({
+                set_highlights = false,
                 scrollbar = {
-                    set_highlights = false,
-                    autohide = { enabled = true, delay_ms = 50 },
-                    update = { interval_ms = 1000 },
+                    autohide = { delay_ms = 50 },
+                    throttle_ms = 1000,
                 },
             }),
             renderer = {
@@ -812,17 +811,17 @@ T["wires provider context invalidations directly and never refreshes providers o
     local child = new_child()
     local result = child.lua_func(function()
         local active_config = require("scrollbar.config").set({
+            set_highlights = false,
+            providers = {
+                cursor = false,
+                diagnostic = false,
+                search = false,
+                gitsigns = false,
+                ale = false,
+                coc = false,
+            },
             scrollbar = {
-                set_highlights = false,
-                update = { interval_ms = 5 },
-                providers = {
-                    cursor = false,
-                    diagnostic = false,
-                    search = false,
-                    gitsigns = false,
-                    ale = false,
-                    coc = false,
-                },
+                throttle_ms = 5,
             },
         })
         local winid = vim.api.nvim_get_current_win()
@@ -930,12 +929,12 @@ T["honors editor-relative active ownership through renderer source windows"] = f
         local second = vim.api.nvim_get_current_win()
 
         local active_config = require("scrollbar.config").set({
+            set_highlights = false,
             scrollbar = {
                 visibility = "all",
-                set_highlights = false,
-                update = { interval_ms = 1000 },
-                float = { placement = { relative = "editor" } },
-                mouse = { enabled = false },
+                throttle_ms = 1000,
+                placement = { relative = "editor" },
+                mouse = false,
             },
         })
         local real_renderer = require("scrollbar.renderer")
@@ -990,13 +989,12 @@ T["does not requeue from renderer-owned float autocmds"] = function()
         vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
 
         local active_config = require("scrollbar.config").set({
+            set_highlights = false,
+            exclude = { buftypes = {}, filetypes = {} },
             scrollbar = {
-                set_highlights = false,
-                update = { interval_ms = 5 },
-                float = { placement = { anchor = "NW" } },
-                mouse = { enabled = false },
-                excluded_buftypes = {},
-                excluded_filetypes = {},
+                throttle_ms = 5,
+                placement = { anchor = "NW" },
+                mouse = false,
             },
         })
         local renderer = require("scrollbar.renderer")
@@ -1043,7 +1041,7 @@ end
 T["reconciles dynamic source-policy transitions through scheduler enumeration"] = function()
     local child = new_child()
     local result = child.lua_func(function()
-        local presets = require("scrollbar.presets")
+        local schema = require("scrollbar.schema")
         local config = require("scrollbar.config")
         local renderer = require("scrollbar.renderer")
         local scheduler = require("scrollbar.scheduler")
@@ -1054,17 +1052,16 @@ T["reconciles dynamic source-policy transitions through scheduler enumeration"] 
         local function start(overrides)
             scheduler.dispose()
             renderer.dispose()
-            local active = config.set({
-                scrollbar = presets.merge({
+            local active = config.set(schema.merge({
+                set_highlights = false,
+                exclude = { buftypes = {}, filetypes = {} },
+                scrollbar = {
                     show = true,
-                    set_highlights = false,
-                    update = { interval_ms = 1000 },
-                    mouse = { enabled = false },
+                    throttle_ms = 1000,
+                    mouse = false,
                     thumb = { hide_if_all_visible = false },
-                    excluded_buftypes = {},
-                    excluded_filetypes = {},
-                }, overrides or {}),
-            })
+                },
+            }, overrides or {}))
             renderer.setup()
             scheduler.setup({ config = active, renderer = renderer })
             scheduler.invalidate_all()
@@ -1078,7 +1075,7 @@ T["reconciles dynamic source-policy transitions through scheduler enumeration"] 
         end
 
         vim.api.nvim_set_current_win(source_win)
-        start({ excluded_filetypes = { "blocked" } })
+        start({ exclude = { filetypes = { "blocked" } } })
         local filetype_state = assert(renderer.get_state(source_win))
         vim.bo[source_buf].filetype = "blocked"
         vim.api.nvim_exec_autocmds("TextChanged", { buffer = source_buf })
@@ -1086,7 +1083,7 @@ T["reconciles dynamic source-policy transitions through scheduler enumeration"] 
         local filetype_closed = closed(filetype_state)
         vim.bo[source_buf].filetype = ""
 
-        start({ max_lines = 3 })
+        start({ scrollbar = { max_lines = 3 } })
         local max_lines_state = assert(renderer.get_state(source_win))
         vim.api.nvim_buf_set_lines(source_buf, -1, -1, false, { "four" })
         vim.api.nvim_exec_autocmds("TextChanged", { buffer = source_buf })
@@ -1107,7 +1104,7 @@ T["reconciles dynamic source-policy transitions through scheduler enumeration"] 
 
         vim.cmd("split")
         local second = vim.api.nvim_get_current_win()
-        start({ float = { placement = { relative = "editor" } } })
+        start({ scrollbar = { placement = { relative = "editor" } } })
         local editor_state = assert(renderer.get_state(second))
         vim.api.nvim_set_current_win(source_win)
         vim.api.nvim_exec_autocmds("WinEnter", { buffer = source_buf })
@@ -1115,7 +1112,7 @@ T["reconciles dynamic source-policy transitions through scheduler enumeration"] 
         vim.api.nvim_win_close(second, true)
 
         vim.api.nvim_set_current_win(source_win)
-        start({ visibility = "active" })
+        start({ scrollbar = { visibility = "active" } })
         local active_state = assert(renderer.get_state(source_win))
         local user_buf = vim.api.nvim_create_buf(false, true)
         local user_float = vim.api.nvim_open_win(user_buf, true, {
@@ -1161,9 +1158,9 @@ T["rerenders every source when editor chrome options change"] = function()
         local scheduler = require("scrollbar.scheduler")
         scheduler.setup({
             config = require("scrollbar.config").set({
+                set_highlights = false,
                 scrollbar = {
-                    set_highlights = false,
-                    update = { interval_ms = 1000 },
+                    throttle_ms = 1000,
                 },
             }),
             renderer = {
@@ -1269,9 +1266,9 @@ T["refreshes colorscheme state and fully disposes timer and autocmd ownership"] 
         local scheduler = require("scrollbar.scheduler")
         scheduler.setup({
             config = require("scrollbar.config").set({
+                set_highlights = false,
                 scrollbar = {
-                    set_highlights = false,
-                    update = { interval_ms = 1000 },
+                    throttle_ms = 1000,
                 },
             }),
             renderer = {
@@ -1432,7 +1429,7 @@ T["OPTION_PATTERNS list matches the mirrored copy in layout.lua"] = function()
     expect.equality(result.layout_covered, true)
 end
 
-T["default update events register the complete autocmd set"] = function()
+T["registers the complete fixed autocmd set"] = function()
     local child = new_child()
     local result = child.lua_func(function()
         local config = require("scrollbar.config").set({ scrollbar = {} })
@@ -1504,8 +1501,7 @@ T["default update events register the complete autocmd set"] = function()
         return {
             missing = missing,
             event_count = vim.tbl_count(event_set),
-            -- VimLeavePre is registered unconditionally for shutdown
-            -- teardown, independent of update.events.
+            -- VimLeavePre is registered separately for shutdown teardown.
             expected_count = #expected + 1,
         }
     end)
@@ -1514,98 +1510,15 @@ T["default update events register the complete autocmd set"] = function()
     expect.equality(result.event_count, result.expected_count)
 end
 
-T["narrower update events list registers fewer autocmds"] = function()
-    local child = new_child()
-    local result = child.lua_func(function()
-        local scheduler = require("scrollbar.scheduler")
-
-        local function count_events(events)
-            local config = require("scrollbar.config").set({
-                scrollbar = { update = { events = events } },
-            })
-            scheduler.setup({
-                config = config,
-                renderer = {
-                    source_windows = function()
-                        return {}
-                    end,
-                    is_source_window = function()
-                        return false
-                    end,
-                    is_buffer_eligible = function()
-                        return false
-                    end,
-                    is_owned_buffer = function()
-                        return false
-                    end,
-                    is_owned_window = function()
-                        return false
-                    end,
-                    render = function() end,
-                },
-            })
-            local augroup_id = scheduler.status().augroup_id
-            local autocmds = vim.api.nvim_get_autocmds({ group = augroup_id })
-            local event_set = {}
-            for _, autocmd in ipairs(autocmds) do
-                local ev = autocmd.event or {}
-                if type(ev) == "string" then
-                    ev = { ev }
-                end
-                for _, event in ipairs(ev) do
-                    event_set[event] = true
-                end
-            end
-            scheduler.dispose()
-            return vim.tbl_count(event_set)
-        end
-
-        local default_count = count_events({
-            "BufEnter",
-            "BufWinEnter",
-            "WinEnter",
-            "TabEnter",
-            "TermEnter",
-            "CmdwinLeave",
-            "CursorMoved",
-            "CursorMovedI",
-            "TextChanged",
-            "TextChangedI",
-            "TextChangedP",
-            "TextChangedT",
-            "WinScrolled",
-            "WinResized",
-            "VimResized",
-            "OptionSet",
-            "ColorScheme",
-            "WinClosed",
-            "BufDelete",
-            "BufWipeout",
-            "TabClosed",
-        })
-        local narrow_count = count_events({ "BufEnter", "CursorMoved", "WinScrolled" })
-
-        return {
-            default_count = default_count,
-            narrow_count = narrow_count,
-        }
-    end)
-
-    expect.equality(result.default_count, 22)
-    expect.equality(result.narrow_count, 4)
-    expect.equality(result.narrow_count < result.default_count, true)
-end
-
 T["VimLeavePre disposes the scheduler before teardown"] = function()
     local child = new_child()
     local result = child.lua_func(function()
         local config = require("scrollbar.config")
         local scheduler = require("scrollbar.scheduler")
         local setup_config = config.set({
+            exclude = { buftypes = {}, filetypes = {} },
             scrollbar = {
-                excluded_buftypes = {},
-                excluded_filetypes = {},
-                update = { interval_ms = 0 },
+                throttle_ms = 0,
             },
         })
         scheduler.setup({

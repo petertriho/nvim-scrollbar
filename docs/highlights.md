@@ -1,29 +1,29 @@
 # Highlights
 
 The scrollbar and the minimap generate automatic highlights independently. When
-a renderer has `set_highlights = true`, setup creates the highlight groups of
-that renderer. The plugin updates them after `ColorScheme` when the
-`update.events` list of that renderer contains `ColorScheme`. Public groups are
-created only as `default = true` links, so existing user or colorscheme
-definitions are kept.
+the top-level `set_highlights = true` (the default), setup creates the scrollbar
+groups, and the minimap groups when the minimap is enabled. The plugin updates
+them after each `ColorScheme` event. Public groups are created only as
+`default = true` links, so existing user or colorscheme definitions are kept.
 
 ## Sources
 
 - A string `track.highlight` or `thumb.highlight` contributes its resolved
   background.
-- A string `marks.<Type>.highlight` contributes its resolved foreground.
-- A string `minimap.overlays.types.<Type>.highlight` also contributes its
-  resolved foreground.
+- A string `highlight` of a mark type contributes its resolved foreground. The
+  top-level `marks.<Type>.highlight` applies to both renderers.
+  `scrollbar.marks.<Type>.highlight` and `minimap.marks.<Type>.highlight`
+  override it for one renderer.
 - A table is used as a direct `nvim_set_hl()` definition.
 
 ```lua
 require("scrollbar").setup({
+    marks = {
+        Search = { highlight = { fg = "#ff9e64", bold = true } },
+    },
     scrollbar = {
         track = { highlight = "PmenuSbar" },
         thumb = { highlight = { bg = "#3b4261", blend = 20 } },
-        marks = {
-            Search = { highlight = { fg = "#ff9e64", bold = true } },
-        },
     },
 })
 ```
@@ -67,7 +67,7 @@ Static minimap groups keep these default links:
 | `ScrollbarMinimapViewport` | `CursorLine` |
 | `ScrollbarMinimapCursor` | `Cursor` |
 
-Every enabled ordinary overlay type uses a distinct public group named
+Every mark type that the minimap shows uses a distinct public group named
 `ScrollbarMinimap<Type>`, for example `ScrollbarMinimapSearch`. In automatic
 mode, each minimap profile also gets its own internal groups. These groups copy
 the configured source. They do not link automatically to the final
@@ -82,7 +82,7 @@ vim.api.nvim_set_hl(0, "ScrollbarMinimapError", { link = "ScrollbarError" })
 
 ## Manual Groups
 
-With `scrollbar.set_highlights = false`, the plugin creates and changes no
+With the top-level `set_highlights = false`, the plugin creates and changes no
 scrollbar groups, including the base group and the legacy aliases. A manual
 configuration must define the canonical Thumb names. It is not sufficient to
 define only the old Handle names.
@@ -92,8 +92,8 @@ profile-specific highlight sources and blend values need
 `set_highlights = true`. There is no public API for profile-specific manual
 highlights.
 
-With `minimap.set_highlights = false`, the plugin writes no minimap groups.
-Every minimap profile uses the canonical `ScrollbarMinimap<Type>` names. Define
+The same option also stops the plugin from writing minimap groups. Every
+minimap profile then uses the canonical `ScrollbarMinimap<Type>` names. Define
 those groups manually.
 
 ## Related

@@ -4,8 +4,8 @@
 ---@alias ScrollbarGeometryMode "line"|"screen"
 ---@alias ScrollbarPlacementRelative "window"|"editor"
 ---@alias ScrollbarFloatAnchor "NW"|"NE"|"SW"|"SE"
----@alias ScrollbarGutterMode "avoid"|"overlap"
----@alias ScrollbarGutterPosition "inner"|"outer"
+---@alias ScrollbarGutter "inner"|"outer"|"overlap"
+---@alias ScrollbarGutterPosition "inner"|"outer" Side of an avoided west gutter that the reservation takes
 ---@alias ScrollbarLayoutDirection "auto"|"ltr"|"rtl"
 ---@alias ScrollbarSearchBackend "sync"|"worker"
 ---@alias ScrollbarText string|string[]
@@ -18,17 +18,11 @@
 ---@field anchor? ScrollbarFloatAnchor
 ---@field row? integer
 ---@field col? integer
----@field gutter? ScrollbarGutterMode
----@field gutter_position? ScrollbarGutterPosition
-
----@class ScrollbarUserFloatConfig
+---@field gutter? ScrollbarGutter
 ---@field zindex? integer
----@field hide_on_cursor? boolean
----@field placement? ScrollbarUserPlacement
 
 ---@class ScrollbarUserMarkLayer
----@field kind "marks"
----@field types? string[] Mark types routed to this lane; omitted means catch-all
+---@field types string[] Mark types routed to this lane
 ---@field max_width? integer Total named-Mark lane width including declared columns
 
 ---@alias ScrollbarUserLayoutLayer "track"|"thumb"|"marks"|ScrollbarUserMarkLayer
@@ -40,19 +34,8 @@
 ---@class ScrollbarUserTrackConfig
 ---@field highlight? ScrollbarHighlight
 
----@class ScrollbarUserRenderConfig
----@field geometry? ScrollbarGeometryMode
-
----@class ScrollbarUserUpdateConfig
----@field events? string[]
----@field interval_ms? integer
-
 ---@class ScrollbarUserAutohideConfig
----@field enabled? boolean
 ---@field delay_ms? integer
-
----@class ScrollbarUserMouseConfig
----@field enabled? boolean
 
 ---@class ScrollbarUserThumbConfig
 ---@field text? string
@@ -69,82 +52,80 @@
 ---@field incsearch? boolean
 ---@field backend ScrollbarSearchBackend
 
----@class ScrollbarUserSearchProviderConfig
----@field incsearch? boolean
----@field backend? ScrollbarSearchBackend
-
 ---@class ScrollbarMarksProviderConfig
 ---@field letters boolean
 ---@field numbers boolean
 
----@class ScrollbarUserMarksProviderConfig
+---@class ScrollbarUserProviderTargets
+---@field scrollbar? boolean Default true when the provider supports the scrollbar
+---@field minimap? boolean Default true
+
+---@class ScrollbarUserSearchProviderConfig: ScrollbarUserProviderTargets
+---@field incsearch? boolean
+---@field backend? ScrollbarSearchBackend
+
+---@class ScrollbarUserMarksProviderConfig: ScrollbarUserProviderTargets
 ---@field letters? boolean
 ---@field numbers? boolean
 
----@class ScrollbarUserPreset
----@field extends? string
----@field layout? ScrollbarUserLayoutConfig
----@field track? ScrollbarUserTrackConfig
----@field thumb? ScrollbarUserThumbConfig
----@field marks? table<string, ScrollbarUserMarkTypeConfig>
----@field float? { placement?: ScrollbarUserPlacement }
+---@alias ScrollbarUserProvider boolean|ScrollbarUserProviderTargets
+
+---@class ScrollbarUserProvidersConfig
+---@field cursor? ScrollbarUserProvider
+---@field diagnostic? ScrollbarUserProvider
+---@field search? boolean|ScrollbarUserSearchProviderConfig
+---@field marks? boolean|ScrollbarUserMarksProviderConfig
+---@field gitsigns? ScrollbarUserProvider
+---@field mini_diff? ScrollbarUserProvider
+---@field signify? ScrollbarUserProvider
+---@field vgit? ScrollbarUserProvider
+---@field ale? ScrollbarUserProvider
+---@field coc? ScrollbarUserProvider
+---@field treesitter? ScrollbarUserProvider
+---@field lsp_semantic_tokens? ScrollbarUserProvider
+
+---@alias ScrollbarUserExcludeEntry boolean|ScrollbarUserProviderTargets
+---@alias ScrollbarUserExcludeList string[]|table<string, ScrollbarUserExcludeEntry>
+
+---@class ScrollbarUserExcludeConfig
+---@field buftypes? ScrollbarUserExcludeList A list replaces the defaults; a table keyed by name merges with them
+---@field filetypes? ScrollbarUserExcludeList A list replaces the defaults; a table keyed by name merges with them
 
 ---@class ScrollbarUserProfileMatcher
 ---@field filetypes? string[]
 ---@field buftypes? string[]
 ---@field when? fun(context: ScrollbarProfileContext): boolean
 
----@class ScrollbarUserProfileConfig
+---@class ScrollbarUserAppearance
+---@field preset? string Built-in preset applied below the options at the same level
+---@field geometry? ScrollbarGeometryMode
+---@field placement? ScrollbarUserPlacement
+---@field hide_on_cursor? boolean
 ---@field hide_if_all_visible? boolean
----@field render? { geometry?: ScrollbarGeometryMode }
----@field float? ScrollbarUserFloatConfig
+---@field mouse? boolean
 ---@field layout? ScrollbarUserLayoutConfig
 ---@field track? ScrollbarUserTrackConfig
----@field mouse? ScrollbarUserMouseConfig
 ---@field thumb? ScrollbarUserThumbConfig
----@field marks? table<string, ScrollbarUserMarkTypeConfig>
+---@field marks? false|table<string, false|ScrollbarUserMarkTypeConfig>
 
----@class ScrollbarUserProfile
+---@class ScrollbarUserProfile: ScrollbarUserAppearance
 ---@field match ScrollbarUserProfileMatcher
----@field preset? string
----@field config? ScrollbarUserProfileConfig
 
----@class ScrollbarUserProvidersConfig
----@field cursor? boolean
----@field diagnostic? boolean
----@field search? boolean|ScrollbarUserSearchProviderConfig
----@field marks? boolean|ScrollbarUserMarksProviderConfig
----@field gitsigns? boolean
----@field mini_diff? boolean
----@field signify? boolean
----@field vgit? boolean
----@field ale? boolean
----@field coc? boolean
-
----@class ScrollbarUserConfig
----@field preset? string Setup-local selected presentation preset
----@field presets? table<string, ScrollbarUserPreset> Setup-local preset definitions
----@field profiles? ScrollbarUserProfile[] Ordered setup-local contextual variants; first match wins
+---@class ScrollbarUserScrollbarConfig: ScrollbarUserAppearance
+---@field enabled? boolean
 ---@field show? boolean
 ---@field visibility? ScrollbarVisibility
----@field set_highlights? boolean
+---@field autohide? boolean|ScrollbarUserAutohideConfig
 ---@field max_lines? false|integer
----@field hide_if_all_visible? boolean
----@field autohide? ScrollbarUserAutohideConfig
----@field update? ScrollbarUserUpdateConfig
----@field render? ScrollbarUserRenderConfig
----@field float? ScrollbarUserFloatConfig
----@field layout? ScrollbarUserLayoutConfig
----@field track? ScrollbarUserTrackConfig
----@field mouse? ScrollbarUserMouseConfig
----@field thumb? ScrollbarUserThumbConfig
----@field marks? table<string, ScrollbarUserMarkTypeConfig>
----@field providers? ScrollbarUserProvidersConfig
----@field excluded_buftypes? string[]
----@field excluded_filetypes? string[]
+---@field throttle_ms? integer
+---@field profiles? ScrollbarUserProfile[] Ordered contextual variants; first match wins
 
----@class ScrollbarTopLevelConfig
----@field scrollbar? ScrollbarUserConfig
+---@class ScrollbarUserConfig
+---@field set_highlights? boolean
+---@field exclude? ScrollbarUserExcludeConfig
+---@field providers? ScrollbarUserProvidersConfig
+---@field marks? table<string, false|ScrollbarUserMarkTypeConfig> Mark-type registry shared by both renderers
+---@field scrollbar? ScrollbarUserScrollbarConfig
 ---@field minimap? ScrollbarMinimapUserConfig
 
 ---@class ScrollbarPlacement
@@ -152,13 +133,14 @@
 ---@field anchor ScrollbarFloatAnchor
 ---@field row integer
 ---@field col integer
----@field gutter ScrollbarGutterMode
----@field gutter_position ScrollbarGutterPosition
-
----@class ScrollbarFloatConfig
+---@field gutter ScrollbarGutter
 ---@field zindex integer
----@field hide_on_cursor boolean
----@field placement ScrollbarPlacement
+
+---@class ScrollbarNormalizedLayoutLayerInput
+---@field kind "track"|"thumb"|"marks"
+---@field catch_all? boolean
+---@field types? false|string[]
+---@field max_width? false|integer
 
 ---@class ScrollbarNormalizedLayoutLayer
 ---@field kind "track"|"thumb"|"marks"
@@ -193,19 +175,8 @@
 ---@class ScrollbarTrackConfig
 ---@field highlight ScrollbarHighlight
 
----@class ScrollbarRenderConfig
----@field geometry ScrollbarGeometryMode
-
----@class ScrollbarUpdateConfig
----@field events string[]
----@field interval_ms integer
-
 ---@class ScrollbarAutohideConfig
----@field enabled boolean
 ---@field delay_ms integer
-
----@class ScrollbarMouseConfig
----@field enabled boolean
 
 ---@class ScrollbarThumbConfig
 ---@field text string
@@ -217,6 +188,19 @@
 ---@field text string[] Density variants ordered from least to most dense; an empty Mark list uses provider text
 ---@field priority integer
 ---@field highlight ScrollbarHighlight Source highlight group or direct definition
+
+---@class ScrollbarMarkRegistry
+---@field specs table<string, ScrollbarMarkTypeConfig> Every registered mark type
+---@field hidden table<string, true> Types hidden in both renderers unless an override shows them
+
+---@class ScrollbarExcludeConfig
+---@field buftypes table<string, true>
+---@field filetypes table<string, true>
+
+---@class ScrollbarSharedConfig
+---@field set_highlights boolean
+---@field marks ScrollbarMarkRegistry
+---@field exclude table<"scrollbar"|"minimap", ScrollbarExcludeConfig>
 
 ---@class ScrollbarMarkHighlightGroups
 ---@field mark string
@@ -241,6 +225,13 @@
 ---@field vgit boolean
 ---@field ale boolean
 ---@field coc boolean
+---@field treesitter boolean
+---@field lsp_semantic_tokens boolean
+
+---@class ScrollbarProviderRequest
+---@field options false|ScrollbarProviderOption Normalized options, or false when no renderer requests the provider
+---@field scrollbar boolean
+---@field minimap boolean
 
 ---@alias ScrollbarProviderExecutionMode "parent"|"worker"
 
@@ -261,25 +252,26 @@
 ---@alias ScrollbarEffectiveProviderPlan table<string, ScrollbarEffectiveProvider>
 
 ---@class ScrollbarConfig
+---@field enabled boolean
 ---@field show boolean
 ---@field visibility ScrollbarVisibility
----@field set_highlights boolean
+---@field autohide false|ScrollbarAutohideConfig
 ---@field max_lines false|integer
+---@field throttle_ms integer
+---@field set_highlights boolean Copied from the top-level option
+---@field exclude ScrollbarExcludeConfig
+---@field geometry ScrollbarGeometryMode
+---@field placement ScrollbarPlacement
+---@field hide_on_cursor boolean
 ---@field hide_if_all_visible boolean
----@field autohide ScrollbarAutohideConfig
----@field update ScrollbarUpdateConfig
----@field render ScrollbarRenderConfig
----@field float ScrollbarFloatConfig
+---@field mouse boolean
 ---@field layout ScrollbarLayoutConfig
 ---@field track ScrollbarTrackConfig
----@field mouse ScrollbarMouseConfig
 ---@field thumb ScrollbarThumbConfig
----@field marks table<string, ScrollbarMarkTypeConfig>
+---@field marks table<string, ScrollbarMarkTypeConfig> Shown mark types
 ---@field highlights ScrollbarHighlightGroups Compiled canonical or profile-internal group names
 ---@field layout_cache table Precompiled static line-layer cache inputs
----@field providers ScrollbarProvidersConfig
----@field excluded_buftypes string[]
----@field excluded_filetypes string[]
+---@field providers? ScrollbarProvidersConfig Present only in provider context snapshots
 
 ---@class ScrollbarProfileContext
 ---@field winid integer

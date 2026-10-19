@@ -13,7 +13,10 @@ local T = MiniTest.new_set({
 })
 
 local function config(overrides)
-    return require("scrollbar.config").set({ scrollbar = overrides })
+    local scrollbar = vim.deepcopy(overrides or {})
+    local marks = scrollbar.marks
+    scrollbar.marks = nil
+    return require("scrollbar.config").set({ marks = marks, scrollbar = scrollbar })
 end
 
 local function compose(options)
@@ -94,7 +97,7 @@ T["routes explicit types before the catch-all lane"] = function()
         config = config({
             layout = {
                 columns = {
-                    { { kind = "marks", types = { "Error", "Future" } } },
+                    { { types = { "Error", "Future" } } },
                     { "marks" },
                 },
             },
@@ -120,7 +123,7 @@ end
 T["uses numeric priority within a lane and stack order across lanes"] = function()
     local same_lane = compose({
         config = config({
-            layout = { columns = { { { kind = "marks", types = { "Search", "Error" } } } } },
+            layout = { columns = { { { types = { "Search", "Error" } } } } },
             marks = { Search = { text = "S", priority = 5 }, Error = { text = "E", priority = 1 } },
         }),
         marks = {
@@ -134,8 +137,8 @@ T["uses numeric priority within a lane and stack order across lanes"] = function
             layout = {
                 columns = {
                     {
-                        { kind = "marks", types = { "Error" } },
-                        { kind = "marks", types = { "Search" } },
+                        { types = { "Error" } },
+                        { types = { "Search" } },
                     },
                 },
             },
@@ -158,8 +161,8 @@ T["clips ordinary text to its lane and suppresses multi-cell glyphs atomically"]
         config = config({
             layout = {
                 columns = {
-                    { { kind = "marks", types = { "Search" } } },
-                    { { kind = "marks", types = { "Search" } } },
+                    { { types = { "Search" } } },
+                    { { types = { "Search" } } },
                     { "track" },
                 },
             },
@@ -172,10 +175,10 @@ T["clips ordinary text to its lane and suppresses multi-cell glyphs atomically"]
         config = config({
             layout = {
                 columns = {
-                    { { kind = "marks", types = { "Search" } } },
+                    { { types = { "Search" } } },
                     {
-                        { kind = "marks", types = { "Search" } },
-                        { kind = "marks", types = { "Error" } },
+                        { types = { "Search" } },
+                        { types = { "Error" } },
                     },
                 },
             },
@@ -199,8 +202,8 @@ T["does not leak a multi-cell glyph across different column layer profiles"] = f
         config = config({
             layout = {
                 columns = {
-                    { "track", "thumb", { kind = "marks", types = { "Search" } } },
-                    { { kind = "marks", types = { "Search" } } },
+                    { "track", "thumb", { types = { "Search" } } },
+                    { { types = { "Search" } } },
                 },
             },
             marks = { Search = { text = "界" } },
@@ -303,7 +306,7 @@ end
 
 T["preserves deterministic ties density variants and exact line ownership"] = function()
     local active_config = config({
-        layout = { columns = { { { kind = "marks", types = { "Alpha", "Beta" } } } } },
+        layout = { columns = { { { types = { "Alpha", "Beta" } } } } },
         marks = {
             Alpha = { text = { "a", "A" }, priority = 3, highlight = "Normal" },
             Beta = { text = "B", priority = 3, highlight = "Normal" },
@@ -333,7 +336,7 @@ T["expands only built-in named marks to the lane cap and container"] = function(
     local active_config = config({
         layout = {
             columns = {
-                { { kind = "marks", types = { "Mark" }, max_width = 4 } },
+                { { types = { "Mark" }, max_width = 4 } },
                 { "thumb" },
             },
         },
@@ -361,7 +364,7 @@ T["expands only built-in named marks to the lane cap and container"] = function(
     })
     local collapsed = compose({
         config = config({
-            layout = { columns = { { { kind = "marks", types = { "Mark" } } }, { "thumb" } } },
+            layout = { columns = { { { types = { "Mark" } } }, { "thumb" } } },
             thumb = { text = "H" },
         }),
         container_width = 5,
@@ -384,9 +387,9 @@ T["treats max_width as lane-local while preserving unrelated declared columns"] 
     local active_config = config({
         layout = {
             columns = {
-                { { kind = "marks", types = { "Search" } } },
-                { { kind = "marks", types = { "Mark" }, max_width = 4 } },
-                { { kind = "marks", types = { "Mark" } } },
+                { { types = { "Search" } } },
+                { { types = { "Mark" }, max_width = 4 } },
+                { { types = { "Mark" } } },
                 { "thumb" },
             },
         },
@@ -428,7 +431,7 @@ T["keeps custom Mark sources collapsed while named marks use dynamic cells"] = f
         config = config({
             layout = {
                 columns = {
-                    { { kind = "marks", types = { "Mark" }, max_width = 4 } },
+                    { { types = { "Mark" }, max_width = 4 } },
                     { "track" },
                 },
             },
@@ -453,12 +456,12 @@ T["pins declared cells while expanding inward for every direction and anchor"] =
     local function rendered(direction, anchor)
         return compose({
             config = config({
-                float = { placement = { anchor = anchor } },
+                placement = { anchor = anchor },
                 layout = {
                     direction = direction,
                     columns = {
-                        { { kind = "marks", types = { "Search" } } },
-                        { { kind = "marks", types = { "Mark" }, max_width = 4 } },
+                        { { types = { "Search" } } },
+                        { { types = { "Mark" }, max_width = 4 } },
                         { "thumb" },
                     },
                 },
@@ -496,8 +499,8 @@ T["composes precomputed mark layers identically and caches glyph parsing"] = fun
     local active_config = config({
         layout = {
             columns = {
-                { { kind = "marks", types = { "Search" } } },
-                { { kind = "marks", types = { "Search" } }, "thumb" },
+                { { types = { "Search" } } },
+                { { types = { "Search" } }, "thumb" },
             },
         },
         thumb = { text = "界" },

@@ -14,10 +14,8 @@ first refresh:
 require("mini.diff").setup()
 
 require("scrollbar").setup({
-    scrollbar = {
-        providers = {
-            mini_diff = true,
-        },
+    providers = {
+        mini_diff = true,
     },
 })
 ```
@@ -35,9 +33,7 @@ With lazy.nvim:
         },
     },
     opts = {
-        scrollbar = {
-            providers = { mini_diff = true },
-        },
+        providers = { mini_diff = true },
     },
 }
 ```
@@ -63,18 +59,17 @@ The three mark types have these defaults:
 
 ```lua
 require("scrollbar").setup({
-    scrollbar = {
-        marks = {
-            MiniDiffAdd = { text = { "▒" }, priority = 7, highlight = "MiniDiffSignAdd" },
-            MiniDiffChange = { text = { "▒" }, priority = 7, highlight = "MiniDiffSignChange" },
-            MiniDiffDelete = { text = { "▒" }, priority = 7, highlight = "MiniDiffSignDelete" },
-        },
+    marks = {
+        MiniDiffAdd = { text = { "▒" }, priority = 7, highlight = "MiniDiffSignAdd" },
+        MiniDiffChange = { text = { "▒" }, priority = 7, highlight = "MiniDiffSignChange" },
+        MiniDiffDelete = { text = { "▒" }, priority = 7, highlight = "MiniDiffSignDelete" },
     },
 })
 ```
 
 To change a mark type, override its `text`, `priority`, or `highlight` in the
-`scrollbar.marks` table.
+top-level `marks` table. To change it in one renderer only, use
+`scrollbar.marks` or `minimap.marks`.
 
 ## Updates
 

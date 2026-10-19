@@ -12,24 +12,20 @@ local function new_child()
     return child
 end
 
-local function base_config(overrides)
+local function base_config(scrollbar, top)
     return vim.tbl_deep_extend("force", {
-        show = false,
         set_highlights = true,
-        mouse = { enabled = false },
         providers = {
             cursor = false,
             diagnostic = false,
             search = false,
             marks = false,
-            gitsigns = false,
-            mini_diff = false,
-            signify = false,
-            vgit = false,
-            ale = false,
-            coc = false,
         },
-    }, overrides or {})
+        scrollbar = vim.tbl_deep_extend("force", {
+            show = false,
+            mouse = false,
+        }, scrollbar or {}),
+    }, top or {})
 end
 
 T["generates canonical Thumb groups transparent base and equivalent Handle aliases"] = function()
@@ -39,7 +35,7 @@ T["generates canonical Thumb groups transparent base and equivalent Handle alias
         vim.api.nvim_set_hl(0, "PmenuSbar", { bg = "#112233" })
         vim.api.nvim_set_hl(0, "PmenuThumb", { bg = "#445566" })
         vim.api.nvim_set_hl(0, "PmenuSel", { bg = "#778899" })
-        require("scrollbar").setup({ scrollbar = config })
+        require("scrollbar").setup(config)
         local get = function(name)
             return vim.api.nvim_get_hl(0, { name = name, link = false })
         end
@@ -79,7 +75,7 @@ T["applies full highlight tables and projects string sources by channel"] = func
             vim.api.nvim_set_hl(0, "DirectThumbSource", { fg = "#010101", bg = "#123456", bold = true })
             vim.api.nvim_set_hl(0, "DirectMarkSource", { fg = "#654321", bg = "#020202", italic = true })
             vim.api.nvim_set_hl(0, "PmenuSel", { bg = "#345678" })
-            require("scrollbar").setup({ scrollbar = config })
+            require("scrollbar").setup(config)
             local get = function(name)
                 return vim.api.nvim_get_hl(0, { name = name, link = false })
             end
@@ -154,7 +150,7 @@ T["preserves public canonical and legacy groups defined before setup"] = functio
             before[name] = vim.api.nvim_get_hl(0, { name = name, link = true })
         end
 
-        require("scrollbar").setup({ scrollbar = config })
+        require("scrollbar").setup(config)
         vim.cmd("doautocmd ColorScheme")
         local after = {}
         for name in pairs(manual) do
@@ -172,7 +168,7 @@ T["refreshes private definitions while preserving public links and later user ov
         local scrollbar = require("scrollbar")
         vim.api.nvim_set_hl(0, "ConfiguredTrackSource", { bg = "#102030" })
         vim.api.nvim_set_hl(0, "PmenuSel", { bg = "#405060" })
-        scrollbar.setup({ scrollbar = config.first })
+        scrollbar.setup(config.first)
 
         local link = function(name)
             return vim.api.nvim_get_hl(0, { name = name, link = true }).link
@@ -195,7 +191,7 @@ T["refreshes private definitions while preserving public links and later user ov
         }
 
         vim.api.nvim_set_hl(0, "ConfiguredTrackSource", { bg = "#203040" })
-        scrollbar.setup({ scrollbar = config.second })
+        scrollbar.setup(config.second)
         local second_links = {
             base = link("ScrollbarBase"),
             track = link("ScrollbarTrack"),
@@ -259,13 +255,13 @@ T["internal namespaces do not capture valid custom mark groups"] = function()
     local child = new_child()
     local result = child.lua_func(
         function(config)
-            config.profiles = {
+            config.scrollbar.profiles = {
                 {
                     match = { filetypes = { "lua" } },
-                    config = { marks = { Search = { highlight = { fg = "#666666" } } } },
+                    marks = { Search = { highlight = { fg = "#666666" } } },
                 },
             }
-            require("scrollbar").setup({ scrollbar = config })
+            require("scrollbar").setup(config)
             local variants = require("scrollbar.config").get_variants()
             local profile_search = variants[2].config.highlights.marks.Search.mark
             local get = function(name)
@@ -282,7 +278,7 @@ T["internal namespaces do not capture valid custom mark groups"] = function()
                 profile_definition = get(profile_search),
             }
         end,
-        base_config({
+        base_config(nil, {
             marks = {
                 Search = { text = "s", priority = 1, highlight = { fg = "#111111" } },
                 GeneratedSearch = { text = "g", priority = 2, highlight = { fg = "#222222" } },
@@ -316,26 +312,22 @@ T["generates and renders isolated automatic groups for every profile"] = functio
         vim.api.nvim_win_set_buf(second, second_buf)
         vim.bo[second_buf].filetype = "text"
 
-        config.show = true
-        config.thumb = { text = "H", hide_if_all_visible = false }
-        config.profiles = {
+        config.scrollbar.show = true
+        config.scrollbar.thumb = { text = "H", hide_if_all_visible = false }
+        config.scrollbar.profiles = {
             {
                 match = { filetypes = { "lua" } },
-                config = {
-                    track = { highlight = { bg = "#112233" } },
-                    thumb = { highlight = { bg = "#223344" }, blend = 11 },
-                    marks = { Search = { highlight = { fg = "#abcdef" } } },
-                },
+                track = { highlight = { bg = "#112233" } },
+                thumb = { highlight = { bg = "#223344" }, blend = 11 },
+                marks = { Search = { highlight = { fg = "#abcdef" } } },
             },
             {
                 match = { filetypes = { "text" } },
-                config = {
-                    track = { highlight = { bg = "#445566" } },
-                    thumb = { highlight = { bg = "#556677" }, blend = 22 },
-                },
+                track = { highlight = { bg = "#445566" } },
+                thumb = { highlight = { bg = "#556677" }, blend = 22 },
             },
         }
-        require("scrollbar").setup({ scrollbar = config })
+        require("scrollbar").setup(config)
         local renderer = require("scrollbar.renderer")
         local first_state = assert(renderer.render(first))
         local second_state = assert(renderer.render(second))
@@ -389,11 +381,11 @@ end
 T["manual highlight mode keeps every variant on canonical user groups"] = function()
     local child = new_child()
     local result = child.lua_func(function(config)
-        config.profiles = {
+        config.scrollbar.profiles = {
             { match = { filetypes = { "lua" } }, preset = "review" },
             { match = { buftypes = { "nofile" } }, preset = "minimal" },
         }
-        require("scrollbar").setup({ scrollbar = config })
+        require("scrollbar").setup(config)
         local variants = require("scrollbar.config").get_variants()
         local groups = {}
         for _, variant in ipairs(variants) do
@@ -410,7 +402,7 @@ T["manual highlight mode keeps every variant on canonical user groups"] = functi
             end
         end
         return { groups = groups, profile_names = profile_names, generated_names = generated_names }
-    end, base_config({ set_highlights = false }))
+    end, base_config(nil, { set_highlights = false }))
 
     expect.equality(result.profile_names, {})
     expect.equality(result.generated_names, {})

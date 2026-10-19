@@ -1,66 +1,36 @@
+--- Top-level configuration. Normalizes the shared sections, compiles the
+--- scrollbar block and its profiles, delegates the minimap block to
+--- `scrollbar.minimap.config`, and builds the provider plan. Setup either
+--- commits every part or fails without changing the active configuration.
+
 local minimap_config = require("scrollbar.minimap.config")
-local provider_config = require("scrollbar.provider_config")
 local presets = require("scrollbar.presets")
+local provider_config = require("scrollbar.provider_config")
+local schema = require("scrollbar.schema")
+local shared_config = require("scrollbar.shared_config")
 local utils = require("scrollbar.utils")
 
-local DEFAULT_EVENTS = {
-    "BufEnter",
-    "BufWinEnter",
-    "WinEnter",
-    "TabEnter",
-    "TermEnter",
-    "CmdwinLeave",
-    "CursorMoved",
-    "CursorMovedI",
-    "TextChanged",
-    "TextChangedI",
-    "TextChangedP",
-    "TextChangedT",
-    "WinScrolled",
-    "WinResized",
-    "VimResized",
-    "OptionSet",
-    "ColorScheme",
-    "WinClosed",
-    "BufDelete",
-    "BufWipeout",
-    "TabClosed",
-}
-
-local ALLOWED_EVENTS = {}
-for _, event in ipairs(DEFAULT_EVENTS) do
-    ALLOWED_EVENTS[event] = true
-end
+local invalid = schema.invalid
 
 local DEFAULTS = {
+    enabled = true,
     show = true,
     visibility = "all",
-    set_highlights = true,
+    autohide = false,
     max_lines = false,
-    hide_if_all_visible = false,
-    autohide = {
-        enabled = false,
-        delay_ms = 1000,
-    },
-    update = {
-        events = vim.deepcopy(DEFAULT_EVENTS),
-        interval_ms = 16,
-    },
-    render = {
-        geometry = "line",
-    },
-    float = {
+    throttle_ms = 16,
+    geometry = "line",
+    placement = {
+        relative = "window",
+        anchor = "NE",
+        row = 0,
+        col = 0,
+        gutter = "inner",
         zindex = 50,
-        hide_on_cursor = true,
-        placement = {
-            relative = "window",
-            anchor = "NE",
-            row = 0,
-            col = 0,
-            gutter = "avoid",
-            gutter_position = "inner",
-        },
     },
+    hide_on_cursor = true,
+    hide_if_all_visible = false,
+    mouse = true,
     layout = {
         direction = "auto",
         columns = {
@@ -70,228 +40,72 @@ local DEFAULTS = {
     track = {
         highlight = "PmenuSbar",
     },
-    mouse = {
-        enabled = true,
-    },
     thumb = {
         text = " ",
         blend = 30,
         highlight = "PmenuThumb",
         hide_if_all_visible = true,
     },
-    marks = {
-        Cursor = {
-            text = { "•" },
-            priority = 0,
-            highlight = "Normal",
-        },
-        Mark = {
-            text = {},
-            priority = 1,
-            highlight = "Special",
-        },
-        Search = {
-            text = { "-", "=" },
-            priority = 1,
-            highlight = "Search",
-        },
-        Error = {
-            text = { "-", "=" },
-            priority = 2,
-            highlight = "DiagnosticVirtualTextError",
-        },
-        Warn = {
-            text = { "-", "=" },
-            priority = 3,
-            highlight = "DiagnosticVirtualTextWarn",
-        },
-        Info = {
-            text = { "-", "=" },
-            priority = 4,
-            highlight = "DiagnosticVirtualTextInfo",
-        },
-        Hint = {
-            text = { "-", "=" },
-            priority = 5,
-            highlight = "DiagnosticVirtualTextHint",
-        },
-        Misc = {
-            text = { "-", "=" },
-            priority = 6,
-            highlight = "Normal",
-        },
-        GitAdd = {
-            text = { "┃" },
-            priority = 7,
-            highlight = "GitSignsAdd",
-        },
-        GitChange = {
-            text = { "┃" },
-            priority = 7,
-            highlight = "GitSignsChange",
-        },
-        GitDelete = {
-            text = { "▁" },
-            priority = 7,
-            highlight = "GitSignsDelete",
-        },
-        MiniDiffAdd = {
-            text = { "▒" },
-            priority = 7,
-            highlight = "MiniDiffSignAdd",
-        },
-        MiniDiffChange = {
-            text = { "▒" },
-            priority = 7,
-            highlight = "MiniDiffSignChange",
-        },
-        MiniDiffDelete = {
-            text = { "▒" },
-            priority = 7,
-            highlight = "MiniDiffSignDelete",
-        },
-        SignifyAdd = {
-            text = { "┃" },
-            priority = 7,
-            highlight = "SignifySignAdd",
-        },
-        SignifyChange = {
-            text = { "┃" },
-            priority = 7,
-            highlight = "SignifySignChange",
-        },
-        SignifyDelete = {
-            text = { "▁" },
-            priority = 7,
-            highlight = "SignifySignDelete",
-        },
-        VGitAdd = {
-            text = { "┃" },
-            priority = 7,
-            highlight = "GitSignsAdd",
-        },
-        VGitChange = {
-            text = { "┃" },
-            priority = 7,
-            highlight = "GitSignsChange",
-        },
-        VGitDelete = {
-            text = { "▁" },
-            priority = 7,
-            highlight = "GitSignsDelete",
-        },
-    },
-    providers = {
-        cursor = true,
-        diagnostic = true,
-        search = true,
-        marks = true,
-        gitsigns = false,
-        mini_diff = false,
-        signify = false,
-        vgit = false,
-        ale = false,
-        coc = false,
-    },
-    excluded_buftypes = {
-        "terminal",
-    },
-    excluded_filetypes = {
-        "blink-cmp-menu",
-        "dropbar_menu",
-        "dropbar_menu_fzf",
-        "DressingInput",
-        "cmp_docs",
-        "cmp_menu",
-        "noice",
-        "prompt",
-        "TelescopePrompt",
-    },
+    marks = {},
 }
 
-local TOP_LEVEL_KEYS = {
+local AUTOHIDE_DEFAULTS = { delay_ms = 1000 }
+
+local GLOBAL_KEYS = {
+    enabled = true,
     show = true,
     visibility = true,
-    set_highlights = true,
+    autohide = { delay_ms = true },
     max_lines = true,
-    hide_if_all_visible = true,
-    autohide = true,
-    update = true,
-    render = true,
-    float = true,
-    layout = true,
-    track = true,
-    mouse = true,
-    thumb = true,
-    marks = true,
-    providers = true,
-    excluded_buftypes = true,
-    excluded_filetypes = true,
+    throttle_ms = true,
 }
 
-local NESTED_KEYS = {
-    autohide = { enabled = true, delay_ms = true },
-    update = { events = true, interval_ms = true },
-    render = { geometry = true },
-    float = { zindex = true, hide_on_cursor = true, placement = true },
-    ["float.placement"] = {
+local APPEARANCE_KEYS = {
+    preset = true,
+    geometry = true,
+    placement = {
         relative = true,
         anchor = true,
         row = true,
         col = true,
         gutter = true,
-        gutter_position = true,
+        zindex = true,
     },
+    hide_on_cursor = true,
+    hide_if_all_visible = true,
+    mouse = true,
     layout = { direction = true, columns = true },
     track = { highlight = true },
-    mouse = { enabled = true },
     thumb = { text = true, blend = true, highlight = true, hide_if_all_visible = true },
-    mark = { text = true, priority = true, highlight = true },
-    layer = { kind = true, types = true, max_width = true },
+    marks = { ["*"] = { text = true, priority = true, highlight = true } },
 }
 
-local PROFILE_KEYS = {
-    match = true,
-    preset = true,
-    config = true,
+local ROOT_KEYS = vim.tbl_extend("error", GLOBAL_KEYS, APPEARANCE_KEYS, { profiles = true })
+local PROFILE_KEYS = vim.tbl_extend("error", APPEARANCE_KEYS, { match = true })
+local LAYER_KEYS = { types = true, max_width = true }
+
+-- Replacements for the v1 options, shown in the unknown-option error.
+local REMOVED_KEYS = {
+    update = "use 'throttle_ms'. The update events are fixed",
+    render = "use 'geometry'",
+    float = "use 'placement', 'placement.zindex', and 'hide_on_cursor'",
+    presets = "custom presets are removed. Set the options in the block or in a profile",
+    extends = "custom presets are removed. Set the options in the block or in a profile",
+    excluded_buftypes = "use the top-level 'exclude' table",
+    excluded_filetypes = "use the top-level 'exclude' table",
+    providers = "use the top-level 'providers' table",
+    set_highlights = "use the top-level 'set_highlights' option",
+    ["autohide.enabled"] = "use 'autohide = true' or 'autohide = { delay_ms = n }'",
+    ["placement.gutter_position"] = "use 'placement.gutter' with 'inner', 'outer', or 'overlap'",
 }
 
-local PROFILE_MATCH_KEYS = {
-    filetypes = true,
-    buftypes = true,
-    when = true,
-}
-
-local PROFILE_CONFIG_KEYS = {
-    hide_if_all_visible = true,
-    render = true,
-    float = true,
-    layout = true,
-    track = true,
-    mouse = true,
-    thumb = true,
+local TOP_LEVEL_KEYS = {
+    set_highlights = true,
+    exclude = true,
+    providers = true,
     marks = true,
-}
-
-local PROFILE_NESTED_KEYS = {
-    render = { geometry = true },
-    float = NESTED_KEYS.float,
-    ["float.placement"] = NESTED_KEYS["float.placement"],
-    layout = NESTED_KEYS.layout,
-    track = NESTED_KEYS.track,
-    mouse = NESTED_KEYS.mouse,
-    thumb = NESTED_KEYS.thumb,
-    mark = NESTED_KEYS.mark,
-}
-
-local ENUMS = {
-    visibility = { all = true, active = true },
-    geometry = { line = true, screen = true },
-    relative = { window = true, editor = true },
-    anchor = { NW = true, NE = true, SW = true, SE = true },
-    gutter = { avoid = true, overlap = true },
-    gutter_position = { inner = true, outer = true },
-    direction = { auto = true, ltr = true, rtl = true },
+    scrollbar = true,
+    minimap = true,
 }
 
 ---@type ScrollbarConfig?
@@ -300,193 +114,13 @@ local active
 local variants
 ---@type ScrollbarEffectiveProviderPlan?
 local provider_plan
-local profile_error_notifications = {}
+---@type table<string, true>?
+local mark_types
+local selector = schema.selector("scrollbar")
 
-local function invalid(message)
-    error("[nvim-scrollbar] " .. message, 3)
-end
-
-local function is_integer(value)
-    return type(value) == "number" and value > -math.huge and value < math.huge and value == math.floor(value)
-end
-
-local function validate_unknown_keys(value, allowed, path)
-    if type(value) ~= "table" then
-        return
-    end
-
-    for key in pairs(value) do
-        if not allowed[key] then
-            invalid(string.format("unknown option '%s.%s'", path, tostring(key)))
-        end
-    end
-end
-
-local function validate_shape(overrides)
-    for key in pairs(overrides) do
-        if not TOP_LEVEL_KEYS[key] then
-            invalid(string.format("unknown option '%s'", tostring(key)))
-        end
-    end
-
-    validate_unknown_keys(overrides.update, NESTED_KEYS.update, "update")
-    validate_unknown_keys(overrides.render, NESTED_KEYS.render, "render")
-    validate_unknown_keys(overrides.autohide, NESTED_KEYS.autohide, "autohide")
-    validate_unknown_keys(overrides.float, NESTED_KEYS.float, "float")
-    if type(overrides.float) == "table" then
-        validate_unknown_keys(overrides.float.placement, NESTED_KEYS["float.placement"], "float.placement")
-    end
-    validate_unknown_keys(overrides.layout, NESTED_KEYS.layout, "layout")
-    validate_unknown_keys(overrides.track, NESTED_KEYS.track, "track")
-    validate_unknown_keys(overrides.mouse, NESTED_KEYS.mouse, "mouse")
-    validate_unknown_keys(overrides.thumb, NESTED_KEYS.thumb, "thumb")
-    provider_config.validate_shape(overrides.providers, provider_config.SCROLLBAR_NAMES, "providers")
-
-    if type(overrides.marks) == "table" then
-        for mark_type, mark in pairs(overrides.marks) do
-            validate_unknown_keys(mark, NESTED_KEYS.mark, "marks." .. tostring(mark_type))
-        end
-    end
-end
-
-local function validate_boolean(value, path)
-    if type(value) ~= "boolean" then
-        invalid(path .. " must be a boolean")
-    end
-end
-
-local function validate_integer(value, path, allow_zero)
-    if not is_integer(value) or value < (allow_zero and 0 or 1) then
-        invalid(path .. (allow_zero and " must be a non-negative integer" or " must be a positive integer"))
-    end
-end
-
-local function validate_enum(value, path, values)
-    if type(value) ~= "string" or not values[value] then
-        local names = {}
-        for name in pairs(values) do
-            table.insert(names, name)
-        end
-        table.sort(names)
-        invalid(string.format("%s must be one of: %s", path, table.concat(names, ", ")))
-    end
-end
-
-local function dense_count(value, path)
-    if type(value) ~= "table" then
-        invalid(path .. " must be a dense list")
-    end
-
-    local count = 0
-    local maximum = 0
-    for key in pairs(value) do
-        count = count + 1
-        if not is_integer(key) or key < 1 then
-            invalid(path .. " must be a dense list")
-        end
-        maximum = math.max(maximum, key)
-    end
-    if count ~= maximum then
-        invalid(path .. " must be a dense list")
-    end
-    return count
-end
-
-local function validate_text(value, path)
-    if type(value) ~= "string" then
-        invalid(path .. " must be a string")
-    end
-    if value:find("%c") then
-        invalid(path .. " must not contain control characters")
-    end
-
-    local ok, width = pcall(vim.fn.strdisplaywidth, value)
-    if not ok or width <= 0 then
-        invalid(path .. " must have positive display width")
-    end
-end
-
-local function normalize_highlight(value, path)
-    if type(value) == "string" and value ~= "" then
-        return value
-    end
-    if type(value) == "table" then
-        return vim.deepcopy(value)
-    end
-    invalid(path .. " must be a non-empty string or table")
-end
-
-local function normalize_text(value, path, allow_empty)
-    if type(value) == "string" then
-        value = { value }
-    elseif type(value) ~= "table" then
-        invalid(path .. " must be a string or dense list of strings")
-    end
-
-    local count = dense_count(value, path)
-    if count == 0 and not allow_empty then
-        invalid(path .. " must contain at least one variant")
-    end
-    for index = 1, count do
-        validate_text(value[index], string.format("%s[%d]", path, index))
-    end
-    return vim.deepcopy(value)
-end
-
-local function validate_string_list(value, path)
-    local count = dense_count(value, path)
-    for index = 1, count do
-        if type(value[index]) ~= "string" then
-            invalid(string.format("%s[%d] must be a string", path, index))
-        end
-    end
-end
-
-local function normalize_matcher_list(value, path)
-    local count = dense_count(value, path)
-    if count == 0 then
-        invalid(path .. " must contain at least one value")
-    end
-
-    local values = {}
-    local lookup = {}
-    for index = 1, count do
-        local item = value[index]
-        if type(item) ~= "string" then
-            invalid(string.format("%s[%d] must be a string", path, index))
-        end
-        values[index] = item
-        lookup[item] = true
-    end
-    return values, lookup
-end
-
-local function normalize_selector_types(value, path)
-    local count = dense_count(value, path)
-    if count == 0 then
-        invalid(path .. " must contain at least one type")
-    end
-
-    local result = {}
-    local seen = {}
-    for index = 1, count do
-        local name = value[index]
-        if type(name) ~= "string" then
-            invalid(string.format("%s[%d] must be a string", path, index))
-        end
-        if not name:match("^[%a_][%w_]*$") then
-            invalid(string.format("%s[%d] must be a valid mark type", path, index))
-        end
-        if seen[name] then
-            invalid(string.format("%s contains duplicate type '%s'", path, name))
-        end
-        seen[name] = true
-        result[#result + 1] = name
-    end
-    table.sort(result)
-    return result
-end
-
+---@param value any
+---@param path string
+---@return ScrollbarNormalizedLayoutLayerInput
 local function normalized_layer(value, path)
     if type(value) == "string" then
         if value == "track" or value == "thumb" then
@@ -495,38 +129,49 @@ local function normalized_layer(value, path)
         if value == "marks" then
             return { kind = "marks", catch_all = true, types = false, max_width = false }
         end
-        invalid(path .. " must be 'track', 'thumb', 'marks', or a mark descriptor")
     end
     if type(value) ~= "table" then
         invalid(path .. " must be 'track', 'thumb', 'marks', or a mark descriptor")
     end
 
-    validate_unknown_keys(value, NESTED_KEYS.layer, path)
-    if value.kind ~= "marks" then
-        invalid(path .. ".kind must be 'marks'")
+    schema.check_keys(value, LAYER_KEYS, path)
+    if value.types == nil then
+        invalid(path .. ".types is required in a mark descriptor. Use 'marks' for the catch-all lane")
     end
 
-    ---@type false|string[]
-    local types = false
-    local catch_all = value.types == nil
-    if value.types ~= nil then
-        types = normalize_selector_types(value.types, path .. ".types")
+    local types_path = path .. ".types"
+    local count = schema.dense_count(value.types, types_path)
+    if count == 0 then
+        invalid(types_path .. " must contain at least one type")
     end
+    local types = {}
+    local seen = {}
+    for index = 1, count do
+        local name = value.types[index]
+        if type(name) ~= "string" then
+            invalid(string.format("%s[%d] must be a string", types_path, index))
+        end
+        if not name:match(schema.TYPE_NAME_PATTERN) then
+            invalid(string.format("%s[%d] must be a valid mark type", types_path, index))
+        end
+        if seen[name] then
+            invalid(string.format("%s contains duplicate type '%s'", types_path, name))
+        end
+        seen[name] = true
+        types[#types + 1] = name
+    end
+    table.sort(types)
 
     local max_width = false
     if value.max_width ~= nil then
-        validate_integer(value.max_width, path .. ".max_width", false)
-        local selects_mark = false
-        for _, name in ipairs(types or {}) do
-            selects_mark = selects_mark or name == "Mark"
-        end
-        if not selects_mark then
+        schema.integer(value.max_width, path .. ".max_width", 1)
+        if not seen.Mark then
             invalid(path .. ".max_width is valid only for a lane explicitly selecting Mark")
         end
         max_width = value.max_width
     end
 
-    return { kind = "marks", catch_all = catch_all, types = types, max_width = max_width }
+    return { kind = "marks", catch_all = false, types = types, max_width = max_width }
 end
 
 local function layer_signature(layer)
@@ -536,14 +181,17 @@ local function layer_signature(layer)
     return table.concat(layer.types, "\0")
 end
 
-local function compile_layout(layout, anchor)
-    if type(layout) ~= "table" then
-        invalid("layout must be a table")
-    end
-    validate_enum(layout.direction, "layout.direction", ENUMS.direction)
-    local width = dense_count(layout.columns, "layout.columns")
+---@param layout any
+---@param anchor ScrollbarFloatAnchor
+---@param path string
+---@return ScrollbarLayoutConfig
+local function compile_layout(layout, anchor, path)
+    schema.table(layout, path)
+    schema.enum(layout.direction, path .. ".direction", { "auto", "ltr", "rtl" })
+    local columns_path = path .. ".columns"
+    local width = schema.dense_count(layout.columns, columns_path)
     if width == 0 then
-        invalid("layout.columns must contain at least one column")
+        invalid(columns_path .. " must contain at least one column")
     end
 
     local logical = {}
@@ -554,8 +202,8 @@ local function compile_layout(layout, anchor)
     local thumb_columns = {}
 
     for column_index = 1, width do
-        local column_path = string.format("layout.columns[%d]", column_index)
-        local layer_count = dense_count(layout.columns[column_index], column_path)
+        local column_path = string.format("%s[%d]", columns_path, column_index)
+        local layer_count = schema.dense_count(layout.columns[column_index], column_path)
         if layer_count == 0 then
             invalid(column_path .. " must contain at least one layer")
         end
@@ -564,11 +212,11 @@ local function compile_layout(layout, anchor)
         local current_signatures = {}
         local seen_layers = {}
         for stack_index = 1, layer_count do
-            local path = string.format("%s[%d]", column_path, stack_index)
-            local layer = normalized_layer(layout.columns[column_index][stack_index], path)
+            local layer_path = string.format("%s[%d]", column_path, stack_index)
+            local layer = normalized_layer(layout.columns[column_index][stack_index], layer_path)
             if layer.kind ~= "marks" then
                 if seen_layers[layer.kind] then
-                    invalid(path .. " duplicates the " .. layer.kind .. " layer in one column")
+                    invalid(layer_path .. " duplicates the " .. layer.kind .. " layer in one column")
                 end
                 seen_layers[layer.kind] = true
                 if layer.kind == "thumb" then
@@ -579,7 +227,7 @@ local function compile_layout(layout, anchor)
                 local signature = layer_signature(layer)
                 local duplicate_key = "marks:" .. signature
                 if seen_layers[duplicate_key] then
-                    invalid(path .. " duplicates the same mark selector in one column")
+                    invalid(layer_path .. " duplicates the same mark selector in one column")
                 end
                 seen_layers[duplicate_key] = true
 
@@ -587,7 +235,7 @@ local function compile_layout(layout, anchor)
                 if lane_id == nil then
                     if lane_by_signature[signature] ~= nil then
                         local label = layer.catch_all and "catch-all marks" or "mark type '" .. layer.types[1] .. "'"
-                        invalid(label .. " must occupy one contiguous lane")
+                        invalid(path .. ": " .. label .. " must occupy one contiguous lane")
                     end
                     lane_id = #lanes + 1
                     lanes[lane_id] = {
@@ -601,7 +249,7 @@ local function compile_layout(layout, anchor)
                     if not layer.catch_all then
                         for _, mark_type in ipairs(layer.types) do
                             if type_owner[mark_type] ~= nil then
-                                invalid("mark type '" .. mark_type .. "' must occupy one contiguous lane")
+                                invalid(path .. ": mark type '" .. mark_type .. "' must occupy one contiguous lane")
                             end
                             type_owner[mark_type] = lane_id
                         end
@@ -611,7 +259,7 @@ local function compile_layout(layout, anchor)
                 local lane = lanes[lane_id]
                 if layer.max_width ~= false then
                     if lane.max_width ~= false and lane.max_width ~= layer.max_width then
-                        invalid(path .. ".max_width conflicts with another value in the same lane")
+                        invalid(layer_path .. ".max_width conflicts with another value in the same lane")
                     end
                     lane.max_width = layer.max_width
                 end
@@ -626,7 +274,7 @@ local function compile_layout(layout, anchor)
 
     for index = 2, #thumb_columns do
         if thumb_columns[index] ~= thumb_columns[index - 1] + 1 then
-            invalid("thumb must occupy one contiguous span")
+            invalid(path .. ": thumb must occupy one contiguous span")
         end
     end
 
@@ -650,7 +298,7 @@ local function compile_layout(layout, anchor)
         lane.first_column = physical_columns[1]
         lane.last_column = physical_columns[#physical_columns]
         if lane.max_width ~= false and lane.max_width < #physical_columns then
-            invalid("layout mark lane max_width must be greater than or equal to its base lane width")
+            invalid(path .. ": mark lane max_width must be greater than or equal to its base lane width")
         end
         if lane.catch_all then
             catchall_lane = lane.id
@@ -683,6 +331,7 @@ local function compile_layout(layout, anchor)
     return result
 end
 
+---@param value ScrollbarConfig
 local function layout_config(value)
     local marks = {}
     for mark_type, mark in pairs(value.marks) do
@@ -691,263 +340,153 @@ local function layout_config(value)
             priority = mark.priority,
         }
     end
-    return { geometry = value.render.geometry, layout = value.layout.cache, marks = marks }
+    return { geometry = value.geometry, layout = value.layout.cache, marks = marks }
 end
 
-local function validate_profile_config(value, path)
-    if type(value) ~= "table" then
-        invalid(path .. " must be a table")
-    end
-    validate_unknown_keys(value, PROFILE_CONFIG_KEYS, path)
-    validate_unknown_keys(value.render, PROFILE_NESTED_KEYS.render, path .. ".render")
-    validate_unknown_keys(value.float, PROFILE_NESTED_KEYS.float, path .. ".float")
-    if type(value.float) == "table" then
-        validate_unknown_keys(value.float.placement, PROFILE_NESTED_KEYS["float.placement"], path .. ".float.placement")
-    end
-    validate_unknown_keys(value.layout, PROFILE_NESTED_KEYS.layout, path .. ".layout")
-    validate_unknown_keys(value.track, PROFILE_NESTED_KEYS.track, path .. ".track")
-    validate_unknown_keys(value.mouse, PROFILE_NESTED_KEYS.mouse, path .. ".mouse")
-    validate_unknown_keys(value.thumb, PROFILE_NESTED_KEYS.thumb, path .. ".thumb")
-    if type(value.marks) == "table" then
-        for mark_type, mark in pairs(value.marks) do
-            validate_unknown_keys(mark, PROFILE_NESTED_KEYS.mark, path .. ".marks." .. tostring(mark_type))
+local describe_root_key = schema.hinter(REMOVED_KEYS)
+
+local describe_profile_key = schema.hinter(
+    vim.tbl_extend("force", REMOVED_KEYS, { config = "set the options directly in the profile" }),
+    function(relative, path)
+        if GLOBAL_KEYS[relative] ~= nil or relative == "profiles" then
+            return path .. " is a global option and cannot be set in a profile"
         end
     end
-end
+)
 
+---@param value any
+---@return { matcher: ScrollbarCompiledMatcher, input: table, path: string }[]
 local function compile_profiles(value)
     if value == nil then
         return {}
     end
 
-    local count = dense_count(value, "profiles")
+    local count = schema.dense_count(value, "scrollbar.profiles")
     local result = {}
     for index = 1, count do
-        local path = string.format("profiles[%d]", index)
+        local path = string.format("scrollbar.profiles[%d]", index)
         local profile = value[index]
-        if type(profile) ~= "table" then
-            invalid(path .. " must be a table")
+        schema.table(profile, path)
+        schema.check_keys(profile, PROFILE_KEYS, path, describe_profile_key)
+        if profile.match == nil then
+            invalid(path .. ".match is required")
         end
-        validate_unknown_keys(profile, PROFILE_KEYS, path)
-        if type(profile.match) ~= "table" then
-            invalid(path .. ".match must be a table")
-        end
-        validate_unknown_keys(profile.match, PROFILE_MATCH_KEYS, path .. ".match")
-        if profile.match.filetypes == nil and profile.match.buftypes == nil and profile.match.when == nil then
-            invalid(path .. ".match must contain at least one matcher")
-        end
-
-        ---@type ScrollbarCompiledMatcher
-        local matcher = {
-            filetypes = false,
-            filetype_lookup = false,
-            buftypes = false,
-            buftype_lookup = false,
-            when = false,
-        }
-        if profile.match.filetypes ~= nil then
-            matcher.filetypes, matcher.filetype_lookup =
-                normalize_matcher_list(profile.match.filetypes, path .. ".match.filetypes")
-        end
-        if profile.match.buftypes ~= nil then
-            matcher.buftypes, matcher.buftype_lookup =
-                normalize_matcher_list(profile.match.buftypes, path .. ".match.buftypes")
-        end
-        if profile.match.when ~= nil then
-            if type(profile.match.when) ~= "function" then
-                invalid(path .. ".match.when must be a function")
-            end
-            matcher.when = profile.match.when
-        end
-        if profile.preset ~= nil and type(profile.preset) ~= "string" then
-            invalid(path .. ".preset must be a string")
-        end
-        if profile.config ~= nil then
-            validate_profile_config(profile.config, path .. ".config")
-        end
-
         result[index] = {
-            matcher = matcher,
-            preset = profile.preset,
-            overrides = vim.deepcopy(profile.config or {}),
+            matcher = schema.matcher(profile.match, path .. ".match"),
+            input = profile,
+            path = path,
         }
     end
     return result
 end
 
-local function normalize(overrides)
-    local resolved = presets.resolve(overrides)
-    validate_shape(resolved)
-    local result = presets.merge(DEFAULTS, resolved)
-
-    validate_boolean(result.show, "show")
-    validate_boolean(result.set_highlights, "set_highlights")
-    validate_boolean(result.hide_if_all_visible, "hide_if_all_visible")
-    validate_enum(result.visibility, "visibility", ENUMS.visibility)
-    if result.max_lines ~= false and (not is_integer(result.max_lines) or result.max_lines < 1) then
-        invalid("max_lines must be false or a positive integer")
+--- Layer the appearance sources in precedence order: the root preset, the
+--- root options, the profile preset, and the profile options.
+---@param root table
+---@param profile? { input: table, path: string }
+---@return table
+local function layered(root, profile)
+    local result = {}
+    if root.preset ~= nil then
+        result = schema.merge(result, presets.get(root.preset, "scrollbar.preset"))
     end
-
-    if type(result.autohide) ~= "table" then
-        invalid("autohide must be a table")
-    end
-    validate_boolean(result.autohide.enabled, "autohide.enabled")
-    validate_integer(result.autohide.delay_ms, "autohide.delay_ms", false)
-
-    if type(result.update) ~= "table" then
-        invalid("update must be a table")
-    end
-    validate_integer(result.update.interval_ms, "update.interval_ms", true)
-    local event_count = dense_count(result.update.events, "update.events")
-    if event_count == 0 then
-        invalid("update.events must contain at least one event")
-    end
-    local seen_events = {}
-    for index = 1, event_count do
-        local event = result.update.events[index]
-        if type(event) ~= "string" then
-            invalid(string.format("update.events[%d] must be a string", index))
+    result = schema.merge(result, schema.without(root, { "preset", "profiles" }))
+    if profile ~= nil then
+        if profile.input.preset ~= nil then
+            result = schema.merge(result, presets.get(profile.input.preset, profile.path .. ".preset"))
         end
-        if not ALLOWED_EVENTS[event] then
-            invalid(string.format("update.events[%d] unknown event '%s'", index, event))
-        end
-        if seen_events[event] then
-            invalid(string.format("update.events[%d] duplicate event '%s'", index, event))
-        end
-        seen_events[event] = true
+        result = schema.merge(result, schema.without(profile.input, { "match", "preset" }))
     end
-
-    if type(result.render) ~= "table" then
-        invalid("render must be a table")
-    end
-    validate_enum(result.render.geometry, "render.geometry", ENUMS.geometry)
-
-    if type(result.float) ~= "table" then
-        invalid("float must be a table")
-    end
-    validate_integer(result.float.zindex, "float.zindex", false)
-    validate_boolean(result.float.hide_on_cursor, "float.hide_on_cursor")
-    if type(result.float.placement) ~= "table" then
-        invalid("float.placement must be a table")
-    end
-    validate_enum(result.float.placement.relative, "float.placement.relative", ENUMS.relative)
-    validate_enum(result.float.placement.anchor, "float.placement.anchor", ENUMS.anchor)
-    validate_enum(result.float.placement.gutter, "float.placement.gutter", ENUMS.gutter)
-    validate_enum(result.float.placement.gutter_position, "float.placement.gutter_position", ENUMS.gutter_position)
-    if not is_integer(result.float.placement.row) then
-        invalid("float.placement.row must be an integer")
-    end
-    if not is_integer(result.float.placement.col) then
-        invalid("float.placement.col must be an integer")
-    end
-
-    result.layout = compile_layout(result.layout, result.float.placement.anchor)
-
-    if type(result.track) ~= "table" then
-        invalid("track must be a table")
-    end
-    result.track.highlight = normalize_highlight(result.track.highlight, "track.highlight")
-
-    if type(result.mouse) ~= "table" then
-        invalid("mouse must be a table")
-    end
-    validate_boolean(result.mouse.enabled, "mouse.enabled")
-
-    if type(result.thumb) ~= "table" then
-        invalid("thumb must be a table")
-    end
-    validate_text(result.thumb.text, "thumb.text")
-    validate_integer(result.thumb.blend, "thumb.blend", true)
-    if result.thumb.blend > 100 then
-        invalid("thumb.blend must be between 0 and 100")
-    end
-    result.thumb.highlight = normalize_highlight(result.thumb.highlight, "thumb.highlight")
-    validate_boolean(result.thumb.hide_if_all_visible, "thumb.hide_if_all_visible")
-
-    if type(result.marks) ~= "table" then
-        invalid("marks must be a table")
-    end
-    for mark_type, mark in pairs(result.marks) do
-        if type(mark_type) ~= "string" or not mark_type:match("^[%a_][%w_]*$") then
-            invalid(string.format("invalid mark type %s", vim.inspect(mark_type)))
-        end
-        if type(mark) ~= "table" then
-            invalid("marks." .. mark_type .. " must be a table")
-        end
-
-        local path = "marks." .. mark_type
-        mark.text = normalize_text(mark.text, path .. ".text", mark_type == "Mark")
-        validate_integer(mark.priority, path .. ".priority", true)
-        mark.highlight = normalize_highlight(mark.highlight, path .. ".highlight")
-    end
-
-    if type(result.providers) ~= "table" then
-        invalid("providers must be a table")
-    end
-    local provider_requests
-    result.providers, provider_requests =
-        provider_config.normalize(result.providers, provider_config.SCROLLBAR_NAMES, "providers")
-    validate_string_list(result.excluded_buftypes, "excluded_buftypes")
-    validate_string_list(result.excluded_filetypes, "excluded_filetypes")
-    return result, provider_requests
+    return schema.merge(DEFAULTS, result)
 end
 
-local function compile(overrides)
-    if overrides == nil then
-        overrides = {}
-    elseif type(overrides) ~= "table" then
-        invalid("configuration must be a table")
+---@param value table Layered options merged onto the defaults
+---@param shared ScrollbarSharedConfig
+---@param path string Prefix for error paths
+---@param variant_id integer 0 for the root, or the profile index
+---@return ScrollbarConfig
+local function normalize(value, shared, path, variant_id)
+    local function at(name)
+        return path .. "." .. name
     end
 
-    local setup = vim.deepcopy(overrides)
-    local compiled_profiles = compile_profiles(setup.profiles)
-    setup.profiles = nil
-    local root, provider_requests = normalize(setup)
+    local autohide = schema.feature(value.autohide, at("autohide"), AUTOHIDE_DEFAULTS)
+    if autohide then
+        schema.integer(autohide.delay_ms, at("autohide.delay_ms"), 1)
+    end
+
+    local placement = schema.table(value.placement, at("placement"))
+    local normalized_placement = {
+        relative = schema.enum(placement.relative, at("placement.relative"), { "window", "editor" }),
+        anchor = schema.enum(placement.anchor, at("placement.anchor"), { "NW", "NE", "SW", "SE" }),
+        row = schema.integer(placement.row, at("placement.row")),
+        col = schema.integer(placement.col, at("placement.col")),
+        gutter = schema.enum(placement.gutter, at("placement.gutter"), { "inner", "outer", "overlap" }),
+        zindex = schema.integer(placement.zindex, at("placement.zindex"), 1),
+    }
+
+    local track = schema.table(value.track, at("track"))
+    local thumb = schema.table(value.thumb, at("thumb"))
+
+    local result = {
+        enabled = schema.boolean(value.enabled, at("enabled")),
+        show = schema.boolean(value.show, at("show")),
+        visibility = schema.enum(value.visibility, at("visibility"), { "all", "active" }),
+        autohide = autohide,
+        max_lines = schema.positive_or_false(value.max_lines, at("max_lines")),
+        throttle_ms = schema.integer(value.throttle_ms, at("throttle_ms"), 0),
+        set_highlights = shared.set_highlights,
+        exclude = shared.exclude.scrollbar,
+        geometry = schema.enum(value.geometry, at("geometry"), { "line", "screen" }),
+        placement = normalized_placement,
+        hide_on_cursor = schema.boolean(value.hide_on_cursor, at("hide_on_cursor")),
+        hide_if_all_visible = schema.boolean(value.hide_if_all_visible, at("hide_if_all_visible")),
+        mouse = schema.boolean(value.mouse, at("mouse")),
+        layout = compile_layout(value.layout, normalized_placement.anchor, at("layout")),
+        track = { highlight = schema.highlight(track.highlight, at("track.highlight")) },
+        thumb = {
+            text = schema.text(thumb.text, at("thumb.text")),
+            blend = schema.integer(thumb.blend, at("thumb.blend"), 0, 100),
+            highlight = schema.highlight(thumb.highlight, at("thumb.highlight")),
+            hide_if_all_visible = schema.boolean(thumb.hide_if_all_visible, at("thumb.hide_if_all_visible")),
+        },
+        marks = shared_config.resolve_marks(shared.marks, value.marks, at("marks"), {
+            fields = { "text", "priority", "highlight" },
+        }),
+    }
+    result.highlights = utils.get_highlight_groups(result, variant_id, shared.set_highlights)
+    result.layout_cache = layout_config(result)
+    ---@cast result ScrollbarConfig
+    return result
+end
+
+---@param overrides any
+---@param shared ScrollbarSharedConfig
+---@return ScrollbarConfig, ScrollbarCompiledVariant[]
+local function compile(overrides, shared)
+    if overrides == nil then
+        overrides = {}
+    end
+    schema.table(overrides, "scrollbar")
+    schema.check_keys(overrides, ROOT_KEYS, "scrollbar", describe_root_key)
+
+    local profiles = compile_profiles(overrides.profiles)
+    local root = normalize(layered(overrides), shared, "scrollbar", 0)
     local compiled = {
         { id = 0, matcher = false, config = root },
     }
-
-    for index, profile in ipairs(compiled_profiles) do
-        local variant_options = vim.deepcopy(setup)
-        variant_options.preset = profile.preset or setup.preset
-        variant_options = presets.merge(variant_options, profile.overrides)
+    for index, profile in ipairs(profiles) do
         compiled[#compiled + 1] = {
             id = index,
             matcher = profile.matcher,
-            config = normalize(variant_options),
+            config = normalize(layered(overrides, profile), shared, profile.path, index),
         }
     end
-    for _, variant in ipairs(compiled) do
-        variant.config.highlights = utils.get_highlight_groups(variant.config, variant.id, root.set_highlights)
-        variant.config.layout_cache = layout_config(variant.config)
-    end
-    return root, compiled, provider_requests
+    return root, compiled
 end
 
-local M = {}
-
-local TOP_LEVEL_DISPATCH_KEYS = {
-    scrollbar = true,
-    minimap = true,
-}
-
----@param compiled ScrollbarCompiledVariant[]
----@return table<string, ScrollbarMinimapOverlaySpec>
-local function minimap_default_overlay_types(compiled)
-    local result = {}
-    for _, variant in ipairs(compiled) do
-        for mark_type, mark in pairs(variant.config.marks) do
-            if mark_type ~= "Cursor" and result[mark_type] == nil then
-                result[mark_type] = {
-                    priority = mark.priority,
-                    highlight = vim.deepcopy(mark.highlight),
-                }
-            end
-        end
-    end
-    return result
-end
-
+---@param scrollbar_variants ScrollbarCompiledVariant[]
+---@param minimap_variants ScrollbarMinimapCompiledVariant[]
 local function validate_public_highlight_groups(scrollbar_variants, minimap_variants)
     local owners = {
         ScrollbarBase = "the scrollbar base",
@@ -980,14 +519,16 @@ local function validate_public_highlight_groups(scrollbar_variants, minimap_vari
         end
     end
     for _, variant in ipairs(minimap_variants) do
-        for mark_type in pairs(variant.config.overlays.types) do
-            claim("ScrollbarMinimap" .. mark_type, "minimap overlay type '" .. mark_type .. "'")
+        for mark_type in pairs(variant.config.marks) do
+            claim("ScrollbarMinimap" .. mark_type, "minimap mark type '" .. mark_type .. "'")
         end
     end
 end
 
---- @param overrides? table
---- @return ScrollbarConfig
+local M = {}
+
+---@param overrides? ScrollbarUserConfig
+---@return ScrollbarConfig
 M.set = function(overrides)
     if overrides == nil then
         overrides = {}
@@ -996,32 +537,32 @@ M.set = function(overrides)
     end
 
     for key in pairs(overrides) do
-        if not TOP_LEVEL_DISPATCH_KEYS[key] then
-            invalid(
-                string.format("unknown option '%s' (top-level options are 'scrollbar' and 'minimap')", tostring(key))
-            )
+        if not TOP_LEVEL_KEYS[key] then
+            local hint = ROOT_KEYS[key] ~= nil and " (scrollbar options go in the 'scrollbar' block)" or ""
+            invalid(string.format("unknown option '%s'%s", tostring(key), hint))
         end
     end
 
-    local scrollbar_overrides = overrides.scrollbar or {}
-    local minimap_overrides = overrides.minimap
+    local shared = shared_config.normalize(overrides)
+    local provider_requests = provider_config.normalize(overrides.providers)
+    local normalized, compiled = compile(overrides.scrollbar, shared)
+    local normalized_minimap, compiled_minimap = minimap_config._compile(overrides.minimap, shared)
+    -- A disabled minimap defines no groups, so it claims none.
+    validate_public_highlight_groups(compiled, normalized_minimap.enabled and compiled_minimap or {})
+    local compiled_provider_plan =
+        provider_config.compile_plan(provider_requests, normalized.enabled, normalized_minimap.enabled)
 
-    local normalized, compiled, scrollbar_provider_requests = compile(scrollbar_overrides)
-    local normalized_minimap, compiled_minimap, minimap_provider_requests =
-        minimap_config._compile(minimap_overrides, minimap_default_overlay_types(compiled))
-    validate_public_highlight_groups(compiled, compiled_minimap)
-    local compiled_provider_plan = provider_config.compile_plan(
-        normalized,
-        scrollbar_provider_requests,
-        normalized_minimap,
-        minimap_provider_requests
-    )
+    local registered = {}
+    for mark_type in pairs(shared.marks.specs) do
+        registered[mark_type] = true
+    end
 
     active = normalized
     variants = compiled
     provider_plan = compiled_provider_plan
+    mark_types = registered
     minimap_config._commit(normalized_minimap, compiled_minimap)
-    profile_error_notifications = {}
+    selector = schema.selector("scrollbar")
     return active
 end
 
@@ -1050,55 +591,19 @@ M.get_variants = function()
     return assert(variants, "compiled scrollbar variants unavailable")
 end
 
+--- Registered mark types. Providers can publish any registered type, even
+--- when a renderer hides it.
+---@return table<string, true>
+M.get_mark_types = function()
+    M.get()
+    return assert(mark_types, "registered mark types unavailable")
+end
+
 ---@param source_win integer
 ---@return ScrollbarConfigSelection
 M.select = function(source_win)
-    local root = M.get()
-    local compiled = assert(variants, "compiled scrollbar variants unavailable")
-    local source_buf = vim.api.nvim_win_get_buf(source_win)
-    local context = {
-        winid = source_win,
-        bufnr = source_buf,
-        filetype = vim.bo[source_buf].filetype,
-        buftype = vim.bo[source_buf].buftype,
-        bufname = vim.api.nvim_buf_get_name(source_buf),
-    }
-
-    for index = 2, #compiled do
-        local variant = compiled[index]
-        local matcher = variant.matcher
-        assert(matcher ~= false, "compiled scrollbar profile matcher unavailable")
-        ---@cast matcher ScrollbarCompiledMatcher
-        local filetype_lookup = matcher.filetype_lookup
-        local buftype_lookup = matcher.buftype_lookup
-        local when = matcher.when
-        if
-            (filetype_lookup == false or filetype_lookup[context.filetype])
-            and (buftype_lookup == false or buftype_lookup[context.buftype])
-        then
-            if when ~= false then
-                local ok, matched = pcall(when, context)
-                if not ok then
-                    local message = tostring(matched)
-                    local notification_key = variant.id .. "\0" .. message
-                    if not profile_error_notifications[notification_key] then
-                        profile_error_notifications[notification_key] = true
-                        vim.notify(
-                            string.format("[nvim-scrollbar] profile %d matcher failed: %s", variant.id, message),
-                            vim.log.levels.ERROR
-                        )
-                    end
-                    return { config = root, variant_id = 0 }
-                end
-                if matched then
-                    return { config = variant.config, variant_id = variant.id }
-                end
-            else
-                return { config = variant.config, variant_id = variant.id }
-            end
-        end
-    end
-    return { config = root, variant_id = 0 }
+    M.get()
+    return schema.select(selector, assert(variants, "compiled scrollbar variants unavailable"), source_win)
 end
 
 return M

@@ -54,21 +54,20 @@ end
 
 local function configure(geometry)
     require("scrollbar.config").set({
+        set_highlights = false,
+        exclude = { buftypes = {}, filetypes = {} },
+        providers = {
+            cursor = false,
+            diagnostic = false,
+            gitsigns = false,
+            search = false,
+            ale = false,
+            coc = false,
+        },
         scrollbar = {
-            set_highlights = false,
-            render = { geometry = geometry },
-            update = { interval_ms = 0 },
-            excluded_buftypes = {},
-            excluded_filetypes = {},
+            geometry = geometry,
+            throttle_ms = 0,
             thumb = { text = "H", hide_if_all_visible = false },
-            providers = {
-                cursor = false,
-                diagnostic = false,
-                gitsigns = false,
-                search = false,
-                ale = false,
-                coc = false,
-            },
         },
     })
     require("scrollbar.renderer").setup()

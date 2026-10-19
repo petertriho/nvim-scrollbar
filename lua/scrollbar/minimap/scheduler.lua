@@ -1,17 +1,15 @@
 --- Minimap-specific scheduler. Independent of `lua/scrollbar/scheduler.lua`
 --- so a stutter in one subsystem cannot delay the other. Mirrors the
---- `dirty` / `flushing` / timer coalescing model and the events-list-driven
---- autocmd registration introduced in T2.
+--- `dirty` / `flushing` / timer coalescing model.
 ---
---- Honors `minimap.update.events` (closed allow-list, validated by
---- `lua/scrollbar/minimap/config.lua`) and `minimap.update.interval_ms`
---- (default 50). Coalesces invalidations from mirror changes (worker
---- callbacks), viewport changes (`WinScrolled` on source windows), shared
---- store mark/span/point notifications, and eligibility changes.
+--- Coalesces invalidations within `minimap.throttle_ms` (default 50) from
+--- mirror changes (worker callbacks), viewport changes (`WinScrolled` on
+--- source windows), shared store mark/span/point notifications, and
+--- eligibility changes.
 ---
---- Autohide hide-timer logic is engaged only when
---- `minimap.autohide.enabled = true`; otherwise the timers are not created
---- and the hold/resume API is a no-op.
+--- Autohide hide-timer logic is engaged only when `minimap.autohide` is
+--- enabled; otherwise the timers are not created and the hold/resume API is a
+--- no-op.
 
 local config = require("scrollbar.minimap.config")
 local providers = require("scrollbar.providers")
@@ -20,6 +18,36 @@ local store = require("scrollbar.store")
 local M = {}
 
 local AUGROUP_NAME = "ScrollbarMinimapScheduler"
+-- Autocmd events that can change minimap content, the viewport, or the window
+-- and buffer lifecycle. Provider updates arrive through the store.
+local EVENTS = {
+    "BufEnter",
+    "BufWinEnter",
+    "WinEnter",
+    "WinScrolled",
+    "WinResized",
+    "VimResized",
+    "CursorMoved",
+    "CursorMovedI",
+    "TextChanged",
+    "TextChangedI",
+    "TextChangedP",
+    "TextChangedT",
+    "WinClosed",
+    "BufDelete",
+    "BufWipeout",
+    "ColorScheme",
+}
+
+---@return boolean
+local function any_variant_shows_marks()
+    for _, variant in ipairs(config.get_variants()) do
+        if next(variant.config.marks) ~= nil then
+            return true
+        end
+    end
+    return false
+end
 
 ---@type ScrollbarMinimapSchedulerRuntime?
 local runtime
@@ -146,7 +174,7 @@ end
 ---@param current ScrollbarMinimapSchedulerRuntime
 ---@param winid integer
 local function restart_hide_deadline(current, winid)
-    if runtime ~= current or not current.config.autohide.enabled or current.held[winid] then
+    if runtime ~= current or not current.config.autohide or current.held[winid] then
         return
     end
 
@@ -190,7 +218,7 @@ local function arm_timer(current)
 
     current.timer_armed = true
     current.timer:start(
-        current.config.update.interval_ms,
+        current.config.throttle_ms,
         0,
         vim.schedule_wrap(function()
             if runtime ~= current then
@@ -216,7 +244,7 @@ local function activity_window(current, winid)
     if runtime ~= current or not is_source_window(current, winid) then
         return false
     end
-    if current.config.autohide.enabled then
+    if current.config.autohide then
         if not renderer_visible(current) or not reveal_source(current, winid) then
             return false
         end
@@ -432,6 +460,7 @@ M.setup = function(options)
         hide_timers = {},
         hide_generations = {},
         held = {},
+        shows_marks = any_variant_shows_marks(),
     }
     runtime = current
     current.unsubscribe_store = store.subscribe(function(event)
@@ -439,7 +468,7 @@ M.setup = function(options)
             runtime ~= current
             or (event.channel ~= "marks" and event.channel ~= "minimap_spans" and event.channel ~= "minimap_points")
             or not providers._consumer_enabled(event.provider, "minimap")
-            or (event.channel == "marks" and not current.config.overlays.enabled)
+            or (event.channel == "marks" and not current.shows_marks)
         then
             return
         end
@@ -451,7 +480,7 @@ M.setup = function(options)
     end)
     timer_closed = false
     local events_enabled = {}
-    for _, event in ipairs(active_config.update.events) do
+    for _, event in ipairs(EVENTS) do
         events_enabled[event] = true
     end
     -- Ride the scrollbar scheduler's shared TextChanged dispatch when wired:
@@ -542,7 +571,7 @@ end
 ---@return integer
 M.reveal_all = function()
     local current = runtime
-    if current == nil or not current.config.autohide.enabled then
+    if current == nil or not current.config.autohide then
         return 0
     end
 
@@ -573,7 +602,7 @@ M.hold_window = function(winid)
     local current = runtime
     if
         current == nil
-        or not current.config.autohide.enabled
+        or not current.config.autohide
         or not renderer_visible(current)
         or not is_source_window(current, winid)
     then
@@ -589,7 +618,7 @@ end
 ---@return boolean
 M.resume_window = function(winid)
     local current = runtime
-    if current == nil or not current.config.autohide.enabled then
+    if current == nil or not current.config.autohide then
         return false
     end
     current.held[winid] = nil
@@ -664,7 +693,7 @@ M.status = function()
         flushing = current ~= nil and current.flushing or false,
         dirty_windows = dirty_windows,
         augroup_id = current and current.augroup or nil,
-        interval_ms = current and current.config.update.interval_ms or nil,
+        interval_ms = current and current.config.throttle_ms or nil,
     }
 end
 

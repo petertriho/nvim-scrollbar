@@ -4,22 +4,25 @@ local expect = MiniTest.expect
 local T = MiniTest.new_set({
     hooks = {
         pre_case = function()
+            package.loaded["scrollbar.config"] = nil
             package.loaded["scrollbar.presets"] = nil
         end,
     },
 })
 
-local function resolve(options)
-    return require("scrollbar.presets").resolve(options)
+local function get(name)
+    return require("scrollbar.presets").get(name, "scrollbar.preset")
 end
 
-local function expect_invalid(options, pattern)
-    local ok, err = pcall(resolve, options)
+local function expect_invalid(fn, pattern)
+    local ok, err = pcall(fn)
     expect.equality(ok, false)
-    expect.no_equality(tostring(err):match(pattern), nil)
+    if tostring(err):match(pattern) == nil then
+        error(string.format("error %q does not match %q", tostring(err), pattern))
+    end
 end
 
-T["resolves exact isolated built-in presentation definitions"] = function()
+T["returns exact isolated built-in presentation definitions"] = function()
     local builtins = {
         vscode = {
             layout = {
@@ -28,7 +31,6 @@ T["resolves exact isolated built-in presentation definitions"] = function()
                     {
                         "track",
                         {
-                            kind = "marks",
                             types = {
                                 "GitAdd",
                                 "GitChange",
@@ -49,7 +51,7 @@ T["resolves exact isolated built-in presentation definitions"] = function()
                     { "track", "marks", "thumb" },
                     {
                         "track",
-                        { kind = "marks", types = { "Error", "Warn", "Info", "Hint" } },
+                        { types = { "Error", "Warn", "Info", "Hint" } },
                         "thumb",
                     },
                 },
@@ -66,7 +68,7 @@ T["resolves exact isolated built-in presentation definitions"] = function()
                 columns = {
                     { "track", "thumb" },
                     {
-                        { kind = "marks", types = { "Error", "Warn", "Info", "Hint" } },
+                        { types = { "Error", "Warn", "Info", "Hint" } },
                         "marks",
                     },
                 },
@@ -83,7 +85,6 @@ T["resolves exact isolated built-in presentation definitions"] = function()
                 columns = {
                     {
                         {
-                            kind = "marks",
                             types = {
                                 "GitAdd",
                                 "GitChange",
@@ -101,7 +102,7 @@ T["resolves exact isolated built-in presentation definitions"] = function()
                         },
                     },
                     { "track", "thumb" },
-                    { { kind = "marks", types = { "Error", "Warn", "Info", "Hint" } } },
+                    { { types = { "Error", "Warn", "Info", "Hint" } } },
                 },
             },
             thumb = { blend = 20 },
@@ -110,7 +111,7 @@ T["resolves exact isolated built-in presentation definitions"] = function()
             layout = {
                 direction = "auto",
                 columns = {
-                    { "track", "thumb", { kind = "marks", types = { "Cursor", "Search" } } },
+                    { "track", "thumb", { types = { "Cursor", "Search" } } },
                 },
             },
             thumb = { blend = 20 },
@@ -119,8 +120,8 @@ T["resolves exact isolated built-in presentation definitions"] = function()
             layout = {
                 direction = "auto",
                 columns = {
-                    { "track", "thumb", { kind = "marks", types = { "Cursor" } } },
-                    { { kind = "marks", types = { "Mark" }, max_width = 8 } },
+                    { "track", "thumb", { types = { "Cursor" } } },
+                    { { types = { "Mark" }, max_width = 8 } },
                 },
             },
             thumb = { blend = 20 },
@@ -137,8 +138,8 @@ T["resolves exact isolated built-in presentation definitions"] = function()
                 direction = "auto",
                 columns = {
                     { "track", "thumb" },
-                    { { kind = "marks", types = { "Error", "Warn", "Info", "Hint" } } },
-                    { { kind = "marks", types = { "Cursor", "Search", "Mark" } } },
+                    { { types = { "Error", "Warn", "Info", "Hint" } } },
+                    { { types = { "Cursor", "Search", "Mark" } } },
                     { "marks" },
                 },
             },
@@ -149,11 +150,11 @@ T["resolves exact isolated built-in presentation definitions"] = function()
             thumb = { blend = 60 },
         },
         emacs = {
-            float = { placement = { anchor = "NW", gutter = "avoid", gutter_position = "outer" } },
+            placement = { anchor = "NW", gutter = "outer" },
             layout = {
                 direction = "auto",
                 columns = {
-                    { { kind = "marks", types = { "Error", "Warn", "Info", "Hint" } } },
+                    { { types = { "Error", "Warn", "Info", "Hint" } } },
                     { "track", "thumb" },
                 },
             },
@@ -164,8 +165,8 @@ T["resolves exact isolated built-in presentation definitions"] = function()
                 direction = "auto",
                 columns = {
                     { "track", "thumb" },
-                    { { kind = "marks", types = { "Cursor", "Search", "Mark" } } },
-                    { { kind = "marks", types = { "Error", "Warn", "Info", "Hint" } } },
+                    { { types = { "Cursor", "Search", "Mark" } } },
+                    { { types = { "Error", "Warn", "Info", "Hint" } } },
                 },
             },
             thumb = { blend = 25 },
@@ -173,136 +174,94 @@ T["resolves exact isolated built-in presentation definitions"] = function()
     }
 
     for name, expected in pairs(builtins) do
-        expect.equality(resolve({ preset = name }), expected)
+        expect.equality(get(name), expected)
     end
 
-    local vscode = resolve({ preset = "vscode" })
+    local vscode = get("vscode")
     vscode.layout.columns[1][1] = "changed"
     vscode.thumb.blend = 99
-    expect.equality(resolve({ preset = "vscode" }).layout.columns[1][1], "track")
-    expect.equality(resolve({ preset = "vscode" }).thumb.blend, 20)
+    expect.equality(get("vscode").layout.columns[1][1], "track")
+    expect.equality(get("vscode").thumb.blend, 20)
 
     for name, expected in pairs(builtins) do
-        local first = resolve({ preset = name })
+        local first = get(name)
         first.layout.columns[1][1] = "changed"
-        expect.equality(resolve({ preset = name }), expected)
+        expect.equality(get(name), expected)
+    end
+
+    local names = vim.tbl_keys(builtins)
+    table.sort(names)
+    expect.equality(require("scrollbar.presets").names(), names)
+end
+
+T["every built-in compiles as a root preset and as a profile preset"] = function()
+    local config = require("scrollbar.config")
+    for _, name in ipairs(require("scrollbar.presets").names()) do
+        local root = config.set({ scrollbar = { preset = name } })
+        expect.equality(root.thumb.blend, get(name).thumb.blend)
+
+        config.set({ scrollbar = { profiles = { { match = { filetypes = { "lua" } }, preset = name } } } })
+        local variants = config.get_variants()
+        expect.equality(variants[2].config.thumb.blend, get(name).thumb.blend)
+        expect.equality(variants[2].config.layout.width, #get(name).layout.columns)
     end
 end
 
-T["supports overlays inheritance and atomic layout replacement for every new built-in"] = function()
-    local names = { "minimal", "review", "search", "navigate", "gvim", "eclipse", "sublime", "emacs", "xcode" }
-
-    for _, name in ipairs(names) do
-        local overlaid = resolve({
-            preset = name,
-            presets = { [name] = { thumb = { text = name } } },
-        })
-        expect.equality(overlaid.thumb.text, name)
-
-        local inherited = resolve({
-            preset = "child",
-            presets = {
-                child = {
-                    extends = name,
-                    layout = { columns = { { "marks" } } },
-                },
-            },
-        })
-        expect.equality(inherited.layout.columns, { { "marks" } })
-        expect.equality(inherited.layout.direction, "auto")
-    end
-end
-
-T["applies built-in overlays inheritance and root overrides deterministically"] = function()
-    local result = resolve({
-        preset = "child",
-        presets = {
-            child = {
-                extends = "vscode",
-                float = { placement = { gutter = "overlap", gutter_position = "outer" } },
-                thumb = { blend = 30 },
-                marks = { Search = { text = { "C" } } },
-            },
-            vscode = {
-                thumb = { text = "V" },
-                marks = { Search = { text = { "V", "S" } } },
-            },
+T["root options override the root preset and keep unset preset values"] = function()
+    local result = require("scrollbar.config").set({
+        scrollbar = {
+            preset = "emacs",
+            placement = { gutter = "overlap" },
+            thumb = { text = "V" },
+            layout = { columns = { { "marks" } } },
         },
-        thumb = { blend = 40 },
-        marks = { Search = { text = { "R" } } },
     })
 
-    expect.equality(result.layout.columns[1][1], "track")
-    expect.equality(result.float.placement.gutter, "overlap")
-    expect.equality(result.float.placement.gutter_position, "outer")
-    expect.equality(result.thumb, { text = "V", blend = 40 })
-    expect.equality(result.marks.Search.text, { "R" })
-    expect.equality(result.preset, nil)
-    expect.equality(result.presets, nil)
-end
-
-T["resolves custom inheritance independently of declaration order"] = function()
-    local options = {
-        preset = "grandchild",
-        presets = {
-            grandchild = { extends = "child", thumb = { blend = 35 } },
-            base = { track = { highlight = "Normal" }, thumb = { text = "B", blend = 10 } },
-            child = { extends = "base", thumb = { text = "C" } },
-        },
-    }
-
-    expect.equality(resolve(options), {
-        track = { highlight = "Normal" },
-        thumb = { text = "C", blend = 35 },
-    })
+    expect.equality(result.placement.anchor, "NW")
+    expect.equality(result.placement.gutter, "overlap")
+    expect.equality(result.thumb.text, "V")
+    expect.equality(result.thumb.blend, 0)
+    expect.equality(result.layout.width, 1)
+    expect.equality(result.layout.catchall_lane, 1)
 end
 
 T["replaces dense and known empty lists atomically"] = function()
-    local merge = require("scrollbar.presets").merge
+    local merge = require("scrollbar.schema").merge
     local result = merge({
         layout = {
             columns = { { "track" }, { "thumb" } },
             descriptor = { types = { "Error", "Warn" } },
         },
         marks = { Search = { text = { "-", "=" } } },
-        excluded_filetypes = { "prompt", "terminal" },
+        list = { "prompt", "terminal" },
+        map = { a = 1, b = 2 },
     }, {
         layout = {
             columns = { { "marks" } },
             descriptor = { types = { "Search" } },
         },
         marks = { Search = { text = {} } },
-        excluded_filetypes = { "help" },
+        list = { "help" },
+        map = { b = false },
     })
 
     expect.equality(result.layout.columns, { { "marks" } })
     expect.equality(result.layout.descriptor.types, { "Search" })
     expect.equality(result.marks.Search.text, {})
-    expect.equality(result.excluded_filetypes, { "help" })
+    expect.equality(result.list, { "help" })
+    expect.equality(result.map, { a = 1, b = false })
 end
 
-T["rejects unknown names parents cycles malformed definitions and disallowed fields"] = function()
-    expect_invalid({ preset = "missing" }, "unknown preset 'missing'")
-    expect_invalid({ presets = { child = { extends = "missing" } } }, "unknown parent preset 'missing'")
-    expect_invalid({ presets = { first = { extends = "second" }, second = { extends = "first" } } }, "preset cycle")
-    expect_invalid({ presets = { [1] = {} } }, "preset names must")
-    expect_invalid({ presets = { invalid = true } }, "preset 'invalid' must be a table")
-    expect_invalid({ presets = { invalid = { extends = 1 } } }, "preset 'invalid'.extends must be a string")
-    expect_invalid({ presets = { invalid = { providers = {} } } }, "preset 'invalid' cannot set 'providers'")
-    expect_invalid(
-        { presets = { invalid = { float = { zindex = 80 } } } },
-        "preset 'invalid' cannot set 'float.zindex'"
-    )
-    expect_invalid(
-        { presets = { invalid = { float = { placement = { zindex = 80 } } } } },
-        "preset 'invalid' cannot set 'float.placement.zindex'"
-    )
-    expect_invalid({ presets = { invalid = { thumb = { column = 1 } } } }, "preset 'invalid' cannot set 'thumb.column'")
-end
-
-T["keeps every resolver call setup-local"] = function()
-    expect.equality(resolve({ preset = "local", presets = { ["local"] = { thumb = { text = "L" } } } }).thumb.text, "L")
-    expect_invalid({ preset = "local" }, "unknown preset 'local'")
+T["rejects unknown and malformed preset names"] = function()
+    expect_invalid(function()
+        get("missing")
+    end, "scrollbar.preset: unknown preset 'missing' %(built%-in presets: eclipse, emacs,")
+    expect_invalid(function()
+        get(1)
+    end, "scrollbar.preset must be a string")
+    expect_invalid(function()
+        require("scrollbar.config").set({ scrollbar = { presets = {} } })
+    end, "unknown option 'scrollbar.presets'")
 end
 
 return T

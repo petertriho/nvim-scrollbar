@@ -11,11 +11,9 @@ option of Neovim:
 
 ```lua
 require("scrollbar").setup({
-    scrollbar = {
-        providers = {
-            search = {
-                backend = "worker",
-            },
+    providers = {
+        search = {
+            backend = "worker",
         },
     },
 })
@@ -29,9 +27,9 @@ set `providers.search` to `false`.
 | `incsearch` | omitted (`nil`) | Uses the value of `vim.o.incsearch`. An explicit `true` or `false` overrides it. |
 | `backend` | `"worker"` | `"worker"` or `"sync"`. The selected backend runs every accepted, incremental, and edit-driven scan. |
 
-If you omit `incsearch`, a change to the native option takes effect without
-another setup. An explicit `incsearch` value does not change the native option
-of Neovim.
+The table also accepts the `scrollbar` and `minimap` target flags. If you omit
+`incsearch`, a change to the native option takes effect without another setup.
+An explicit `incsearch` value does not change the native option of Neovim.
 
 ## Accepted And Incremental Modes
 
@@ -41,10 +39,8 @@ typing on the search command line to start preview scans:
 
 ```lua
 require("scrollbar").setup({
-    scrollbar = {
-        providers = {
-            search = { incsearch = false },
-        },
+    providers = {
+        search = { incsearch = false },
     },
 })
 ```
@@ -54,10 +50,8 @@ when the native Neovim option is disabled:
 
 ```lua
 require("scrollbar").setup({
-    scrollbar = {
-        providers = {
-            search = { incsearch = true },
-        },
+    providers = {
+        search = { incsearch = true },
     },
 })
 ```
@@ -84,7 +78,7 @@ provider shows them only when all of these conditions are true:
 - `hlsearch` is enabled.
 - `v:hlsearch` is nonzero.
 - The `/` search register is nonempty.
-- The buffer is displayed in an eligible scrollbar source window.
+- The buffer is displayed in an eligible source window.
 
 `:nohlsearch`, `set nohlsearch`, and an empty search register each clear the
 accepted search marks. A later accepted search can make them visible again. The
@@ -94,8 +88,7 @@ While an incremental `/` or `?` command line is active, the provider can show
 the preview even when the previous accepted search is hidden. After the command
 line closes, accepted marks again obey the native visibility rules above.
 
-Search marks are also unavailable when the scrollbar itself has one of these
-states:
+The scrollbar also does not show search marks when it has one of these states:
 
 - It is excluded.
 - It is globally hidden.
@@ -152,10 +145,8 @@ have:
 
 ```lua
 require("scrollbar").setup({
-    scrollbar = {
-        providers = {
-            search = { backend = "sync" },
-        },
+    providers = {
+        search = { backend = "sync" },
     },
 })
 ```
@@ -169,12 +160,10 @@ The synchronous backend also supports incremental scans:
 
 ```lua
 require("scrollbar").setup({
-    scrollbar = {
-        providers = {
-            search = {
-                incsearch = true,
-                backend = "sync",
-            },
+    providers = {
+        search = {
+            incsearch = true,
+            backend = "sync",
         },
     },
 })
@@ -204,17 +193,16 @@ Depending on the new configuration, the new setup can start a new worker.
 ## Appearance
 
 Search marks use the `Search` mark type. Customize the glyphs, the priority, or
-the highlight in `marks.Search`. Route the type through `layout`:
+the highlight in the top-level `marks.Search`. To put the type in its own lane,
+use `scrollbar.layout`:
 
 ```lua
 require("scrollbar").setup({
-    scrollbar = {
-        marks = {
-            Search = {
-                text = { "s", "S" },
-                priority = 1,
-                highlight = { fg = "#ff9e64", bold = true },
-            },
+    marks = {
+        Search = {
+            text = { "s", "S" },
+            priority = 1,
+            highlight = { fg = "#ff9e64", bold = true },
         },
     },
 })
@@ -236,7 +224,7 @@ rules, see [Highlights](../highlights.md) and
 - Make sure that the buffer is displayed in an eligible source window.
 
 If marks exist but the scrollbar is not visible, examine these items: global
-visibility, autohide, excluded buffer types and filetypes, `max_lines`, and the
+visibility, autohide, the top-level `exclude` table, `max_lines`, and the
 hide-if-all-visible options. `:ScrollbarRefresh` refreshes data, but it does not
 show a window that autohide conceals.
 
@@ -272,9 +260,8 @@ synchronous scan still uses one eligible source window as its context.
 
 Examine the configured backend, and look for a worker fallback warning. With a
 synchronous configuration or after a worker fallback, scans run on the main
-loop of Neovim. For
-expensive searches, prefer the worker backend and set `incsearch = false`. You
-can also reduce the cost of the buffer or the pattern.
+loop of Neovim. For expensive searches, prefer the worker backend and set
+`incsearch = false`. You can also reduce the cost of the buffer or the pattern.
 
 ### Marks look briefly out of date
 

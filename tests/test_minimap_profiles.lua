@@ -4,8 +4,8 @@ local expect = MiniTest.expect
 local T = MiniTest.new_set({
     hooks = {
         pre_case = function()
+            package.loaded["scrollbar.config"] = nil
             package.loaded["scrollbar.minimap.config"] = nil
-            package.loaded["scrollbar.minimap.presets"] = nil
         end,
     },
 })
@@ -20,22 +20,22 @@ local function expect_invalid(overrides, pattern)
     expect.no_equality(tostring(err):match(pattern), nil)
 end
 
+local function lua_profile(options)
+    return vim.tbl_extend("error", { match = { filetypes = { "lua" } } }, options)
+end
+
 T["compiles profile variants with settled precedence"] = function()
     local root = config().set({
         width = 100,
         profiles = {
             {
                 match = { filetypes = { "lua" } },
-                config = {
-                    width = 40,
-                    overlays = { enabled = false },
-                },
+                width = 40,
+                marks = false,
             },
             {
                 match = { buftypes = { "quickfix" } },
-                config = {
-                    float = { placement = { anchor = "NW" } },
-                },
+                placement = { anchor = "NW" },
             },
         },
     })
@@ -46,14 +46,16 @@ T["compiles profile variants with settled precedence"] = function()
     expect.equality(variants[1].config, root)
     expect.equality(variants[2].id, 1)
     expect.equality(variants[2].config.width, 40)
-    expect.equality(variants[2].config.overlays.enabled, false)
-    expect.equality(variants[2].config.float.placement.relative, "window")
-    expect.equality(variants[2].config.float.placement.anchor, "NE")
+    expect.equality(next(variants[2].config.marks), nil)
+    expect.equality(variants[2].config.placement.relative, "window")
+    expect.equality(variants[2].config.placement.anchor, "NE")
     expect.equality(variants[3].id, 2)
     expect.equality(variants[3].config.width, 100)
-    expect.equality(variants[3].config.float.placement.anchor, "NW")
+    expect.equality(variants[3].config.placement.anchor, "NW")
+    expect.no_equality(next(variants[3].config.marks), nil)
 
     for _, variant in ipairs(variants) do
+        expect.equality(rawget(variant.config, "match"), nil)
         expect.equality(rawget(variant.config, "preset"), nil)
         expect.equality(rawget(variant.config, "presets"), nil)
         expect.equality(rawget(variant.config, "profiles"), nil)
@@ -71,11 +73,11 @@ T["selects variants by filetype, buftype, and when predicate"] = function()
         profiles = {
             {
                 match = { filetypes = { "lua" } },
-                config = { width = 30 },
+                width = 30,
             },
             {
                 match = { buftypes = { "quickfix" } },
-                config = { width = 50 },
+                width = 50,
             },
         },
     })
@@ -107,7 +109,7 @@ T["builds callback context with the source window's metadata"] = function()
                         return true
                     end,
                 },
-                config = { width = 30 },
+                width = 30,
             },
         },
     })
@@ -150,7 +152,7 @@ T["falls back to root config on predicate errors and notifies once per distinct 
                         return true
                     end,
                 },
-                config = { width = 30 },
+                width = 30,
             },
         },
     })
@@ -171,134 +173,180 @@ T["validates profile schema"] = function()
         { profiles = { [2] = { match = { when = function() end } } } },
         "minimap.profiles must be a dense list"
     )
-    expect_invalid({ profiles = { {} } }, "minimap%.profiles%[1%].match must be a table")
+    expect_invalid({ profiles = { {} } }, "minimap%.profiles%[1%]%.match is required")
+    expect_invalid({ profiles = { { match = "lua" } } }, "minimap%.profiles%[1%]%.match must be a table")
     expect_invalid({ profiles = { { match = {} } } }, "minimap%.profiles%[1%].match must contain at least one matcher")
     expect_invalid({ profiles = { { match = { filetypes = {} } } } }, "filetypes must contain at least one value")
     expect_invalid({ profiles = { { match = { buftypes = { "", false } } } } }, "buftypes%[2%] must be a string")
     expect_invalid({ profiles = { { match = { when = true } } } }, "when must be a function")
     expect_invalid({ profiles = { { match = { filetypes = { "lua" }, extra = true } } } }, "unknown option")
-    expect_invalid({ profiles = { { match = { when = function() end }, preset = 1 } } }, "preset must be a string")
+    expect_invalid(
+        { profiles = { { match = { when = function() end }, preset = 1 } } },
+        "minimap%.profiles%[1%]%.preset: the minimap has no presets"
+    )
     expect_invalid(
         { profiles = { { match = { when = function() end }, preset = "missing" } } },
-        "unknown minimap preset 'missing'"
+        "minimap%.profiles%[1%]%.preset: the minimap has no presets"
     )
 end
 
-T["profile config rejects disallowed nested keys"] = function()
-    expect_invalid({
-        profiles = {
-            {
-                match = { filetypes = { "lua" } },
-                config = { background = { blend = 40 } },
-            },
-        },
-    }, "unknown option")
-
-    expect_invalid({
-        profiles = {
-            {
-                match = { filetypes = { "lua" } },
-                config = { float = { placement = { gutter = "inside" } } },
-            },
-        },
-    }, "float.placement.gutter must be one of: avoid, overlap")
-
-    expect_invalid({
-        profiles = {
-            {
-                match = { filetypes = { "lua" } },
-                config = { float = { extra = true } },
-            },
-        },
-    }, "unknown option")
-
-    expect_invalid({
-        profiles = {
-            {
-                match = { filetypes = { "lua" } },
-                config = { enabled = true },
-            },
-        },
-    }, "unknown option")
-
-    expect_invalid({
-        profiles = {
-            {
-                match = { filetypes = { "lua" } },
-                config = { syntax_highlighting = true },
-            },
-        },
-    }, "unknown option")
-
-    expect_invalid({
-        profiles = {
-            {
-                match = { filetypes = { "lua" } },
-                config = { show_cursor_row = true },
-            },
-        },
-    }, "unknown option")
-
-    expect_invalid({
-        profiles = {
-            {
-                match = { filetypes = { "lua" } },
-                config = { providers = { cursor = false } },
-            },
-        },
-    }, "unknown option")
+T["profiles reject global and disallowed nested keys"] = function()
+    expect_invalid(
+        { profiles = { lua_profile({ background_blend = 40 }) } },
+        "minimap%.profiles%[1%]%.background_blend is a global option and cannot be set in a profile"
+    )
+    expect_invalid(
+        { profiles = { lua_profile({ enabled = true }) } },
+        "minimap%.profiles%[1%]%.enabled is a global option and cannot be set in a profile"
+    )
+    expect_invalid(
+        { profiles = { lua_profile({ placement = { gutter = "inside" } }) } },
+        "unknown option 'minimap%.profiles%[1%]%.placement%.gutter'"
+    )
+    expect_invalid(
+        { profiles = { lua_profile({ placement = { extra = true } }) } },
+        "unknown option 'minimap%.profiles%[1%]%.placement%.extra'"
+    )
+    expect_invalid(
+        { profiles = { lua_profile({ float = { blend = 20 } }) } },
+        "unknown option 'minimap%.profiles%[1%]%.float'"
+    )
+    expect_invalid(
+        { profiles = { lua_profile({ config = { width = 20 } }) } },
+        "unknown option 'minimap%.profiles%[1%]%.config'"
+    )
+    expect_invalid(
+        { profiles = { lua_profile({ syntax_highlighting = true }) } },
+        "unknown option 'minimap%.profiles%[1%]%.syntax_highlighting'"
+    )
+    expect_invalid(
+        { profiles = { lua_profile({ show_cursor_row = true }) } },
+        "unknown option 'minimap%.profiles%[1%]%.show_cursor_row'"
+    )
+    expect_invalid(
+        { profiles = { lua_profile({ providers = { cursor = false } }) } },
+        "unknown option 'minimap%.profiles%[1%]%.providers'"
+    )
 end
 
-T["profile config accepts cursor hiding and full-float blend"] = function()
+T["profiles accept cursor hiding and blend while inheriting background_blend"] = function()
     config().set({
-        background = { blend = 35 },
+        background_blend = 35,
         profiles = {
-            {
-                match = { filetypes = { "lua" } },
-                config = { float = { blend = 20, hide_on_cursor = false } },
-            },
+            lua_profile({ blend = 20, hide_on_cursor = false }),
         },
     })
 
     local profile = config().get_variants()[2].config
-    expect.equality(profile.background.blend, 35)
-    expect.equality(profile.float.blend, 20)
-    expect.equality(profile.float.hide_on_cursor, false)
+    expect.equality(profile.background_blend, 35)
+    expect.equality(profile.blend, 20)
+    expect.equality(profile.hide_on_cursor, false)
 end
 
-T["profile config accepts and validates content glyphs"] = function()
+T["profiles accept and validate glyphs"] = function()
     config().set({
         profiles = {
-            {
-                match = { filetypes = { "lua" } },
-                config = { content_glyph = "#" },
-            },
+            lua_profile({ glyph = "#" }),
             {
                 match = { filetypes = { "markdown" } },
-                config = { content_glyph = "▌" },
+                glyph = "▌",
             },
         },
     })
 
     local variants = config().get_variants()
-    expect.equality(variants[2].config.content_glyph, "#")
-    expect.equality(variants[3].config.content_glyph, "▌")
+    expect.equality(variants[2].config.glyph, "#")
+    expect.equality(variants[3].config.glyph, "▌")
 
-    expect_invalid({
-        profiles = {
-            { match = { filetypes = { "lua" } }, config = { content_glyph = "" } },
+    expect_invalid(
+        { profiles = { lua_profile({ glyph = "" }) } },
+        "minimap%.profiles%[1%]%.glyph must be a non%-empty string"
+    )
+    expect_invalid(
+        { profiles = { lua_profile({ glyph = "ab" }) } },
+        "minimap%.profiles%[1%]%.glyph must be a single%-width glyph"
+    )
+    expect_invalid(
+        { profiles = { lua_profile({ content_glyphs = { both = "x" } }) } },
+        "unknown option 'minimap%.profiles%[1%]%.content_glyphs'"
+    )
+end
+
+T["profile marks deep merge onto root overrides and preserve hidden types"] = function()
+    config().set({
+        marks = {
+            Error = { priority = 0 },
         },
-    }, "minimap%.content_glyph must be a non%-empty string")
-    expect_invalid({
         profiles = {
-            { match = { filetypes = { "lua" } }, config = { content_glyph = "ab" } },
+            lua_profile({ marks = { Warn = false } }),
         },
-    }, "minimap%.content_glyph must be a single%-width glyph")
-    expect_invalid({
+    })
+    local variants = config().get_variants()
+    local root_marks = variants[1].config.marks
+    local profile_marks = variants[2].config.marks
+
+    expect.equality(root_marks.Error, {
+        priority = 0,
+        highlight = "DiagnosticVirtualTextError",
+        group = "ScrollbarMinimapError",
+    })
+    expect.equality(root_marks.Warn.priority, 3)
+    expect.equality(profile_marks.Error, {
+        priority = 0,
+        highlight = "DiagnosticVirtualTextError",
+        group = "ScrollbarMinimapProfile1.Error",
+    })
+    expect.equality(profile_marks.Warn, nil)
+    expect.equality(profile_marks.Hint, {
+        priority = 5,
+        highlight = "DiagnosticVirtualTextHint",
+        group = "ScrollbarMinimapProfile1.Hint",
+    })
+end
+
+T["profile marks can re-show a type that the root hid"] = function()
+    config().set({
+        marks = { Search = false },
         profiles = {
-            { match = { filetypes = { "lua" } }, config = { content_glyphs = { both = "x" } } },
+            lua_profile({ marks = { Search = { highlight = "IncSearch" } } }),
         },
-    }, "unknown option 'minimap%.profiles%[1%]%.config%.content_glyphs'")
+    })
+    local variants = config().get_variants()
+
+    expect.equality(variants[1].config.marks.Search, nil)
+    expect.equality(variants[2].config.marks.Search, {
+        priority = 1,
+        highlight = "IncSearch",
+        group = "ScrollbarMinimapProfile1.Search",
+    })
+end
+
+T["profile marks = false gives an empty marks table"] = function()
+    config().set({
+        marks = { Error = { priority = 0 } },
+        profiles = {
+            lua_profile({ marks = false }),
+        },
+    })
+    local variants = config().get_variants()
+
+    expect.equality(variants[2].config.marks, {})
+    expect.no_equality(next(variants[1].config.marks), nil)
+end
+
+T["profile mark overrides are validated against the registry"] = function()
+    expect_invalid(
+        { profiles = { lua_profile({ marks = { Custom = {} } }) } },
+        "minimap%.profiles%[1%]%.marks%.Custom: unknown mark type 'Custom'"
+    )
+    expect_invalid(
+        { profiles = { lua_profile({ marks = { Cursor = false } }) } },
+        "minimap%.profiles%[1%]%.marks%.Cursor: the minimap draws the cursor"
+    )
+    expect_invalid(
+        { profiles = { lua_profile({ marks = { Error = { priority = -1 } } }) } },
+        "minimap%.profiles%[1%]%.marks%.Error%.priority must be a non%-negative integer"
+    )
 end
 
 T["select returns the root variant for the root config when no profiles match"] = function()

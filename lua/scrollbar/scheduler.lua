@@ -6,6 +6,31 @@ local layout = require("scrollbar.layout")
 local M = {}
 
 local AUGROUP_NAME = "ScrollbarScheduler"
+-- Autocmd events that can change scrollbar geometry, cursor activity, or the
+-- window and buffer lifecycle. Provider updates arrive through the store.
+local EVENTS = {
+    "BufEnter",
+    "BufWinEnter",
+    "WinEnter",
+    "TabEnter",
+    "TermEnter",
+    "CmdwinLeave",
+    "CursorMoved",
+    "CursorMovedI",
+    "TextChanged",
+    "TextChangedI",
+    "TextChangedP",
+    "TextChangedT",
+    "WinScrolled",
+    "WinResized",
+    "VimResized",
+    "OptionSet",
+    "ColorScheme",
+    "WinClosed",
+    "BufDelete",
+    "BufWipeout",
+    "TabClosed",
+}
 -- Window/buffer options whose changes can affect rendered scrollbar layout.
 -- `lua/scrollbar/layout.lua` keeps an extent-relevant subset
 -- (EXTENT_OPTION_PATTERNS) for its screen-geometry cache digests; this list is
@@ -199,7 +224,7 @@ end
 ---@param current ScrollbarSchedulerRuntime
 ---@param winid integer
 local function restart_hide_deadline(current, winid)
-    if runtime ~= current or not current.config.autohide.enabled or current.held[winid] then
+    if runtime ~= current or not current.config.autohide or current.held[winid] then
         return
     end
 
@@ -243,7 +268,7 @@ local function arm_timer(current)
 
     current.timer_armed = true
     current.timer:start(
-        current.config.update.interval_ms,
+        current.config.throttle_ms,
         0,
         vim.schedule_wrap(function()
             if runtime ~= current then
@@ -269,7 +294,7 @@ local function activity_window(current, winid)
     if runtime ~= current or not is_source_window(current, winid) then
         return false
     end
-    if current.config.autohide.enabled then
+    if current.config.autohide then
         if not renderer_visible(current) or not reveal_source(current, winid) then
             return false
         end
@@ -532,7 +557,7 @@ M.setup = function(options)
     end)
     timer_closed = false
     local events_enabled = {}
-    for _, event in ipairs(active_config.update.events) do
+    for _, event in ipairs(EVENTS) do
         events_enabled[event] = true
     end
     text_change_subscribers = {}
@@ -566,7 +591,7 @@ end
 
 ---Subscribe to the scheduler's TextChanged dispatch. The callback runs on
 ---text-change events fired for non-owned buffers, before invalidation.
----`events` lists event names the subscriber needs beyond `update.events`;
+---`events` lists event names the subscriber needs beyond the scheduler events;
 ---each is registered as a subscriber-only dispatch row when missing.
 ---@param fn fun(args: table)
 ---@param events? string[]
@@ -603,7 +628,7 @@ end
 ---Subscribe to the scheduler's cursor-activity dispatch (CursorMoved(I)).
 ---The callback runs after the scheduler's own activity handling, for
 ---non-owned events. `events` lists event names the subscriber needs beyond
----`update.events`; each is registered as a subscriber-only dispatch row when
+---the scheduler events; each is registered as a subscriber-only dispatch row when
 ---missing. Returns false when the hub is inactive so the caller keeps its
 ---own registration.
 ---@param fn fun(args: table)
@@ -699,7 +724,7 @@ end
 ---@return integer
 M.reveal_all = function()
     local current = runtime
-    if current == nil or not current.config.autohide.enabled then
+    if current == nil or not current.config.autohide then
         return 0
     end
 
@@ -730,7 +755,7 @@ M.hold_window = function(winid)
     local current = runtime
     if
         current == nil
-        or not current.config.autohide.enabled
+        or not current.config.autohide
         or not renderer_visible(current)
         or not is_source_window(current, winid)
     then
@@ -746,7 +771,7 @@ end
 ---@return boolean
 M.resume_window = function(winid)
     local current = runtime
-    if current == nil or not current.config.autohide.enabled then
+    if current == nil or not current.config.autohide then
         return false
     end
     current.held[winid] = nil
@@ -821,7 +846,7 @@ M.status = function()
         flushing = current ~= nil and current.flushing or false,
         dirty_windows = dirty_windows,
         augroup_id = current and current.augroup or nil,
-        interval_ms = current and current.config.update.interval_ms or nil,
+        interval_ms = current and current.config.throttle_ms or nil,
     }
 end
 

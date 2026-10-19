@@ -8,18 +8,21 @@ and is disabled by default.
 
 ```lua
 require("scrollbar").setup({
+    providers = {
+        lsp_semantic_tokens = true,
+    },
     minimap = {
         enabled = true,
-        providers = {
-            lsp_semantic_tokens = true,
-        },
     },
 })
 ```
 
-`minimap.providers.lsp_semantic_tokens` is a setup-level boolean. Each eligible
-buffer also needs at least one attached client with a semantic-token legend and
-support for full-document or range requests.
+`providers.lsp_semantic_tokens` is a boolean, or a table that contains only the
+`scrollbar` and `minimap` target flags. The provider runs only when the minimap
+is enabled. Setup rejects `scrollbar = true`. A minimap profile cannot select
+the provider. Each eligible buffer also needs at least one attached
+client with a semantic-token legend and support for full-document or range
+requests.
 
 When the provider activates, every eligible loaded buffer gets an initial
 refresh. A buffer without a supporting attached client gets no LSP semantic

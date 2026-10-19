@@ -37,9 +37,9 @@ of that source window. Release or cancellation starts a new full delay.
 
 ## Disabling
 
-`mouse.enabled = false` makes the floats non-focusable and installs no mappings.
-A profile can change `mouse.enabled` for the windows that it matches. A float
-that `float.hide_on_cursor` hides does not capture mouse input.
+`scrollbar.mouse = false` makes the floats non-focusable and installs no
+mappings. A profile can change `mouse` for the windows that it matches. A float
+that `hide_on_cursor` hides does not capture mouse input.
 
 ## Related
 

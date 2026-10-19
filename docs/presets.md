@@ -1,9 +1,11 @@
 # Presets
 
-Scrollbar presets are setup-local baselines for presentation. A preset can
-change `layout`, `track`, `thumb`, `marks`, and `float.placement`. A preset
-cannot change providers, visibility, geometry mode, mouse behavior, exclusions,
-autohide, or performance options.
+A preset is a named set of scrollbar appearance options. You select one with
+`preset` at the root of the `scrollbar` block or in a
+[profile](configuration.md#profiles). The built-in presets set `layout`,
+`thumb.blend`, and, for `emacs`, `placement`. A preset never changes global
+options, providers, exclusions, or the shared mark types. The minimap has no
+presets.
 
 ## Built-ins
 
@@ -56,122 +58,46 @@ minimap, and they do not claim pixel-perfect GUI fidelity.
 [`lua/scrollbar/presets.lua`](../lua/scrollbar/presets.lua) defines the
 exact layout and `thumb.blend` value of each built-in preset.
 
-## Local Presets
+## Customize a Preset
+
+Options next to `preset` win over the preset. Use this to change part of a
+built-in preset:
 
 ```lua
 require("scrollbar").setup({
     scrollbar = {
-        preset = "focused",
-        presets = {
-            focused = {
-                extends = "intellij",
-                thumb = { blend = 15 },
-                layout = {
-                    columns = {
-                        { "track", "thumb" },
-                        { { kind = "marks", types = { "Error", "Warn" } }, "marks" },
-                    },
-                },
+        preset = "intellij",
+        thumb = { blend = 15 },
+        layout = {
+            columns = {
+                { "track", "thumb" },
+                { { types = { "Error", "Warn" } }, "marks" },
             },
         },
-        thumb = { text = " " }, -- Root values win last.
     },
 })
 ```
 
-A local preset can have one optional `extends` parent. The order of the
-declarations does not matter. Unknown names, unknown parents, cycles, malformed
-definitions, and disallowed fields are errors. A local entry with the name of a
-built-in overlays that built-in. It does not erase the built-in.
-
-Local presets do not persist across setup calls. Dense lists, such as
-`layout.columns`, selector `types`, and mark `text`, replace atomically.
+To reuse the same options in several places, put them in a Lua table. See
+[Profiles](configuration.md#profiles).
 
 ## Precedence
 
 Later layers win:
 
-1. The neutral plugin defaults.
-2. The selected built-in or local preset, including its parent.
-3. The root setup options.
+1. The plugin defaults.
+2. The root `preset`.
+3. The root options.
+4. The profile `preset`.
+5. The profile options.
 
-A preset `float` accepts only `placement`. Set `float.zindex` and
-`float.hide_on_cursor` in the root options or in a profile `config`.
-
-## Minimap Presets
-
-The minimap has a separate setup-local preset registry. Its one built-in preset
-is `default`, with `width = 16`, `height = false`, window-relative north-east
-placement, overlays enabled, and viewport tint enabled:
-
-```lua
-require("scrollbar").setup({
-    minimap = {
-        enabled = true,
-        preset = "default",
-    },
-})
-```
-
-Minimap preset definitions accept only these fields:
-
-| Field | Allowed value |
-| --- | --- |
-| `extends` | One parent preset name. |
-| `width` | `false` or a positive integer. `false` gives a width of `16`. |
-| `height` | `false` or a positive integer. |
-| `float.placement` | `relative`, `anchor`, `row`, `col`, `gutter`, and `gutter_position`. |
-| `overlays` | `enabled` and `types`. |
-| `show_viewport` | Boolean. |
-| `autohide` | `enabled` and `delay_ms`. |
-| `visibility` | `"all"` or `"active"`. |
-
-`background`, `float.zindex`, `float.blend`, `float.hide_on_cursor`,
-`providers`, `backend`, `mouse`, exclusions, `update`, `content_glyph`, and
-`enabled` are not preset fields. You set `background.blend` only in the root
-minimap options. A preset can set `visibility` and `autohide`, but a profile
-cannot. A profile can set `float.zindex`, `float.blend`, and
-`float.hide_on_cursor`.
-
-```lua
-require("scrollbar").setup({
-    minimap = {
-        enabled = true,
-        preset = "review-map",
-        presets = {
-            ["review-map"] = {
-                extends = "default",
-                width = 12,
-                float = {
-                    placement = { anchor = "NW", col = 1 },
-                },
-                overlays = {
-                    types = {
-                        Error = { priority = 0 },
-                        Hint = false,
-                        GitChange = { highlight = "DiffChange" },
-                    },
-                },
-                show_viewport = false,
-            },
-        },
-        providers = {
-            diagnostic = true,
-            gitsigns = true,
-        },
-    },
-})
-```
-
-Minimap presets use the same rules as scrollbar presets for inheritance, local
-overrides of a built-in name, and precedence. The precedence is the neutral
-defaults, then the selected preset chain, then the root minimap options. Keyed
-`overlays.types` entries deep-merge through these layers. A later layer can
-re-enable a type that an earlier layer set to `false`.
+A profile preset wins over the root options. Root values that the profile
+preset does not set stay in effect. Dense lists, such as `layout.columns`,
+descriptor `types`, and mark `text`, replace the earlier value. See
+[Precedence](configuration.md#precedence).
 
 ## Related
 
 - [Configuration](configuration.md)
 - [Layout and geometry](layout-and-geometry.md)
-- [Minimap configuration](minimap/configuration.md)
 - [Migration](migration.md)

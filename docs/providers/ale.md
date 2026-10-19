@@ -10,10 +10,8 @@ Install ALE. Then enable the provider:
 
 ```lua
 require("scrollbar").setup({
-    scrollbar = {
-        providers = {
-            ale = true,
-        },
+    providers = {
+        ale = true,
     },
 })
 ```
@@ -36,18 +34,17 @@ ALE uses the shared `Error` and `Warn` mark types:
 
 ```lua
 require("scrollbar").setup({
-    scrollbar = {
-        providers = { ale = true },
-        marks = {
-            Error = { text = "E", highlight = "DiagnosticError" },
-            Warn = { text = "W", highlight = "DiagnosticWarn" },
-        },
+    providers = { ale = true },
+    marks = {
+        Error = { text = "E", highlight = "DiagnosticError" },
+        Warn = { text = "W", highlight = "DiagnosticWarn" },
     },
 })
 ```
 
 A change to these types also changes the marks of other providers that publish
-`Error` or `Warn` marks.
+`Error` or `Warn` marks. To show ALE marks in only one renderer, use a provider
+target, for example `ale = { minimap = false }`.
 
 ## Updates
 

@@ -57,15 +57,14 @@ end
 
 local function configure(minimap_overrides)
     minimap_overrides = vim.deepcopy(minimap_overrides or {})
-    minimap_overrides.providers = vim.tbl_extend("force", minimap_overrides.providers or {}, {
-        treesitter = semantic_enabled,
-        lsp_semantic_tokens = semantic_enabled,
-    })
     require("scrollbar.config").set({
-        scrollbar = { set_highlights = false },
+        set_highlights = false,
+        providers = {
+            treesitter = semantic_enabled,
+            lsp_semantic_tokens = semantic_enabled,
+        },
         minimap = vim.tbl_extend("keep", minimap_overrides, {
             enabled = true,
-            set_highlights = false,
         }),
     })
 end
@@ -297,8 +296,8 @@ local function measure_render(_label, line_count, options)
         backend = "sync",
         width = 80,
         height = 24,
-        overlays = { enabled = options.overlays ~= false },
-        show_viewport = true,
+        marks = options.overlays ~= false and {} or false,
+        viewport = true,
     })
     local worker = setup_worker("sync")
     local overlays = require("scrollbar.minimap.overlays")
@@ -339,7 +338,7 @@ local function measure_render(_label, line_count, options)
     return stats
 end
 
-local function measure_cadence(_label, events)
+local function measure_cadence(_label)
     local lines = make_lines(10000)
     local buf = fresh_buffer(lines)
     local source_win = vim.api.nvim_open_win(buf, false, {
@@ -353,7 +352,7 @@ local function measure_cadence(_label, events)
         backend = "sync",
         width = 80,
         height = 24,
-        update = { events = events, interval_ms = 5 },
+        throttle_ms = 5,
     })
     local worker = setup_worker("sync")
     local overlays = require("scrollbar.minimap.overlays")
@@ -404,25 +403,7 @@ local render_ratios = {
     { label = "ratio 5", stats = measure_render("render ratio 5", 120, { overlays = false }) },
     { label = "ratio 10", stats = measure_render("render ratio 10", 240, { overlays = false }) },
 }
-local cadence_full = measure_cadence("cadence full", {
-    "BufEnter",
-    "BufWinEnter",
-    "WinEnter",
-    "WinScrolled",
-    "WinResized",
-    "VimResized",
-    "CursorMoved",
-    "CursorMovedI",
-    "TextChanged",
-    "TextChangedI",
-    "TextChangedP",
-    "TextChangedT",
-    "WinClosed",
-    "BufDelete",
-    "BufWipeout",
-    "ColorScheme",
-})
-local cadence_narrow = measure_cadence("cadence narrow", { "BufEnter", "TextChanged" })
+local cadence = measure_cadence("cadence")
 
 local function write_table(headers, rows)
     io.write("| " .. table.concat(headers, " | ") .. " |\n")
@@ -517,18 +498,12 @@ write_table(
 )
 
 io.write("\n## Update-cadence cost\n\n")
-write_table({ "Events", "Median (p50)", "p95", "Maximum" }, {
+write_table({ "Case", "Median (p50)", "p95", "Maximum" }, {
     {
-        "full defaults",
-        string.format("%.3f", cadence_full.median),
-        string.format("%.3f", cadence_full.p95),
-        string.format("%.3f", cadence_full.maximum),
-    },
-    {
-        "narrow {BufEnter, TextChanged}",
-        string.format("%.3f", cadence_narrow.median),
-        string.format("%.3f", cadence_narrow.p95),
-        string.format("%.3f", cadence_narrow.maximum),
+        "invalidate all and flush",
+        string.format("%.3f", cadence.median),
+        string.format("%.3f", cadence.p95),
+        string.format("%.3f", cadence.maximum),
     },
 })
 

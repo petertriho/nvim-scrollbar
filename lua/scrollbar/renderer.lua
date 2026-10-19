@@ -85,18 +85,6 @@ local function clear_buffer_caches(source_buf)
     end
 end
 
----@param value any
----@param values string[]
----@return boolean
-local function contains(values, value)
-    for _, item in ipairs(values) do
-        if item == value then
-            return true
-        end
-    end
-    return false
-end
-
 ---@param winid integer
 ---@return boolean
 local function valid_window(winid)
@@ -290,10 +278,16 @@ end
 ---@param active_config ScrollbarConfig
 ---@return boolean
 local function reserves_statuscolumn(active_config)
-    local placement = active_config.float.placement
+    local placement = active_config.placement
     return placement.relative == "window"
         and (placement.anchor == "NW" or placement.anchor == "SW")
-        and placement.gutter == "avoid"
+        and placement.gutter ~= "overlap"
+end
+
+---@param active_config ScrollbarConfig
+---@return ScrollbarGutterPosition
+local function reservation_position(active_config)
+    return active_config.placement.gutter == "outer" and "outer" or "inner"
 end
 
 ---@param source_win integer
@@ -390,7 +384,8 @@ end
 ---@return boolean
 local function buffer_eligible(bufnr, root_config)
     if
-        type(bufnr) ~= "number"
+        not root_config.enabled
+        or type(bufnr) ~= "number"
         or not vim.api.nvim_buf_is_valid(bufnr)
         or not vim.api.nvim_buf_is_loaded(bufnr)
         or owned_buffer(bufnr)
@@ -398,10 +393,10 @@ local function buffer_eligible(bufnr, root_config)
         return false
     end
 
-    if contains(root_config.excluded_buftypes, vim.bo[bufnr].buftype) then
+    if root_config.exclude.buftypes[vim.bo[bufnr].buftype] then
         return false
     end
-    if contains(root_config.excluded_filetypes, vim.bo[bufnr].filetype) then
+    if root_config.exclude.filetypes[vim.bo[bufnr].filetype] then
         return false
     end
 
@@ -489,7 +484,7 @@ local function source_selection(source_win, root_config, active_source, basic_ok
     end
 
     local selection = config.select(source_win)
-    if selection.config.float.placement.relative == "editor" and source_win ~= active_source then
+    if selection.config.placement.relative == "editor" and source_win ~= active_source then
         return nil
     end
     return selection
@@ -614,11 +609,11 @@ end
 ---@param hidden boolean
 ---@return table<string, any>
 local function float_config(active_config, source_win, area, container_width, width, hidden)
-    local placement = active_config.float.placement
+    local placement = active_config.placement
     local north = placement.anchor == "NW" or placement.anchor == "NE"
     local west = placement.anchor == "NW" or placement.anchor == "SW"
     local west_origin = 0
-    if reserves_statuscolumn(active_config) and placement.gutter_position == "inner" then
+    if reserves_statuscolumn(active_config) and placement.gutter == "inner" then
         west_origin = reservation_base_textoff(source_win)
     end
     local vertical_anchor
@@ -635,9 +630,9 @@ local function float_config(active_config, source_win, area, container_width, wi
         col = (west and west_origin or container_width) + placement.col,
         width = width,
         height = area.height,
-        focusable = active_config.mouse.enabled,
-        mouse = active_config.mouse.enabled,
-        zindex = active_config.float.zindex,
+        focusable = active_config.mouse,
+        mouse = active_config.mouse,
+        zindex = active_config.placement.zindex,
         hide = hidden,
     }
     if placement.relative == "window" then
@@ -747,7 +742,7 @@ end
 ---@return integer? row
 ---@return integer? col
 local function cursor_screen_position(source_win, active_config)
-    if not active_config.float.hide_on_cursor or vim.api.nvim_get_current_win() ~= source_win then
+    if not active_config.hide_on_cursor or vim.api.nvim_get_current_win() ~= source_win then
         return nil, nil
     end
 
@@ -907,7 +902,7 @@ end
 ---@param compact_search? ScrollbarCompactSearch
 ---@return ScrollbarGeometry
 local function geometry_for(active_config, source_win, source_buf, height, marks, line_count, mark_rows, compact_search)
-    if active_config.render.geometry == "screen" then
+    if active_config.geometry == "screen" then
         return layout.screen({
             source_win = source_win,
             height = height,
@@ -1245,17 +1240,17 @@ local function render_source(source_win, selection, root_config)
         close_state(existing_state)
         existing_state = nil
     end
-    if root_config.autohide.enabled and revealed[source_win] ~= source_buf then
+    if root_config.autohide and revealed[source_win] ~= source_buf then
         conceal_source(source_win)
         return nil
     end
     local reserved = reserves_statuscolumn(active_config)
     if reserved then
         local initial_width = existing_state and existing_state.width or active_config.layout.width
-        local initial_span = math.max(0, initial_width + active_config.float.placement.col)
+        local initial_span = math.max(0, initial_width + active_config.placement.col)
         if
             initial_span > 0
-            and ensure_statuscolumn(source_win, initial_span, active_config.float.placement.gutter_position) == nil
+            and ensure_statuscolumn(source_win, initial_span, reservation_position(active_config)) == nil
         then
             close_source(source_win)
             return nil
@@ -1265,7 +1260,7 @@ local function render_source(source_win, selection, root_config)
     end
 
     local marks, buffer_revision, window_revision, compact_search = flattened_marks(source_win, source_buf)
-    local line_count = active_config.render.geometry == "line" and vim.api.nvim_buf_line_count(source_buf) or nil
+    local line_count = active_config.geometry == "line" and vim.api.nvim_buf_line_count(source_buf) or nil
     local area
     local container_width
     local geometry
@@ -1276,12 +1271,12 @@ local function render_source(source_win, selection, root_config)
             close_source(source_win)
             return nil
         end
-        if active_config.float.placement.relative == "window" then
+        if active_config.placement.relative == "window" then
             local base_textoff = reserved and reservation_base_textoff(source_win) or 0
             container_width = math.max(0, area.width - base_textoff)
             local reservation = statuscolumn_reservations[source_win]
             if reserved and reservation ~= nil and reservation.limited then
-                local maximum_width = math.max(0, reservation.span - active_config.float.placement.col)
+                local maximum_width = math.max(0, reservation.span - active_config.placement.col)
                 container_width = math.min(container_width, maximum_width)
             end
         else
@@ -1345,12 +1340,12 @@ local function render_source(source_win, selection, root_config)
         if not reserved then
             break
         end
-        local span = math.max(0, output.width + active_config.float.placement.col)
+        local span = math.max(0, output.width + active_config.placement.col)
         local current = statuscolumn_reservations[source_win]
         if span == (current and current.span or 0) then
             break
         end
-        if span > 0 and ensure_statuscolumn(source_win, span, active_config.float.placement.gutter_position) == nil then
+        if span > 0 and ensure_statuscolumn(source_win, span, reservation_position(active_config)) == nil then
             close_source(source_win)
             return nil
         end
@@ -1359,7 +1354,7 @@ local function render_source(source_win, selection, root_config)
     assert(area ~= nil and geometry ~= nil and output ~= nil, "render geometry unavailable")
     if reserved then
         local reservation = statuscolumn_reservations[source_win]
-        local required_span = math.max(0, output.width + active_config.float.placement.col)
+        local required_span = math.max(0, output.width + active_config.placement.col)
         if required_span > 0 and (reservation == nil or reservation.span < required_span) then
             close_source(source_win)
             return nil
@@ -1380,8 +1375,8 @@ local function render_source(source_win, selection, root_config)
             if reserved then
                 ensure_statuscolumn(
                     source_win,
-                    math.max(0, output.width + active_config.float.placement.col),
-                    active_config.float.placement.gutter_position
+                    math.max(0, output.width + active_config.placement.col),
+                    reservation_position(active_config)
                 )
             end
         end
@@ -1438,7 +1433,7 @@ local function render_source(source_win, selection, root_config)
     state.hitmap = output.hitmap
     state.handle = output.handle
     state.geometry = {
-        mode = active_config.render.geometry,
+        mode = active_config.geometry,
         total_extent = geometry.total_extent,
         viewport_start = geometry.viewport_start,
         viewport_end = geometry.viewport_end,
@@ -1519,7 +1514,7 @@ M.reveal = function(source_win)
         return false
     end
 
-    if root_config.autohide.enabled then
+    if root_config.autohide then
         revealed[source_win] = vim.api.nvim_win_get_buf(source_win)
     end
     return true
@@ -1528,7 +1523,7 @@ end
 ---@param source_win integer
 ---@return boolean
 M.conceal = function(source_win)
-    if not config.get().autohide.enabled then
+    if not config.get().autohide then
         return false
     end
     local was_revealed = revealed[source_win] ~= nil or states[source_win] ~= nil
@@ -1722,7 +1717,7 @@ M.hide = function()
 end
 
 M.show = function()
-    visible = true
+    visible = config.get().enabled
 end
 
 M.toggle = function()
@@ -1773,7 +1768,8 @@ end
 
 M.setup = function()
     M.dispose()
-    visible = config.get().show
+    local root_config = config.get()
+    visible = root_config.enabled and root_config.show
     lifecycle_group = vim.api.nvim_create_augroup(AUGROUP_NAME, { clear = true })
 
     vim.api.nvim_create_autocmd("WinClosed", {

@@ -217,7 +217,7 @@ M.press = function(float_win)
     end
 
     local state = active.renderer.get_state_by_float(float_win or vim.fn.getmousepos().winid)
-    if state == nil or not valid_state(state) or not state.config.mouse.enabled then
+    if state == nil or not valid_state(state) or not state.config.mouse then
         return
     end
     local _, row, col, screen_row, screen_col = mouse_position(state.float_win)
@@ -321,7 +321,7 @@ M.attach = function(state)
         return
     end
     local current = interaction
-    if not state.config.mouse.enabled and (current == nil or current.float_buf ~= state.float_buf) then
+    if not state.config.mouse and (current == nil or current.float_buf ~= state.float_buf) then
         detach(active, state.float_buf)
         return
     end

@@ -1,8 +1,9 @@
 # Providers
 
 Built-in providers publish ordinary typed marks, minimap semantic spans, or
-minimap points for eligible source targets. Provider configuration controls
-collection. Scrollbar `layout` and minimap presentation control rendering.
+minimap points for eligible source targets. The top-level `providers` table
+controls collection. The mark types and the scrollbar `layout` control
+rendering.
 
 ## Built-ins
 
@@ -21,65 +22,71 @@ collection. Scrollbar `layout` and minimap presentation control rendering.
 | [`treesitter`](treesitter.md) | unavailable | off | Buffer minimap byte spans | Installed parser |
 | [`lsp_semantic_tokens`](lsp_semantic_tokens.md) | unavailable | off | Buffer minimap byte spans | Attached LSP client |
 
+You configure every built-in provider once, in the top-level `providers`
+table. These are the defaults:
+
 ```lua
 require("scrollbar").setup({
-    scrollbar = {
-        providers = {
-            cursor = true,
-            diagnostic = true,
-            search = { backend = "worker" },
-            marks = { letters = true, numbers = false },
-            gitsigns = false,
-            mini_diff = false,
-            signify = false,
-            vgit = false,
-            ale = false,
-            coc = false,
-        },
-    },
-    minimap = {
-        enabled = true,
-        providers = {
-            cursor = true,
-            diagnostic = true,
-            search = true,
-            marks = true,
-            gitsigns = false,
-            mini_diff = false,
-            signify = false,
-            vgit = false,
-            ale = false,
-            coc = false,
-            treesitter = false,
-            lsp_semantic_tokens = false,
-        },
+    providers = {
+        cursor = true,
+        diagnostic = true,
+        search = true,
+        marks = true,
+        gitsigns = false,
+        mini_diff = false,
+        signify = false,
+        vgit = false,
+        ale = false,
+        coc = false,
+        treesitter = false,
+        lsp_semantic_tokens = false,
     },
 })
 ```
 
-`search` and `marks` also accept option tables. See [Search](search.md) and
-[Marks](marks.md). All other built-ins are booleans.
+Each entry is `false`, `true`, or a table:
 
-The allow-lists are strict. `scrollbar.providers` accepts the first ten names in
-the table. `minimap.providers` accepts all twelve. Unknown keys are errors. To
-add a custom data source, register it through the
-[custom provider API](custom.md).
+- `false` turns off the provider.
+- `true` turns on the provider for every enabled renderer that supports it.
+- A table turns on the provider. It holds the provider options and the
+  optional `scrollbar` and `minimap` booleans, which default to `true`.
+
+```lua
+require("scrollbar").setup({
+    providers = {
+        gitsigns = true,                                -- both renderers
+        diagnostic = { minimap = false },               -- scrollbar only
+        coc = { scrollbar = false },                    -- minimap only
+        search = { incsearch = true, minimap = false }, -- options and targets
+    },
+})
+```
+
+Only `search` and `marks` have options. See [Search](search.md) and
+[Marks](marks.md). `treesitter` and `lsp_semantic_tokens` support only the
+minimap, so `scrollbar = true` on them is a setup error. Unknown provider
+names and unknown option keys are also errors. To add a
+custom data source, register it through the [custom provider API](custom.md).
 
 ## Shared Providers
 
-A built-in provider runs once when the scrollbar, the minimap, or both enable
-it. Each renderer shows only the output of the providers that it enables. The
-two blocks share the `search` and `marks` options. For the rules, see
-[Configuration](../configuration.md#providers). A disabled minimap does not
-enable providers or affect the shared options.
+A built-in provider runs once, with one option set, when at least one enabled
+renderer requests it. Each renderer shows only the output of the providers
+that target it. A provider does not refresh for a renderer that it does not
+target. A disabled renderer requests no providers. See
+[Configuration](../configuration.md#providers).
 
-You configure scrollbar presentation under `scrollbar.marks.<Type>` with
-`text`, `priority`, and `highlight`. Route those types into explicit or
-catch-all lanes under scrollbar `layout`. You configure ordinary minimap
-presentation independently under `minimap.overlays.types.<Type>` with
-`priority` and `highlight`. In one scrollbar lane or one minimap row, the lower
-numeric priority wins. Minimap spans and points use the opposite direction: the
-higher numeric value wins.
+Provider targets control what runs. Mark types control what shows. Each
+provider publishes types from the top-level `marks` registry, which sets
+`text`, `priority`, and `highlight` for both renderers. `scrollbar.marks.<Type>`
+and `minimap.marks.<Type>` override these fields for one renderer, or hide the
+type with `false`. A hidden type is still accepted from providers. It is not
+drawn. Route the scrollbar types into explicit or catch-all lanes under
+scrollbar `layout`. See [Configuration](../configuration.md#marks).
+
+In one scrollbar lane or one minimap row, the lower numeric priority wins.
+Minimap spans and points use the opposite direction: the higher numeric value
+wins.
 
 ## Refresh
 

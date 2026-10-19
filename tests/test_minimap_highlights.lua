@@ -15,7 +15,7 @@ end
 T["private base resolution follows links and forces the requested blend"] = function()
     local child = new_child()
     local result = child.lua_func(function()
-        require("scrollbar.minimap.config").set({ set_highlights = false })
+        require("scrollbar.config").set({ set_highlights = false })
         local highlights = require("scrollbar.minimap.highlights")
         vim.api.nvim_set_hl(0, "MinimapBaseTarget", { fg = "#abcdef", bg = "#123456", blend = 12 })
         vim.api.nvim_set_hl(0, "ScrollbarMinimapBase", { link = "MinimapBaseTarget" })
@@ -39,7 +39,7 @@ end
 T["non-base resolution protects only implicit background blends"] = function()
     local child = new_child()
     local result = child.lua_func(function()
-        require("scrollbar.minimap.config").set({ set_highlights = false })
+        require("scrollbar.config").set({ set_highlights = false })
         local highlights = require("scrollbar.minimap.highlights")
         highlights.set()
         vim.api.nvim_set_hl(0, "ImplicitBackground", { fg = "#abcdef", bg = "#123456" })
@@ -76,11 +76,11 @@ T["ColorScheme refreshes cached private definitions without changing public grou
     local result = child.lua_func(function()
         vim.api.nvim_set_hl(0, "ScrollbarMinimapViewport", { bg = "#102030" })
         require("scrollbar").setup({
+            set_highlights = false,
             scrollbar = { show = false },
             minimap = {
                 enabled = true,
                 backend = "sync",
-                set_highlights = false,
             },
         })
         local highlights = require("scrollbar.minimap.highlights")

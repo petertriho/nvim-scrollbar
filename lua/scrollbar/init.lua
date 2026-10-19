@@ -73,14 +73,25 @@ local function reconcile_builtins(provider_plan)
     end
 end
 
-local function create_commands()
-    vim.api.nvim_create_user_command("ScrollbarShow", M.show, { force = true })
-    vim.api.nvim_create_user_command("ScrollbarHide", M.hide, { force = true })
-    vim.api.nvim_create_user_command("ScrollbarToggle", M.toggle, { force = true })
-    vim.api.nvim_create_user_command("ScrollbarRefresh", M.refresh, { force = true })
+local COMMANDS = {
+    ScrollbarShow = "show",
+    ScrollbarHide = "hide",
+    ScrollbarToggle = "toggle",
+    ScrollbarRefresh = "refresh",
+}
+
+---@param enabled boolean
+local function update_commands(enabled)
+    for name, method in pairs(COMMANDS) do
+        if enabled then
+            vim.api.nvim_create_user_command(name, M[method], { force = true })
+        else
+            pcall(vim.api.nvim_del_user_command, name)
+        end
+    end
 end
 
----@param overrides? ScrollbarTopLevelConfig
+---@param overrides? ScrollbarUserConfig
 M.setup = function(overrides)
     local active_config = config.set(overrides)
     local active_minimap_config = config.get_minimap()
@@ -91,7 +102,7 @@ M.setup = function(overrides)
     if active_config.set_highlights then
         utils.set_highlights()
     end
-    create_commands()
+    update_commands(active_config.enabled)
 
     renderer.setup()
     scheduler.setup({ config = active_config, renderer = renderer })
@@ -125,7 +136,7 @@ end
 
 M.show = function()
     renderer.show()
-    if config.get().autohide.enabled then
+    if config.get().autohide then
         scheduler.reveal_all()
     else
         scheduler.invalidate_all()

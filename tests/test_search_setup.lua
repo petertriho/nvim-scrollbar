@@ -16,14 +16,13 @@ T["configuration rejects a non-boolean incsearch option without mutation"] = fun
     local child = new_child()
     helpers.setup_search(child, false)
     local result = child.lua_get([[(function()
-        local config = require("scrollbar.config").get()
-        local before = vim.deepcopy(config.providers.search)
-        local ok, err = pcall(require("scrollbar.config").set, { scrollbar = { providers = { search = { incsearch = "yes" } } } })
+        local before = vim.deepcopy(require("scrollbar.config").get_provider_plan().search.options)
+        local ok, err = pcall(require("scrollbar.config").set, { providers = { search = { incsearch = "yes" } } })
         return {
             ok = ok,
             error = err,
             before = before,
-            after = require("scrollbar.config").get().providers.search,
+            after = require("scrollbar.config").get_provider_plan().search.options,
         }
     end)()]])
 
@@ -36,14 +35,13 @@ T["a rejected legacy reconfiguration leaves the managed provider active"] = func
     local child = new_child()
     helpers.setup_search(child, false)
     local result = child.lua_get([[(function()
-        local config = require("scrollbar.config").get()
-        local before = vim.deepcopy(config.providers.search)
-        local ok, err = pcall(require("scrollbar.config").set, { scrollbar = { providers = { search = { live = true } } } })
+        local before = vim.deepcopy(require("scrollbar.config").get_provider_plan().search.options)
+        local ok, err = pcall(require("scrollbar.config").set, { providers = { search = { live = true } } })
         return {
             ok = ok,
             error = err,
             before = before,
-            after = require("scrollbar.config").get().providers.search,
+            after = require("scrollbar.config").get_provider_plan().search.options,
         }
     end)()]])
 
@@ -61,7 +59,7 @@ T["providers.search=true normalizes configuration and scans an existing search"]
     helpers.activate_search(child, "Foo")
     helpers.setup_search_config(child, true)
 
-    expect.equality(child.lua_get([[require("scrollbar.config").get().providers.search]]), {
+    expect.equality(child.lua_get([[require("scrollbar.config").get_provider_plan().search.options]]), {
         backend = "worker",
     })
     expect.equality(helpers.mark_lines(child), { 1 })
@@ -117,7 +115,7 @@ T["repeated provider manager setup is idempotent"] = function()
     helpers.setup_search_config(child, true)
     helpers.setup_search(child, false)
 
-    expect.equality(child.lua_get([[require("scrollbar.config").get().providers.search]]), {
+    expect.equality(child.lua_get([[require("scrollbar.config").get_provider_plan().search.options]]), {
         incsearch = false,
         backend = "worker",
     })

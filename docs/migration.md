@@ -2,8 +2,9 @@
 
 This guide lists the changes from v1 to v2 that need a change in your
 configuration. v2 rejects unknown options and has no compatibility layer for
-v1 options. A v1 configuration fails setup until you migrate it. A call
-without options, `require("scrollbar").setup()`, works in both versions.
+v1 options. A v1 configuration fails setup until you migrate it. For most
+removed options, the error names the replacement. A call without options,
+`require("scrollbar").setup()`, works in both versions.
 
 ## Stay On v1
 
@@ -39,13 +40,21 @@ Plug 'petertriho/nvim-scrollbar', { 'branch': 'v1' }
 
 ## Configuration Shape
 
-Move all v1 options into a `scrollbar` block:
+v2 splits the options into shared sections and one block for each renderer.
+Move the v1 options as follows:
+
+- `set_highlights` and `marks` stay at the top level.
+- `excluded_buftypes` and `excluded_filetypes` move into the top-level
+  `exclude` table.
+- `handlers` becomes the top-level `providers` table.
+- All other options move into the `scrollbar` block.
 
 Old:
 
 ```lua
 require("scrollbar").setup({
     show_in_active_only = true,
+    excluded_filetypes = { "NvimTree" },
     handle = { text = " " },
     handlers = { gitsigns = true },
 })
@@ -55,42 +64,44 @@ New:
 
 ```lua
 require("scrollbar").setup({
+    exclude = { filetypes = { NvimTree = true } },
+    providers = { gitsigns = true },
     scrollbar = {
         visibility = "active",
         thumb = { text = " " },
-        providers = { gitsigns = true },
     },
 })
 ```
 
-The top level accepts only `scrollbar` and `minimap`. Any other top-level key
-is a setup error. The `minimap` block is optional and is disabled by default.
+The top level accepts only `set_highlights`, `exclude`, `providers`, `marks`,
+`scrollbar`, and `minimap`. Any other top-level key is a setup error. The
+`minimap` block is optional and is disabled by default.
 
 ## Options
 
 These options keep their names and meaning: `show`, `set_highlights`,
-`max_lines`, `hide_if_all_visible`, `excluded_buftypes`, `excluded_filetypes`,
-and `marks.<Type>.text`, `priority`, and `highlight`.
+`max_lines`, `hide_if_all_visible`, `throttle_ms`, and
+`marks.<Type>.text`, `priority`, and `highlight`.
 
 | v1 option | v2 replacement |
 | --- | --- |
-| `show_in_active_only = true` | `visibility = "active"` |
-| `show_in_active_only = false` | `visibility = "all"` (the default) |
-| `folds` | `render.geometry`. `"screen"` accounts for closed folds and wrapped lines. `"line"` (the default) does not. There is no line-count limit. |
-| `throttle_ms` | `update.interval_ms` |
-| `handle` | `thumb` |
-| `handle.text`, `handle.blend`, `handle.hide_if_all_visible` | `thumb.text`, `thumb.blend`, `thumb.hide_if_all_visible` |
-| `handle.highlight` | `thumb.highlight` |
-| `handle.color`, `handle.color_nr` | A `thumb.highlight` table, for example `{ bg = "#3b4261", ctermbg = 238 }` |
+| `show_in_active_only = true` | `scrollbar.visibility = "active"` |
+| `show_in_active_only = false` | `scrollbar.visibility = "all"` (the default) |
+| `excluded_buftypes`, `excluded_filetypes` | `exclude.buftypes`, `exclude.filetypes`. A list replaces the defaults. A table keyed by name, such as `{ NvimTree = true }`, adds to the defaults. See [Exclude](configuration.md#exclude). |
+| `folds` | `scrollbar.geometry`. `"screen"` accounts for closed folds and wrapped lines. `"line"` (the default) does not. There is no line-count limit. |
+| `handle` | `scrollbar.thumb` |
+| `handle.text`, `handle.blend`, `handle.hide_if_all_visible` | `scrollbar.thumb.text`, `thumb.blend`, `thumb.hide_if_all_visible` |
+| `handle.highlight` | `scrollbar.thumb.highlight` |
+| `handle.color`, `handle.color_nr` | A `scrollbar.thumb.highlight` table, for example `{ bg = "#3b4261", ctermbg = 238 }` |
 | `marks.<Type>.color`, `gui`, `cterm`, `color_nr` | A `marks.<Type>.highlight` table. See [Colors](#colors). |
-| `autocmd.render` | `update.events` |
-| `autocmd.clear` | Removed. To show only the active window, use `visibility = "active"`. |
+| `autocmd.render` | Removed. The plugin listens to a fixed set of events. |
+| `autocmd.clear` | Removed. To show only the active window, use `scrollbar.visibility = "active"`. |
 | `handlers` | `providers`. See [Handlers](#handlers). |
-| `handlers.handle = false` | Remove `"thumb"` from `layout.columns`, for example `layout = { columns = { { "track", "marks" } } }` |
+| `handlers.handle = false` | Remove `"thumb"` from `scrollbar.layout.columns`, for example `layout = { columns = { { "track", "marks" } } }` |
 
-The default `update.events` list contains every v1 `autocmd.render` event.
-Unknown event names are setup errors. See
-[Configuration](configuration.md#update-cadence).
+The top-level `marks` table defines the mark types for the scrollbar and the
+minimap. `scrollbar.marks` changes or hides types for the scrollbar only. See
+[Marks](configuration.md#marks).
 
 ### Colors
 
@@ -130,17 +141,17 @@ New:
 local colors = require("tokyonight.colors").setup()
 
 require("scrollbar").setup({
+    marks = {
+        Search = { highlight = { fg = colors.orange } },
+        Error = { highlight = { fg = colors.error } },
+        Warn = { highlight = { fg = colors.warning } },
+        Info = { highlight = { fg = colors.info } },
+        Hint = { highlight = { fg = colors.hint } },
+        Misc = { highlight = { fg = colors.purple } },
+    },
     scrollbar = {
         thumb = {
             highlight = { bg = colors.bg_highlight },
-        },
-        marks = {
-            Search = { highlight = { fg = colors.orange } },
-            Error = { highlight = { fg = colors.error } },
-            Warn = { highlight = { fg = colors.warning } },
-            Info = { highlight = { fg = colors.info } },
-            Hint = { highlight = { fg = colors.hint } },
-            Misc = { highlight = { fg = colors.purple } },
         },
     },
 })
@@ -150,7 +161,7 @@ See [Highlights](highlights.md).
 
 ## Handlers
 
-v1 handlers are v2 providers. Enable them in `scrollbar.providers`:
+v1 handlers are v2 providers. Enable them in the top-level `providers` table:
 
 | v1 handler | v2 provider |
 | --- | --- |
@@ -169,7 +180,9 @@ The v1 `diagnostic` handler also showed coc.nvim diagnostics. In v2, coc.nvim
 diagnostics need `providers.coc = true`.
 
 v2 also has providers for native marks, mini.diff, vim-signify, vgit.nvim, and
-coc.nvim. See [Providers](providers/README.md).
+coc.nvim. A provider entry can also select the renderers that use it, for
+example `diagnostic = { minimap = false }`. See
+[Providers](configuration.md#providers).
 
 ### Search
 
@@ -199,9 +212,7 @@ New:
 ```lua
 require("gitsigns").setup()
 require("scrollbar").setup({
-    scrollbar = {
-        providers = { gitsigns = true },
-    },
+    providers = { gitsigns = true },
 })
 ```
 
@@ -248,7 +259,7 @@ require("scrollbar.providers").register({
   `refresh_owner = { buffer = "provider" }` and publish the marks from your
   own autocmds.
 - Every mark needs a `type`. v1 used `Misc` when `type` was missing. The type
-  must be configured in `scrollbar.marks`.
+  must be registered in the top-level `marks` table.
 - Remove `level`. A mark can have only `line`, `type`, and `text`. A mark with
   another field fails validation.
 - The `b:scrollbar_marks` buffer variable is removed. Publish marks through a
@@ -297,15 +308,15 @@ option to get closer to the v1 behavior.
 | Behavior | v1 | v2 |
 | --- | --- | --- |
 | Drawing | Virtual text at the right edge of the window | A floating window at the north-east corner of each source window |
-| Mouse | No mouse support | `mouse.enabled = true`. Clicks also need `vim.o.mouse`. |
-| Cursor over the scrollbar | No effect | `float.hide_on_cursor = true` hides the scrollbar while the cursor is in its cells |
-| Update interval | `throttle_ms = 100` | `update.interval_ms = 16` |
+| Mouse | No mouse support | `scrollbar.mouse = true`. Clicks also need `vim.o.mouse`. |
+| Cursor over the scrollbar | No effect | `scrollbar.hide_on_cursor = true` hides the scrollbar while the cursor is in its cells |
+| Update interval | `throttle_ms = 100` | `scrollbar.throttle_ms = 16` |
 | Thumb highlight | `CursorColumn` | `PmenuThumb` |
-| Track | None | `track.highlight = "PmenuSbar"`, in the default layout |
+| Track | None | `scrollbar.track.highlight = "PmenuSbar"`, in the default layout |
 | Search marks | Off, needed nvim-hlslens | `providers.search = true` |
 | Native marks | None | `providers.marks = true` shows letter marks as `Mark` |
 | `GitAdd` and `GitChange` text | `┆` | `┃` |
-| Closed folds | Counted in buffers up to 1000 lines (`folds = 1000`) | Not counted (`render.geometry = "line"`) |
+| Closed folds | Counted in buffers up to 1000 lines (`folds = 1000`) | Not counted (`scrollbar.geometry = "line"`) |
 | coc.nvim diagnostics | Shown by the `diagnostic` handler | `providers.coc = false` |
 
 ## New In v2

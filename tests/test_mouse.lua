@@ -12,34 +12,33 @@ local function new_child()
     return child
 end
 
-local function mouse_config(overrides)
-    return require("scrollbar.presets").merge({
-        show = true,
+local function mouse_config(overrides, top)
+    local schema = require("scrollbar.schema")
+    return schema.merge({
         set_highlights = true,
-        update = { interval_ms = 0 },
-        render = { geometry = "line" },
-        float = { placement = { relative = "window", anchor = "NW", row = 0, col = 5 } },
-        layout = {
-            direction = "ltr",
-            columns = {
-                { "track", "marks" },
-                { "track", "thumb" },
-            },
-        },
-        mouse = { enabled = true },
-        thumb = { text = "H", hide_if_all_visible = false },
-        marks = { Misc = { text = "M" } },
         providers = {
             cursor = false,
             diagnostic = false,
             search = false,
-            gitsigns = false,
-            ale = false,
-            coc = false,
         },
-        excluded_buftypes = {},
-        excluded_filetypes = {},
-    }, overrides or {})
+        exclude = { buftypes = {}, filetypes = {} },
+        marks = { Misc = { text = "M" } },
+        scrollbar = schema.merge({
+            show = true,
+            throttle_ms = 0,
+            geometry = "line",
+            placement = { relative = "window", anchor = "NW", row = 0, col = 5 },
+            layout = {
+                direction = "ltr",
+                columns = {
+                    { "track", "marks" },
+                    { "track", "thumb" },
+                },
+            },
+            mouse = true,
+            thumb = { text = "H", hide_if_all_visible = false },
+        }, overrides or {}),
+    }, top or {})
 end
 
 local function input_mouse(child, action, row, col)
@@ -93,7 +92,7 @@ local function setup_single(child, options)
         if opts.marks and #opts.marks > 0 and providers.get(opts.mark_provider) == nil then
             providers.register({ name = opts.mark_provider })
         end
-        local active_config = require("scrollbar.config").set({ scrollbar = opts.config })
+        local active_config = require("scrollbar.config").set(opts.config)
         local source_buf = vim.api.nvim_win_get_buf(source_win)
         if opts.marks and #opts.marks > 0 then
             assert(require("scrollbar.store").set(opts.mark_provider, source_buf, opts.marks))
@@ -112,7 +111,7 @@ local function setup_single(child, options)
         scheduler.setup({ config = active_config, renderer = renderer })
         mouse.setup({ config = active_config, renderer = renderer, scheduler = scheduler })
         local state
-        if active_config.autohide.enabled then
+        if active_config.autohide then
             vim.api.nvim_set_current_win(source_win)
             vim.api.nvim_exec_autocmds("CursorMoved", { buffer = source_buf })
             scheduler.flush()
@@ -125,7 +124,7 @@ local function setup_single(child, options)
         local source_position = vim.fn.win_screenpos(source_win)
         local raw_height = vim.api.nvim_win_get_height(source_win)
         local winbar_rows = vim.api.nvim_get_option_value("winbar", { win = source_win }) == "" and 0 or 1
-        if active_config.autohide.enabled then
+        if active_config.autohide then
             scheduler.resume_window(source_win)
         end
         return {
@@ -227,10 +226,11 @@ T["keeps the handle pressed highlight through drag until release"] = function()
     local child = new_child()
     local setup = setup_single(child, {
         config = mouse_config({
+            layout = { columns = { { "track" }, { "track", "thumb", "marks" } } },
+        }, {
             marks = {
                 Custom = { text = "!", priority = 10, highlight = "Special" },
             },
-            layout = { columns = { { "track" }, { "track", "thumb", "marks" } } },
         }),
         marks = { { line = 0, type = "Custom" } },
     })
@@ -294,7 +294,7 @@ T["clicks an empty track cell proportionally and restores source focus"] = funct
         local source_win = vim.api.nvim_get_current_win()
         vim.api.nvim_win_set_height(source_win, 10)
 
-        local active_config = require("scrollbar.config").set({ scrollbar = config })
+        local active_config = require("scrollbar.config").set(config)
         local renderer = require("scrollbar.renderer")
         local scheduler = require("scrollbar.scheduler")
         local mouse = require("scrollbar.mouse")
@@ -456,7 +456,7 @@ T["uses direct screen rows when short rendered content fits"] = function()
     local setup = setup_single(child, {
         line_count = 5,
         height = 10,
-        config = mouse_config({ render = { geometry = "screen" } }),
+        config = mouse_config({ geometry = "screen" }),
     })
 
     expect.equality(setup.geometry.mode, "screen")
@@ -478,8 +478,8 @@ T["jumps to the exact visible mark selected by display column"] = function()
     local config = mouse_config({
         layout = {
             columns = {
-                { "track", { kind = "marks", types = { "Misc" } } },
-                { "track", { kind = "marks", types = { "Search" } } },
+                { "track", { types = { "Misc" } } },
+                { "track", { types = { "Search" } } },
                 { "track", "thumb" },
             },
         },
@@ -544,9 +544,9 @@ T["expanded named marks navigate by letter and adjacent cells do not drag"] = fu
         config = mouse_config({
             layout = {
                 columns = {
-                    { { kind = "marks", types = { "Mark" }, max_width = 3 } },
-                    { { kind = "marks", types = { "Mark" } } },
-                    { { kind = "marks", types = { "Mark" } } },
+                    { { types = { "Mark" }, max_width = 3 } },
+                    { { types = { "Mark" } } },
+                    { { types = { "Mark" } } },
                     { "thumb" },
                 },
             },
@@ -592,7 +592,7 @@ end
 T["collapsed named marks keep their deterministic representative click"] = function()
     local child = new_child()
     local setup = setup_single(child, {
-        config = mouse_config({ providers = { marks = true } }),
+        config = mouse_config(nil, { providers = { marks = true } }),
         mark_provider = "marks",
         marks = {
             { line = 100, type = "Mark", text = "c" },
@@ -618,10 +618,10 @@ T["uses mark rest and pressed highlights on the translated east handle"] = funct
     local child = new_child()
     local setup = setup_single(child, {
         config = mouse_config({
-            float = { placement = { anchor = "NE" } },
+            placement = { anchor = "NE" },
             layout = {
                 columns = {
-                    { "track", "thumb", { kind = "marks", types = { "Mark" }, max_width = 4 } },
+                    { "track", "thumb", { types = { "Mark" }, max_width = 4 } },
                 },
             },
         }),
@@ -667,10 +667,10 @@ T["drags from the translated east handle column"] = function()
     local child = new_child()
     local setup = setup_single(child, {
         config = mouse_config({
-            float = { placement = { anchor = "NE" } },
+            placement = { anchor = "NE" },
             layout = {
                 columns = {
-                    { "track", "thumb", { kind = "marks", types = { "Mark" }, max_width = 4 } },
+                    { "track", "thumb", { types = { "Mark" }, max_width = 4 } },
                 },
             },
         }),
@@ -734,10 +734,10 @@ T["keeps an east handle press stationary when expansion changes relative columns
     local child = new_child()
     local setup = setup_single(child, {
         config = mouse_config({
-            float = { placement = { anchor = "NE" } },
+            placement = { anchor = "NE" },
             layout = {
                 columns = {
-                    { "track", "thumb", { kind = "marks", types = { "Mark" }, max_width = 4 } },
+                    { "track", "thumb", { types = { "Mark" }, max_width = 4 } },
                 },
             },
         }),
@@ -851,7 +851,7 @@ T["uses screen geometry when reverse-mapping an empty track click"] = function()
     local setup = setup_single(child, {
         line_count = 100,
         folds = { { 1, 80 } },
-        config = mouse_config({ render = { geometry = "screen" } }),
+        config = mouse_config({ geometry = "screen" }),
     })
     expect.equality(setup.geometry.mode, "screen")
 
@@ -880,7 +880,7 @@ T["keeps independent ownership for multiple source windows"] = function()
             vim.cmd("normal! zt")
         end)
 
-        local active_config = require("scrollbar.config").set({ scrollbar = config })
+        local active_config = require("scrollbar.config").set(config)
         local renderer = require("scrollbar.renderer")
         local scheduler = require("scrollbar.scheduler")
         local mouse = require("scrollbar.mouse")
@@ -925,7 +925,7 @@ end
 T["holds autohide through press and drag then resumes a full delay"] = function()
     local child = new_child()
     local setup = setup_single(child, {
-        config = mouse_config({ autohide = { enabled = true, delay_ms = 500 } }),
+        config = mouse_config({ autohide = { delay_ms = 500 } }),
     })
     local active = refresh_autohide_state(child, setup.source_win)
     local row = active.position[1] + active.handle.first_row
@@ -975,7 +975,7 @@ end
 T["resumes after cancellation but global hide cannot rearm"] = function()
     local child = new_child()
     local setup = setup_single(child, {
-        config = mouse_config({ autohide = { enabled = true, delay_ms = 300 } }),
+        config = mouse_config({ autohide = { delay_ms = 300 } }),
     })
     local active = refresh_autohide_state(child, setup.source_win)
     local row = active.position[1] + active.handle.first_row
@@ -1030,7 +1030,7 @@ end
 T["drops attachment bookkeeping across repeated conceal and reveal cycles"] = function()
     local child = new_child()
     local setup = setup_single(child, {
-        config = mouse_config({ autohide = { enabled = true, delay_ms = 80 } }),
+        config = mouse_config({ autohide = { delay_ms = 80 } }),
     })
     local result = child.lua_func(function(source_win, first_buffer)
         local mouse = require("scrollbar.mouse")
@@ -1093,7 +1093,7 @@ end
 T["does not attach mappings or mutate mouse behavior when disabled"] = function()
     local child = new_child()
     local setup = setup_single(child, {
-        config = mouse_config({ mouse = { enabled = false } }),
+        config = mouse_config({ mouse = false }),
     })
     local before = child.lua_func(function(float_win, float_buf)
         return {
@@ -1126,7 +1126,7 @@ T["uses each rendered profile's mouse policy and updates switched floats"] = fun
         vim.bo[second_buf].filetype = "text"
         local disabled = true
 
-        config.profiles = {
+        config.scrollbar.profiles = {
             {
                 match = {
                     filetypes = { "lua" },
@@ -1134,10 +1134,10 @@ T["uses each rendered profile's mouse policy and updates switched floats"] = fun
                         return disabled
                     end,
                 },
-                config = { mouse = { enabled = false } },
+                mouse = false,
             },
         }
-        local active_config = require("scrollbar.config").set({ scrollbar = config })
+        local active_config = require("scrollbar.config").set(config)
         local renderer = require("scrollbar.renderer")
         local scheduler = require("scrollbar.scheduler")
         local mouse = require("scrollbar.mouse")
@@ -1194,18 +1194,18 @@ T["keeps track interaction geometry captured at press time across profile switch
             vim.cmd("1,80fold")
         end)
         local screen = false
-        config.profiles = {
+        config.scrollbar.profiles = {
             {
                 match = {
                     when = function()
                         return screen
                     end,
                 },
-                config = { render = { geometry = "screen" } },
+                geometry = "screen",
             },
         }
 
-        local active_config = require("scrollbar.config").set({ scrollbar = config })
+        local active_config = require("scrollbar.config").set(config)
         local renderer = require("scrollbar.renderer")
         local scheduler = require("scrollbar.scheduler")
         local mouse = require("scrollbar.mouse")
@@ -1248,7 +1248,7 @@ T["passes input to the source while cursor-hidden and restores interaction"] = f
         local source_win = vim.api.nvim_get_current_win()
         vim.api.nvim_win_set_height(source_win, 10)
 
-        local active_config = require("scrollbar.config").set({ scrollbar = config })
+        local active_config = require("scrollbar.config").set(config)
         local source_position = vim.fn.win_screenpos(source_win)
         local overlap = true
         local screenrow = vim.fn.screenrow

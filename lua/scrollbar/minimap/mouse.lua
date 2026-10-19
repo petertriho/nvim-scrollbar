@@ -192,7 +192,7 @@ M.press = function(float_win)
     if state == nil or not valid_state(state) then
         return
     end
-    if not state.config.mouse.enabled then
+    if not state.config.mouse then
         return
     end
     local _, row, col = mouse_position(state.float_win)
@@ -250,7 +250,7 @@ M.attach = function(state)
     if active == nil or not valid_state(state) then
         return
     end
-    if not state.config.mouse.enabled then
+    if not state.config.mouse then
         detach(active, state.float_buf)
         return
     end

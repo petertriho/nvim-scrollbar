@@ -7,10 +7,8 @@ local T = MiniTest.new_set({
             package.loaded["scrollbar.config"] = nil
             package.loaded["scrollbar.store"] = nil
             require("scrollbar.config").set({
-                scrollbar = {
-                    marks = {
-                        Custom = { text = "!", priority = 1, highlight = "WarningMsg" },
-                    },
+                marks = {
+                    Custom = { text = "!", priority = 1, highlight = "WarningMsg" },
                 },
             })
         end,
@@ -782,10 +780,8 @@ T["validates complete lists against the current config and mark contract"] = fun
     expect.equality(#notifications, #invalid_lists)
 
     require("scrollbar.config").set({
-        scrollbar = {
-            marks = {
-                Runtime = { text = "r", priority = 1, highlight = "Normal" },
-            },
+        marks = {
+            Runtime = { text = "r", priority = 1, highlight = "Normal" },
         },
     })
     local ok, changed = store.set("alpha", bufnr, { { line = 1, type = "Runtime" } })
@@ -793,44 +789,67 @@ T["validates complete lists against the current config and mark contract"] = fun
     expect.equality(changed, { [bufnr] = true })
 end
 
-T["accepts types configured only for minimap overlays"] = function()
+T["accepts registered types that both renderers hide"] = function()
     require("scrollbar.config").set({
-        scrollbar = {},
-        minimap = {
-            overlays = {
-                types = {
-                    MinimapOnly = { priority = 1, highlight = "Special" },
-                },
-            },
+        marks = {
+            Hidden = { text = "h", priority = 1, highlight = "Special" },
+            Hint = false,
+        },
+        scrollbar = {
+            marks = { Hidden = false },
             profiles = {
                 {
                     match = { filetypes = { "lua" } },
-                    config = {
-                        overlays = {
-                            types = {
-                                ProfileOnly = { priority = 2, highlight = "Question" },
-                            },
-                        },
-                    },
+                    marks = false,
                 },
             },
+        },
+        minimap = {
+            enabled = true,
+            marks = { Hidden = false },
+        },
+    })
+    for _, variant in ipairs(require("scrollbar.config").get_variants()) do
+        expect.equality(variant.config.marks.Hidden, nil)
+        expect.equality(variant.config.marks.Hint, nil)
+    end
+    expect.equality(require("scrollbar.minimap.config").get().marks.Hidden, nil)
+
+    local store = require("scrollbar.store")
+    local bufnr = new_buffer({ "one", "two" })
+    local ok, changed = store.set("alpha", bufnr, {
+        { line = 0, type = "Hidden" },
+        { line = 1, type = "Hint" },
+    })
+    expect.equality(ok, true)
+    expect.equality(changed, { [bufnr] = true })
+    expect.equality(store.get(bufnr), {
+        alpha = {
+            { line = 0, type = "Hidden" },
+            { line = 1, type = "Hint" },
+        },
+    })
+end
+
+T["rejects types missing from the mark registry"] = function()
+    local notifications = capture_notifications()
+    require("scrollbar.config").set({
+        marks = {
+            Registered = { text = "r", priority = 1, highlight = "Special" },
         },
     })
     local store = require("scrollbar.store")
     local bufnr = new_buffer({ "one", "two" })
 
     local ok, changed = store.set("alpha", bufnr, {
-        { line = 0, type = "ProfileOnly" },
-        { line = 1, type = "MinimapOnly" },
+        { line = 0, type = "Registered" },
+        { line = 1, type = "Unregistered" },
     })
-    expect.equality(ok, true)
-    expect.equality(changed, { [bufnr] = true })
-    expect.equality(store.get(bufnr), {
-        alpha = {
-            { line = 0, type = "ProfileOnly" },
-            { line = 1, type = "MinimapOnly" },
-        },
-    })
+    expect.equality(ok, false)
+    expect.equality(changed, {})
+    expect.equality(store.get(bufnr), {})
+    expect.equality(#notifications, 1)
+    expect.equality(notifications[1].message:find("marks[2].type is not configured", 1, true) ~= nil, true)
 end
 
 T["stale positions do not hide malformed fields in atomic replacements"] = function()

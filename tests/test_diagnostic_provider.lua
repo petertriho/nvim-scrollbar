@@ -10,9 +10,9 @@ local T = MiniTest.new_set({
             package.loaded["scrollbar.providers"] = nil
             package.loaded["scrollbar.providers.diagnostic"] = nil
             require("scrollbar.config").set({
-                scrollbar = {
-                    excluded_buftypes = {},
-                    excluded_filetypes = { "scrollbar-excluded" },
+                exclude = {
+                    buftypes = {},
+                    filetypes = { "scrollbar-excluded" },
                 },
             })
         end,

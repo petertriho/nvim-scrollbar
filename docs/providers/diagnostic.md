@@ -6,15 +6,13 @@ dependency.
 
 ## Setup And Defaults
 
-`providers.diagnostic` is a boolean. Setup rejects provider-specific table
-options.
+`providers.diagnostic` is a boolean, or a table that contains only the
+`scrollbar` and `minimap` target flags. The provider has no other options.
 
 ```lua
 require("scrollbar").setup({
-    scrollbar = {
-        providers = {
-            diagnostic = true,
-        },
+    providers = {
+        diagnostic = true,
     },
 })
 ```
@@ -55,27 +53,28 @@ eligible source buffers.
 
 ## Customization
 
-Customize the severity mark types under `marks`:
+Customize the severity mark types in the top-level `marks` registry, and route
+them in the scrollbar `layout`:
 
 ```lua
 require("scrollbar").setup({
+    marks = {
+        Error = {
+            text = { "E", "!" },
+            priority = 1,
+            highlight = "DiagnosticError",
+        },
+        Warn = {
+            text = "W",
+            priority = 2,
+            highlight = "DiagnosticWarn",
+        },
+    },
     scrollbar = {
         layout = {
             columns = {
-                { { kind = "marks", types = { "Error" } } },
-                { { kind = "marks", types = { "Warn" } }, "marks" },
-            },
-        },
-        marks = {
-            Error = {
-                text = { "E", "!" },
-                priority = 1,
-                highlight = "DiagnosticError",
-            },
-            Warn = {
-                text = "W",
-                priority = 2,
-                highlight = "DiagnosticWarn",
+                { { types = { "Error" } } },
+                { { types = { "Warn" } }, "marks" },
             },
         },
     },
@@ -83,9 +82,11 @@ require("scrollbar").setup({
 ```
 
 `Error`, `Warn`, `Info`, and `Hint` are shared mark types. A change to them
-also changes the enabled ALE or Coc marks of the same type. For
-provider-specific filtering or styling, disable this provider. Then publish
-distinct types from a [custom provider](custom.md).
+also changes the enabled ALE or Coc marks of the same type. To keep the
+providers apart in the two renderers, use the provider targets, for example
+`diagnostic = { minimap = false }` and `coc = { scrollbar = false }`. For
+provider-specific styling, disable this provider. Then publish distinct types
+from a [custom provider](custom.md).
 
 ## Limitations And Troubleshooting
 
@@ -98,8 +99,8 @@ distinct types from a [custom provider](custom.md).
   `:lua print(vim.inspect(vim.diagnostic.get(0)))`. If the result is empty, the
   cause is upstream of the scrollbar provider.
 - If source data exists but marks do not appear, do these steps:
-  1. Examine `providers.diagnostic`, buffer exclusions, `max_lines`, layout
-     routing, and priorities.
+  1. Examine `providers.diagnostic`, the top-level `exclude` table,
+     `max_lines`, layout routing, and priorities.
   2. Run `:ScrollbarRefresh`.
 
 ## Related

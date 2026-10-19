@@ -15,10 +15,8 @@ available at the first refresh:
 -- Then configure scrollbar from Lua:
 
 require("scrollbar").setup({
-    scrollbar = {
-        providers = {
-            signify = true,
-        },
+    providers = {
+        signify = true,
     },
 })
 ```
@@ -32,9 +30,7 @@ With lazy.nvim:
         { "mhinz/vim-signify" },
     },
     opts = {
-        scrollbar = {
-            providers = { signify = true },
-        },
+        providers = { signify = true },
     },
 }
 ```
@@ -60,18 +56,17 @@ The three mark types have these defaults:
 
 ```lua
 require("scrollbar").setup({
-    scrollbar = {
-        marks = {
-            SignifyAdd = { text = { "┃" }, priority = 7, highlight = "SignifySignAdd" },
-            SignifyChange = { text = { "┃" }, priority = 7, highlight = "SignifySignChange" },
-            SignifyDelete = { text = { "▁" }, priority = 7, highlight = "SignifySignDelete" },
-        },
+    marks = {
+        SignifyAdd = { text = { "┃" }, priority = 7, highlight = "SignifySignAdd" },
+        SignifyChange = { text = { "┃" }, priority = 7, highlight = "SignifySignChange" },
+        SignifyDelete = { text = { "▁" }, priority = 7, highlight = "SignifySignDelete" },
     },
 })
 ```
 
 To change a mark type, override its `text`, `priority`, or `highlight` in the
-`scrollbar.marks` table.
+top-level `marks` table. To change it in one renderer only, use
+`scrollbar.marks` or `minimap.marks`.
 
 ## Updates
 

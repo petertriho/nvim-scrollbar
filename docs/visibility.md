@@ -7,21 +7,26 @@ Visibility is controlled globally, per source window, and by buffer eligibility.
 - `visibility = "all"` creates an independent scrollbar for every eligible
   normal window. Two windows that show the same buffer keep different thumbs.
 - `visibility = "active"` keeps only the scrollbar of the active source window.
-- `float.placement.relative = "editor"` also renders only the active source
-  window, for every `visibility` value. As a result, editor-relative floats
-  cannot overlap.
+- `placement.relative = "editor"` also renders only the active source window,
+  for every `visibility` value. As a result, editor-relative floats cannot
+  overlap.
 
-Only the root configuration sets `visibility`. With contextual profiles and the
-root `visibility = "all"`, each source window gets the placement of its own
-profile. Window-relative profiles can stay visible together. A scrollbar with an
-editor-relative profile shows only when its source window is active. Profile
-predicates run again before each render. If a different profile starts to
-match a source window, only the scrollbar of that window changes.
+`visibility` is a global option, so a profile cannot set it. With contextual
+profiles and `visibility = "all"`, each source window gets the placement of its
+own profile. Window-relative profiles can stay visible together. A scrollbar
+with an editor-relative profile shows only when its source window is active.
+Profile predicates run again before each render. If a different profile starts
+to match a source window, only the scrollbar of that window changes.
 
 ## Global Visibility
 
-`show = false` starts with master visibility disabled. A call to `show()`,
-`hide()`, or `toggle()` changes this global state for all eligible windows.
+`scrollbar.enabled = false` turns off the scrollbar. Setup creates no
+scrollbar floats and no scrollbar commands, and the scrollbar requests no
+providers. Use it, for example, when you want only the minimap.
+
+`scrollbar.show = false` starts with master visibility disabled. A call to
+`show()`, `hide()`, or `toggle()` changes this global state for all eligible
+windows.
 
 | Command | Lua API | Effect |
 | --- | --- | --- |
@@ -32,18 +37,18 @@ match a source window, only the scrollbar of that window changes.
 
 ## Autohide
 
-With `autohide.enabled = true`, each eligible window starts concealed. The
+With `autohide = true`, each eligible window starts concealed. The
 `CursorMoved`, `CursorMovedI`, or `WinScrolled` activity of that window reveals
-it. After `autohide.delay_ms` of inactivity, autohide conceals that window
-independently.
+it. After 1000 ms of inactivity, autohide conceals that window independently.
+To change the delay, use `autohide = { delay_ms = 500 }`.
 
 Provider updates, option changes, resizes, colorscheme changes, and
 `:ScrollbarRefresh` can rerender a revealed scrollbar. They do not reveal a
 concealed scrollbar. A press or drag on a scrollbar pauses the deadline of that
 source window. Release or cancellation starts a new full delay.
 
-Autohide, master visibility, exclusions, and `max_lines` are root-owned. A
-profile cannot change them.
+Autohide, master visibility, and `max_lines` are global options. The top-level
+`exclude` table also applies to every profile. A profile cannot change them.
 
 ## Documents That Fit
 
@@ -59,9 +64,9 @@ profile cannot change `max_lines`.
 
 ## Cursor Intersection
 
-`scrollbar.float.hide_on_cursor = true` applies to the scrollbar of the active
-source window. When the editing cursor enters any cell of the float, the whole
-scrollbar hides. When the cursor moves away, the scrollbar shows again.
+`scrollbar.hide_on_cursor = true` (the default) applies to the scrollbar of the
+active source window. When the editing cursor enters any cell of the float, the
+whole scrollbar hides. When the cursor moves away, the scrollbar shows again.
 
 Only the cursor of the current window triggers this behavior. Stored cursor
 positions in inactive splits do not hide their scrollbars. The check uses the
@@ -70,15 +75,13 @@ coordinates and does not examine the text.
 
 While the scrollbar is hidden, it does not capture mouse input. Mouse input on
 those cells goes to the source window. To keep the scrollbar visible under the
-cursor, set `scrollbar.float.hide_on_cursor = false`.
+cursor, set `scrollbar.hide_on_cursor = false`.
 
-The minimap has the same option, `minimap.float.hide_on_cursor`, which is also
+The minimap has the same option, `minimap.hide_on_cursor`, which is also
 `true` by default. It applies only to the minimap of the active source window,
-and it does not need `minimap.providers.cursor`. The minimap does this check
-when it renders. If you remove `CursorMoved` and `CursorMovedI` from the
-minimap `update.events`, the minimap hides or shows again only on the next
-configured event. To turn off the check, set
-`minimap.float.hide_on_cursor = false`.
+and it does not need the `cursor` provider. The minimap does this check when
+it renders, which includes each cursor movement. To turn off the check, set
+`minimap.hide_on_cursor = false`.
 
 ## Related
 
