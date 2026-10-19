@@ -167,6 +167,10 @@ require("scrollbar").setup({
 or `SW`). `"inner"` and `"outer"` reserve blank gutter cells for the
 scrollbar, after or before the existing gutter. `"overlap"` reserves no cells.
 
+When the minimap is on the same side as the scrollbar, `minimap.placement.stack`
+arranges the two floats. See
+[Placement Beside the Scrollbar](minimap/configuration.md#placement-beside-the-scrollbar).
+
 ## Providers
 
 `providers` enables the built-in data sources. Each entry is `false`, `true`,

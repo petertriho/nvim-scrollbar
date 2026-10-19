@@ -6,6 +6,7 @@ local mouse = require("scrollbar.mouse")
 local providers = require("scrollbar.providers")
 local renderer = require("scrollbar.renderer")
 local scheduler = require("scrollbar.scheduler")
+local stack = require("scrollbar.stack")
 local utils = require("scrollbar.utils")
 
 local M = {}
@@ -42,6 +43,8 @@ local function remove_orphaned_renderer_resources()
 end
 
 local function dispose_runtime()
+    -- Both renderers close every float, so nothing needs to move first.
+    stack.reset()
     minimap.dispose()
     mouse.dispose()
     scheduler.dispose()
@@ -106,6 +109,11 @@ M.setup = function(overrides)
 
     renderer.setup()
     scheduler.setup({ config = active_config, renderer = renderer })
+    stack.register("scrollbar", function(source_win)
+        if renderer.reposition(source_win) then
+            scheduler.invalidate_window(source_win)
+        end
+    end)
     mouse.setup({ config = active_config, renderer = renderer, scheduler = scheduler })
 
     -- Both store consumers must be subscribed before provider setup publishes.

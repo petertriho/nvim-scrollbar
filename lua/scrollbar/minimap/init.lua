@@ -17,6 +17,7 @@ local overlays = require("scrollbar.minimap.overlays")
 local providers = require("scrollbar.providers")
 local renderer = require("scrollbar.minimap.renderer")
 local scheduler = require("scrollbar.minimap.scheduler")
+local stack = require("scrollbar.stack")
 local worker = require("scrollbar.minimap.worker")
 
 local M = {}
@@ -25,6 +26,7 @@ local active_config
 local COMMANDS = { "MinimapShow", "MinimapHide", "MinimapToggle", "MinimapRefresh" }
 
 local function dispose_runtime()
+    stack.register("minimap", nil)
     mouse.dispose()
     scheduler.dispose()
     overlays.dispose()
@@ -95,6 +97,7 @@ M.setup = function(overrides, wiring)
         end,
         on_text_change = wiring ~= nil and wiring.on_text_change or nil,
     })
+    stack.register("minimap", renderer.reposition)
     mouse.setup({
         renderer = renderer,
         scheduler = scheduler,

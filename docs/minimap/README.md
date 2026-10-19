@@ -69,23 +69,24 @@ By default, the minimap of the active source window hides while the editing
 cursor is inside it. It shows again when the cursor leaves. See
 [Visibility](../visibility.md).
 
-### Conflict Avoidance with the Scrollbar
+### Placement Beside the Scrollbar
 
-The minimap and the scrollbar both use east-side placement by default, so they
-may overlap. The minimap does not detect the lane width of the scrollbar.
-Coordinate the two placements explicitly:
+The minimap and the scrollbar both use east-side placement by default. When
+they are on the same side, `placement.stack` arranges them. With the default
+`"inner"`, the scrollbar stays at the window edge, and the minimap is beside
+it, nearer the text. `"outer"` puts the minimap at the window edge. `"above"`
+and `"below"` overlap the two floats and set which one is on top:
 
 ```lua
 require("scrollbar").setup({
-    scrollbar = {
-        placement = { relative = "editor", anchor = "NE", col = 0 },
-    },
     minimap = {
         enabled = true,
-        placement = { relative = "editor", anchor = "NE", col = -2 },
+        placement = { stack = "above" },
     },
 })
 ```
+
+See [Placement Beside the Scrollbar](configuration.md#placement-beside-the-scrollbar).
 
 ## Viewport and Cursor
 

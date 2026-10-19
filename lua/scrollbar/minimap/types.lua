@@ -5,12 +5,18 @@
 
 ---@alias ScrollbarMinimapBackend "worker"|"sync"
 
+--- Arrangement with a scrollbar on the same side of the source window.
+--- `inner` and `outer` place the floats side by side, with the minimap beside
+--- the text or at the window edge. `above` and `below` overlap them.
+---@alias ScrollbarMinimapStack "inner"|"outer"|"above"|"below"
+
 ---@class ScrollbarMinimapUserPlacement
 ---@field relative? ScrollbarPlacementRelative
 ---@field anchor? ScrollbarFloatAnchor
 ---@field row? integer
 ---@field col? integer
 ---@field zindex? integer
+---@field stack? ScrollbarMinimapStack
 
 ---@class ScrollbarMinimapUserMarkTypeConfig
 ---@field priority? integer Lower values win overlay collisions
@@ -47,6 +53,7 @@
 ---@field row integer
 ---@field col integer
 ---@field zindex integer
+---@field stack ScrollbarMinimapStack
 
 ---@class ScrollbarMinimapMarkSpec
 ---@field priority integer Lower values win overlay collisions
@@ -191,6 +198,7 @@
 ---@field hidden_by_cursor boolean
 ---@field winblend integer
 ---@field winhighlight string
+---@field footprint ScrollbarStackFootprint Own stacking footprint from the last render
 
 ---@class ScrollbarMinimapRendererWorker
 ---@field request fun(request: table): boolean

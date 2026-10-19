@@ -521,6 +521,7 @@
 ---@field handle_pressed boolean
 ---@field hidden_by_cursor boolean
 ---@field geometry ScrollbarRendererGeometry
+---@field footprint? ScrollbarStackFootprint Own stacking footprint from the last render
 
 ---@class ScrollbarFlattenedMarksCache
 ---@field source_buf integer

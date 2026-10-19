@@ -71,7 +71,8 @@ layout = {
 When built-in named marks collide on a row, their lane grows only as much as
 necessary. `max_width` caps the total width of that lane, including its
 declared base span. It does not cap the whole float. The active placement
-container limits the growth. Dynamic cells contain only named marks and are
+container limits the growth. When the scrollbar is beside a minimap, nearer
+the text, the container ends at the far edge of the window. Dynamic cells contain only named marks and are
 inserted on the inward side that faces the editor. The screen cells of the
 declared track, thumb, and ordinary marks stay pinned as the float grows or
 shrinks.
@@ -87,6 +88,10 @@ sufficient, the ordered prefix stays and the tail is omitted. Marks with
 window. `anchor` selects `NW`, `NE`, `SW`, or `SE`. The signed `row` and `col`
 offsets apply literally. `zindex` sets the `nvim_open_win` z-index (default
 `50`).
+
+When the minimap is on the same side, `minimap.placement.stack` puts the two
+floats side by side or sets which one is on top. See
+[Placement Beside the Scrollbar](minimap/configuration.md#placement-beside-the-scrollbar).
 
 `gutter` selects how a west scrollbar uses the gutter:
 

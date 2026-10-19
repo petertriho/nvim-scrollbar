@@ -1,6 +1,7 @@
 local config = require("scrollbar.config")
 local layout = require("scrollbar.layout")
 local providers = require("scrollbar.providers")
+local stack = require("scrollbar.stack")
 local store = require("scrollbar.store")
 
 local M = {}
@@ -525,8 +526,11 @@ local function close_source(source_win)
         clear_source_cache(source_win)
         release_statuscolumn(source_win)
     end
+    stack.publish("scrollbar", source_win, nil)
 end
 
+--- Autohide is a short hide: the footprint stays, so a minimap beside the
+--- scrollbar keeps its position.
 ---@param source_win integer
 local function conceal_source(source_win)
     revealed[source_win] = nil
@@ -553,6 +557,7 @@ local function close_all_states()
     for _, source_win in ipairs(reserved) do
         release_statuscolumn(source_win)
     end
+    stack.clear("scrollbar")
 end
 
 ---@param source_win integer
@@ -565,6 +570,11 @@ local function close_other_states(source_win)
     end
     for _, state in ipairs(pending) do
         close_state(state)
+    end
+    for _, winid in ipairs(stack.windows("scrollbar")) do
+        if winid ~= source_win then
+            stack.publish("scrollbar", winid, nil)
+        end
     end
 end
 
@@ -583,6 +593,7 @@ local function sweep_states()
     end
     for _, state in ipairs(pending) do
         close_state(state)
+        stack.publish("scrollbar", state.source_win, nil, { notify = valid_window(state.source_win) })
     end
 end
 
@@ -601,21 +612,90 @@ local function source_text_area(source_win)
     }
 end
 
+---@param active_config ScrollbarConfig
+---@return boolean
+local function west_anchor(active_config)
+    local anchor = active_config.placement.anchor
+    return anchor == "NW" or anchor == "SW"
+end
+
+--- The column that `placement.col` applies to, without stacking.
+---@param active_config ScrollbarConfig
+---@param source_win integer
+---@param area table<string, integer>
+---@return integer
+local function placement_origin(active_config, source_win, area)
+    local placement = active_config.placement
+    if west_anchor(active_config) then
+        if reserves_statuscolumn(active_config) and placement.gutter == "inner" then
+            return reservation_base_textoff(source_win)
+        end
+        return 0
+    end
+    return placement.relative == "window" and area.width or vim.o.columns
+end
+
+-- Compiled configs do not change, so each one keeps one placement table and
+-- a steady render allocates nothing for stacking.
+---@type table<ScrollbarConfig, ScrollbarStackPlacement>
+local stack_placements = setmetatable({}, { __mode = "k" })
+
+---@param active_config ScrollbarConfig
+---@return ScrollbarStackPlacement
+local function stack_placement(active_config)
+    local cached = stack_placements[active_config]
+    if cached == nil then
+        local placement = active_config.placement
+        cached = {
+            relative = placement.relative,
+            side = west_anchor(active_config) and "W" or "E",
+            zindex = placement.zindex,
+        }
+        stack_placements[active_config] = cached
+    end
+    return cached
+end
+
+---@param active_config ScrollbarConfig
+---@param origin integer
+---@param width integer
+---@param previous? ScrollbarStackFootprint Returned again when nothing changed
+---@return ScrollbarStackFootprint
+local function stack_footprint(active_config, origin, width, previous)
+    local placement = stack_placement(active_config)
+    local col = active_config.placement.col
+    if
+        previous ~= nil
+        and previous.origin == origin
+        and previous.width == width
+        and previous.col == col
+        and previous.relative == placement.relative
+        and previous.side == placement.side
+        and previous.zindex == placement.zindex
+    then
+        return previous
+    end
+    return {
+        relative = placement.relative,
+        side = placement.side,
+        zindex = placement.zindex,
+        origin = origin,
+        col = col,
+        width = width,
+    }
+end
+
 ---@param source_win integer
 ---@param active_config ScrollbarConfig
 ---@param area table<string, integer>
----@param container_width integer
+---@param origin integer Resolved horizontal origin that `placement.col` applies to
+---@param zindex integer Resolved z-index
 ---@param width integer
 ---@param hidden boolean
 ---@return table<string, any>
-local function float_config(active_config, source_win, area, container_width, width, hidden)
+local function float_config(active_config, source_win, area, origin, zindex, width, hidden)
     local placement = active_config.placement
     local north = placement.anchor == "NW" or placement.anchor == "NE"
-    local west = placement.anchor == "NW" or placement.anchor == "SW"
-    local west_origin = 0
-    if reserves_statuscolumn(active_config) and placement.gutter == "inner" then
-        west_origin = reservation_base_textoff(source_win)
-    end
     local vertical_anchor
     if placement.relative == "window" then
         vertical_anchor = north and 0 or area.height
@@ -627,12 +707,12 @@ local function float_config(active_config, source_win, area, container_width, wi
         relative = placement.relative == "window" and "win" or "editor",
         anchor = placement.anchor,
         row = vertical_anchor + placement.row,
-        col = (west and west_origin or container_width) + placement.col,
+        col = origin + placement.col,
         width = width,
         height = area.height,
         focusable = active_config.mouse,
         mouse = active_config.mouse,
-        zindex = active_config.placement.zindex,
+        zindex = zindex,
         hide = hidden,
     }
     if placement.relative == "window" then
@@ -1242,6 +1322,10 @@ local function render_source(source_win, selection, root_config)
     end
     if root_config.autohide and revealed[source_win] ~= source_buf then
         conceal_source(source_win)
+        local previous = stack.footprint("scrollbar", source_win)
+        local origin = placement_origin(active_config, source_win, source_text_area(source_win))
+        local width = previous and previous.width or active_config.layout.width
+        stack.publish("scrollbar", source_win, stack_footprint(active_config, origin, width, previous))
         return nil
     end
     local reserved = reserves_statuscolumn(active_config)
@@ -1261,6 +1345,8 @@ local function render_source(source_win, selection, root_config)
 
     local marks, buffer_revision, window_revision, compact_search = flattened_marks(source_win, source_buf)
     local line_count = active_config.geometry == "line" and vim.api.nvim_buf_line_count(source_buf) or nil
+    local west = west_anchor(active_config)
+    local stack_origin, stack_zindex = stack.resolve("scrollbar", source_win, stack_placement(active_config))
     local area
     local container_width
     local geometry
@@ -1274,6 +1360,10 @@ local function render_source(source_win, selection, root_config)
         if active_config.placement.relative == "window" then
             local base_textoff = reserved and reservation_base_textoff(source_win) or 0
             container_width = math.max(0, area.width - base_textoff)
+            if stack_origin ~= nil then
+                -- Beside a minimap, named marks grow only up to the far edge.
+                container_width = math.max(0, west and area.width - stack_origin or stack_origin)
+            end
             local reservation = statuscolumn_reservations[source_win]
             if reserved and reservation ~= nil and reservation.limited then
                 local maximum_width = math.max(0, reservation.span - active_config.placement.col)
@@ -1281,6 +1371,9 @@ local function render_source(source_win, selection, root_config)
             end
         else
             container_width = vim.o.columns
+            if stack_origin ~= nil then
+                container_width = math.max(0, west and vim.o.columns - stack_origin or stack_origin)
+            end
         end
 
         local mark_layer
@@ -1367,6 +1460,7 @@ local function render_source(source_win, selection, root_config)
     end
     local cursor_row, cursor_col = cursor_screen_position(source_win, active_config)
     local cursor_position_available = cursor_row ~= nil and cursor_col ~= nil
+    local own_origin
     ---@type ScrollbarWindowState?
     local state = states[source_win]
     if state == nil or not valid_window(state.float_win) or not vim.api.nvim_buf_is_valid(state.float_buf) then
@@ -1380,8 +1474,16 @@ local function render_source(source_win, selection, root_config)
                 )
             end
         end
-        local active_float_config =
-            float_config(active_config, source_win, area, container_width, output.width, cursor_position_available)
+        own_origin = placement_origin(active_config, source_win, area)
+        local active_float_config = float_config(
+            active_config,
+            source_win,
+            area,
+            stack_origin or own_origin,
+            stack_zindex,
+            output.width,
+            cursor_position_available
+        )
         state = create_state(
             source_win,
             source_buf,
@@ -1395,11 +1497,13 @@ local function render_source(source_win, selection, root_config)
             resolve_float_position()
         end
     else
+        own_origin = placement_origin(active_config, source_win, area)
         local active_float_config = float_config(
             active_config,
             source_win,
             area,
-            container_width,
+            stack_origin or own_origin,
+            stack_zindex,
             output.width,
             cursor_position_available and state.hidden_by_cursor or false
         )
@@ -1438,6 +1542,8 @@ local function render_source(source_win, selection, root_config)
         viewport_start = geometry.viewport_start,
         viewport_end = geometry.viewport_end,
     }
+    state.footprint = stack_footprint(active_config, own_origin, output.width, state.footprint)
+    stack.publish("scrollbar", source_win, state.footprint)
     if state_callback ~= nil then
         pcall(state_callback, state)
     end
@@ -1478,6 +1584,41 @@ M.render = function(source_win)
         return nil
     end
     return state
+end
+
+--- Resolve the stacked origin and z-index of one scrollbar float again, after
+--- the minimap footprint of its source window changes. The content does not
+--- render again, so the caller schedules a render when this returns true: the
+--- container for named-mark growth depends on the origin.
+---@param source_win integer
+---@return boolean changed
+M.reposition = function(source_win)
+    local state = states[source_win]
+    local footprint = state and state.footprint
+    if state == nil or footprint == nil or not valid_window(source_win) or not valid_window(state.float_win) then
+        return false
+    end
+    local origin, zindex = stack.resolve("scrollbar", source_win, footprint)
+    local desired = vim.deepcopy(state.float_config)
+    desired.col = (origin or footprint.origin) + footprint.col
+    desired.zindex = zindex
+    if vim.deep_equal(state.float_config, desired) then
+        return false
+    end
+
+    local cursor_row, cursor_col = cursor_screen_position(source_win, state.config)
+    local cursor_position_available = cursor_row ~= nil and cursor_col ~= nil
+    if cursor_position_available then
+        desired.hide = true
+    end
+    vim.api.nvim_win_set_config(state.float_win, desired)
+    state.float_config = desired
+    state.hidden_by_cursor = desired.hide
+    if cursor_position_available then
+        resolve_float_position()
+    end
+    update_cursor_visibility(state, cursor_row, cursor_col)
+    return true
 end
 
 ---@param source_win integer
@@ -1692,6 +1833,11 @@ M.source_windows = function(bufnr)
             stale[source_win] = true
         end
     end
+    for _, source_win in ipairs(stack.windows("scrollbar")) do
+        if not selected[source_win] then
+            stale[source_win] = true
+        end
+    end
     for source_win in pairs(stale) do
         close_source(source_win)
     end
@@ -1787,6 +1933,10 @@ M.setup = function()
                 clear_source_cache(closed_win)
                 release_statuscolumn(closed_win)
             end
+            -- A closing source window takes the minimap float with it, so
+            -- only a closed scrollbar float repositions the minimap.
+            local source_win = state and state.source_win or closed_win
+            stack.publish("scrollbar", source_win, nil, { notify = source_win ~= closed_win })
         end,
     })
     vim.api.nvim_create_autocmd("WinNew", {
@@ -1809,6 +1959,7 @@ M.setup = function()
             end
             for _, state in ipairs(pending) do
                 close_state(state)
+                stack.publish("scrollbar", state.source_win, nil)
             end
         end,
     })

@@ -97,6 +97,7 @@ T["defaults to disabled with sensible defaults"] = function()
         row = 0,
         col = 0,
         zindex = 50,
+        stack = "inner",
     })
     expect.equality(result.blend, 0)
     expect.equality(result.hide_on_cursor, true)
@@ -201,6 +202,7 @@ T["accepts the complete valid schema and deep copies inputs"] = function()
                 row = -1,
                 col = 2,
                 zindex = 90,
+                stack = "below",
             },
             blend = 35,
             hide_on_cursor = false,
@@ -226,7 +228,10 @@ T["accepts the complete valid schema and deep copies inputs"] = function()
     expect.equality(result.background_blend, 65)
     expect.equality(result.width, 120)
     expect.equality(result.height, 40)
-    expect.equality(result.placement, { relative = "window", anchor = "SW", row = -1, col = 2, zindex = 90 })
+    expect.equality(
+        result.placement,
+        { relative = "window", anchor = "SW", row = -1, col = 2, zindex = 90, stack = "below" }
+    )
     expect.equality(result.blend, 35)
     expect.equality(result.hide_on_cursor, false)
     expect.equality(result.mouse, false)
@@ -329,6 +334,11 @@ T["rejects invalid scalar and enum values"] = function()
     expect_invalid({ placement = { anchor = "C" } }, "minimap%.placement%.anchor must be one of")
     expect_invalid({ placement = { relative = "screen" } }, "minimap%.placement%.relative must be one of")
     expect_invalid({ placement = { row = 1.5 } }, "minimap%.placement%.row must be an integer")
+    expect_invalid(
+        { placement = { stack = "beside" } },
+        "minimap%.placement%.stack must be one of: above, below, inner, outer"
+    )
+    expect_invalid({ placement = { stack = false } }, "minimap%.placement%.stack must be one of")
     expect_invalid({ mouse = 1 }, "minimap%.mouse must be a boolean")
     expect_invalid({ mouse = { enabled = false } }, "minimap%.mouse must be a boolean")
     expect_invalid({ viewport = "yes" }, "minimap%.viewport must be a boolean")
@@ -644,6 +654,12 @@ T["profiles reject removed and shared options"] = function()
     end
 end
 
+T["accepts every placement.stack value"] = function()
+    for _, stack in ipairs({ "inner", "outer", "above", "below" }) do
+        expect.equality(set({ placement = { stack = stack } }).placement.stack, stack)
+    end
+end
+
 T["profiles allow display-only overrides"] = function()
     local result = set({
         profiles = {
@@ -651,7 +667,7 @@ T["profiles allow display-only overrides"] = function()
                 match = { filetypes = { "lua" } },
                 width = 60,
                 height = 30,
-                placement = { anchor = "NW", zindex = 70 },
+                placement = { anchor = "NW", zindex = 70, stack = "outer" },
                 blend = 20,
                 hide_on_cursor = false,
                 marks = false,
@@ -664,7 +680,11 @@ T["profiles allow display-only overrides"] = function()
     local profile = minimap().get_variants()[2].config
     expect.equality(profile.width, 60)
     expect.equality(profile.height, 30)
-    expect.equality(profile.placement, { relative = "window", anchor = "NW", row = 0, col = 0, zindex = 70 })
+    expect.equality(
+        profile.placement,
+        { relative = "window", anchor = "NW", row = 0, col = 0, zindex = 70, stack = "outer" }
+    )
+    expect.equality(result.placement.stack, "inner")
     expect.equality(profile.blend, 20)
     expect.equality(profile.hide_on_cursor, false)
     expect.equality(profile.marks, {})

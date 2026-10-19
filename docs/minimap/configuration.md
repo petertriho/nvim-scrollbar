@@ -33,6 +33,7 @@ require("scrollbar").setup({
             row = 0,
             col = 0,
             zindex = 50,
+            stack = "inner", -- "inner", "outer", "above", or "below"
         },
         blend = 0,
         hide_on_cursor = true,
@@ -75,12 +76,85 @@ You set appearance options at the root of the `minimap` block or in a
 | `placement.row` | `0` | Row offset from the anchor. |
 | `placement.col` | `0` | Column offset from the anchor. |
 | `placement.zindex` | `50` | `nvim_open_win()` z-index. |
+| `placement.stack` | `"inner"` | Arrangement with a scrollbar on the same side. See [Placement Beside the Scrollbar](#placement-beside-the-scrollbar). |
 | `blend` | `0` | Pseudo-transparency of the full float, `0` to `100`. |
 | `hide_on_cursor` | `true` | Hides the minimap of the active source window while the cursor is inside it. See [Cursor Yielding](#cursor-yielding). |
 | `mouse` | `true` | Adds the `<LeftMouse>`, `<LeftDrag>`, and `<LeftRelease>` mappings. |
 | `viewport` | `true` | Tints the background of the rows that the source window shows. |
 | `glyph` | `"█"` | Glyph for every occupied cell. It must be one string with a display width of exactly one. |
 | `marks` | `{}` | Overrides of the shared mark types for the minimap. See [Marks](#marks). |
+
+## Placement Beside the Scrollbar
+
+`placement.stack` sets how the minimap and the scrollbar share one side of a
+source window:
+
+| Value | Arrangement |
+| --- | --- |
+| `"inner"` | Side by side. The scrollbar is at the window edge. The minimap is beside it, nearer the text. |
+| `"outer"` | Side by side. The minimap is at the window edge. The scrollbar is beside it, nearer the text. |
+| `"above"` | The floats overlap. The minimap is on top. |
+| `"below"` | The floats overlap. The scrollbar is on top. |
+
+```lua
+require("scrollbar").setup({
+    minimap = {
+        enabled = true,
+        placement = { stack = "outer" },
+    },
+})
+```
+
+The floats share a side when both use the same `placement.relative` and both
+anchors are east (`NE`, `SE`) or both are west (`NW`, `SW`). The vertical half
+of the anchor does not matter. In all other cases, each float uses only its own
+placement. For example, a window-relative minimap and an editor-relative
+scrollbar can overlap in the rightmost window.
+
+### Side by Side
+
+- The float at the window edge uses its own `placement.col`, as usual.
+- The other float starts at the inward edge of the float at the window edge.
+  Its own `placement.col` applies from that edge. On the east side, a negative
+  `col` leaves a gap between the floats. On the west side, a positive `col`
+  leaves a gap.
+- When the scrollbar is at the window edge and its width changes, for example
+  when named marks collide, the minimap moves at once.
+- When the scrollbar is nearer the text, its named marks can grow only up to
+  the far edge of the window.
+
+A float that hides for a short time keeps its place, so the other float does
+not move:
+
+- `hide_on_cursor` hides a float while the cursor is inside it.
+- `autohide` hides a float after a period without activity.
+
+When the float at the window edge hides for a lasting reason, the other float
+moves to the window edge. The lasting reasons are:
+
+- `:ScrollbarHide` or `:MinimapHide`.
+- A disabled renderer.
+- An excluded buffer, or a buffer with more lines than `max_lines`.
+- `hide_if_all_visible` on the scrollbar.
+- An inactive window under `visibility = "active"` or with an editor-relative
+  placement.
+
+On the west side, the scrollbar can reserve gutter cells with
+`scrollbar.placement.gutter`. The reservation does not change. With `"inner"`,
+the minimap starts after the reserved scrollbar cells, so the line numbers stay
+visible. With `"outer"`, the scrollbar moves beside the minimap, and its
+reserved cells stay blank. For that combination, set
+`scrollbar.placement.gutter = "overlap"`.
+
+A window that is narrower than both floats gets no special handling. Neovim
+keeps each float inside the editor, so the floats can overlap in a very narrow
+window.
+
+### Overlap
+
+`"above"` and `"below"` set the order only when both `placement.zindex` values
+are equal. In that case, the bottom float uses `zindex - 1`. If both values are
+`1`, the top float uses `2` instead. Different `zindex` values always win.
 
 ## Providers
 

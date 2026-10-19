@@ -129,7 +129,8 @@ require("scrollbar").setup({
 ```
 
 By default, each source window gets a 16-column minimap at its north-east
-corner. Each minimap row represents a group of source lines. Occupied cells
+corner, beside the scrollbar. Each minimap row represents a group of source
+lines. Occupied cells
 show the single-width `glyph` (`"█"` by default). Treesitter and LSP
 semantic-token colors are opt-in providers:
 

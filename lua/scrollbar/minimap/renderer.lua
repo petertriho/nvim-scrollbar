@@ -2,10 +2,11 @@
 --- cells plus semantic, viewport, and cursor highlight layers into a visible
 --- scratch buffer. Parallels `lua/scrollbar/renderer.lua` but is independent.
 ---
---- Float placement reuses the anchor/row/col math from the scrollbar
---- renderer (copied, not imported, per the plan non-goal of no shared
---- runtime modules). Squash output is the only source of row text; viewport,
---- cursor, and semantic overlays are non-destructive extmark highlights.
+--- Float placement mirrors the anchor/row/col math of the scrollbar renderer.
+--- `scrollbar.stack` resolves the origin and z-index against a scrollbar on the
+--- same side of the source window. Squash output is the only source of row
+--- text; viewport, cursor, and semantic overlays are non-destructive extmark
+--- highlights.
 ---
 --- State cache is keyed by
 --- `(source_win, source_buf, mirror_signature, viewport, width, height, overlay_signature)`
@@ -15,6 +16,7 @@ local config_module = require("scrollbar.minimap.config")
 local highlight_module = require("scrollbar.minimap.highlights")
 local providers = require("scrollbar.providers")
 local semantic = require("scrollbar.minimap.semantic")
+local stack = require("scrollbar.stack")
 local store = require("scrollbar.store")
 
 local M = {}
@@ -277,14 +279,40 @@ local function source_viewport(source_win)
     end)
 end
 
+---@param active_config ScrollbarMinimapConfig
+---@param source_win integer
+---@return ScrollbarStackFootprint
+local function stack_footprint(active_config, source_win)
+    local placement = active_config.placement
+    local west = placement.anchor == "NW" or placement.anchor == "SW"
+    local origin
+    if west then
+        origin = 0
+    elseif placement.relative == "window" then
+        origin = vim.api.nvim_win_get_width(source_win)
+    else
+        origin = vim.o.columns
+    end
+    return {
+        relative = placement.relative,
+        side = west and "W" or "E",
+        origin = origin,
+        col = placement.col,
+        width = active_config.width,
+        zindex = placement.zindex,
+        stack = placement.stack,
+    }
+end
+
 ---Compute the float config for the minimap window. Mirrors the scrollbar
----renderer's float_config math at `lua/scrollbar/renderer.lua:545-576` but
----uses the minimap's own width/height and placement.
+---renderer's float_config math but uses the minimap's own width/height and
+---placement.
 ---@param active_config ScrollbarMinimapConfig
 ---@param source_win integer
 ---@param area_top integer
 ---@param area_height integer
----@param editor_columns integer
+---@param origin integer Resolved horizontal origin that `placement.col` applies to
+---@param zindex integer Resolved z-index
 ---@param target_width integer
 ---@param target_height integer
 ---@param hidden boolean
@@ -294,14 +322,14 @@ local function float_config(
     source_win,
     area_top,
     area_height,
-    editor_columns,
+    origin,
+    zindex,
     target_width,
     target_height,
     hidden
 )
     local placement = active_config.placement
     local north = placement.anchor == "NW" or placement.anchor == "NE"
-    local west = placement.anchor == "NW" or placement.anchor == "SW"
 
     local vertical_anchor
     if placement.relative == "window" then
@@ -309,25 +337,17 @@ local function float_config(
     else
         vertical_anchor = north and area_top or (area_top + area_height)
     end
-    local horizontal_origin
-    if west then
-        horizontal_origin = 0
-    elseif placement.relative == "window" then
-        horizontal_origin = vim.api.nvim_win_get_width(source_win)
-    else
-        horizontal_origin = editor_columns
-    end
 
     local result = {
         relative = placement.relative == "window" and "win" or "editor",
         anchor = placement.anchor,
         row = vertical_anchor + placement.row,
-        col = horizontal_origin + placement.col,
+        col = origin + placement.col,
         width = target_width,
         height = target_height,
         focusable = active_config.mouse,
         mouse = active_config.mouse,
-        zindex = active_config.placement.zindex,
+        zindex = zindex,
         hide = hidden,
     }
     if placement.relative == "window" then
@@ -455,8 +475,11 @@ local function close_source(source_win)
     else
         revealed[source_win] = nil
     end
+    stack.publish("minimap", source_win, nil)
 end
 
+--- Autohide is a short hide: the footprint stays, so a scrollbar beside the
+--- minimap keeps its position.
 ---@param source_win integer
 local function conceal_source(source_win)
     revealed[source_win] = nil
@@ -474,6 +497,7 @@ local function close_all_states()
     for _, state in ipairs(pending) do
         close_state(state)
     end
+    stack.clear("minimap")
 end
 
 local function sweep_states()
@@ -491,6 +515,7 @@ local function sweep_states()
     end
     for _, state in ipairs(pending) do
         close_state(state)
+        stack.publish("minimap", state.source_win, nil, { notify = valid_window(state.source_win) })
     end
 end
 
@@ -806,6 +831,7 @@ local function render_source(source_win, selection, root_config)
     end
     if root_config.autohide and revealed[source_win] ~= source_buf then
         conceal_source(source_win)
+        stack.publish("minimap", source_win, stack_footprint(active_config, source_win))
         return nil
     end
 
@@ -940,6 +966,9 @@ local function render_source(source_win, selection, root_config)
     local active_winblend, active_winhighlight = window_presentation(active_config)
     local cursor_screen_row, cursor_screen_col = cursor_screen_position(source_win, active_config)
     local cursor_position_available = cursor_screen_row ~= nil and cursor_screen_col ~= nil
+    local footprint = stack_footprint(active_config, source_win)
+    local stack_origin, stack_zindex = stack.resolve("minimap", source_win, footprint)
+    local origin = stack_origin or footprint.origin
     ---@type ScrollbarMinimapRendererState?
     local state = states[source_win]
     if state == nil or not valid_window(state.float_win) or not vim.api.nvim_buf_is_valid(state.float_buf) then
@@ -951,7 +980,8 @@ local function render_source(source_win, selection, root_config)
             source_win,
             area_top,
             area_height,
-            vim.o.columns,
+            origin,
+            stack_zindex,
             target_width,
             target_height,
             cursor_position_available
@@ -985,6 +1015,7 @@ local function render_source(source_win, selection, root_config)
             hidden_by_cursor = desired.hide == true,
             winblend = active_winblend,
             winhighlight = active_winhighlight,
+            footprint = footprint,
         }
         states[source_win] = state
         states_by_float[float_win] = state
@@ -997,7 +1028,8 @@ local function render_source(source_win, selection, root_config)
             source_win,
             area_top,
             area_height,
-            vim.o.columns,
+            origin,
+            stack_zindex,
             target_width,
             target_height,
             cursor_position_available and state.hidden_by_cursor or false
@@ -1041,7 +1073,9 @@ local function render_source(source_win, selection, root_config)
     state.overlay_signature = overlay_sig
     state.cells_signature = cache.signature
     state.rendered_signature = cache.signature
+    state.footprint = footprint
     prune_cell_cache(source_buf)
+    stack.publish("minimap", source_win, footprint)
 
     if state_callback ~= nil then
         pcall(state_callback, state)
@@ -1079,6 +1113,40 @@ M.render = function(source_win)
         return nil
     end
     return state
+end
+
+--- Resolve the stacked origin and z-index of one minimap float again, after
+--- the scrollbar footprint of its source window changes. The content does not
+--- render again.
+---@param source_win integer
+---@return boolean changed
+M.reposition = function(source_win)
+    local state = states[source_win]
+    if state == nil or not valid_window(source_win) or not valid_window(state.float_win) then
+        return false
+    end
+    local footprint = state.footprint
+    local origin, zindex = stack.resolve("minimap", source_win, footprint)
+    local desired = vim.deepcopy(state.float_config)
+    desired.col = (origin or footprint.origin) + footprint.col
+    desired.zindex = zindex
+    if vim.deep_equal(state.float_config, desired) then
+        return false
+    end
+
+    local cursor_row, cursor_col = cursor_screen_position(source_win, state.config)
+    local cursor_position_available = cursor_row ~= nil and cursor_col ~= nil
+    if cursor_position_available then
+        desired.hide = true
+    end
+    vim.api.nvim_win_set_config(state.float_win, desired)
+    state.float_config = desired
+    state.hidden_by_cursor = desired.hide
+    if cursor_position_available then
+        resolve_float_position()
+    end
+    update_cursor_visibility(state, cursor_row, cursor_col)
+    return true
 end
 
 ---@param source_win integer
@@ -1312,6 +1380,11 @@ M.source_windows = function(bufnr)
             stale[source_win] = true
         end
     end
+    for _, source_win in ipairs(stack.windows("minimap")) do
+        if not selected[source_win] then
+            stale[source_win] = true
+        end
+    end
     for source_win in pairs(stale) do
         close_source(source_win)
     end
@@ -1401,6 +1474,10 @@ M.setup = function(options)
             else
                 revealed[closed_win] = nil
             end
+            -- A closing source window takes the scrollbar float with it, so
+            -- only a closed minimap float repositions the scrollbar.
+            local source_win = state and state.source_win or closed_win
+            stack.publish("minimap", source_win, nil, { notify = source_win ~= closed_win })
         end,
     })
     vim.api.nvim_create_autocmd({ "BufDelete", "BufWipeout" }, {
@@ -1414,6 +1491,7 @@ M.setup = function(options)
             end
             for _, state in ipairs(pending) do
                 close_state(state)
+                stack.publish("minimap", state.source_win, nil)
             end
             cell_cache[args.buf] = nil
             pending_cells[args.buf] = nil
