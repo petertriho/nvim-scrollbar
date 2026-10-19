@@ -81,9 +81,6 @@ To replace the images:
 Do not run `make demo` between step 1 and step 3. A new build changes the
 bytes of the GIFs, so the attachments no longer match the files.
 
-When v2 is released, change `BRANCH` in `scripts/demo/cli.lua`, update the
-note at the top of the showcase, and update the issues again.
-
 ## Continuous Integration
 
 CI blocks on the quality checks and on the tests with Neovim `v0.11.4` and the

@@ -17,7 +17,7 @@ local manifest_path = demo_dir .. "/manifest.json"
 local catalog = dofile(demo_dir .. "/entries.lua")
 
 local REPO_URL = "https://github.com/petertriho/nvim-scrollbar"
-local BRANCH = "refactor/v2"
+local BRANCH = "main"
 -- GitHub rejects larger image attachments.
 local MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024
 local MAX_ISSUE_BODY = 65536
@@ -314,7 +314,6 @@ local COMMON_SETUP = [[
 },
 {
     "petertriho/nvim-scrollbar",
-    branch = "%s",
     config = function()
         -- Paste the setup of an entry here.
     end,
@@ -325,12 +324,6 @@ local COMMON_SETUP = [[
 ---@return string
 local function showcase_body(manifest_data)
     local lines = {
-        "> [!NOTE]",
-        string.format(
-            "> These configs are for nvim-scrollbar v2, which is on the `%s` branch until its release. They do not work with v1.",
-            BRANCH
-        ),
-        "",
         string.format(
             "Each image shows one preset or configuration, and its snippet is the exact setup that produced it. [`scripts/demo/`](%s/tree/%s/scripts/demo) generates the images with `make demo`.",
             REPO_URL,
@@ -355,9 +348,9 @@ local function showcase_body(manifest_data)
         "",
         "## Common setup",
         "",
-        "Every image uses this lazy.nvim setup: the tokyonight `night` style with three scrollbar highlight overrides, mini.diff for the Git hunks, and the v2 branch of nvim-scrollbar.",
+        "Every image uses this lazy.nvim setup: the tokyonight `night` style with three scrollbar highlight overrides, mini.diff for the Git hunks, and nvim-scrollbar.",
         "",
-        COMMON_SETUP:format(BRANCH),
+        COMMON_SETUP,
         "",
         string.format(
             'The editor options are `number`, `relativenumber`, `cursorline`, `signcolumn = "no"`, `cmdheight = 0`, and `laststatus = 3`. The demo sets fixed diagnostics, Git hunks, the named marks `a` to `e`, and a search for `%s` in [`%s`](%s/blob/%s/%s).',
