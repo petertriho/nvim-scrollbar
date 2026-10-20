@@ -861,4 +861,73 @@ T["M.screen projects compact_search rows aligned with equivalent expanded marks"
     expect.equality(result.compact_mark_rows, result.mark_rows)
 end
 
+T["compose cache drops the entries of unreachable mark layers"] = function()
+    local child = new_child()
+    local result = child.lua_func(function()
+        local layout_module = require("scrollbar.layout")
+        local active_config = require("scrollbar.config").set({ scrollbar = { thumb = { text = "H" } } })
+        layout_module.clear_cache()
+
+        local function compose_cache()
+            local index = 1
+            while true do
+                local name, value = debug.getupvalue(layout_module.compose, index)
+                assert(name ~= nil, "compose_cache is not an upvalue of layout.compose")
+                if name == "compose_cache" then
+                    return value
+                end
+                index = index + 1
+            end
+        end
+        local function entry_count()
+            collectgarbage("collect")
+            collectgarbage("collect")
+            local count = 0
+            for _ in pairs(compose_cache()) do
+                count = count + 1
+            end
+            return count
+        end
+        local function input(row, mark_layer)
+            return {
+                config = active_config,
+                height = 10,
+                line_count = 100,
+                geometry = {
+                    total_extent = 100,
+                    viewport_start = 0,
+                    viewport_end = 9,
+                    mark_rows = { row },
+                    handle = { first_row = 1, last_row = 2 },
+                },
+                marks = { { line = row * 10, type = "Search" } },
+                mark_layer = mark_layer,
+            }
+        end
+
+        -- Each call without `mark_layer` resolves a new layer that nothing
+        -- else holds.
+        for index = 1, 200 do
+            layout_module.compose(input(index % 10))
+        end
+        local after_rebuilds = entry_count()
+
+        -- A layer that the caller still holds keeps its entry and its cached
+        -- output.
+        local held = layout_module.mark_layer(input(3))
+        local first = layout_module.compose(input(3, held))
+        local held_count = entry_count()
+        local second = layout_module.compose(input(3, held))
+        return {
+            after_rebuilds = after_rebuilds,
+            held_count = held_count,
+            cache_hit = first == second,
+        }
+    end)
+
+    expect.equality(result.after_rebuilds <= 1, true)
+    expect.equality(result.held_count >= 1 and result.held_count <= 2, true)
+    expect.equality(result.cache_hit, true)
+end
+
 return T

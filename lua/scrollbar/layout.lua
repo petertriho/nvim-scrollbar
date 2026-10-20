@@ -2149,10 +2149,11 @@ end
 -- layer. Each entry holds the handle rows, the height, and the compiled
 -- layout cache, which fully determine the compose result. Each window
 -- rebuild produces a distinct layer table. Thus windows that share a variant
--- keep separate entries and do not evict each other. The keys are strong, so
--- an entry stays after a rebuild replaces its layer. Only clear_cache removes
--- entries (on renderer hide, dispose, and setup).
-local compose_cache = {}
+-- keep separate entries and do not evict each other. Weak keys keep an entry
+-- alive exactly as long as its layer (an entry never references its key). An
+-- entry goes away after a rebuild drops its layer and the GC runs, or on
+-- clear_cache.
+local compose_cache = setmetatable({}, { __mode = "k" })
 
 -- Per-row reuse across layer rebuilds that share the identity of the
 -- flattened marks table. After an edit, only a couple of row assignments
@@ -2319,7 +2320,7 @@ end
 
 M.clear_cache = function()
     glyph_cache = {}
-    compose_cache = {}
+    compose_cache = setmetatable({}, { __mode = "k" })
     compose_reuse = setmetatable({}, { __mode = "k" })
 end
 
