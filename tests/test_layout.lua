@@ -861,6 +861,62 @@ T["M.screen projects compact_search rows aligned with equivalent expanded marks"
     expect.equality(result.compact_mark_rows, result.mark_rows)
 end
 
+T["uniform probe finds a silent fold in every slice below the viewport"] = function()
+    local child = new_child()
+    local result = child.lua_func(function()
+        local layout_module = require("scrollbar.layout")
+        layout_module.screen_extent_verify_interval_ms = 0
+        -- 1003 lines below the viewport make four slices of 250 lines and a
+        -- remainder of 3 lines.
+        local lines = {}
+        for index = 1, 2023 do
+            lines[index] = "line " .. index
+        end
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        vim.wo.foldmethod = "manual"
+        vim.wo.wrap = false
+        local source_win = vim.api.nvim_get_current_win()
+        local height = 20
+        local function total_extent()
+            return layout_module.screen({ source_win = source_win, height = height, marks = {} }).total_extent
+        end
+        local function show_line_1001()
+            vim.fn.winrestview({ topline = 1001, lnum = 1001 })
+        end
+
+        -- Return the number of probes after the first probe that find a fold
+        -- of `first`..`last` (one-based), or nil.
+        local function probes_to_find(first, last)
+            vim.cmd("normal! zE")
+            layout_module.clear_screen_cache(source_win)
+            show_line_1001()
+            total_extent()
+            vim.cmd(string.format("%d,%dfold", first, last))
+            show_line_1001()
+            local truth = vim.api.nvim_win_text_height(source_win, {}).all
+            for probe = 1, 8 do
+                if total_extent() == truth then
+                    return probe
+                end
+            end
+            return nil
+        end
+
+        local found = {
+            first_slice = probes_to_find(1031, 1060),
+            second_slice = probes_to_find(1281, 1310),
+            last_slice = probes_to_find(1781, 1810),
+            remainder = probes_to_find(2022, 2023),
+        }
+        layout_module.screen_extent_verify_interval_ms = nil
+        return found
+    end)
+
+    for _, slice in ipairs({ "first_slice", "second_slice", "last_slice", "remainder" }) do
+        expect.equality({ slice, result[slice] ~= nil and result[slice] <= 4 }, { slice, true })
+    end
+end
+
 T["compose cache drops the entries of unreachable mark layers"] = function()
     local child = new_child()
     local result = child.lua_func(function()

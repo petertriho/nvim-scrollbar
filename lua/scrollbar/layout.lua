@@ -1013,14 +1013,14 @@ end
 
 --- Bounded probe that stands in for the periodic full verify on uniform
 --- layers. The viewport and one slice below it must still render 1:1 (one row
---- per line). A mismatch drops the layer to the full verify. Each slice is
---- 1/UNIFORM_PROBE_SLICES of the lines below the viewport, and the slice
---- changes on each probe. The cursor cycles through slots 1 to
---- UNIFORM_PROBE_SLICES, so only the first probe of a layer checks slot 0 (the
---- first slice). The last slot holds only the remainder lines. The probe never
---- checks the lines above the viewport. A silent fold above the viewport, or in
---- the first slice after the first probe, stays unknown until the viewport
---- reaches it or a full verify runs for another reason.
+--- per line). A mismatch drops the layer to the full verify. The lines below
+--- the viewport split into UNIFORM_PROBE_SLICES slices, and the last slice
+--- also holds the remainder lines. Each probe checks the next slice in turn.
+--- Thus while the viewport stays still, the probe finds a silent fold below it
+--- within UNIFORM_PROBE_SLICES probes. Each probe measures the viewport and
+--- about 1/UNIFORM_PROBE_SLICES of the lines below it. The probe never checks
+--- the lines above the viewport. A silent fold there stays unknown until the
+--- viewport reaches it or a full verify runs for another reason.
 local UNIFORM_PROBE_SLICES = 4
 
 local function uniform_probe(source_win, layer, height)
@@ -1041,9 +1041,12 @@ local function uniform_probe(source_win, layer, height)
     if below > 0 then
         local slice = math.max(1, math.floor(below / UNIFORM_PROBE_SLICES))
         local cursor = layer.uniform_cursor or 0
-        layer.uniform_cursor = (cursor % UNIFORM_PROBE_SLICES) + 1
+        layer.uniform_cursor = (cursor + 1) % UNIFORM_PROBE_SLICES
         local start = view_end + cursor * slice
-        local stop = math.min(start + slice, line_count)
+        local stop = line_count
+        if cursor < UNIFORM_PROBE_SLICES - 1 then
+            stop = math.min(start + slice, line_count)
+        end
         if stop > start and rows_between(source_win, start, stop, line_count) ~= (stop - start) then
             return false
         end
