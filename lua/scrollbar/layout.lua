@@ -1137,14 +1137,6 @@ M.screen = function(input)
                 previous = line
             end
         end
-        if compact_search ~= nil then
-            search_compact.each(compact_search, function(line)
-                local clamped = clamp(line, 0, maximum_line)
-                if prefixes[clamped] == nil then
-                    prefixes[clamped] = clamped == 0 and 0 or prefix_for(source_win, clamped, layer)
-                end
-            end)
-        end
     else
         unique_lines = {}
         local seen_lines = {}
@@ -1176,13 +1168,35 @@ M.screen = function(input)
         mark_rows[index] = M.map_position(prefixes[line], total_extent, height)
     end
 
+    -- One inlined pass over the blob. A shared `search_compact.each` loop with
+    -- a different callback at each call site keeps leaving its JIT trace.
+    -- Built-in search sorts the blob by line, so equal lines are adjacent and
+    -- reuse the row of the previous entry. Any order gives the same rows.
     local compact_mark_rows
     if compact_search ~= nil then
         compact_mark_rows = {}
-        search_compact.each(compact_search, function(line)
-            local clamped = clamp(line, 0, maximum_line)
-            compact_mark_rows[#compact_mark_rows + 1] = M.map_position(prefixes[clamped], total_extent, height)
-        end)
+        local data = compact_search.data
+        local previous_line = -1
+        local previous_row = 0
+        local index = 0
+        for offset = 1, #data, 4 do
+            local first, second, third, fourth = data:byte(offset, offset + 3)
+            local line = first * 0x1000000 + second * 0x10000 + third * 0x100 + fourth
+            if line > maximum_line then
+                line = maximum_line
+            end
+            if line ~= previous_line then
+                local prefix = prefixes[line]
+                if prefix == nil then
+                    prefix = line == 0 and 0 or prefix_for(source_win, line, layer)
+                    prefixes[line] = prefix
+                end
+                previous_row = M.map_position(prefix, total_extent, height)
+                previous_line = line
+            end
+            index = index + 1
+            compact_mark_rows[index] = previous_row
+        end
     end
 
     screen_marks_cache[source_win] = {
@@ -1487,24 +1501,38 @@ local function group_candidates(input, column_offset, expanded_lane_id)
     if compact ~= nil and search_config ~= nil and search_lane ~= nil then
         local precomputed = input.geometry.compact_mark_rows
         local compact_groups = {}
+        local data = compact.data
+        local last_compact_row, last_compact_group
         if precomputed ~= nil then
-            search_compact.each(compact, function(line, index)
+            local index = 0
+            for offset = 1, #data, 4 do
+                local first, second, third, fourth = data:byte(offset, offset + 3)
+                local line = first * 0x1000000 + second * 0x10000 + third * 0x100 + fourth
+                index = index + 1
                 local row = precomputed[index]
-                local group = compact_groups[row]
-                if group == nil then
-                    group = group_for(row, "Search", search_config, search_lane)
-                    group.compact_source = { provider = "search", line = line, type = "Search" }
-                    compact_groups[row] = group
+                local group
+                if row == last_compact_row then
+                    group = last_compact_group
+                else
+                    group = compact_groups[row]
+                    if group == nil then
+                        group = group_for(row, "Search", search_config, search_lane)
+                        group.compact_source = { provider = "search", line = line, type = "Search" }
+                        compact_groups[row] = group
+                    end
+                    last_compact_row = row
+                    last_compact_group = group
                 end
-                group.count = group.count + 1
-                group.lines[#group.lines + 1] = line
-            end)
+                local n = group.count + 1
+                group.count = n
+                group.lines[n] = line
+            end
         else
             local total_extent = math.max(0, input.line_count)
             local maximum_position = math.max(0, total_extent - 1)
             local maximum_row = math.max(0, input.height - 1)
-            for offset = 1, #compact.data, 4 do
-                local first, second, third, fourth = compact.data:byte(offset, offset + 3)
+            for offset = 1, #data, 4 do
+                local first, second, third, fourth = data:byte(offset, offset + 3)
                 local line = first * 0x1000000 + second * 0x10000 + third * 0x100 + fourth
                 local row
                 if total_extent <= 1 or input.height <= 1 then
@@ -1514,14 +1542,22 @@ local function group_candidates(input, column_offset, expanded_lane_id)
                 else
                     row = math.floor(math.min(line, maximum_position) * maximum_row / maximum_position)
                 end
-                local group = compact_groups[row]
-                if group == nil then
-                    group = group_for(row, "Search", search_config, search_lane)
-                    group.compact_source = { provider = "search", line = line, type = "Search" }
-                    compact_groups[row] = group
+                local group
+                if row == last_compact_row then
+                    group = last_compact_group
+                else
+                    group = compact_groups[row]
+                    if group == nil then
+                        group = group_for(row, "Search", search_config, search_lane)
+                        group.compact_source = { provider = "search", line = line, type = "Search" }
+                        compact_groups[row] = group
+                    end
+                    last_compact_row = row
+                    last_compact_group = group
                 end
-                group.count = group.count + 1
-                group.lines[#group.lines + 1] = line
+                local n = group.count + 1
+                group.count = n
+                group.lines[n] = line
             end
         end
     end

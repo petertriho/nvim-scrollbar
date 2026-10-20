@@ -861,6 +861,67 @@ T["M.screen projects compact_search rows aligned with equivalent expanded marks"
     expect.equality(result.compact_mark_rows, result.mark_rows)
 end
 
+T["M.screen maps an unsorted compact blob like ordinary marks on folded and wrapped lines"] = function()
+    local child = new_child()
+    local result = child.lua_func(function()
+        local lines = {}
+        for index = 1, 200 do
+            lines[index] = index % 7 == 0 and string.rep("wrapped ", 40) or ("line " .. index)
+        end
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        vim.cmd("split")
+        local source_win = vim.api.nvim_get_current_win()
+        vim.api.nvim_win_set_height(source_win, 10)
+        vim.wo[source_win].wrap = true
+        vim.wo[source_win].foldmethod = "manual"
+        vim.cmd("51,80fold")
+
+        local layout_module = require("scrollbar.layout")
+        local compact = require("scrollbar.providers.search.compact")
+        -- Unsorted, with duplicates that are not adjacent, a folded line, a
+        -- wrapped line, and a line after the end of the buffer.
+        local match_lines = { 150, 10, 10, 60, 199, 250, 0, 60, 120, 10, 13 }
+        local reference_marks = {}
+        for index, line in ipairs(match_lines) do
+            reference_marks[index] = { line = line, type = "Search" }
+        end
+
+        local reference = layout_module.screen({
+            source_win = source_win,
+            height = 10,
+            marks = reference_marks,
+        })
+        local presorted = layout_module.screen({
+            source_win = source_win,
+            height = 10,
+            marks = { { line = 13, type = "Search" }, { line = 60, type = "Search" } },
+            marks_sorted = true,
+            compact_search = compact.encode(match_lines),
+        })
+        local unsorted = layout_module.screen({
+            source_win = source_win,
+            height = 10,
+            marks = {},
+            compact_search = compact.encode(match_lines),
+        })
+
+        local distinct = {}
+        for _, row in ipairs(reference.mark_rows) do
+            distinct[row] = true
+        end
+        return {
+            reference = reference.mark_rows,
+            presorted = presorted.compact_mark_rows,
+            unsorted = unsorted.compact_mark_rows,
+            distinct_rows = vim.tbl_count(distinct),
+        }
+    end)
+
+    expect.equality(result.distinct_rows > 3, true)
+    expect.equality(result.presorted, result.reference)
+    expect.equality(result.unsorted, result.reference)
+end
+
 T["uniform probe finds a silent fold in every slice below the viewport"] = function()
     local child = new_child()
     local result = child.lua_func(function()

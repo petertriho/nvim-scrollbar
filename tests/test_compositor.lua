@@ -284,6 +284,51 @@ T["screen compact search via compact_mark_rows stays equivalent to ordinary mark
     expect.equality(compact.hitmap[1][1].lines, { 10, 10, 11, 20 })
 end
 
+T["groups an unsorted compact blob like the same ordinary search marks"] = function()
+    local active_config = config({
+        layout = { columns = { { "marks" }, { "track" } } },
+        marks = { Search = { text = { "-", "=", "#" } } },
+    })
+    -- Row 0 comes back after row 1, so a group is found again by its row.
+    local match_lines = { 10, 99, 11, 10 }
+    local match_rows = { 0, 1, 0, 0 }
+    local alpha = { provider = "alpha", line = 20, type = "Search", text = "A" }
+    local ordinary_marks = {}
+    for index, line in ipairs(match_lines) do
+        ordinary_marks[index] = { provider = "search", line = line, type = "Search" }
+    end
+    ordinary_marks[#ordinary_marks + 1] = alpha
+    local ordinary_rows = vim.list_extend(vim.deepcopy(match_rows), { 0 })
+    local ordinary = compose({
+        config = active_config,
+        height = 2,
+        marks = ordinary_marks,
+        mark_rows = ordinary_rows,
+    })
+    local blob = require("scrollbar.providers.search.compact").encode(match_lines)
+    local with_rows = compose({
+        config = active_config,
+        height = 2,
+        compact_search = blob,
+        compact_mark_rows = match_rows,
+        marks = { alpha },
+        mark_rows = { 0 },
+    })
+    local with_line_count = compose({
+        config = active_config,
+        height = 2,
+        line_count = 100,
+        compact_search = blob,
+        marks = { alpha },
+        mark_rows = { 0 },
+    })
+
+    expect.equality(with_rows, ordinary)
+    expect.equality(with_line_count, ordinary)
+    expect.equality(ordinary.hitmap[1][1].lines, { 10, 10, 11, 20 })
+    expect.equality(ordinary.hitmap[2][1].lines, { 99 })
+end
+
 T["supports optional components and inert transparent cells"] = function()
     local result = compose({
         config = config({
