@@ -22,24 +22,39 @@ local source_buf = vim.api.nvim_get_current_buf()
 
 -- Dense matches: 2 per line on even-indexed lines, 1 per line on odd-indexed
 -- lines. This fixture mirrors the "dense" fixture in benchmarks/search.lua. The
--- two cases publish the matches as a compact blob or as ordinary search marks.
--- The first render after a publish runs the line dedup in M.screen. The timed
--- passes measure the steady state with warm caches after that render.
-local match_lines = {}
-for index = 0, line_count - 1 do
-    match_lines[#match_lines + 1] = index
-    if index % 2 == 0 then
-        match_lines[#match_lines + 1] = index
+-- two forms publish the matches as a compact blob or as ordinary search marks.
+-- Two match sets alternate, because the store ignores an identical publish.
+-- Each timed pass is a cold render:
+-- - publish: a new match set, as on an incsearch keystroke or a refresh after
+--   an edit. The pass times the store call and the render.
+-- - scroll: a scroll by one line. In screenline mode, a scroll runs the line
+--   dedup in M.screen and rebuilds the mark layer.
+local function dense_match_lines(shift)
+    local result = {}
+    for index = 0, line_count - 1 do
+        local line = (index + shift) % line_count
+        result[#result + 1] = line
+        if index % 2 == 0 then
+            result[#result + 1] = line
+        end
+    end
+    table.sort(result)
+    return result
+end
+
+local match_sets = { dense_match_lines(0), dense_match_lines(1) }
+local match_count = #match_sets[1]
+
+local compact = require("scrollbar.providers.search.compact")
+local compact_blobs = {}
+local ordinary_marks = {}
+for set_index, match_lines in ipairs(match_sets) do
+    compact_blobs[set_index] = compact.encode(match_lines)
+    ordinary_marks[set_index] = {}
+    for index, line in ipairs(match_lines) do
+        ordinary_marks[set_index][index] = { line = line, type = "Search" }
     end
 end
-local match_count = #match_lines
-
-local ordinary_marks = {}
-for index, line in ipairs(match_lines) do
-    ordinary_marks[index] = { line = line, type = "Search" }
-end
-
-local compact_blob = require("scrollbar.providers.search.compact").encode(match_lines)
 
 local function pack(...)
     return select("#", ...), { ... }
@@ -208,6 +223,7 @@ local function assert_render_gets_matches(name, winid)
 end
 
 local phases = {
+    "publish",
     "store snapshot/flattening",
     "geometry",
     "screen geometry",
@@ -215,7 +231,7 @@ local phases = {
     "row composition",
 }
 
-local function measure_phases(name, publish)
+local function measure_phases(name, mode, publish)
     local renderer = require("scrollbar.renderer")
     local store = require("scrollbar.shared.store")
     local winid = vim.api.nvim_get_current_win()
@@ -224,14 +240,24 @@ local function measure_phases(name, publish)
     configure_screen()
     local instrumentation = instrument_renderer()
 
-    -- Publish once. The renderer caches after the first render. We measure the
-    -- steady state with a warm cache, as benchmarks/render.lua does.
-    publish(store)
+    store.clear("search", source_buf)
+    local set_index = 1
+    local topline = 1
+    publish(store, set_index)
     assert_render_gets_matches(name, winid)
 
     local samples = {}
     local function profiled_pass()
         local sample = instrumentation.start_sample()
+        if mode == "publish" then
+            set_index = 3 - set_index
+            local started = vim.uv.hrtime()
+            assert(publish(store, set_index), "the store rejected the publish")
+            instrumentation.record("publish", (vim.uv.hrtime() - started) / 1000000)
+        else
+            topline = 3 - topline
+            vim.fn.winrestview({ topline = topline, lnum = topline })
+        end
         renderer.render(winid)
         instrumentation.stop_sample()
         return sample
@@ -258,21 +284,21 @@ local function measure_phases(name, publish)
     return { name = name, match_count = match_count, phases = result }
 end
 
+local publishers = {
+    ["compact blob"] = function(store, set_index)
+        return store._set_search_compact(source_buf, compact_blobs[set_index])
+    end,
+    ["ordinary search marks"] = function(store, set_index)
+        return store.set("search", source_buf, ordinary_marks[set_index])
+    end,
+}
+
 local results = {}
-
-table.insert(
-    results,
-    measure_phases("screenline + compact blob", function(store)
-        store._set_search_compact(source_buf, compact_blob)
-    end)
-)
-
-table.insert(
-    results,
-    measure_phases("screenline + ordinary search marks", function(store)
-        store.set("search", source_buf, ordinary_marks)
-    end)
-)
+for _, mode in ipairs({ "publish", "scroll" }) do
+    for _, form in ipairs({ "compact blob", "ordinary search marks" }) do
+        table.insert(results, measure_phases(string.format("%s, %s", mode, form), mode, publishers[form]))
+    end
+end
 
 io.write(string.format("match_count = %d\n\n", match_count))
 io.write("## Renderer phases (screenline unit, p50 / p95 / max ms)\n\n")
