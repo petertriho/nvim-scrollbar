@@ -1,132 +1,31 @@
-local config = require("scrollbar.config")
-local float_focus = require("scrollbar.float_focus")
+--- Scrollbar mouse: the press, drag, and release policy of the scrollbar
+--- float. `scrollbar.mouse_core` owns the runtime, the mappings, focus, and
+--- the autohide hold.
+---
+--- A press reads the hit map of the last render. A press on a mark or the
+--- track holds the autohide deadline. A press on the thumb also drags it: the
+--- source cursor follows the thumb row, and the thumb shows the pressed
+--- highlight until the release. A click on a mark jumps to its line, and a
+--- click on the track jumps to the line of the pressed row.
+
 local layout = require("scrollbar.layout")
+local mouse_core = require("scrollbar.mouse_core")
 
 local M = {}
 
-local AUGROUP_NAME = "ScrollbarMouse"
-local MAPPINGS = { "<LeftMouse>", "<LeftDrag>", "<LeftRelease>" }
+local clamp = mouse_core.clamp
 
----@class ScrollbarMouseRuntime
----@field config ScrollbarConfig
----@field renderer ScrollbarMouseRenderer
----@field scheduler ScrollbarMouseScheduler
----@field augroup integer
----@field attached table<integer, true>
----@field unwatch fun()
-
----@type ScrollbarMouseRuntime?
-local runtime
-
----@type ScrollbarInteractionState?
-local interaction
-
----@param active ScrollbarMouseRuntime
----@param float_buf integer
-local function detach(active, float_buf)
-    if not active.attached[float_buf] then
-        return
-    end
-    for _, lhs in ipairs(MAPPINGS) do
-        pcall(vim.keymap.del, "n", lhs, { buffer = float_buf })
-    end
-    active.attached[float_buf] = nil
-end
-
----@param value integer
----@param minimum integer
----@param maximum integer
----@return integer
-local function clamp(value, minimum, maximum)
-    return math.max(minimum, math.min(value, maximum))
-end
-
----@param winid integer
----@return boolean
-local function valid_window(winid)
-    return type(winid) == "number" and vim.api.nvim_win_is_valid(winid)
-end
-
----@param state ScrollbarWindowState
----@return boolean
-local function valid_state(state)
-    return valid_window(state.source_win)
-        and valid_window(state.float_win)
-        and vim.api.nvim_buf_is_valid(state.source_buf)
-        and vim.api.nvim_buf_is_valid(state.float_buf)
-        and vim.api.nvim_win_get_buf(state.source_win) == state.source_buf
-        and vim.api.nvim_win_get_buf(state.float_win) == state.float_buf
-end
-
----@param current ScrollbarInteractionState
-local function restore_focus(current)
-    float_focus.restore(current.source_win)
-end
+---@type ScrollbarMouseCore
+local core
 
 ---@param current ScrollbarInteractionState
 ---@param pressed boolean
-local function set_handle_pressed(current, pressed)
-    local active = runtime
+---@param active? ScrollbarMouseCoreRuntime
+local function set_handle_pressed(current, pressed, active)
     if active == nil or current.handle_grab_offset == nil or type(active.renderer.set_handle_pressed) ~= "function" then
         return
     end
     pcall(active.renderer.set_handle_pressed, current.float_win, pressed)
-end
-
----@param float_win integer
----@return integer, integer, integer, integer, integer
-local function mouse_position(float_win)
-    local mouse = vim.fn.getmousepos()
-    if mouse.winid == float_win then
-        return mouse.winid, mouse.winrow - 1, mouse.wincol, mouse.screenrow, mouse.screencol
-    end
-    local position = vim.fn.win_screenpos(float_win)
-    return mouse.winid,
-        mouse.screenrow - position[1],
-        mouse.screencol - position[2] + 1,
-        mouse.screenrow,
-        mouse.screencol
-end
-
----@param current ScrollbarInteractionState
----@return ScrollbarWindowState?
-local function interaction_state(current)
-    local active = runtime
-    if active == nil then
-        return nil
-    end
-    local state = active.renderer.get_state_by_float(current.float_win)
-    if
-        state == nil
-        or state.source_win ~= current.source_win
-        or state.source_buf ~= current.source_buf
-        or state.float_buf ~= current.float_buf
-        or not valid_state(state)
-    then
-        return nil
-    end
-    return state
-end
-
----@param current ScrollbarInteractionState
----@param state ScrollbarWindowState
----@param line integer
----@return boolean
-local function navigate(current, state, line)
-    if not valid_state(state) then
-        return false
-    end
-    local line_count = vim.api.nvim_buf_line_count(current.source_buf)
-    line = clamp(line, 0, math.max(0, line_count - 1))
-    local ok = pcall(vim.api.nvim_win_call, current.source_win, function()
-        vim.api.nvim_win_set_cursor(current.source_win, { line + 1, 0 })
-        vim.cmd("normal! zv")
-        vim.cmd("normal! zz")
-    end)
-    if ok and runtime ~= nil then
-        pcall(runtime.scheduler.invalidate_window, current.source_win)
-    end
-    return ok
 end
 
 ---@param current ScrollbarInteractionState
@@ -153,63 +52,16 @@ local function drag_line(current, pointer_row)
     return track_line(current, track_row)
 end
 
----@param callback fun()
----@param fallback_source? integer
----@return fun()
-local function guarded(callback, fallback_source)
-    return function()
-        local ok = xpcall(callback, debug.traceback)
-        if not ok then
-            if interaction ~= nil then
-                M.cancel()
-            elseif fallback_source ~= nil then
-                float_focus.restore(fallback_source)
-            end
-        end
-    end
-end
-
----@param current ScrollbarInteractionState
----@param resume_deadline boolean
-local function finish_interaction(current, resume_deadline)
-    set_handle_pressed(current, false)
-    interaction = nil
-    restore_focus(current)
-    if resume_deadline and current.held and runtime ~= nil then
-        pcall(runtime.scheduler.resume_window, current.source_win)
-    end
-    local active = runtime
-    if active ~= nil then
-        local state = active.renderer.get_state_by_float(current.float_win)
-        if state ~= nil then
-            M.attach(state)
-        end
-    end
-end
-
----@param float_win? integer
-M.press = function(float_win)
-    local active = runtime
-    if active == nil then
-        return
-    end
-    if interaction ~= nil then
-        M.cancel()
-    end
-
-    local state = active.renderer.get_state_by_float(float_win or vim.fn.getmousepos().winid)
-    if state == nil or not valid_state(state) or not state.config.mouse then
-        return
-    end
-    local _, row, col, screen_row, screen_col = mouse_position(state.float_win)
-    if row < 0 or row >= state.height or col < 1 or col > state.width then
-        return
-    end
-
+---@param state ScrollbarWindowState
+---@param row integer
+---@param col integer
+---@param screen_row integer
+---@param screen_col integer
+---@return ScrollbarInteractionState
+local function start(state, row, col, screen_row, screen_col)
     local hit = state.hitmap[row + 1] and state.hitmap[row + 1][col] or { track = false, thumb = false }
-    local interactive = hit.line ~= nil or hit.track or hit.thumb
     local pressed_handle = hit.thumb == true and state.handle ~= false
-    interaction = {
+    return {
         source_win = state.source_win,
         source_buf = state.source_buf,
         float_win = state.float_win,
@@ -227,190 +79,86 @@ M.press = function(float_win)
         last_row = row,
         last_col = col,
         dragging = false,
-        held = interactive,
+        held = hit.line ~= nil or hit.track or hit.thumb,
     }
-    if interactive then
-        pcall(active.scheduler.hold_window, state.source_win)
-    end
-    if pressed_handle then
-        set_handle_pressed(interaction, true)
-    end
-    if valid_window(state.float_win) then
-        pcall(vim.api.nvim_set_current_win, state.float_win)
-    end
 end
 
-M.drag = function()
-    local current = interaction
-    if current == nil then
-        return
-    end
-    local state = interaction_state(current)
+---@param current ScrollbarInteractionState
+local function drag(current)
+    local state = core.interaction_state(current)
     if state == nil then
-        M.cancel()
+        core.cancel()
         return
     end
 
-    local _, row, col, screen_row, screen_col = mouse_position(current.float_win)
+    local _, row, col, screen_row, screen_col = mouse_core.mouse_position(current.float_win)
     row = clamp(row, 0, current.height - 1)
     col = clamp(col, 1, state.width)
     local moved = screen_row ~= current.pressed_screen_row or screen_col ~= current.pressed_screen_col
     if moved and current.handle_grab_offset ~= nil then
         current.dragging = true
-        navigate(current, state, drag_line(current, row))
+        core.navigate(current, drag_line(current, row))
     end
     current.last_row = row
     current.last_col = col
 end
 
-M.release = function()
-    local current = interaction
-    if current == nil then
-        return
-    end
-    local state = interaction_state(current)
-    if state == nil then
-        M.cancel()
+---@param current ScrollbarInteractionState
+local function release(current)
+    if core.interaction_state(current) == nil then
         return
     end
 
-    local _, row = mouse_position(current.float_win)
+    local _, row = mouse_core.mouse_position(current.float_win)
     row = clamp(row, 0, current.height - 1)
     pcall(function()
         if current.dragging then
-            navigate(current, state, drag_line(current, row))
+            core.navigate(current, drag_line(current, row))
         elseif current.pressed_hit.line ~= nil then
-            navigate(current, state, current.pressed_hit.line)
+            core.navigate(current, current.pressed_hit.line)
         elseif current.pressed_hit.track and not current.pressed_hit.thumb then
-            navigate(current, state, track_line(current, current.pressed_row))
+            core.navigate(current, track_line(current, current.pressed_row))
         end
     end)
-    finish_interaction(current, true)
 end
 
-M.cancel = function()
-    local current = interaction
-    if current ~= nil then
-        finish_interaction(current, true)
-    end
+---@param current ScrollbarInteractionState
+---@param _ ScrollbarWindowState
+---@param active ScrollbarMouseCoreRuntime
+local function on_press(current, _, active)
+    set_handle_pressed(current, true, active)
 end
 
----@param state ScrollbarWindowState
-M.attach = function(state)
-    local active = runtime
-    if active == nil or not valid_state(state) then
-        return
-    end
-    local current = interaction
-    if not state.config.mouse and (current == nil or current.float_buf ~= state.float_buf) then
-        detach(active, state.float_buf)
-        return
-    end
-    if active.attached[state.float_buf] then
-        return
-    end
-
-    vim.keymap.set(
-        "n",
-        "<LeftMouse>",
-        guarded(function()
-            M.press(state.float_win)
-        end, state.source_win),
-        {
-            buffer = state.float_buf,
-            nowait = true,
-            silent = true,
-        }
-    )
-    vim.keymap.set("n", "<LeftDrag>", guarded(M.drag), {
-        buffer = state.float_buf,
-        nowait = true,
-        silent = true,
-    })
-    vim.keymap.set("n", "<LeftRelease>", guarded(M.release), {
-        buffer = state.float_buf,
-        nowait = true,
-        silent = true,
-    })
-    active.attached[state.float_buf] = true
+---@param current ScrollbarInteractionState
+---@param active? ScrollbarMouseCoreRuntime
+local function on_finish(current, active)
+    set_handle_pressed(current, false, active)
 end
 
----@param options? ScrollbarMouseOptions
-M.setup = function(options)
-    M.dispose()
-    options = options or {}
-    local active_config = options.config or config.get()
-    local active_renderer = options.renderer or require("scrollbar.renderer")
-    local active_scheduler = options.scheduler or require("scrollbar.scheduler")
-    local augroup = vim.api.nvim_create_augroup(AUGROUP_NAME, { clear = true })
-    runtime = {
-        config = active_config,
-        renderer = active_renderer,
-        scheduler = active_scheduler,
-        augroup = augroup,
-        attached = {},
-        unwatch = float_focus.watch({
-            name = AUGROUP_NAME,
-            group = augroup,
-            get_state = active_renderer.get_state_by_float,
-            interacting = function()
-                return interaction ~= nil
-            end,
-            press = function(float_win, source_win)
-                guarded(function()
-                    M.press(float_win)
-                end, source_win)()
-            end,
-        }),
-    }
+core = mouse_core.new({
+    name = "ScrollbarMouse",
+    renderer = "scrollbar.renderer",
+    scheduler = "scrollbar.scheduler",
+    start = start,
+    on_press = on_press,
+    drag = drag,
+    release = release,
+    on_finish = on_finish,
+})
 
-    vim.api.nvim_create_autocmd("WinClosed", {
-        group = augroup,
-        callback = function(args)
-            local current = interaction
-            local closed = tonumber(args.match)
-            if current ~= nil and (closed == current.float_win or closed == current.source_win) then
-                M.cancel()
-            end
-        end,
-    })
-    vim.api.nvim_create_autocmd({ "BufDelete", "BufWipeout" }, {
-        group = augroup,
-        callback = function(args)
-            local active = runtime
-            if active ~= nil then
-                active.attached[args.buf] = nil
-            end
-            local current = interaction
-            if current ~= nil and (args.buf == current.float_buf or args.buf == current.source_buf) then
-                M.cancel()
-            end
-        end,
-    })
-
-    active_renderer.set_state_callback(M.attach)
-end
-
-M.dispose = function()
-    local active = runtime
-    if active == nil then
-        return
-    end
-    if interaction ~= nil then
-        finish_interaction(interaction, false)
-    end
-    runtime = nil
-    active.unwatch()
-    active.renderer.set_state_callback(nil)
-    for float_buf in pairs(active.attached) do
-        detach(active, float_buf)
-    end
-    pcall(vim.api.nvim_del_augroup_by_id, active.augroup)
-end
-
----@return ScrollbarInteractionState?
-M.get_interaction = function()
-    return interaction and interaction.held and vim.deepcopy(interaction) or nil
-end
+--- The mouse reads the configuration of each rendered state, so
+--- `options.config` has no effect.
+---@type fun(options?: ScrollbarMouseOptions)
+M.setup = core.setup
+M.dispose = core.dispose
+---@type fun(float_win?: integer)
+M.press = core.press
+M.drag = core.drag
+M.release = core.release
+M.cancel = core.cancel
+---@type fun(state: ScrollbarWindowState)
+M.attach = core.attach
+---@type fun(): ScrollbarInteractionState?
+M.get_interaction = core.get_interaction
 
 return M

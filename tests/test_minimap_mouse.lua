@@ -377,6 +377,93 @@ T["source window retains focus after release"] = function()
     expect.equality(result.current_win, result.source_win)
 end
 
+T["held press keeps an autohide minimap and the release resumes the delay"] = function()
+    local child = new_child()
+    local result = child.lua_func(function()
+        local lines = {}
+        for index = 1, 400 do
+            lines[index] = string.rep("a", index % 30)
+        end
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        require("scrollbar").setup({
+            scrollbar = { enabled = false },
+            minimap = { enabled = true, backend = "sync", width = 4, autohide = { delay_ms = 100 } },
+        })
+        local renderer = require("scrollbar.minimap.renderer")
+        local scheduler = require("scrollbar.minimap.scheduler")
+        local mouse = require("scrollbar.minimap.mouse")
+        local source_win = vim.api.nvim_get_current_win()
+        scheduler.reveal_all()
+        scheduler.flush()
+        local state = assert(renderer.get_state(source_win))
+
+        local original = vim.fn.getmousepos
+        ---@diagnostic disable-next-line: duplicate-set-field
+        vim.fn.getmousepos = function()
+            return { winid = state.float_win, winrow = 3, wincol = 1, screenrow = 3, screencol = 1 }
+        end
+        mouse.press(state.float_win)
+        -- The button stays down without a move for longer than the delay.
+        vim.wait(300)
+        local held = {
+            interaction = mouse.get_interaction() ~= nil,
+            shown = renderer.get_state(source_win) ~= nil,
+        }
+        mouse.release()
+        vim.fn.getmousepos = original
+        local released_shown = renderer.get_state(source_win) ~= nil
+        local concealed = vim.wait(1000, function()
+            return renderer.get_state(source_win) == nil
+        end)
+        return {
+            held = held,
+            released_shown = released_shown,
+            concealed = concealed,
+            current = vim.api.nvim_get_current_win() == source_win,
+        }
+    end)
+
+    expect.equality(result, {
+        held = { interaction = true, shown = true },
+        released_shown = true,
+        concealed = true,
+        current = true,
+    })
+end
+
+T["pressed float keeps its keymaps until the interaction ends"] = function()
+    local child = new_child()
+    reset_modules(child)
+    configure(child, { enabled = true, width = 4, height = 4 })
+
+    local result = child.lua_func(function()
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, { "a", "b", "c", "d", "e", "f" })
+        local state = assert(require("scrollbar.minimap.renderer").render(0))
+        local mouse = require("scrollbar.minimap.mouse")
+        local without_mouse = vim.tbl_extend("force", state, {
+            config = vim.tbl_extend("force", state.config, { mouse = false }),
+        })
+        local function keymap_count()
+            return #vim.api.nvim_buf_get_keymap(state.float_buf, "n")
+        end
+
+        local original = vim.fn.getmousepos
+        ---@diagnostic disable-next-line: duplicate-set-field
+        vim.fn.getmousepos = function()
+            return { winid = state.float_win, winrow = 1, wincol = 1, screenrow = 1, screencol = 1 }
+        end
+        mouse.press(state.float_win)
+        vim.fn.getmousepos = original
+        mouse.attach(without_mouse)
+        local during = keymap_count()
+        mouse.cancel()
+        mouse.attach(without_mouse)
+        return { during = during, after = keymap_count() }
+    end)
+
+    expect.equality(result, { during = 3, after = 0 })
+end
+
 T["disabled config does not attach keymaps to the float buffer"] = function()
     local child = new_child()
     reset_modules(child)

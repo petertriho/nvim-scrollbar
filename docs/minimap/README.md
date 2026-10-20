@@ -275,8 +275,10 @@ vim.o.mouse = "a"
 The click uses logical lines. It does not account for wrapped rows, or for
 folds beyond their first line. A drag scrolls with `CTRL-E` and `CTRL-Y`,
 which count a closed fold as one line, so a drag over closed folds can scroll
-past the band position. A press on the minimap does not pause the autohide
-deadline.
+past the band position.
+
+With `autohide`, a press or drag on the minimap pauses the deadline of that
+source window. Release or cancellation starts a new full delay.
 
 The minimap float is not focusable, and it uses the same focus rules as the
 scrollbar floats. See [Focus](../mouse.md#focus).

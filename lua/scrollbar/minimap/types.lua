@@ -266,6 +266,8 @@
 
 ---@class ScrollbarMinimapMouseScheduler
 ---@field invalidate_window fun(winid: integer): boolean
+---@field hold_window? fun(winid: integer): boolean
+---@field resume_window? fun(winid: integer): boolean
 
 ---@class ScrollbarMinimapMouseOptions
 ---@field renderer? ScrollbarMinimapMouseRenderer
@@ -282,5 +284,6 @@
 ---@field pressed_row integer 0-based minimap row at press time
 ---@field pressed_topline integer 0-based source topline after the press jump
 ---@field dragging boolean
+---@field held boolean Whether the scheduler deadline was paused; always true because every press navigates
 
 return {}
