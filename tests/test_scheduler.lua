@@ -1397,7 +1397,7 @@ T["refreshes colorscheme state and fully disposes timer and autocmd ownership"] 
     expect.equality(result.group_exists, false)
 end
 
-T["OPTION_PATTERNS list matches the mirrored copy in layout.lua"] = function()
+T["OPTION_PATTERNS covers the EXTENT_OPTION_PATTERNS of layout.lua"] = function()
     local child = new_child()
     local result = child.lua_func(function()
         -- `OPTION_PATTERNS` of scheduler.lua and `EXTENT_OPTION_PATTERNS` of
