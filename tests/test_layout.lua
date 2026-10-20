@@ -1460,4 +1460,62 @@ T["screen geometry keeps the chunk memo valid after a fold in an earlier chunk"]
     expect.equality(wrong, 0)
 end
 
+T["screen geometry keeps the prefixes of more marks than the memo floor"] = function()
+    local child = new_child()
+    local result = child.lua_func(function()
+        -- More marked lines than PREFIX_MAP_LIMIT (32768), in a folded buffer.
+        local line_count = 34000
+        local lines = {}
+        for index = 1, line_count do
+            lines[index] = "line " .. index
+        end
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        vim.wo.foldmethod = "manual"
+        for start = 101, line_count - 30, 200 do
+            vim.cmd(string.format("%d,%dfold", start, start + 19))
+        end
+
+        local layout_module = require("scrollbar.layout")
+        layout_module.screen_extent_sweep_interval_ms = 1e9
+        local source_win = vim.api.nvim_get_current_win()
+        local function marks()
+            local list = {}
+            for line = 0, line_count - 1 do
+                list[#list + 1] = { line = line, type = "Search" }
+            end
+            return list
+        end
+        local function call_screen()
+            return layout_module.screen({
+                source_win = source_win,
+                height = vim.api.nvim_win_get_height(source_win),
+                marks = marks(),
+                marks_sorted = true,
+            })
+        end
+
+        local first = call_screen()
+        local original = vim.api.nvim_win_text_height
+        local calls = 0
+        ---@diagnostic disable-next-line: duplicate-set-field
+        vim.api.nvim_win_text_height = function(...)
+            calls = calls + 1
+            return original(...)
+        end
+        -- A new marks table misses the screen cache, as after a publish.
+        local second = call_screen()
+        vim.api.nvim_win_text_height = original
+        return {
+            uncached = not rawequal(first.mark_rows, second.mark_rows),
+            same_rows = vim.deep_equal(first.mark_rows, second.mark_rows),
+            calls = calls,
+        }
+    end)
+
+    expect.equality(result.uncached, true)
+    expect.equality(result.same_rows, true)
+    -- Every prefix comes from the memo, so the recompute measures nothing.
+    expect.equality(result.calls, 0)
+end
+
 return T

@@ -381,6 +381,9 @@ end
 -- Memo entries are stored per chunk and keyed relative to the chunk start.
 -- A chunk shift (or a re-base of everything after an edit) never rewrites
 -- entries, so maintenance stays O(#chunks + #anchors) instead of O(#memo).
+-- PREFIX_MAP_LIMIT is the floor of the memo limit. `M.screen` raises the limit
+-- of a layer to make room for twice the lines of its current marks, so that a
+-- dense mark set stays in the memo and the next recompute measures nothing.
 local PREFIX_MAP_LIMIT = 32768
 
 ---Binary search for the chunk that contains `line` (the last chunk with start <= line).
@@ -508,7 +511,7 @@ local function prefix_for(source_win, line, layer)
         -- anchors still measures at most CHUNK_LINES lines.
         halve_anchors(layer)
     end
-    if layer.prefix_count > PREFIX_MAP_LIMIT then
+    if layer.prefix_count > layer.prefix_limit then
         evict_memo(layer)
     end
     return prefix
@@ -1057,6 +1060,7 @@ local function extent_layer_for(source_win)
         uniform = false,
         generation = (layer ~= nil and layer.generation or 0) + 1,
         prefix_count = 0,
+        prefix_limit = PREFIX_MAP_LIMIT,
         anchors = { 0 },
         verified_at = 0,
         chunks = nil,
@@ -1182,6 +1186,11 @@ M.screen = function(input)
             handle = M.handle_geometry(viewport_start, viewport_end, total_extent, height),
         }
     end
+
+    -- Room for the lines of the current marks and of the previous set, so
+    -- that a recompute does not evict the entries that the next one needs.
+    local wanted_lines = #input.marks + (compact_search ~= nil and compact_search.count or 0)
+    layer.prefix_limit = PREFIX_MAP_LIMIT + 2 * math.min(wanted_lines, line_count)
 
     local unique_lines
     local prefixes = {}
