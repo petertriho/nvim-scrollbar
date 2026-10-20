@@ -1039,6 +1039,18 @@ local function extent_layer_for(source_win)
                 end
             end
         end
+        -- The chunk path did not apply the change. The edit history can be
+        -- gone, an edit can be too large, or a batch can stop after some of
+        -- its edits. Then the heights and the memo of the chunks can be from
+        -- the old text, and verify_extent compares only the total extent. Thus
+        -- drop the chunks, so that verify_extent rebuilds them and bumps the
+        -- generation. With 'wrap', a new width can also move rows between
+        -- lines and keep the total. Without 'wrap', no height depends on the
+        -- width.
+        local text_changed = changedtick ~= layer.changedtick or line_count ~= layer.line_count
+        if text_changed or (layer.wrap and win_width ~= layer.win_width) then
+            layer.chunks = nil
+        end
         layer.changedtick = changedtick
         layer.line_count = line_count
         layer.win_width = win_width

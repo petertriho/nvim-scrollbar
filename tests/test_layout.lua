@@ -1518,4 +1518,89 @@ T["screen geometry keeps the prefixes of more marks than the memo floor"] = func
     expect.equality(result.calls, 0)
 end
 
+-- Apply `edit` to a wrapped 6000-line buffer with manual folds, where the chunk
+-- path cannot apply it, and count the mark rows that differ from a fresh
+-- measurement. Each edit keeps the total extent.
+local function rows_after_fallback(edit)
+    local child = new_child()
+    return child.lua_func(function(name)
+        local layout_module = require("scrollbar.layout")
+        local source_win = vim.api.nvim_get_current_win()
+        local width = vim.api.nvim_win_get_width(source_win)
+        local lines = {}
+        for index = 1, 6000 do
+            lines[index] = "line " .. index
+        end
+        -- Line 300 wraps to 200 rows.
+        lines[300] = string.rep("x", width * 200)
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        vim.wo.wrap = true
+        vim.wo.foldmethod = "manual"
+        vim.cmd("5501,5510fold")
+
+        -- A large track height makes a shift of a few rows visible.
+        local height = 100
+        local marks = {}
+        for line = 0, 5999, 3 do
+            marks[#marks + 1] = { line = line, type = "Search" }
+        end
+        local function call_screen()
+            return layout_module.screen({ source_win = source_win, height = height, marks = marks })
+        end
+
+        local extent_before = call_screen().total_extent
+        if name == "ten edits" then
+            -- The edit history keeps 8 edits. Lines 300 and 1300 swap their
+            -- text, and 8 more lines change.
+            local long = vim.api.nvim_buf_get_lines(0, 299, 300, false)
+            local short = vim.api.nvim_buf_get_lines(0, 1299, 1300, false)
+            vim.api.nvim_buf_set_lines(0, 299, 300, false, short)
+            vim.api.nvim_buf_set_lines(0, 1299, 1300, false, long)
+            for index = 1, 8 do
+                vim.api.nvim_buf_set_lines(0, 2000 + index, 2001 + index, false, { "edit " .. index })
+            end
+        else
+            -- One edit of 4990 lines is larger than the chunk path takes.
+            local block = vim.api.nvim_buf_get_lines(0, 0, 4990, false)
+            local reversed = {}
+            for index = #block, 1, -1 do
+                reversed[#reversed + 1] = block[index]
+            end
+            vim.api.nvim_buf_set_lines(0, 0, 4990, false, reversed)
+        end
+        local geometry = call_screen()
+
+        local total = vim.api.nvim_win_text_height(source_win, {}).all
+        local wrong = 0
+        for index, entry in ipairs(marks) do
+            local prefix = entry.line == 0 and 0
+                or vim.api.nvim_win_text_height(source_win, {
+                    start_row = 0,
+                    start_vcol = 0,
+                    end_row = entry.line,
+                    end_vcol = 0,
+                }).all
+            if geometry.mark_rows[index] ~= layout_module.map_position(prefix, total, height) then
+                wrong = wrong + 1
+            end
+        end
+        return { wrong = wrong, extent_before = extent_before, total = total }
+    end, edit)
+end
+
+local fallback_cases = MiniTest.new_set()
+T["screen geometry follows an edit that the chunk path cannot apply"] = fallback_cases
+
+fallback_cases["ten one-line edits before one render"] = function()
+    local result = rows_after_fallback("ten edits")
+    expect.equality(result.total, result.extent_before)
+    expect.equality(result.wrong, 0)
+end
+
+fallback_cases["a reverse of more than 4096 lines"] = function()
+    local result = rows_after_fallback("reverse")
+    expect.equality(result.total, result.extent_before)
+    expect.equality(result.wrong, 0)
+end
+
 return T
