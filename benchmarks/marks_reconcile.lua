@@ -1,9 +1,13 @@
--- Benchmark: per-call cost of the work the marks provider does inside its
--- SafeState reconcile callback (reconcile_source_buffers + collect in
--- lua/scrollbar/providers/marks.lua). The cost scales with the number of
--- unique buffers visible across source windows; this benchmark measures
--- per-call latency across a configurable set of buffer counts and projects
--- total overhead at typical SafeState fire rates.
+-- Benchmark: the cost per call of the reconcile of the marks provider
+-- (reconcile_source_buffers in lua/scrollbar/providers/marks.lua). The provider
+-- runs it on MarkSet, and also on SafeState when Neovim is older than 0.12.2 or
+-- the `numbers` option is on. For each unique buffer that a window shows, the
+-- benchmark runs the real collect() through the refresh() export. A stub
+-- context skips the eligibility check and the publication to the store.
+-- The cost scales with the number of unique buffers that are visible in source
+-- windows. This benchmark measures the latency per call for a configurable set
+-- of buffer counts. It also projects the total overhead at typical SafeState
+-- fire rates.
 --
 -- Run with: make benchmark-marks
 -- Or:       nvim --headless --noplugin -u NONE -l benchmarks/marks_reconcile.lua [counts...]
@@ -45,17 +49,36 @@ local function statistics(samples)
     }
 end
 
--- Build a fixture with `buffer_count` unique buffers visible, each with the
--- same line layout and a representative set of letter marks. Mirrors what
--- collect() walks in providers/marks.lua.
+-- The provider context that collect() reads. The marks options come from the
+-- default provider plan, so the benchmark follows the default `letters` and
+-- `numbers` options.
+require("scrollbar.config").set({})
+local marks_provider = require("scrollbar.providers.marks")
+local context = {
+    config = {
+        providers = {
+            marks = vim.deepcopy(require("scrollbar.config").get_provider_plan().marks.options),
+        },
+    },
+    is_buffer_eligible = function()
+        return true
+    end,
+    clear_marks = function() end,
+}
+
+local mark_positions = { 100, 500, 5000, 10000, 25000, 40000 }
+local mark_names = { "a", "b", "c", "d", "e", "f" }
+
+-- Set a representative set of letter marks, like the data that collect() walks
+-- in providers/marks.lua.
 local function plant_marks(buf)
-    local positions = { 100, 500, 5000, 10000, 25000, 40000 }
-    local names = { "a", "b", "c", "d", "e", "f" }
-    for index = 1, #names do
-        vim.api.nvim_buf_set_mark(buf, names[index], positions[index], 0, {})
+    for index = 1, #mark_names do
+        vim.api.nvim_buf_set_mark(buf, mark_names[index], mark_positions[index], 0, {})
     end
 end
 
+-- Build a fixture with `buffer_count` unique visible buffers. Each buffer has
+-- the same line layout and the letter marks of plant_marks().
 local function make_session(buffer_count)
     local wins = { vim.api.nvim_get_current_win() }
     local lines = {}
@@ -76,24 +99,36 @@ local function make_session(buffer_count)
     return wins
 end
 
--- Mirror marks.lua reconcile_source_buffers + collect: walk windows, dedup
--- by buffer, query line count and every letter mark per unique buffer.
-local function reconcile_like_marks()
+-- Mirror reconcile_source_buffers and update in marks.lua. Walk the windows and
+-- dedup them by buffer. For each unique buffer, query the line count and run
+-- the real collect() through refresh(). The result is not published.
+local function reconcile_marks()
     local seen = {}
     for _, win in ipairs(vim.api.nvim_list_wins()) do
         if vim.api.nvim_win_is_valid(win) then
             local buf = vim.api.nvim_win_get_buf(win)
             if not seen[buf] then
                 seen[buf] = true
-                vim.api.nvim_buf_line_count(buf)
-                for byte = string.byte("a"), string.byte("z") do
-                    vim.api.nvim_buf_get_mark(buf, string.char(byte))
-                end
-                for byte = string.byte("A"), string.byte("Z") do
-                    pcall(vim.api.nvim_get_mark, string.char(byte), {})
+                if vim.api.nvim_buf_is_valid(buf) then
+                    vim.api.nvim_buf_line_count(buf)
+                    marks_provider.refresh(buf, context)
                 end
             end
         end
+    end
+end
+
+-- Stop the benchmark if collect() does not return every planted mark of each
+-- buffer. Without this check, a context that disables the provider measures no
+-- work and still prints plausible numbers.
+local function assert_collect_finds_marks()
+    for _, win in ipairs(vim.api.nvim_list_wins()) do
+        local buf = vim.api.nvim_win_get_buf(win)
+        local marks = marks_provider.refresh(buf, context) or {}
+        assert(
+            #marks == #mark_names,
+            string.format("buffer %d: collect() returned %d marks, expected %d", buf, #marks, #mark_names)
+        )
     end
 end
 
@@ -113,16 +148,17 @@ end
 local function measure(buffer_count)
     reset_session()
     make_session(buffer_count)
+    assert_collect_finds_marks()
 
     for _ = 1, warmup_count do
-        reconcile_like_marks()
+        reconcile_marks()
     end
     collectgarbage("collect")
 
     local samples = {}
     for index = 1, iteration_count do
         local started = vim.uv.hrtime()
-        reconcile_like_marks()
+        reconcile_marks()
         samples[index] = (vim.uv.hrtime() - started) / 1e6
     end
     return {
