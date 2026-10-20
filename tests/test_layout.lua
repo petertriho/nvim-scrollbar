@@ -986,6 +986,58 @@ T["compose cache drops the entries of unreachable mark layers"] = function()
     expect.equality(result.cache_hit, true)
 end
 
+T["screen geometry reuses the mark rows on a scroll in a folded window"] = function()
+    local child = new_child()
+    local result = child.lua_func(function()
+        local lines = {}
+        for index = 1, 3000 do
+            lines[index] = "line " .. index
+        end
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        vim.wo.foldmethod = "manual"
+        vim.cmd("101,200fold")
+
+        local layout_module = require("scrollbar.layout")
+        local source_win = vim.api.nvim_get_current_win()
+        local marks = {}
+        for line = 0, 2999, 7 do
+            marks[#marks + 1] = { line = line, type = "Search" }
+        end
+        local function call_screen()
+            return layout_module.screen({
+                source_win = source_win,
+                height = vim.api.nvim_win_get_height(source_win),
+                marks = marks,
+            })
+        end
+
+        vim.api.nvim_win_set_cursor(source_win, { 1, 0 })
+        vim.cmd("normal! zt")
+        local first = call_screen()
+        local original = layout_module.map_position
+        local calls = 0
+        ---@diagnostic disable-next-line: duplicate-set-field
+        layout_module.map_position = function(...)
+            calls = calls + 1
+            return original(...)
+        end
+        vim.api.nvim_win_set_cursor(source_win, { 1500, 0 })
+        vim.cmd("normal! zt")
+        local second = call_screen()
+        layout_module.map_position = original
+        return {
+            moved = second.viewport_start ~= first.viewport_start,
+            same_rows = rawequal(first.mark_rows, second.mark_rows),
+            calls = calls,
+        }
+    end)
+
+    expect.equality(result.moved, true)
+    expect.equality(result.same_rows, true)
+    -- The two calls map the handle. The mark rows come from the cache.
+    expect.equality(result.calls, 2)
+end
+
 T["screen geometry follows a fold that moves to another chunk"] = function()
     local child = new_child()
     local result = child.lua_func(function()

@@ -1106,7 +1106,6 @@ M.screen = function(input)
         and cached.total_extent == total_extent
         and cached.marks == input.marks
         and cached.compact == compact_search
-        and cached.viewport_start == viewport_start
     then
         return {
             total_extent = total_extent,
@@ -1194,7 +1193,6 @@ M.screen = function(input)
         total_extent = total_extent,
         marks = input.marks,
         compact = compact_search,
-        viewport_start = viewport_start,
         mark_rows = mark_rows,
         compact_mark_rows = compact_mark_rows,
     }
