@@ -634,7 +634,13 @@ end
 --- A text edit recorded through `nvim_buf_attach` re-measures only the chunks
 --- that it overlaps (bounded by the edit size). To catch silent fold changes,
 --- each render re-measures a few chunks (round-robin) instead of a rescan of
---- the whole buffer on every pass.
+--- the whole buffer on every pass. The sweep compares the height of each
+--- CHUNK_SUB_LINES sub-span, so it also finds a fold change that keeps the
+--- height of the chunk. It does not find a fold change inside one sub-span
+--- that keeps the height of that sub-span, for example two folds of the same
+--- size in one sub-span that swap their state. Then the prefixes inside that
+--- sub-span stay wrong by at most CHUNK_SUB_LINES - 1 rows until the next
+--- change that the sweep or an edit finds.
 local CHUNK_LINES = 512
 -- Sub-span granularity for edits that keep the line count. Only the height of
 -- the edited 64-line span can change (each line renders independently), so a
@@ -647,17 +653,19 @@ local CHUNK_SWEEP_PER_RENDER = 6
 -- Tests can tighten it with `screen_extent_sweep_interval_ms`.
 local SWEEP_INTERVAL_MS = 50
 
---- Cost ceiling for the fold sweep of one render. The measurement of a
---- 512-line chunk takes about 45-60µs on this code path. When a sweep exceeds
---- the budget, the remaining chunks wait for the next render. The round-robin
---- cursor advances only over measured chunks, so coverage continues where it
---- stopped.
+--- Cost ceiling for the fold sweep of one render. The measurement of the
+--- sub-spans of a 512-line chunk takes about 10µs without 'wrap' and about
+--- 28µs with 'wrap'. When a sweep exceeds the budget, the remaining chunks wait
+--- for the next render. The round-robin cursor advances only over measured
+--- chunks, so coverage continues where it stopped.
 local CHUNK_SWEEP_BUDGET_NS = 120 * 1000
 
 -- Measure a chunk as fixed sub-spans. The constructors capture the PRE-edit
 -- heights. The edit fast path never builds sub-spans: when `subs` is missing,
 -- it falls back to a wholesale rebuild.
-local function measure_chunk(source_win, at, stop, current_count, base)
+---@return integer[] subs
+---@return integer height
+local function measure_subs(source_win, at, stop, current_count)
     local subs = {}
     local height = 0
     local sub_at = at
@@ -670,7 +678,26 @@ local function measure_chunk(source_win, at, stop, current_count, base)
         sub_at = sub_stop
         index = index + 1
     end
+    return subs, height
+end
+
+local function measure_chunk(source_win, at, stop, current_count, base)
+    local subs, height = measure_subs(source_win, at, stop, current_count)
     return { start = at, height = height, base = base, memo = {}, subs = subs }
+end
+
+---@param left integer[]
+---@param right integer[]?
+local function same_subs(left, right)
+    if right == nil or #left ~= #right then
+        return false
+    end
+    for index = 1, #left do
+        if left[index] ~= right[index] then
+            return false
+        end
+    end
+    return true
 end
 
 local function build_chunks(source_win, layer)
@@ -721,21 +748,6 @@ local function sweep_chunks(source_win, layer)
     if chunks == nil or #chunks == 0 then
         return
     end
-    if #chunks == 1 then
-        -- One chunk: the whole-buffer call is the chunk measurement.
-        local height = full_extent(source_win)
-        local chunk = chunks[1]
-        if height ~= chunk.height then
-            layer.total_extent = height
-            chunk.height = height
-            chunk.memo = {}
-            chunk.subs = nil
-            layer.prefix_count = 0
-            layer.anchors = { 0 }
-        end
-        layer.verified_at = uv.now()
-        return
-    end
     local count = math.min(CHUNK_SWEEP_PER_RENDER, #chunks)
     local changed = nil
     local started = uv.hrtime()
@@ -751,10 +763,13 @@ local function sweep_chunks(source_win, layer)
         local chunk = chunks[index]
         local stop = index < #chunks and chunks[index + 1].start or layer.line_count
         if stop > chunk.start then
-            local height = rows_between(source_win, chunk.start, stop, layer.line_count)
-            if height ~= chunk.height then
+            -- A fold can move inside the chunk and keep its height, so compare
+            -- the sub-spans too. The fresh sub-spans also keep the edit fast
+            -- path available for this chunk.
+            local subs, height = measure_subs(source_win, chunk.start, stop, layer.line_count)
+            if height ~= chunk.height or not same_subs(subs, chunk.subs) then
                 chunk.height = height
-                chunk.subs = nil
+                chunk.subs = subs
                 chunk.memo = {}
                 changed = changed or {}
                 changed[index] = true

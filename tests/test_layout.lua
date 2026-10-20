@@ -412,7 +412,9 @@ T["screen geometry cache hits issue zero nvim_win_text_height calls beyond the c
     end)
 
     expect.equality(result.first.during > 1, true)
-    expect.equality(result.second.during, 1)
+    -- The canary sweep measures the one chunk as 4 sub-spans of 64 lines,
+    -- and rows_between measures the last line of the buffer separately.
+    expect.equality(result.second.during, 5)
 end
 
 T["renderer clear_source_cache clears the screen-geometry cache"] = function()
@@ -1161,6 +1163,77 @@ T["screen geometry follows a fold that moves to another chunk"] = function()
 
     expect.equality(result.extent, result.total)
     expect.equality(result.wrong, 0)
+end
+
+T["screen geometry follows a fold that moves inside one chunk"] = function()
+    local child = new_child()
+    local result = child.lua_func(function()
+        local layout_module = require("scrollbar.layout")
+        layout_module.screen_extent_sweep_interval_ms = 0
+        local source_win = vim.api.nvim_get_current_win()
+        local height = vim.api.nvim_win_get_height(source_win)
+
+        -- Two folds of the same size in different sub-spans of one chunk swap
+        -- their state, so the height of the chunk does not change.
+        local function wrong_rows(line_count, first_fold, second_fold)
+            local lines = {}
+            for index = 1, line_count do
+                lines[index] = "line " .. index
+            end
+            vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+            vim.wo.foldmethod = "manual"
+            vim.cmd("normal! zE")
+            vim.cmd(first_fold .. "fold")
+            vim.cmd(second_fold .. "fold")
+            vim.cmd(second_fold:match("^%d+") .. "foldopen")
+            layout_module.clear_screen_cache(source_win)
+            local marks = {}
+            for line = 0, line_count - 1, 3 do
+                marks[#marks + 1] = { line = line, type = "Search" }
+            end
+            local function call_screen()
+                return layout_module.screen({ source_win = source_win, height = height, marks = marks })
+            end
+
+            call_screen()
+            vim.cmd(first_fold:match("^%d+") .. "foldopen")
+            vim.cmd(second_fold:match("^%d+") .. "foldclose")
+            -- One sweep measures at least one chunk, so one render for each
+            -- chunk measures every chunk.
+            local geometry
+            for _ = 1, math.ceil(line_count / 512) + 1 do
+                geometry = call_screen()
+            end
+
+            local total = vim.api.nvim_win_text_height(source_win, {}).all
+            local wrong = 0
+            for index, entry in ipairs(marks) do
+                local prefix = entry.line == 0 and 0
+                    or vim.api.nvim_win_text_height(source_win, {
+                        start_row = 0,
+                        start_vcol = 0,
+                        end_row = entry.line,
+                        end_vcol = 0,
+                    }).all
+                if geometry.mark_rows[index] ~= layout_module.map_position(prefix, total, height) then
+                    wrong = wrong + 1
+                end
+            end
+            return wrong
+        end
+
+        local counts = {
+            -- 1100 lines make three chunks. Both folds are in the first chunk.
+            chunks = wrong_rows(1100, "101,150", "201,250"),
+            -- 400 lines make one chunk.
+            single = wrong_rows(400, "51,100", "201,250"),
+        }
+        layout_module.screen_extent_sweep_interval_ms = nil
+        return counts
+    end)
+
+    expect.equality(result.chunks, 0)
+    expect.equality(result.single, 0)
 end
 
 return T
