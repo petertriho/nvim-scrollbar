@@ -20,9 +20,11 @@ end
 vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
 local source_buf = vim.api.nvim_get_current_buf()
 
--- Dense matches: 2 per line on even-indexed lines, 1 per line on odd-indexed.
--- This mirrors the "dense" fixture in benchmarks/search.lua and exercises the
--- dedup path inside M.screen (compact path) / expand_compact (old path).
+-- Dense matches: 2 per line on even-indexed lines, 1 per line on odd-indexed
+-- lines. This fixture mirrors the "dense" fixture in benchmarks/search.lua. The
+-- two cases publish the matches as a compact blob or as ordinary search marks.
+-- The first render after a publish runs the line dedup in M.screen. The timed
+-- passes measure the steady state with warm caches after that render.
 local match_lines = {}
 for index = 0, line_count - 1 do
     match_lines[#match_lines + 1] = index
@@ -60,11 +62,15 @@ local function configure_screen()
     require("scrollbar.config").set({
         set_highlights = false,
         exclude = { buftypes = {}, filetypes = {} },
+        -- The renderer draws search marks only when the search consumer of
+        -- the scrollbar is enabled. The benchmark does not call
+        -- `providers.setup()`, so this option starts no search provider, no
+        -- autocmds, and no worker. The benchmark publishes the matches itself.
         providers = {
             cursor = false,
             diagnostic = false,
             gitsigns = false,
-            search = false,
+            search = true,
             ale = false,
             coc = false,
         },
@@ -178,6 +184,29 @@ local function instrument_renderer()
     }
 end
 
+-- Render once and stop the benchmark if the screen geometry does not get every
+-- match. Without this check, a configuration that drops the search marks
+-- measures an empty render and still prints plausible numbers.
+local function assert_render_gets_matches(name, winid)
+    local layout = require("scrollbar.layout")
+    local original_screen = layout.screen
+    local received
+    rawset(layout, "screen", function(input)
+        received = input
+        return original_screen(input)
+    end)
+    local ok, render_error = pcall(require("scrollbar.renderer").render, winid)
+    rawset(layout, "screen", original_screen)
+    assert(ok, render_error)
+    assert(received ~= nil, string.format("%s: the render did not call layout.screen", name))
+    local compact_count = received.compact_search and received.compact_search.count or 0
+    local received_count = #received.marks + compact_count
+    assert(
+        received_count == match_count,
+        string.format("%s: layout.screen got %d matches, expected %d", name, received_count, match_count)
+    )
+end
+
 local phases = {
     "store snapshot/flattening",
     "geometry",
@@ -195,9 +224,10 @@ local function measure_phases(name, publish)
     configure_screen()
     local instrumentation = instrument_renderer()
 
-    -- Publish once; renderer caches after the first render. We measure the
-    -- warm-cache steady state, matching what benchmarks/render.lua does.
+    -- Publish once. The renderer caches after the first render. We measure the
+    -- steady state with a warm cache, as benchmarks/render.lua does.
     publish(store)
+    assert_render_gets_matches(name, winid)
 
     local samples = {}
     local function profiled_pass()
