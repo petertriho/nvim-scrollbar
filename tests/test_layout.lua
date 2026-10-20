@@ -1236,4 +1236,103 @@ T["screen geometry follows a fold that moves inside one chunk"] = function()
     expect.equality(result.single, 0)
 end
 
+-- Apply `edit` to a wrapped 1100-line buffer with one closed fold, and count
+-- the mark rows that differ from a fresh measurement. Each edit keeps the total
+-- extent, so only the generation of the extent layer can invalidate the cached
+-- mark rows.
+local function rows_after_edit(foldmethod, edit)
+    local child = new_child()
+    return child.lua_func(function(method, name)
+        local layout_module = require("scrollbar.layout")
+        local source_win = vim.api.nvim_get_current_win()
+        local width = vim.api.nvim_win_get_width(source_win)
+        local lines = {}
+        for index = 1, 1100 do
+            lines[index] = "line " .. index
+        end
+        -- Line 300 wraps to 20 rows. Lines 401-430 fill one row each. Lines
+        -- 701-710 make the closed fold.
+        lines[300] = string.rep("x", width * 20)
+        for index = 401, 430 do
+            lines[index] = string.rep("a", width - 1)
+        end
+        for index = 701, 710 do
+            lines[index] = "    indented " .. index
+        end
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        vim.wo.wrap = true
+        vim.wo.foldmethod = method
+        vim.wo.foldlevel = 0
+        if method == "manual" then
+            vim.cmd("701,710fold")
+        end
+
+        -- A large track height makes a shift of a few rows visible.
+        local height = 100
+        local marks = {}
+        for line = 0, 1099 do
+            marks[#marks + 1] = { line = line, type = "Search" }
+        end
+        local function call_screen()
+            return layout_module.screen({ source_win = source_win, height = height, marks = marks })
+        end
+
+        local extent_before = call_screen().total_extent
+        -- Lines 257-320 make one sub-span. Lines 300 and 315 swap their text.
+        if name == "block" then
+            local block = vim.api.nvim_buf_get_lines(0, 299, 315, false)
+            block[1], block[16] = block[16], block[1]
+            vim.api.nvim_buf_set_lines(0, 299, 315, false, block)
+        elseif name == "two lines" then
+            local long = vim.api.nvim_buf_get_lines(0, 299, 300, false)
+            local short = vim.api.nvim_buf_get_lines(0, 314, 315, false)
+            vim.api.nvim_buf_set_lines(0, 299, 300, false, short)
+            vim.api.nvim_buf_set_lines(0, 314, 315, false, long)
+        else
+            -- The joined line wraps to the 30 rows of its lines.
+            vim.cmd("401,430join")
+        end
+        local geometry = call_screen()
+
+        local total = vim.api.nvim_win_text_height(source_win, {}).all
+        local maximum_line = vim.api.nvim_buf_line_count(0) - 1
+        local wrong = 0
+        for index, entry in ipairs(marks) do
+            local line = math.min(entry.line, maximum_line)
+            local prefix = line == 0 and 0
+                or vim.api.nvim_win_text_height(source_win, {
+                    start_row = 0,
+                    start_vcol = 0,
+                    end_row = line,
+                    end_vcol = 0,
+                }).all
+            if geometry.mark_rows[index] ~= layout_module.map_position(prefix, total, height) then
+                wrong = wrong + 1
+            end
+        end
+        return { wrong = wrong, extent_before = extent_before, total = total }
+    end, foldmethod, edit)
+end
+
+local edit_cases = MiniTest.new_set({ parametrize = { { "manual" }, { "indent" } } })
+T["screen geometry follows an edit that keeps the extent"] = edit_cases
+
+edit_cases["that trades rows inside one sub-span"] = function(foldmethod)
+    local result = rows_after_edit(foldmethod, "block")
+    expect.equality(result.total, result.extent_before)
+    expect.equality(result.wrong, 0)
+end
+
+edit_cases["on two lines of one sub-span before one render"] = function(foldmethod)
+    local result = rows_after_edit(foldmethod, "two lines")
+    expect.equality(result.total, result.extent_before)
+    expect.equality(result.wrong, 0)
+end
+
+edit_cases["that joins lines"] = function(foldmethod)
+    local result = rows_after_edit(foldmethod, "join")
+    expect.equality(result.total, result.extent_before)
+    expect.equality(result.wrong, 0)
+end
+
 return T

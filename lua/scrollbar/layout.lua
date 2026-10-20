@@ -802,6 +802,7 @@ end
 ---Apply one recorded edit to the chunk table. Coordinates are in the buffer
 ---state before this edit, and `current_count` is the line count in that state.
 ---@return boolean applied false when a full rebuild is the cheaper path
+---@return boolean? moved true when the edit can have changed a prefix
 local function reindex_chunks_for_edit(source_win, layer, first, last, updated, current_count)
     local chunks = layer.chunks
     if chunks == nil or #chunks == 0 then
@@ -841,10 +842,23 @@ local function reindex_chunks_for_edit(source_win, layer, first, last, updated, 
                     end
                 end
                 chunk.memo = {}
+                -- Every anchor needs a memo entry, so the anchors of the chunk
+                -- go with its memo.
+                local kept = {}
+                for _, anchor in ipairs(layer.anchors) do
+                    if anchor == 0 or anchor < chunk.start or anchor >= chunk_end then
+                        kept[#kept + 1] = anchor
+                    end
+                end
+                layer.anchors = kept
                 if layer.wrapped_memo ~= nil and layer.wrapped_memo.line >= first then
                     layer.wrapped_memo = nil
                 end
-                return true
+                -- A one-line edit changes only the height of its line, so no
+                -- prefix changes when the height of its sub-span stays the
+                -- same. The lines of a longer edit can trade rows inside one
+                -- sub-span.
+                return true, delta ~= 0 or updated - first > 1
             end
         end
         -- Span crossing a chunk boundary: fall through to the wholesale rebuild.
@@ -888,6 +902,20 @@ local function reindex_chunks_for_edit(source_win, layer, first, last, updated, 
         at = stop
     end
 
+    -- A change of the line count moves the later lines. Otherwise, the
+    -- prefixes change when a sub-span of the region changes its height, or
+    -- when the lines of a longer edit trade rows inside one sub-span.
+    local moved = delta_lines ~= 0 or updated - first > 1 or #fresh ~= j - i + 1
+    if not moved then
+        for index, chunk in ipairs(fresh) do
+            local old = chunks[i + index - 1]
+            if chunk.start ~= old.start or not same_subs(chunk.subs, old.subs) then
+                moved = true
+                break
+            end
+        end
+    end
+
     local height_delta = added_height - removed_height
     local spliced = {}
     for index = 1, i - 1 do
@@ -920,7 +948,7 @@ local function reindex_chunks_for_edit(source_win, layer, first, last, updated, 
     if layer.wrapped_memo ~= nil and layer.wrapped_memo.line >= first then
         layer.wrapped_memo = nil
     end
-    return true
+    return true, moved
 end
 
 local function extent_layer_for(source_win)
@@ -967,20 +995,31 @@ local function extent_layer_for(source_win)
             local edits = edits_list_since(source_buf, layer.changedtick)
             if edits ~= nil then
                 local applied = true
+                local moved = false
                 local prior_count = layer.line_count
                 for _, edit in ipairs(edits) do
                     local first, last, updated = edit[1], edit[2], edit[3]
                     local current_count = prior_count
                     prior_count = prior_count + (updated - last)
-                    if not reindex_chunks_for_edit(source_win, layer, first, last, updated, current_count) then
+                    local edit_applied, edit_moved =
+                        reindex_chunks_for_edit(source_win, layer, first, last, updated, current_count)
+                    if not edit_applied then
                         applied = false
                         break
                     end
+                    -- Each edit measures the current text, which also holds the
+                    -- later edits. Thus one-line edits on two lines of one
+                    -- sub-span can cancel out in its height, so an edit on a
+                    -- second line counts as a change.
+                    moved = moved or edit_moved or first ~= edits[1][1]
                 end
                 if applied and prior_count == line_count then
                     layer.changedtick = changedtick
                     layer.line_count = line_count
                     layer.verified_at = uv.now()
+                    if moved then
+                        layer.generation = layer.generation + 1
+                    end
                     return layer
                 end
             end
