@@ -104,23 +104,25 @@ local function valid_source(current)
 end
 M.valid_source = valid_source
 
---- Pointer position relative to `float_win`, also when the pointer is outside
---- it during a drag.
+--- Pointer position relative to the content of `float_win`, also when the
+--- pointer is outside it during a drag. A border cell is outside the content.
 ---@param float_win integer
+---@param sides ScrollbarWindowSides Border size of each side of the float
 ---@return integer mouse_winid
----@return integer row 0-based row relative to the float
----@return integer col 1-based column relative to the float
+---@return integer row 0-based row relative to the content
+---@return integer col 1-based column relative to the content
 ---@return integer screen_row
 ---@return integer screen_col
-M.mouse_position = function(float_win)
+M.mouse_position = function(float_win, sides)
     local mouse = vim.fn.getmousepos()
+    -- `winrow`, `wincol`, and `win_screenpos` count the border.
     if mouse.winid == float_win then
-        return mouse.winid, mouse.winrow - 1, mouse.wincol, mouse.screenrow, mouse.screencol
+        return mouse.winid, mouse.winrow - 1 - sides.top, mouse.wincol - sides.left, mouse.screenrow, mouse.screencol
     end
     local position = vim.fn.win_screenpos(float_win)
     return mouse.winid,
-        mouse.screenrow - position[1],
-        mouse.screencol - position[2] + 1,
+        mouse.screenrow - position[1] - sides.top,
+        mouse.screencol - position[2] + 1 - sides.left,
         mouse.screenrow,
         mouse.screencol
 end
@@ -250,7 +252,7 @@ M.new = function(spec)
         if state == nil or not valid_state(state) or not state.config.mouse then
             return
         end
-        local _, row, col, screen_row, screen_col = M.mouse_position(state.float_win)
+        local _, row, col, screen_row, screen_col = M.mouse_position(state.float_win, state.sides)
         if row < 0 or row >= state.height or col < 1 or col > state.width then
             return
         end

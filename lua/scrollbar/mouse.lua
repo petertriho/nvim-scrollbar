@@ -66,6 +66,7 @@ local function start(state, row, col, screen_row, screen_col)
         source_buf = state.source_buf,
         float_win = state.float_win,
         float_buf = state.float_buf,
+        sides = state.sides,
         pressed_row = row,
         pressed_col = col,
         pressed_screen_row = screen_row,
@@ -91,7 +92,7 @@ local function drag(current)
         return
     end
 
-    local _, row, col, screen_row, screen_col = mouse_core.mouse_position(current.float_win)
+    local _, row, col, screen_row, screen_col = mouse_core.mouse_position(current.float_win, current.sides)
     row = clamp(row, 0, current.height - 1)
     col = clamp(col, 1, state.width)
     local moved = screen_row ~= current.pressed_screen_row or screen_col ~= current.pressed_screen_col
@@ -109,7 +110,7 @@ local function release(current)
         return
     end
 
-    local _, row = mouse_core.mouse_position(current.float_win)
+    local _, row = mouse_core.mouse_position(current.float_win, current.sides)
     row = clamp(row, 0, current.height - 1)
     pcall(function()
         if current.dragging then

@@ -133,6 +133,12 @@ behavior. See [Visibility](../visibility.md) and
 `false`, which uses the height of the text area of the source window. An
 explicit `height` is clamped to that height.
 
+The minimap has no border by default, also when you set `'winborder'`.
+`window.border` adds a frame around the grid. The frame stays inside the text
+area of the source window, so the border rows make the grid shorter. `width`
+and `height` set the size of the grid inside the frame. See
+[Window](configuration.md#window).
+
 By default, the minimap of the active source window hides while the editing
 cursor is inside it. It shows again when the cursor leaves. See
 [Visibility](../visibility.md).
@@ -277,6 +283,8 @@ The click uses logical lines. It does not account for wrapped rows, or for
 folds beyond their first line. A drag scrolls with `CTRL-E` and `CTRL-Y`,
 which count a closed fold as one line. As a result, a drag over closed folds
 can scroll past the band position.
+
+A press on the border, the title, or the footer of the float does nothing.
 
 With `autohide`, a press or drag on the minimap pauses the autohide delay of
 its source window. Release or cancellation starts a new full delay.

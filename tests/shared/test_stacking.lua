@@ -471,4 +471,58 @@ T["an inactive window under scrollbar visibility active moves the minimap to the
     })
 end
 
+local SIDE_BORDER = { "", "", "", "│", "", "", "", "│" }
+
+-- The border characters take more than one byte, so the checks cut the row by
+-- the byte length of the expected text.
+local function expect_row_end(child, expected)
+    local row = screen_row(child)
+    expect.equality(row:sub(-#expected), expected)
+end
+
+local function expect_row_start(child, expected)
+    local row = screen_row(child)
+    expect.equality(row:sub(1, #expected), expected)
+end
+
+T["inner places the bordered minimap at the inward frame edge of the scrollbar"] = function()
+    local child = new_child()
+    setup(child, {
+        scrollbar = { window = { border = SIDE_BORDER } },
+        minimap = { window = { border = SIDE_BORDER } },
+    })
+    flush(child)
+
+    expect_row_end(child, " │MMMM││S│")
+end
+
+T["outer places the bordered scrollbar at the inward frame edge of the minimap"] = function()
+    local child = new_child()
+    setup(child, {
+        scrollbar = { window = { border = SIDE_BORDER } },
+        minimap = { placement = { stack = "outer" }, window = { border = SIDE_BORDER } },
+    })
+    flush(child)
+
+    expect_row_end(child, " │S││MMMM│")
+end
+
+T["west inner places the bordered minimap after the reserved scrollbar frame"] = function()
+    local child = new_child()
+    setup(child, {
+        scrollbar = { placement = { anchor = "NW", gutter = "inner" }, window = { border = SIDE_BORDER } },
+        minimap = { placement = { anchor = "NW" }, window = { border = SIDE_BORDER } },
+    })
+    child.lua([[
+        vim.wo.number = true
+        vim.wo.relativenumber = false
+        vim.wo.signcolumn = "no"
+        vim.wo.foldcolumn = "0"
+    ]])
+    flush(child)
+    flush(child)
+
+    expect_row_start(child, "  1 │S││MMMM│x")
+end
+
 return T

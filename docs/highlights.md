@@ -57,6 +57,47 @@ each profile also gets its own internal groups. As a result, windows that are
 visible at the same time can use different track, thumb, blend, mark, overlap,
 and pressed definitions.
 
+## Frame Groups
+
+The border, the title, and the footer of each float use static groups. The
+plugin creates them as default links:
+
+| Group | Default link | Float |
+| --- | --- | --- |
+| `ScrollbarFloatBorder` | `FloatBorder` | Scrollbar |
+| `ScrollbarFloatTitle` | `FloatTitle` | Scrollbar |
+| `ScrollbarFloatFooter` | `FloatFooter` | Scrollbar |
+| `ScrollbarMinimapFloatBorder` | `FloatBorder` | Minimap |
+| `ScrollbarMinimapFloatTitle` | `FloatTitle` | Minimap |
+| `ScrollbarMinimapFloatFooter` | `FloatFooter` | Minimap |
+
+The `winhighlight` of each float maps `FloatBorder`, `FloatTitle`, and
+`FloatFooter` to these groups. All profiles use the same groups. To change the
+frame of one profile, set `window.wo.winhighlight` in that profile:
+
+```lua
+require("scrollbar").setup({
+    scrollbar = {
+        window = { border = "rounded" },
+        profiles = {
+            {
+                match = { filetypes = { "help" } },
+                window = { wo = { winhighlight = "FloatBorder:DiagnosticInfo" } },
+            },
+        },
+    },
+})
+```
+
+The entries of `window.wo.winhighlight` add to the mapping of the renderer.
+An entry for a group replaces the entry of the renderer for that group. See
+[Window](configuration.md#window).
+
+The groups own these names, so `FloatBorder`, `FloatTitle`, and `FloatFooter`
+are not valid mark types. A scrollbar mark type with one of these names claims
+the same group as the frame, and setup fails. The minimap rejects the names as
+minimap mark types.
+
 ## Minimap Groups
 
 Static minimap groups keep these default links:
@@ -96,6 +137,9 @@ highlights.
 With the same option, the plugin also writes no minimap groups. Every minimap
 profile then uses the canonical `ScrollbarMinimap<Type>` names. Define those
 groups manually.
+
+The floats still map their frames to the [frame groups](#frame-groups). When
+you use a border, a title, or a footer in manual mode, define those groups too.
 
 ## Related
 

@@ -52,6 +52,10 @@ require("scrollbar").setup({
         mouse = true,
         viewport = true,
         marks = {}, -- overrides of the shared mark types
+        window = { -- see Window
+            border = "none",
+            wo = {},
+        },
 
         profiles = nil,
     },
@@ -98,6 +102,7 @@ You set appearance options at the root of the `minimap` block or in a
 | `mouse` | `true` | Adds the `<LeftMouse>`, `<LeftDrag>`, and `<LeftRelease>` mappings. |
 | `viewport` | `true` | Tints the background of the rows that show the visible lines of the source window. |
 | `marks` | `{}` | Overrides of the shared mark types for the minimap. See [Marks](#marks). |
+| `window` | see Defaults | Border, title, footer, and window options of the float. See [Window](#window). |
 
 ## Events
 
@@ -191,6 +196,36 @@ window.
 `"above"` and `"below"` set the order only when both `placement.zindex` values
 are equal. In that case, the bottom float uses `zindex - 1`. If both values are
 `1`, the top float uses `2` instead. Different `zindex` values always win.
+
+## Window
+
+`minimap.window` uses the same format and the same rules as
+[`scrollbar.window`](../configuration.md#window). The default
+`border = "none"` opens the float without a border, also when you set
+`'winborder'`.
+
+```lua
+require("scrollbar").setup({
+    minimap = {
+        enabled = true,
+        window = { border = "rounded", title = "map" },
+    },
+})
+```
+
+The minimap differs from the scrollbar in these items:
+
+- `width` and `height` set the size of the grid. The border is outside the
+  grid, so a float with a border is wider and taller than the grid. The error
+  for `window.width` or `window.height` names the option to use.
+- `wo.winblend` is a setup error, because `blend` sets it. Use `blend`.
+- With `height = false`, the grid fills the text area of the source window
+  minus the border rows. When the source window has no row left for the grid,
+  the minimap does not show.
+- The frame uses `ScrollbarMinimapFloatBorder`,
+  `ScrollbarMinimapFloatTitle`, and `ScrollbarMinimapFloatFooter`. See
+  [Highlights](#highlights).
+- `placement.stack` places the floats beside the full frame, border included.
 
 ## Providers
 
@@ -350,6 +385,9 @@ with theme-owned default links:
 | `ScrollbarMinimapContent` | `Comment` | Monochrome highlight for occupied cells without a syntax capture. |
 | `ScrollbarMinimapViewport` | `Visual` | Background of the viewport band. |
 | `ScrollbarMinimapCursor` | `Cursor` | Exact projected cursor-cell accent. |
+| `ScrollbarMinimapFloatBorder` | `FloatBorder` | Border of the float. See [Window](#window). |
+| `ScrollbarMinimapFloatTitle` | `FloatTitle` | Title of the float. |
+| `ScrollbarMinimapFloatFooter` | `FloatFooter` | Footer of the float. |
 
 Each shown mark type also gets a public `ScrollbarMinimap<Type>` group, such as
 `ScrollbarMinimapError`, `ScrollbarMinimapSearch`, or
@@ -396,9 +434,12 @@ starts with `[nvim-scrollbar]` and gives the full option path.
 - `preset`: the name of a built-in minimap preset. An unknown name lists the
   built-in names.
 - `glyph` is removed. Use `encoding`. The block encoding always draws `█`.
-- `Base`, `Content`, `Viewport`, and `Cursor` are not valid minimap mark
-  types, because their `ScrollbarMinimap<Name>` groups belong to the static
-  layers. The minimap does not show a shared type with one of these names.
+- `Base`, `Content`, `Viewport`, `FloatBorder`, `FloatTitle`, `FloatFooter`,
+  and `Cursor` are not valid minimap mark types, because their
+  `ScrollbarMinimap<Name>` groups belong to the static layers. The minimap
+  does not show a shared type with one of these names.
+- `window`: see [Window](#window). Neovim validates the keys and the window
+  options during setup.
 
 When the minimap is enabled, setup also rejects a scrollbar type and a minimap
 type that claim the same public highlight group. An example is a scrollbar type

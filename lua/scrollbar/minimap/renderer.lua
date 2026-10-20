@@ -30,12 +30,16 @@ local source_policy = require("scrollbar.shared.source_policy")
 local stack = require("scrollbar.shared.stack")
 local store = require("scrollbar.shared.store")
 local text_tick = require("scrollbar.shared.text_tick")
+local window_config = require("scrollbar.config.window")
 
 local M = {}
 
 local NAMESPACE = vim.api.nvim_create_namespace("ScrollbarMinimapRenderer")
 local AUGROUP_NAME = "ScrollbarMinimapRendererLifecycle"
-local FLOAT_WINHIGHLIGHT = "Normal:ScrollbarMinimapBase,NormalNC:ScrollbarMinimapBase,EndOfBuffer:ScrollbarMinimapBase"
+local FRAME_WINHIGHLIGHT = "FloatBorder:ScrollbarMinimapFloatBorder,FloatTitle:ScrollbarMinimapFloatTitle,"
+    .. "FloatFooter:ScrollbarMinimapFloatFooter"
+local FLOAT_WINHIGHLIGHT = "Normal:ScrollbarMinimapBase,NormalNC:ScrollbarMinimapBase,EndOfBuffer:ScrollbarMinimapBase,"
+    .. FRAME_WINHIGHLIGHT
 -- Window and buffer variable that marks a minimap float, also from an earlier
 -- setup.
 local OWNED_VAR = "scrollbar_minimap_owned"
@@ -48,12 +52,13 @@ local CONTENT_PRIORITY = 2
 local function window_presentation(active_config)
     local background_blend = active_config.background_blend
     if background_blend == false then
-        return active_config.blend, FLOAT_WINHIGHLIGHT
+        return active_config.blend, window_config.winhighlight(FLOAT_WINHIGHLIGHT, active_config.window)
     end
 
     local base = highlight_module.resolve("ScrollbarMinimapBase", background_blend, "base")
+    local winhighlight = string.format("Normal:%s,NormalNC:%s,EndOfBuffer:%s,%s", base, base, base, FRAME_WINHIGHLIGHT)
     return math.max(active_config.blend, background_blend),
-        string.format("Normal:%s,NormalNC:%s,EndOfBuffer:%s", base, base, base)
+        window_config.winhighlight(winhighlight, active_config.window)
 end
 
 ---@type table<integer, ScrollbarMinimapRendererState>
@@ -185,6 +190,7 @@ local function source_viewport(source_win)
     end)
 end
 
+--- The footprint uses the width of the float with its border.
 ---@param active_config ScrollbarMinimapConfig
 ---@param source_win integer
 ---@return ScrollbarStackFootprint
@@ -204,7 +210,7 @@ local function stack_footprint(active_config, source_win)
         side = west and "W" or "E",
         origin = origin,
         col = placement.col,
-        width = active_config.width,
+        width = active_config.width + active_config.window.sides.left + active_config.window.sides.right,
         zindex = placement.zindex,
         stack = placement.stack,
     }
@@ -524,11 +530,19 @@ local function render_source(source_win, selection, root_config)
     end
 
     local area_top, area_height = source_area(source_win)
+    -- The frame stays inside the text area, so the border rows limit the
+    -- content height.
+    local sides = active_config.window.sides
+    local available_height = area_height - sides.top - sides.bottom
+    if available_height < 1 and sides.top + sides.bottom > 0 then
+        close_source(source_win)
+        return nil
+    end
     local target_height = active_config.height
     if target_height == false then
-        target_height = area_height
+        target_height = available_height
     end
-    target_height = math.max(1, math.min(target_height, area_height))
+    target_height = math.max(1, math.min(target_height, available_height))
     local target_width = active_config.width
     if target_width <= 0 then
         close_source(source_win)
@@ -700,7 +714,12 @@ local function render_source(source_win, selection, root_config)
     local origin = stack_origin or footprint.origin
     ---@type ScrollbarMinimapRendererState?
     local state = states[source_win]
-    if state == nil or not valid_window(state.float_win) or not vim.api.nvim_buf_is_valid(state.float_buf) then
+    if
+        state == nil
+        or not valid_window(state.float_win)
+        or not vim.api.nvim_buf_is_valid(state.float_buf)
+        or state.window_signature ~= active_config.window.signature
+    then
         if state ~= nil then
             close_state(state)
         end
@@ -715,13 +734,15 @@ local function render_source(source_win, selection, root_config)
             target_height,
             cursor_position_available
         )
+        local window = active_config.window
         local float_win, float_buf = float.open(
             "scrollbar_minimap://%d/%d",
             source_win,
             desired,
+            window.open,
             configure_buffer,
             function(opened_win)
-                float.configure_window(opened_win, OWNED_VAR, active_winhighlight, active_winblend)
+                float.configure_window(opened_win, OWNED_VAR, active_winhighlight, active_winblend, window.wo)
             end
         )
         -- The zero size makes the first write fill the whole buffer.
@@ -750,6 +771,8 @@ local function render_source(source_win, selection, root_config)
             winblend = active_winblend,
             winhighlight = active_winhighlight,
             footprint = footprint,
+            sides = window.sides,
+            window_signature = window.signature,
         }
         states[source_win] = state
         states_by_float[float_win] = state

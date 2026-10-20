@@ -1177,8 +1177,10 @@ end
 M.screen = function(input)
     local source_win = input.source_win
     local height = input.height
+    -- A border makes the track shorter than the source viewport.
+    local viewport_height = input.viewport_height or height
     local layer = extent_layer_for(source_win)
-    extent_layer_current(source_win, layer, height)
+    extent_layer_current(source_win, layer, viewport_height)
 
     local line_count = layer.line_count
     local maximum_line = math.max(0, line_count - 1)
@@ -1194,7 +1196,7 @@ M.screen = function(input)
         0,
         maximum_extent
     )
-    local viewport_end = clamp(viewport_start + height - 1, 0, maximum_extent)
+    local viewport_end = clamp(viewport_start + viewport_height - 1, 0, maximum_extent)
 
     local buffer_revision = store._get_snapshot(layer.source_buf).revision
     local window_revision = store._get_window_snapshot(source_win).revision

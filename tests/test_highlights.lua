@@ -417,4 +417,47 @@ T["manual highlight mode keeps every variant on canonical user groups"] = functi
     end
 end
 
+T["links the frame groups of both floats to the Neovim float groups"] = function()
+    local child = new_child()
+    local result = child.lua_func(function(config)
+        vim.api.nvim_set_hl(0, "ScrollbarFloatTitle", { fg = "#123456" })
+        require("scrollbar").setup(config)
+        local groups = {}
+        for _, name in ipairs({
+            "ScrollbarFloatBorder",
+            "ScrollbarFloatTitle",
+            "ScrollbarFloatFooter",
+            "ScrollbarMinimapFloatBorder",
+            "ScrollbarMinimapFloatTitle",
+            "ScrollbarMinimapFloatFooter",
+        }) do
+            local definition = vim.api.nvim_get_hl(0, { name = name, link = true })
+            groups[name] = { link = definition.link, fg = definition.fg }
+        end
+        return groups
+    end, base_config({}, { minimap = { enabled = true, show = false } }))
+
+    expect.equality(result, {
+        ScrollbarFloatBorder = { link = "FloatBorder" },
+        ScrollbarFloatTitle = { fg = 0x123456 },
+        ScrollbarFloatFooter = { link = "FloatFooter" },
+        ScrollbarMinimapFloatBorder = { link = "FloatBorder" },
+        ScrollbarMinimapFloatTitle = { link = "FloatTitle" },
+        ScrollbarMinimapFloatFooter = { link = "FloatFooter" },
+    })
+end
+
+T["manual highlight mode leaves the frame groups to the user"] = function()
+    local child = new_child()
+    local result = child.lua_func(function(config)
+        require("scrollbar").setup(config)
+        return {
+            border = vim.api.nvim_get_hl(0, { name = "ScrollbarFloatBorder" }),
+            minimap_border = vim.api.nvim_get_hl(0, { name = "ScrollbarMinimapFloatBorder" }),
+        }
+    end, base_config({}, { set_highlights = false, minimap = { enabled = true, show = false } }))
+
+    expect.equality(result, { border = {}, minimap_border = {} })
+end
+
 return T

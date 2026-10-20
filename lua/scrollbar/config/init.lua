@@ -10,6 +10,7 @@ local minimap_config = require("scrollbar.minimap.config")
 local provider_config = require("scrollbar.config.providers")
 local schema = require("scrollbar.config.schema")
 local shared_config = require("scrollbar.config.shared")
+local window_config = require("scrollbar.config.window")
 
 local invalid = schema.invalid
 
@@ -48,6 +49,10 @@ local DEFAULTS = {
         hide_if_all_visible = true,
     },
     marks = {},
+    window = {
+        border = "none",
+        wo = {},
+    },
 }
 
 -- The scrollbar listens to every supported event by default. If the list is in
@@ -73,6 +78,15 @@ local APPEARANCE_KEYS = {
     track = { highlight = true },
     thumb = { text = true, blend = true, highlight = true, hide_if_all_visible = true },
     marks = { ["*"] = { text = true, priority = true, highlight = true } },
+    -- `scrollbar.config.window` validates the keys of `window`.
+    window = { ["*"] = true },
+}
+
+local WINDOW_SPEC = {
+    owned_keys = {
+        width = "the layout sets the width",
+        height = "the text area sets the height",
+    },
 }
 
 local LAYER_KEYS = { types = true, max_width = true }
@@ -397,6 +411,7 @@ local function normalize(value, shared, path, variant_id)
         marks = shared_config.resolve_marks(shared.marks, value.marks, at("marks"), {
             fields = { "text", "priority", "highlight" },
         }),
+        window = window_config.normalize(value.window, at("window"), WINDOW_SPEC),
     })
     result.highlights = highlights.get_highlight_groups(result, variant_id, shared.set_highlights)
     result.layout_cache = layout_config(result)
@@ -434,10 +449,16 @@ local function validate_public_highlight_groups(scrollbar_variants, minimap_vari
         ScrollbarThumbPressed = "the pressed scrollbar thumb",
         ScrollbarHandle = "the legacy scrollbar handle",
         ScrollbarHandlePressed = "the pressed legacy scrollbar handle",
+        ScrollbarFloatBorder = "the scrollbar border",
+        ScrollbarFloatTitle = "the scrollbar title",
+        ScrollbarFloatFooter = "the scrollbar footer",
         ScrollbarMinimapBase = "the static minimap base",
         ScrollbarMinimapContent = "the static minimap content",
         ScrollbarMinimapViewport = "the static minimap viewport",
         ScrollbarMinimapCursor = "the static minimap cursor",
+        ScrollbarMinimapFloatBorder = "the minimap border",
+        ScrollbarMinimapFloatTitle = "the minimap title",
+        ScrollbarMinimapFloatFooter = "the minimap footer",
     }
     local function claim(group, owner)
         local existing = owners[group]

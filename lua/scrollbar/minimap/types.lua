@@ -45,6 +45,7 @@
 ---@field mouse? boolean
 ---@field viewport? boolean
 ---@field marks? false|table<string, false|ScrollbarMinimapUserMarkTypeConfig>
+---@field window? ScrollbarUserWindowConfig
 
 ---@class ScrollbarMinimapUserProfile: ScrollbarMinimapUserAppearance
 ---@field match ScrollbarUserProfileMatcher
@@ -97,6 +98,7 @@
 ---@field mouse boolean
 ---@field viewport boolean
 ---@field marks table<string, ScrollbarMinimapMarkSpec> The mark types that the minimap shows
+---@field window ScrollbarWindowConfig
 
 ---@class ScrollbarMinimapCompiledVariant
 ---@field id integer Root is 0. A profile variant uses the one-based index of its declaration
@@ -234,6 +236,8 @@
 ---@field winblend integer
 ---@field winhighlight string
 ---@field footprint ScrollbarStackFootprint Stacking footprint of this minimap from the last render
+---@field sides ScrollbarWindowSides Border size of each side of the float
+---@field window_signature string Signature of the `window` configuration that opened the float
 
 ---@class ScrollbarMinimapRendererWorker
 ---@field request fun(request: table): boolean
@@ -270,6 +274,7 @@
 ---@field width integer
 ---@field projection ScrollbarMinimapProjection Projection of the render before the press
 ---@field pressed_row integer Zero-based minimap row at press time
+---@field sides ScrollbarWindowSides Border size of each side of the float at press time
 ---@field pressed_topline integer Zero-based source topline after the press jump
 ---@field dragging boolean
 ---@field held boolean Whether the scheduler deadline was paused. Always true, because every press navigates

@@ -22,6 +22,9 @@ vim.o.mouse = "a"
 - If a visible mark is above the thumb, a release without movement clicks the
   mark, and movement starts a thumb drag.
 - If the thumb is above a mark layer, the covered mark is not clickable.
+- A press on the border, the title, or the footer of a float does nothing. A
+  drag that starts on the content continues across the border, as a drag
+  outside the float does. See [Window](configuration.md#window).
 
 Navigation uses `zv` to open only the folds that contain the target. Then it
 centers the target with `zz`. After release or cancellation, focus returns to

@@ -104,7 +104,8 @@ end
 ---@param owned_var string Window variable that marks the window as owned
 ---@param winhighlight string
 ---@param winblend? integer Pseudo-transparency, 0-100; nil keeps the inherited value
-M.configure_window = function(float_win, owned_var, winhighlight, winblend)
+---@param wo? table<string, any> Window options of the `window` configuration. They apply last, so they win
+M.configure_window = function(float_win, owned_var, winhighlight, winblend, wo)
     vim.api.nvim_set_option_value("wrap", false, { win = float_win })
     vim.api.nvim_set_option_value("number", false, { win = float_win })
     vim.api.nvim_set_option_value("relativenumber", false, { win = float_win })
@@ -120,6 +121,11 @@ M.configure_window = function(float_win, owned_var, winhighlight, winblend)
     if winblend ~= nil then
         vim.api.nvim_set_option_value("winblend", winblend, { win = float_win })
     end
+    if wo ~= nil then
+        for name, value in pairs(wo) do
+            vim.api.nvim_set_option_value(name, value, { win = float_win })
+        end
+    end
     vim.api.nvim_win_set_var(float_win, owned_var, true)
 end
 
@@ -127,19 +133,26 @@ end
 ---@param name_format string Buffer name format with the source window and the float buffer
 ---@param source_win integer
 ---@param float_config table<string, any>
+---@param open_keys table<string, any> `nvim_open_win` keys of the `window` configuration, such as `border`
 ---@param configure_buffer fun(float_buf: integer)
 ---@param configure_window fun(float_win: integer)
 ---@return integer float_win
 ---@return integer float_buf
-M.open = function(name_format, source_win, float_config, configure_buffer, configure_window)
+M.open = function(name_format, source_win, float_config, open_keys, configure_buffer, configure_window)
     local float_buf = vim.api.nvim_create_buf(false, true)
     configure_buffer(float_buf)
     pcall(vim.api.nvim_buf_set_name, float_buf, string.format(name_format, source_win, float_buf))
 
-    -- Applying the minimal style again changes winhighlight on Neovim 0.11.4.
-    float_config.style = "minimal"
-    local ok, float_win = pcall(vim.api.nvim_open_win, float_buf, false, float_config)
-    float_config.style = nil
+    -- Only the open gets the style and the `window` keys. Applying the minimal
+    -- style again changes winhighlight on Neovim 0.11.4. A float with other
+    -- `window` keys opens again, because `nvim_win_set_config` keeps the keys
+    -- that it does not get.
+    local open_config = copy_config(float_config)
+    for key, value in pairs(open_keys) do
+        open_config[key] = value
+    end
+    open_config.style = "minimal"
+    local ok, float_win = pcall(vim.api.nvim_open_win, float_buf, false, open_config)
     if not ok then
         pcall(vim.api.nvim_buf_delete, float_buf, { force = true })
         error(float_win, 0)
@@ -224,6 +237,10 @@ local function cursor_overlaps(state, cursor_row, cursor_col)
     then
         return false
     end
+    -- The position is the corner of the frame, so the border counts too.
+    local sides = state.sides
+    height = height + sides.top + sides.bottom
+    width = width + sides.left + sides.right
 
     return cursor_row >= top and cursor_row < top + height and cursor_col >= left and cursor_col < left + width
 end

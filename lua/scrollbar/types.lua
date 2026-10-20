@@ -13,6 +13,32 @@
 ---@alias ScrollbarHighlight string|ScrollbarHighlightDefinition
 ---@alias ScrollbarProviderOption boolean|ScrollbarSearchProviderConfig|ScrollbarMarksProviderConfig
 
+---@class ScrollbarUserWindowConfig
+---@field border? string|(string|string[])[] `nvim_open_win` border. The default `"none"` keeps 'winborder' out
+---@field title? string|string[][]
+---@field title_pos? "left"|"center"|"right"
+---@field footer? string|string[][]
+---@field footer_pos? "left"|"center"|"right"
+---@field wo? table<string, any> Window-local options, applied after the renderer defaults
+---@field [string] any Other `nvim_open_win` keys that the renderer does not set
+
+---@class ScrollbarWindowSides
+---@field top integer Border rows above the content, 0 or 1
+---@field right integer Border columns right of the content, 0 or 1
+---@field bottom integer Border rows below the content, 0 or 1
+---@field left integer Border columns left of the content, 0 or 1
+
+---@class ScrollbarWindowHighlights
+---@field value string The `wo.winhighlight` value
+---@field groups table<string, true> Groups that the value maps
+
+---@class ScrollbarWindowConfig
+---@field open table<string, any> `nvim_open_win` keys. `border` is always set
+---@field wo table<string, any> Window options by full name, without `winhighlight`
+---@field winhighlight false|ScrollbarWindowHighlights
+---@field sides ScrollbarWindowSides
+---@field signature string Stable text of the keys and the options. A float with another signature opens again
+
 ---@class ScrollbarUserPlacement
 ---@field relative? ScrollbarPlacementRelative
 ---@field anchor? ScrollbarFloatAnchor
@@ -118,6 +144,7 @@
 ---@field track? ScrollbarUserTrackConfig
 ---@field thumb? ScrollbarUserThumbConfig
 ---@field marks? false|table<string, false|ScrollbarUserMarkTypeConfig>
+---@field window? ScrollbarUserWindowConfig
 
 ---@class ScrollbarUserProfile: ScrollbarUserAppearance
 ---@field match ScrollbarUserProfileMatcher
@@ -282,6 +309,7 @@
 ---@field track ScrollbarTrackConfig
 ---@field thumb ScrollbarThumbConfig
 ---@field marks table<string, ScrollbarMarkTypeConfig> Shown mark types
+---@field window ScrollbarWindowConfig
 ---@field highlights ScrollbarHighlightGroups Compiled canonical or profile-internal group names
 ---@field layout_cache table Precompiled static inputs for the line-layer cache
 ---@field providers? ScrollbarProvidersConfig Present only in provider context snapshots
@@ -449,6 +477,7 @@
 ---@class ScrollbarScreenGeometryInput
 ---@field source_win integer
 ---@field height integer Track height in rows
+---@field viewport_height? integer Text rows of the source window. Defaults to `height`
 ---@field marks ScrollbarMark[]
 ---@field marks_sorted? boolean Marks already ordered per provider by (line, text). Skips the dedup/sort pass
 ---@field compact_search? ScrollbarCompactSearch Private built-in search matches projected into compact_mark_rows
@@ -535,6 +564,8 @@
 ---@field hidden_by_cursor boolean
 ---@field geometry ScrollbarRendererGeometry
 ---@field footprint? ScrollbarStackFootprint Own stacking footprint from the last render
+---@field sides ScrollbarWindowSides Border size of each side of the float
+---@field window_signature string Signature of the `window` configuration that opened the float
 
 ---@class ScrollbarFlattenedMarksCache
 ---@field source_buf integer
@@ -592,6 +623,7 @@
 ---@field source_buf integer
 ---@field float_win integer
 ---@field float_buf integer
+---@field sides ScrollbarWindowSides Border size of each side of the float at press time
 ---@field pressed_row integer
 ---@field pressed_col integer
 ---@field pressed_screen_row integer

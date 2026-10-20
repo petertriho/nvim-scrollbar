@@ -116,7 +116,8 @@ For a window-relative west anchor, these names apply:
 
 - `G` is the gutter width of the source window before the scrollbar
   reservation.
-- `W` is the rendered float width.
+- `W` is the rendered float width. It includes the left and right border
+  columns.
 - `C` is the configured `col`.
 
 With `"inner"` or `"outer"`, the renderer reserves `max(0, W + C)` blank
@@ -159,7 +160,32 @@ of that profile.
 The float covers the buffer-text rows of the source window. It excludes the
 winbar of the source window and the rows that the tabline, the statusline, and
 the command line already use. The plugin derives the float width and height.
-The float options are `placement` and `hide_on_cursor`.
+The float options are `placement`, `hide_on_cursor`, and `window`.
+
+### Border
+
+`window.border` adds a frame around the float. See
+[Window](configuration.md#window). The frame stays inside the text area of the
+source window:
+
+- `anchor`, `row`, and `col` place the corner of the frame, not the corner of
+  the content.
+- The top and bottom border rows make the track shorter. The track has the
+  height of the text area minus the border rows. The thumb and the marks map
+  the buffer to these content rows.
+- `hide_if_all_visible` and `thumb.hide_if_all_visible` compare the buffer
+  with the text area of the source window. The border does not change the
+  result.
+- The left and right border columns make the float wider. The layout sets the
+  width of the content. The gutter reservation and the arrangement beside the
+  minimap use the full width of the frame.
+- When the text area has no row left for the content, the scrollbar does not
+  show.
+- `hide_on_cursor` hides the float while the cursor is inside the frame,
+  border included.
+
+The minimap uses the same rules. Its `width` and `height` set the size of the
+grid inside the frame. See [Window](minimap/configuration.md#window).
 
 ## Units
 

@@ -54,6 +54,9 @@ M.set = function()
     set_default_link("ScrollbarMinimapContent", "Comment")
     set_default_link("ScrollbarMinimapViewport", "Visual")
     set_default_link("ScrollbarMinimapCursor", "Cursor")
+    set_default_link("ScrollbarMinimapFloatBorder", "FloatBorder")
+    set_default_link("ScrollbarMinimapFloatTitle", "FloatTitle")
+    set_default_link("ScrollbarMinimapFloatFooter", "FloatFooter")
 
     for _, variant in ipairs(config.get_variants()) do
         for _, spec in pairs(variant.config.marks) do

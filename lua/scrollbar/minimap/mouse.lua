@@ -85,6 +85,7 @@ local function start(state, row)
         source_buf = state.source_buf,
         float_win = state.float_win,
         float_buf = state.float_buf,
+        sides = state.sides,
         height = state.height,
         width = state.width,
         projection = state.projection,
@@ -110,7 +111,7 @@ local function drag(current)
         core.cancel()
         return
     end
-    local _, row = mouse_core.mouse_position(current.float_win)
+    local _, row = mouse_core.mouse_position(current.float_win, current.sides)
     current.dragging = true
     scroll_to(
         current,
@@ -123,7 +124,7 @@ local function release(current)
     if current.dragging or not mouse_core.valid_window(current.float_win) then
         return
     end
-    local _, row = mouse_core.mouse_position(current.float_win)
+    local _, row = mouse_core.mouse_position(current.float_win, current.sides)
     row = mouse_core.clamp(row, 0, current.height - 1)
     core.navigate(current, projection_module.row_line(current.projection, row))
 end

@@ -133,6 +133,10 @@ require("scrollbar").setup({
             hide_if_all_visible = true,
         },
         marks = {}, -- overrides of the shared mark types
+        window = { -- see Window
+            border = "none",
+            wo = {},
+        },
 
         profiles = nil,
     },
@@ -172,6 +176,7 @@ require("scrollbar").setup({
 | `thumb.highlight` | `"PmenuThumb"` | A group name or an `nvim_set_hl()` table. |
 | `thumb.hide_if_all_visible` | `true` | Hides only the thumb when the buffer fits in the window. |
 | `marks` | `{}` | Overrides of the shared mark types for the scrollbar. See [Marks](#marks). |
+| `window` | see Defaults | Border, title, footer, and window options of the float. See [Window](#window). |
 
 `placement.gutter` applies to window-relative floats with a west anchor (`NW`
 or `SW`). `"inner"` reserves blank gutter cells for the scrollbar after the
@@ -181,6 +186,48 @@ existing gutter. `"outer"` reserves them before the existing gutter.
 When the minimap is on the same side as the scrollbar, `minimap.placement.stack`
 arranges the two floats. See
 [Placement Beside the Scrollbar](minimap/configuration.md#placement-beside-the-scrollbar).
+
+### Window
+
+`window` configures the float itself. Its keys go to `nvim_open_win()`, and
+`window.wo` holds window-local options. The default `border = "none"` opens the
+float without a border, also when you set `'winborder'`.
+
+```lua
+require("scrollbar").setup({
+    scrollbar = {
+        window = {
+            border = "rounded",
+            wo = { winhighlight = "FloatBorder:DiagnosticInfo" },
+        },
+    },
+})
+```
+
+- `window` accepts each `nvim_open_win()` key that the renderer does not set,
+  for example `border`, `title`, `title_pos`, `footer`, and `footer_pos`.
+  Neovim validates the values during setup.
+- Setup rejects the keys that the renderer sets: `relative`, `win`, `bufpos`,
+  `anchor`, `row`, `col`, `width`, `height`, `zindex`, `focusable`, `mouse`,
+  `hide`, `style`, `external`, `split`, `vertical`, `noautocmd`, and `fixed`.
+  The error names the option that controls the key, for example
+  `placement.anchor`.
+- `window.wo` accepts window options. They apply after the defaults of the
+  renderer, so your values win. Setup rejects `number`, `relativenumber`,
+  `signcolumn`, `foldcolumn`, `statuscolumn`, and `wrap`, because they change
+  the text area of the float.
+- The entries of `wo.winhighlight` add to the mapping of the renderer. An entry
+  for a group replaces the entry of the renderer for that group.
+- The frame stays inside the text area of the window. The border rows make the
+  track shorter, and the border columns make the float wider. See
+  [Border](layout-and-geometry.md#border).
+- The frame uses `ScrollbarFloatBorder`, `ScrollbarFloatTitle`, and
+  `ScrollbarFloatFooter`. See [Frame Groups](highlights.md#frame-groups).
+- A profile can set its own `window`. A profile clears a title of the root
+  with `title = ""`. When the `window` of a float changes, the float opens
+  again.
+- To use the border of other floats, set `border = vim.o.winborder`. This works
+  when `'winborder'` is a style name, such as `"rounded"`.
 
 ## Providers
 
@@ -268,6 +315,8 @@ marks = {
 
 - A table merges with the default definition of that type. A new type must set
   `text`, `priority`, and `highlight`. Type names match `^[%a_][%w_]*$`.
+  The frame groups reserve the names `FloatBorder`, `FloatTitle`, and
+  `FloatFooter`. See [Frame Groups](highlights.md#frame-groups).
 - `false` hides the type in both renderers. The type stays registered, so
   providers can still publish it. A renderer override table can show it again.
 - `text` is a string or a dense list of strings. Each string must have a
@@ -522,6 +571,9 @@ overrides apply on top of the shared `marks` definitions.
 - `thumb.blend`: an integer from `0` to `100`.
 - `thumb.text`: one string with a positive display width and no control
   characters.
+- `window`: Neovim validates the keys and the window options during setup.
+  For this check, setup opens a hidden float and closes it at once. The default
+  `window` opens no float. See [Window](#window).
 - Unknown keys at every level are errors.
 
 Error messages give the full path of the option, for example

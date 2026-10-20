@@ -6,12 +6,14 @@ local providers = require("scrollbar.providers")
 local source_policy = require("scrollbar.shared.source_policy")
 local stack = require("scrollbar.shared.stack")
 local store = require("scrollbar.shared.store")
+local window_config = require("scrollbar.config.window")
 
 local M = {}
 
 local NAMESPACE = vim.api.nvim_create_namespace("ScrollbarRenderer")
 local AUGROUP_NAME = "ScrollbarRendererLifecycle"
-local FLOAT_WINHIGHLIGHT = "Normal:ScrollbarBase,NormalNC:ScrollbarBase,EndOfBuffer:ScrollbarBase"
+local FLOAT_WINHIGHLIGHT = "Normal:ScrollbarBase,NormalNC:ScrollbarBase,EndOfBuffer:ScrollbarBase,"
+    .. "FloatBorder:ScrollbarFloatBorder,FloatTitle:ScrollbarFloatTitle,FloatFooter:ScrollbarFloatFooter"
 -- Window and buffer variable that marks a scrollbar float, also from an
 -- earlier setup.
 local OWNED_VAR = "scrollbar_owned"
@@ -469,16 +471,27 @@ local function stack_footprint(active_config, origin, width, previous)
     }
 end
 
+--- Width of the float with its border. The stack footprint and the
+--- statuscolumn reservation use this width.
+---@param active_config ScrollbarConfig
+---@param width integer Content width
+---@return integer
+local function frame_width(active_config, width)
+    local sides = active_config.window.sides
+    return width + sides.left + sides.right
+end
+
 ---@param source_win integer
 ---@param active_config ScrollbarConfig
 ---@param area table<string, integer>
 ---@param origin integer Resolved horizontal origin that `placement.col` applies to
 ---@param zindex integer Resolved z-index
----@param width integer
+---@param width integer Content width
+---@param height integer Content height
 ---@param hidden boolean
 ---@return table<string, any>
-local function float_config(active_config, source_win, area, origin, zindex, width, hidden)
-    return float.config(active_config, source_win, area.top, area.height, origin, zindex, width, area.height, hidden)
+local function float_config(active_config, source_win, area, origin, zindex, width, height, hidden)
+    return float.config(active_config, source_win, area.top, area.height, origin, zindex, width, height, hidden)
 end
 
 ---@param float_buf integer
@@ -488,8 +501,9 @@ local function configure_buffer(float_buf)
 end
 
 ---@param float_win integer
-local function configure_window(float_win)
-    float.configure_window(float_win, OWNED_VAR, FLOAT_WINHIGHLIGHT)
+---@param window ScrollbarWindowConfig
+local function configure_window(float_win, window)
+    float.configure_window(float_win, OWNED_VAR, window_config.winhighlight(FLOAT_WINHIGHLIGHT, window), nil, window.wo)
 end
 
 ---@param source_win integer
@@ -498,7 +512,7 @@ end
 ---@param variant_id integer
 ---@param active_float_config table<string, any>
 ---@param configure_owned_buffer fun(float_buf: integer)
----@param configure_owned_window fun(float_win: integer)
+---@param configure_owned_window fun(float_win: integer, window: ScrollbarWindowConfig)
 ---@return ScrollbarWindowState
 local function create_state(
     source_win,
@@ -509,12 +523,16 @@ local function create_state(
     configure_owned_buffer,
     configure_owned_window
 )
+    local window = active_config.window
     local float_win, float_buf = float.open(
         "scrollbar://source/%d/%d",
         source_win,
         active_float_config,
+        window.open,
         configure_owned_buffer,
-        configure_owned_window
+        function(opened_win)
+            configure_owned_window(opened_win, window)
+        end
     )
     local state = {
         source_win = source_win,
@@ -534,6 +552,8 @@ local function create_state(
         handle_pressed = false,
         hidden_by_cursor = active_float_config.hide == true,
         geometry = { unit = "line", total_extent = 0, viewport_start = 0, viewport_end = 0 },
+        sides = window.sides,
+        window_signature = window.signature,
     }
     states[source_win] = state
     states_by_float[float_win] = state
@@ -628,17 +648,29 @@ end
 ---@param source_win integer
 ---@param source_buf integer
 ---@param active_config ScrollbarConfig
----@param height integer
+---@param height integer Track rows
+---@param viewport_height integer Text rows of the source window
 ---@param marks ScrollbarLayoutMark[]
 ---@param line_count? integer
 ---@param mark_rows? integer[]
 ---@param compact_search? ScrollbarCompactSearch
 ---@return ScrollbarGeometry
-local function geometry_for(active_config, source_win, source_buf, height, marks, line_count, mark_rows, compact_search)
+local function geometry_for(
+    active_config,
+    source_win,
+    source_buf,
+    height,
+    viewport_height,
+    marks,
+    line_count,
+    mark_rows,
+    compact_search
+)
     if active_config.unit == "screenline" then
         return layout.screen({
             source_win = source_win,
             height = height,
+            viewport_height = viewport_height,
             marks = marks,
             marks_sorted = true,
             compact_search = compact_search,
@@ -916,14 +948,14 @@ local function render_source(source_win, selection, root_config)
     if concealed then
         local previous = stack.footprint("scrollbar", source_win)
         local origin = placement_origin(active_config, source_win, source_text_area(source_win))
-        local width = previous and previous.width or active_config.layout.width
+        local width = previous and previous.width or frame_width(active_config, active_config.layout.width)
         stack.publish("scrollbar", source_win, stack_footprint(active_config, origin, width, previous))
         return nil
     end
     local reserved = reserves_statuscolumn(active_config)
     if reserved then
         local initial_width = existing_state and existing_state.width or active_config.layout.width
-        local initial_span = math.max(0, initial_width + active_config.placement.col)
+        local initial_span = math.max(0, frame_width(active_config, initial_width) + active_config.placement.col)
         if
             initial_span > 0
             and ensure_statuscolumn(source_win, initial_span, reservation_position(active_config)) == nil
@@ -939,13 +971,18 @@ local function render_source(source_win, selection, root_config)
     local line_count = active_config.unit == "line" and vim.api.nvim_buf_line_count(source_buf) or nil
     local west = west_anchor(active_config)
     local stack_origin, stack_zindex = stack.resolve("scrollbar", source_win, stack_placement(active_config))
+    local sides = active_config.window.sides
     local area
+    local content_height
     local container_width
     local geometry
     local output
     for _ = 1, 3 do
         area = source_text_area(source_win)
-        if area.height < 1 then
+        -- The frame stays inside the text area, so the border rows shorten the
+        -- track.
+        content_height = area.height - sides.top - sides.bottom
+        if content_height < 1 then
             close_source(source_win)
             return nil
         end
@@ -967,6 +1004,7 @@ local function render_source(source_win, selection, root_config)
                 container_width = math.max(0, west and vim.o.columns - stack_origin or stack_origin)
             end
         end
+        container_width = math.max(0, container_width - sides.left - sides.right)
 
         local mark_layer
         if line_count ~= nil then
@@ -977,7 +1015,7 @@ local function render_source(source_win, selection, root_config)
                 window_revision,
                 line_count,
                 container_width,
-                area.height,
+                content_height,
                 active_config,
                 marks,
                 compact_search
@@ -986,6 +1024,7 @@ local function render_source(source_win, selection, root_config)
                 active_config,
                 source_win,
                 source_buf,
+                content_height,
                 area.height,
                 marks,
                 line_count,
@@ -994,14 +1033,24 @@ local function render_source(source_win, selection, root_config)
             )
             mark_layer = cached.layer
         else
-            geometry = geometry_for(active_config, source_win, source_buf, area.height, marks, nil, nil, compact_search)
+            geometry = geometry_for(
+                active_config,
+                source_win,
+                source_buf,
+                content_height,
+                area.height,
+                marks,
+                nil,
+                nil,
+                compact_search
+            )
             mark_layer = screen_mark_layer(
                 source_win,
                 source_buf,
                 buffer_revision,
                 window_revision,
                 container_width,
-                area.height,
+                content_height,
                 active_config,
                 marks,
                 geometry,
@@ -1014,7 +1063,7 @@ local function render_source(source_win, selection, root_config)
 
         output = layout.compose({
             config = active_config,
-            height = area.height,
+            height = content_height,
             line_count = line_count,
             container_width = container_width,
             geometry = geometry,
@@ -1025,7 +1074,7 @@ local function render_source(source_win, selection, root_config)
         if not reserved then
             break
         end
-        local span = math.max(0, output.width + active_config.placement.col)
+        local span = math.max(0, frame_width(active_config, output.width) + active_config.placement.col)
         local current = statuscolumn_reservations[source_win]
         if span == (current and current.span or 0) then
             break
@@ -1036,10 +1085,10 @@ local function render_source(source_win, selection, root_config)
         end
     end
 
-    assert(area ~= nil and geometry ~= nil and output ~= nil, "render geometry unavailable")
+    assert(area ~= nil and content_height ~= nil and geometry ~= nil and output ~= nil, "render geometry unavailable")
     if reserved then
         local reservation = statuscolumn_reservations[source_win]
-        local required_span = math.max(0, output.width + active_config.placement.col)
+        local required_span = math.max(0, frame_width(active_config, output.width) + active_config.placement.col)
         if required_span > 0 and (reservation == nil or reservation.span < required_span) then
             close_source(source_win)
             return nil
@@ -1055,13 +1104,18 @@ local function render_source(source_win, selection, root_config)
     local own_origin
     ---@type ScrollbarWindowState?
     local state = states[source_win]
-    if state == nil or not valid_window(state.float_win) or not vim.api.nvim_buf_is_valid(state.float_buf) then
+    if
+        state == nil
+        or not valid_window(state.float_win)
+        or not vim.api.nvim_buf_is_valid(state.float_buf)
+        or state.window_signature ~= active_config.window.signature
+    then
         if state ~= nil then
             close_state(state)
             if reserved then
                 ensure_statuscolumn(
                     source_win,
-                    math.max(0, output.width + active_config.placement.col),
+                    math.max(0, frame_width(active_config, output.width) + active_config.placement.col),
                     reservation_position(active_config)
                 )
             end
@@ -1074,6 +1128,7 @@ local function render_source(source_win, selection, root_config)
             stack_origin or own_origin,
             stack_zindex,
             output.width,
+            content_height,
             cursor_position_available
         )
         state = create_state(
@@ -1097,6 +1152,7 @@ local function render_source(source_win, selection, root_config)
             stack_origin or own_origin,
             stack_zindex,
             output.width,
+            content_height,
             cursor_position_available and state.hidden_by_cursor or false
         )
         float.apply_config(state, active_float_config, cursor_position_available)
@@ -1106,9 +1162,9 @@ local function render_source(source_win, selection, root_config)
 
     state.config = active_config
     state.variant_id = selection.variant_id
-    local active_highlights = update_buffer(state, output, output.width, area.height)
+    local active_highlights = update_buffer(state, output, output.width, content_height)
     state.width = output.width
-    state.height = area.height
+    state.height = content_height
     state.rows = output.rows
     state.highlights = output.highlights
     state.rendered_highlights = active_highlights
@@ -1120,7 +1176,8 @@ local function render_source(source_win, selection, root_config)
         viewport_start = geometry.viewport_start,
         viewport_end = geometry.viewport_end,
     }
-    state.footprint = stack_footprint(active_config, own_origin, output.width, state.footprint)
+    state.footprint =
+        stack_footprint(active_config, own_origin, frame_width(active_config, output.width), state.footprint)
     stack.publish("scrollbar", source_win, state.footprint)
     return state
 end

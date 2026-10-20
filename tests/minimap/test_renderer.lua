@@ -1720,7 +1720,9 @@ T["background inheritance keeps direct groups and uses full-float winblend"] = f
     expect.equality(result.winblend, 35)
     expect.equality(
         result.winhighlight,
-        "Normal:ScrollbarMinimapBase,NormalNC:ScrollbarMinimapBase,EndOfBuffer:ScrollbarMinimapBase"
+        "Normal:ScrollbarMinimapBase,NormalNC:ScrollbarMinimapBase,EndOfBuffer:ScrollbarMinimapBase,"
+            .. "FloatBorder:ScrollbarMinimapFloatBorder,FloatTitle:ScrollbarMinimapFloatTitle,"
+            .. "FloatFooter:ScrollbarMinimapFloatFooter"
     )
     expect.equality(result.highlight, "ScrollbarMinimapContent")
 end
@@ -2519,6 +2521,165 @@ T["the fit scale shows the whole buffer"] = function()
     expect.equality(result.offset, 0)
     expect.equality(result.rows[1], "█   ")
     expect.equality(result.rows[10], "   █")
+end
+
+T["window"] = MiniTest.new_set()
+
+---@param child table
+---@param height? integer Height of a split for the source window
+local function window_source(child, height)
+    child.lua_func(function(split_height)
+        local lines = {}
+        for index = 1, 200 do
+            lines[index] = string.rep("a", index % 30)
+        end
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        if split_height ~= vim.NIL and split_height ~= nil then
+            vim.cmd("split")
+            vim.api.nvim_win_set_height(0, split_height)
+        end
+    end, height)
+end
+
+---@param child table
+---@return table
+local function window_render(child)
+    return child.lua_func(function()
+        local renderer = require("scrollbar.minimap.renderer")
+        local state = renderer.render(0)
+        if state == nil then
+            return { shown = false }
+        end
+        local config = vim.api.nvim_win_get_config(state.float_win)
+        return {
+            shown = true,
+            float_win = state.float_win,
+            bordered = type(config.border) == "table",
+            title = config.title,
+            width = config.width,
+            height = config.height,
+            text_height = vim.api.nvim_win_get_height(0),
+            rows = #state.rows,
+            footprint_width = state.footprint.width,
+            winhighlight = vim.api.nvim_get_option_value("winhighlight", { win = state.float_win }),
+            cursorline = vim.api.nvim_get_option_value("cursorline", { win = state.float_win }),
+        }
+    end)
+end
+
+T["window"]["ignores winborder by default"] = function()
+    local child = new_child()
+    reset_modules(child)
+    child.o.winborder = "rounded"
+    configure(child, { enabled = true, width = 16, hide_on_cursor = false }, { set_highlights = false })
+    window_source(child)
+
+    local result = window_render(child)
+    expect.equality(result.bordered, false)
+    expect.equality(result.height, result.text_height)
+    expect.equality(result.footprint_width, 16)
+end
+
+T["window"]["keeps the frame inside the text area at the configured map size"] = function()
+    local child = new_child()
+    reset_modules(child)
+    window_source(child, 10)
+    configure(child, {
+        enabled = true,
+        width = 16,
+        hide_on_cursor = false,
+        window = { border = "rounded" },
+    }, { set_highlights = false })
+    local fitted = window_render(child)
+    configure(child, {
+        enabled = true,
+        width = 16,
+        height = 100,
+        hide_on_cursor = false,
+        window = { border = "shadow" },
+    }, { set_highlights = false })
+    local shadow = window_render(child)
+
+    expect.equality(fitted.bordered, true)
+    expect.equality(fitted.width, 16)
+    expect.equality(fitted.height, 8)
+    expect.equality(fitted.rows, 8)
+    expect.equality(fitted.footprint_width, 18)
+    expect.equality(shadow.width, 16)
+    expect.equality(shadow.height, 9)
+    expect.equality(shadow.footprint_width, 17)
+end
+
+T["window"]["shows no float when the text area cannot hold the frame"] = function()
+    local child = new_child()
+    reset_modules(child)
+    window_source(child, 2)
+    configure(child, {
+        enabled = true,
+        width = 4,
+        hide_on_cursor = false,
+        window = { border = "rounded" },
+    }, { set_highlights = false })
+
+    expect.equality(window_render(child).shown, false)
+    child.api.nvim_win_set_height(0, 3)
+    expect.equality(window_render(child).height, 1)
+end
+
+T["window"]["merges the user winhighlight over the resolved base"] = function()
+    local child = new_child()
+    reset_modules(child)
+    window_source(child)
+    local options = {
+        enabled = true,
+        width = 4,
+        hide_on_cursor = false,
+        background_blend = 20,
+        window = { border = "rounded", wo = { cursorline = true, winhighlight = "FloatBorder:Error" } },
+    }
+    configure(child, options, { set_highlights = false })
+    local first = window_render(child)
+    options.blend = 40
+    configure(child, options, { set_highlights = false })
+    local blended = window_render(child)
+
+    for _, case in ipairs({ first, blended }) do
+        local base = case.winhighlight:match("^Normal:([^,]+),")
+        expect.no_equality(base, nil)
+        expect.no_equality(base, "ScrollbarMinimapBase")
+        expect.equality(
+            case.winhighlight,
+            string.format(
+                "Normal:%s,NormalNC:%s,EndOfBuffer:%s,FloatTitle:ScrollbarMinimapFloatTitle,"
+                    .. "FloatFooter:ScrollbarMinimapFloatFooter,FloatBorder:Error",
+                base,
+                base,
+                base
+            )
+        )
+        expect.equality(case.cursorline, true)
+    end
+end
+
+T["window"]["opens the float again only when the window changes"] = function()
+    local child = new_child()
+    reset_modules(child)
+    window_source(child)
+    local framed = { enabled = true, width = 4, hide_on_cursor = false, window = { border = "rounded", title = "x" } }
+    configure(child, framed, { set_highlights = false })
+    local first = window_render(child)
+    local steady = window_render(child)
+    child.lua(
+        [[require("scrollbar.config").set({ set_highlights = false, minimap = { enabled = true, width = 4, hide_on_cursor = false } })]]
+    )
+    local plain = window_render(child)
+
+    expect.equality(first.title, { { "x" } })
+    expect.equality(steady.float_win, first.float_win)
+    expect.no_equality(plain.float_win, first.float_win)
+    expect.equality(child.api.nvim_win_is_valid(first.float_win), false)
+    expect.equality(plain.bordered, false)
+    expect.equality(plain.title, nil)
 end
 
 return T

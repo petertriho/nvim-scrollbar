@@ -4,6 +4,9 @@ local expect = MiniTest.expect
 
 local T = MiniTest.new_set()
 
+local FLOAT_WINHIGHLIGHT = "Normal:ScrollbarBase,NormalNC:ScrollbarBase,EndOfBuffer:ScrollbarBase,"
+    .. "FloatBorder:ScrollbarFloatBorder,FloatTitle:ScrollbarFloatTitle,FloatFooter:ScrollbarFloatFooter"
+
 local function new_child()
     local child = helpers.new_child()
     child.lua([[
@@ -473,7 +476,7 @@ T["keeps same-buffer source windows independent and writes only float buffers"] 
     expect.equality(result.float_filetype, "scrollbar")
     expect.equality(result.float_buftype, "nofile")
     expect.equality(result.float_modifiable, false)
-    expect.equality(result.winhighlight, "Normal:ScrollbarBase,NormalNC:ScrollbarBase,EndOfBuffer:ScrollbarBase")
+    expect.equality(result.winhighlight, FLOAT_WINHIGHLIGHT)
     expect.equality(result.lookup, result.first.source_win)
 end
 
@@ -575,7 +578,7 @@ T["renders track only in declared columns over a transparent float base"] = func
     expect.equality(result.groups.ScrollbarTrack, { start_col = 0, end_col = 1, priority = 1 })
     expect.equality(result.groups.ScrollbarMisc, { start_col = 1, end_col = 2, priority = 1 })
     expect.equality(result.groups.ScrollbarThumb, { start_col = 2, end_col = 3, priority = 1 })
-    expect.equality(result.winhighlight, "Normal:ScrollbarBase,NormalNC:ScrollbarBase,EndOfBuffer:ScrollbarBase")
+    expect.equality(result.winhighlight, FLOAT_WINHIGHLIGHT)
 end
 
 T["enforces visibility and editor-relative single ownership"] = function()
@@ -3656,6 +3659,284 @@ T["accepts marks of a hidden type from a custom provider without drawing them"] 
     expect.no_equality(result.hidden.last, "C")
     expect.equality(result.registered, true)
     expect.equality(result.normalized, true)
+end
+
+T["window"] = MiniTest.new_set()
+
+---@param child table
+---@param line_count integer
+---@param height? integer Height of a split for the source window. Without it, the source is the full window
+local function window_source(child, line_count, height)
+    child.lua_func(function(count, split_height)
+        local lines = {}
+        for index = 1, count do
+            lines[index] = "line " .. index
+        end
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        if split_height ~= vim.NIL and split_height ~= nil then
+            vim.cmd("split")
+            vim.api.nvim_win_set_height(0, split_height)
+        end
+    end, line_count, height)
+end
+
+T["window"]["ignores winborder by default"] = function()
+    local child = new_child()
+    window_source(child, 80)
+    local result = child.lua_func(function(base_config)
+        vim.o.winborder = "rounded"
+        require("scrollbar.test.set_config")(base_config)
+        local renderer = require("scrollbar.renderer")
+        renderer.setup()
+        local state = assert(renderer.render(vim.api.nvim_get_current_win()))
+        local config = vim.api.nvim_win_get_config(state.float_win)
+        return {
+            bordered = type(config.border) == "table",
+            height = config.height,
+            text_height = vim.api.nvim_win_get_height(0),
+        }
+    end, renderer_config())
+
+    expect.equality(result.bordered, false)
+    expect.equality(result.height, result.text_height)
+end
+
+T["window"]["applies the keys, the options, and the merged winhighlight"] = function()
+    local child = new_child()
+    window_source(child, 80)
+    local result = child.lua_func(function(base_config)
+        base_config.window = {
+            border = "single",
+            title = "T",
+            wo = { cursorline = true, winhighlight = "FloatBorder:Error" },
+        }
+        require("scrollbar.test.set_config")(base_config)
+        local renderer = require("scrollbar.renderer")
+        renderer.setup()
+        local state = assert(renderer.render(vim.api.nvim_get_current_win()))
+        local config = vim.api.nvim_win_get_config(state.float_win)
+        return {
+            border = config.border,
+            title = config.title,
+            cursorline = vim.api.nvim_get_option_value("cursorline", { win = state.float_win }),
+            winhighlight = vim.api.nvim_get_option_value("winhighlight", { win = state.float_win }),
+        }
+    end, renderer_config())
+
+    expect.equality(result.border, { "┌", "─", "┐", "│", "┘", "─", "└", "│" })
+    expect.equality(result.title, { { "T" } })
+    expect.equality(result.cursorline, true)
+    expect.equality(
+        result.winhighlight,
+        "Normal:ScrollbarBase,NormalNC:ScrollbarBase,EndOfBuffer:ScrollbarBase,"
+            .. "FloatTitle:ScrollbarFloatTitle,FloatFooter:ScrollbarFloatFooter,FloatBorder:Error"
+    )
+end
+
+T["window"]["keeps the frame inside the text area and shortens the track"] = function()
+    local child = new_child()
+    window_source(child, 15, 10)
+    local result = child.lua_func(function(base_config)
+        local renderer = require("scrollbar.renderer")
+        local source_win = vim.api.nvim_get_current_win()
+        local function render(unit, anchor)
+            local active = vim.deepcopy(base_config)
+            active.unit = unit
+            active.placement.anchor = anchor
+            active.window = { border = "rounded" }
+            require("scrollbar.test.set_config")(active)
+            renderer.setup()
+            local state = assert(renderer.render(source_win))
+            local config = vim.api.nvim_win_get_config(state.float_win)
+            return {
+                row = config.row,
+                height = config.height,
+                width = config.width,
+                state_height = state.height,
+                rows = #state.rows,
+                hitmap_rows = #state.hitmap,
+                handle = state.handle,
+                footprint_width = state.footprint.width,
+            }
+        end
+        return {
+            text_height = vim.api.nvim_win_get_height(source_win),
+            line = render("line", "NE"),
+            screenline = render("screenline", "NE"),
+            south = render("line", "SE"),
+        }
+    end, renderer_config())
+
+    expect.equality(result.text_height, 10)
+    for _, case in ipairs({ result.line, result.screenline }) do
+        expect.equality(case.row, 0)
+        expect.equality(case.height, 8)
+        expect.equality(case.state_height, 8)
+        expect.equality(case.rows, 8)
+        expect.equality(case.hitmap_rows, 8)
+        expect.equality(case.footprint_width, case.width + 2)
+    end
+    -- The thumb covers the 10 visible lines of 15 on both units. A viewport of
+    -- 8 rows would end the thumb at row 3.
+    expect.equality(result.screenline.handle, result.line.handle)
+    expect.equality(result.line.handle.last_row, 4)
+    expect.equality(result.south.row, 10)
+    expect.equality(result.south.height, 8)
+end
+
+T["window"]["compares all visible lines against the source viewport"] = function()
+    local child = new_child()
+    window_source(child, 9, 10)
+    local result = child.lua_func(function(base_config)
+        base_config.hide_if_all_visible = true
+        base_config.window = { border = "rounded" }
+        require("scrollbar.test.set_config")(base_config)
+        local renderer = require("scrollbar.renderer")
+        renderer.setup()
+        return renderer.render(vim.api.nvim_get_current_win()) == nil
+    end, renderer_config())
+
+    expect.equality(result, true)
+end
+
+T["window"]["shows no float when the text area cannot hold the frame"] = function()
+    local child = new_child()
+    window_source(child, 80, 2)
+    local result = child.lua_func(function(base_config)
+        base_config.window = { border = "rounded" }
+        require("scrollbar.test.set_config")(base_config)
+        local renderer = require("scrollbar.renderer")
+        renderer.setup()
+        local source_win = vim.api.nvim_get_current_win()
+        local short = renderer.render(source_win) == nil and renderer.get_state(source_win) == nil
+        vim.api.nvim_win_set_height(source_win, 3)
+        local tall = renderer.render(source_win)
+        return {
+            short = short,
+            tall_height = tall and tall.height or false,
+        }
+    end, renderer_config())
+
+    expect.equality(result, { short = true, tall_height = 1 })
+end
+
+T["window"]["reserves the statuscolumn for the frame width"] = function()
+    local child = new_child()
+    window_source(child, 80)
+    local result = child.lua_func(function(base_config)
+        local source_win = vim.api.nvim_get_current_win()
+        vim.api.nvim_set_option_value("number", false, { win = source_win })
+        vim.api.nvim_set_option_value("signcolumn", "yes:2", { win = source_win })
+        local original_textoff = vim.fn.getwininfo(source_win)[1].textoff
+        local renderer = require("scrollbar.renderer")
+        local function render(border)
+            local active = vim.deepcopy(base_config)
+            active.placement = { relative = "window", anchor = "NW", row = 0, col = 0, gutter = "inner" }
+            active.window = { border = border }
+            require("scrollbar.test.set_config")(active)
+            renderer.setup()
+            local state = assert(renderer.render(source_win))
+            local config = vim.api.nvim_win_get_config(state.float_win)
+            return { col = config.col, width = config.width, textoff = vim.fn.getwininfo(source_win)[1].textoff }
+        end
+        return {
+            original_textoff = original_textoff,
+            rounded = render("rounded"),
+            sides = render({ "", "", "", "│", "", "", "", "│" }),
+            none = render("none"),
+        }
+    end, renderer_config())
+
+    for _, case in ipairs({ result.rounded, result.sides }) do
+        expect.equality(case.col, result.original_textoff)
+        expect.equality(case.textoff, result.original_textoff + case.width + 2)
+    end
+    expect.equality(result.none.textoff, result.original_textoff + result.none.width)
+end
+
+T["window"]["opens the float again only when the window changes"] = function()
+    local child = new_child()
+    window_source(child, 80)
+    local result = child.lua_func(function(base_config)
+        local source_win = vim.api.nvim_get_current_win()
+        local renderer = require("scrollbar.renderer")
+        local framed = vim.deepcopy(base_config)
+        framed.window = { border = "rounded", title = "x" }
+        require("scrollbar.test.set_config")(framed)
+        renderer.setup()
+        local first = assert(renderer.render(source_win))
+
+        local config_calls = 0
+        local win_set_config = vim.api.nvim_win_set_config
+        rawset(vim.api, "nvim_win_set_config", function(...)
+            config_calls = config_calls + 1
+            return win_set_config(...)
+        end)
+        require("scrollbar.test.set_config")(framed)
+        local steady = assert(renderer.render(source_win))
+        rawset(vim.api, "nvim_win_set_config", win_set_config)
+
+        require("scrollbar.test.set_config")(base_config)
+        local plain = assert(renderer.render(source_win))
+        local config = vim.api.nvim_win_get_config(plain.float_win)
+        return {
+            steady_same = steady.float_win == first.float_win,
+            steady_calls = config_calls,
+            reopened = plain.float_win ~= first.float_win and not vim.api.nvim_win_is_valid(first.float_win),
+            bordered = type(config.border) == "table",
+            title = config.title == nil,
+            sides = plain.sides,
+        }
+    end, renderer_config())
+
+    expect.equality(result, {
+        steady_same = true,
+        steady_calls = 0,
+        reopened = true,
+        bordered = false,
+        title = true,
+        sides = { top = 0, right = 0, bottom = 0, left = 0 },
+    })
+end
+
+T["window"]["hides on cursor overlap with the border"] = function()
+    local child = new_child()
+    window_source(child, 120)
+    local result = child.lua_func(function(base_config)
+        local source_win = vim.api.nvim_get_current_win()
+        base_config.placement.anchor = "NW"
+        base_config.window = { border = "rounded" }
+        require("scrollbar.test.set_config")(base_config)
+        local renderer = require("scrollbar.renderer")
+        renderer.setup()
+
+        -- The frame corner is at row 1 and column 5. The content is 2 columns
+        -- wide, so the right border is at column 8.
+        local cursor_col = 9
+        local screenrow = vim.fn.screenrow
+        local screencol = vim.fn.screencol
+        local get_position = vim.api.nvim_win_get_position
+        rawset(vim.fn, "screenrow", function()
+            return 2
+        end)
+        rawset(vim.fn, "screencol", function()
+            return cursor_col
+        end)
+        rawset(vim.api, "nvim_win_get_position", function()
+            return { 1, 5 }
+        end)
+
+        local hidden = assert(renderer.render(source_win)).hidden_by_cursor
+        cursor_col = 10
+        local restored = not assert(renderer.render(source_win)).hidden_by_cursor
+
+        rawset(vim.fn, "screenrow", screenrow)
+        rawset(vim.fn, "screencol", screencol)
+        rawset(vim.api, "nvim_win_get_position", get_position)
+        return { hidden = hidden, restored = restored }
+    end, renderer_config())
+
+    expect.equality(result, { hidden = true, restored = true })
 end
 
 return T

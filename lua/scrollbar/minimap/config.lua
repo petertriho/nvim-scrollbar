@@ -5,6 +5,7 @@
 local block_config = require("scrollbar.config.block")
 local schema = require("scrollbar.config.schema")
 local shared_config = require("scrollbar.config.shared")
+local window_config = require("scrollbar.config.window")
 
 local invalid = schema.invalid
 
@@ -35,6 +36,10 @@ local DEFAULTS = {
     mouse = true,
     viewport = true,
     marks = {},
+    window = {
+        border = "none",
+        wo = {},
+    },
 }
 
 -- Autocmd events that can change minimap content, the viewport, or the window
@@ -84,6 +89,17 @@ local APPEARANCE_KEYS = {
     mouse = true,
     viewport = true,
     marks = { ["*"] = { priority = true, highlight = true } },
+    -- `scrollbar.config.window` validates the keys of `window`.
+    window = { ["*"] = true },
+}
+
+local WINDOW_SPEC = {
+    owned_keys = {
+        width = "use 'width'",
+        height = "use 'height'",
+    },
+    -- The minimap sets the blend again on each render.
+    owned_options = { winblend = "use 'blend'" },
 }
 
 -- These names belong to the static ScrollbarMinimap<Name> groups.
@@ -93,6 +109,9 @@ local REJECTED_MARK_TYPES = {
     Base = "conflicts with the static ScrollbarMinimapBase group",
     Content = "conflicts with the static ScrollbarMinimapContent group",
     Viewport = "conflicts with the static ScrollbarMinimapViewport group",
+    FloatBorder = "conflicts with the static ScrollbarMinimapFloatBorder group",
+    FloatTitle = "conflicts with the static ScrollbarMinimapFloatTitle group",
+    FloatFooter = "conflicts with the static ScrollbarMinimapFloatFooter group",
 }
 
 ---@type ScrollbarMinimapConfig?
@@ -196,6 +215,7 @@ local function normalize(value, shared, path, variant_id)
             fields = { "priority", "highlight" },
             reject = REJECTED_MARK_TYPES,
         }),
+        window = window_config.normalize(value.window, at("window"), WINDOW_SPEC),
     })
     for mark_type, spec in pairs(result.marks) do
         spec.group = mark_group_name(mark_type, variant_id, shared.set_highlights)

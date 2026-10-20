@@ -169,6 +169,9 @@ M.set_highlights = function()
     end
 
     set_root_highlight(active_config.highlights.base, {})
+    set_default_link("ScrollbarFloatBorder", "FloatBorder")
+    set_default_link("ScrollbarFloatTitle", "FloatTitle")
+    set_default_link("ScrollbarFloatFooter", "FloatFooter")
     for _, variant in ipairs(config.get_variants()) do
         set_variant_highlights(variant.config, variant.id == 0)
     end

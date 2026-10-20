@@ -61,8 +61,9 @@ local function configure(child, minimap_overrides)
     end, minimap_overrides)
 end
 
-local function press_and_drag(child, rows)
-    return child.lua_func(function(drag_rows)
+---@param wincol? integer Column that `getmousepos` reports, 1 by default
+local function press_and_drag(child, rows, wincol)
+    return child.lua_func(function(drag_rows, mouse_col)
         local lines = {}
         for index = 1, 400 do
             lines[index] = string.rep("a", index % 30)
@@ -78,7 +79,13 @@ local function press_and_drag(child, rows)
             local original = vim.fn.getmousepos
             ---@diagnostic disable-next-line: duplicate-set-field
             vim.fn.getmousepos = function()
-                return { winid = state.float_win, winrow = row + 1, wincol = 1, screenrow = row + 1, screencol = 1 }
+                return {
+                    winid = state.float_win,
+                    winrow = row + 1,
+                    wincol = mouse_col,
+                    screenrow = row + 1,
+                    screencol = mouse_col,
+                }
             end
             callback()
             vim.fn.getmousepos = original
@@ -109,7 +116,7 @@ local function press_and_drag(child, rows)
             source_win = source_win,
             line_count = #lines,
         }
-    end, rows)
+    end, rows, wincol or 1)
 end
 
 local function setup_screen(child)
@@ -524,6 +531,67 @@ T["augroup is independent of the scrollbar mouse augroup"] = function()
     expect.equality(result.has_minimap, true)
     -- ScrollbarMouse exists only if scrollbar mouse.setup was called. This
     -- test checks only the augroup name.
+end
+
+T["click maps rows through the border and ignores border cells"] = function()
+    local child = new_child()
+    reset_modules(child)
+    configure(child, { enabled = true, width = 4, height = 4, window = { border = "rounded" } })
+
+    local result = child.lua_func(function()
+        local lines = {}
+        for index = 1, 20 do
+            lines[index] = string.rep("a", index)
+        end
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        local renderer = require("scrollbar.minimap.renderer")
+        local state = assert(renderer.render(0))
+        local mouse = require("scrollbar.minimap.mouse")
+        local function click(winrow, wincol)
+            vim.api.nvim_win_set_cursor(state.source_win, { 1, 0 })
+            local original_getmousepos = vim.fn.getmousepos
+            ---@diagnostic disable-next-line: duplicate-set-field
+            vim.fn.getmousepos = function()
+                return { winid = state.float_win, winrow = winrow, wincol = wincol, screenrow = 1, screencol = 1 }
+            end
+            mouse.press(state.float_win)
+            mouse.release()
+            vim.fn.getmousepos = original_getmousepos
+            return vim.api.nvim_win_get_cursor(state.source_win)[1]
+        end
+        -- `winrow` and `wincol` count the border, so content row 2 is `winrow` 4.
+        return {
+            content = click(4, 2),
+            top = click(1, 2),
+            bottom = click(6, 2),
+            left = click(4, 1),
+            right = click(4, 6),
+        }
+    end)
+
+    -- Each row covers 4 lines, so row index 2 starts at 0-based line 8.
+    expect.equality(result, { content = 9, top = 1, bottom = 1, left = 1, right = 1 })
+end
+
+T["drag continues across the border"] = function()
+    for _, scale in ipairs({ "fixed", "fit", 2 }) do
+        local plain = new_child()
+        reset_modules(plain)
+        configure(plain, { enabled = true, width = 4, height = 8, scale = scale })
+        local framed = new_child()
+        reset_modules(framed)
+        configure(framed, { enabled = true, width = 4, height = 8, scale = scale, window = { border = "rounded" } })
+
+        -- The same content rows, 5 to 8. Row 8 is below the plain float and on
+        -- the bottom border of the framed float. `winrow` and `wincol` count
+        -- the border, so the framed float gets one more row and column.
+        local expected = press_and_drag(plain, { 5, 6, 7, 8 })
+        local result = press_and_drag(framed, { 6, 7, 8, 9 }, 2)
+
+        expect.equality(result.views, expected.views)
+        expect.equality(result.released, expected.released)
+        expect.equality(result.current_win, result.source_win)
+    end
 end
 
 return T

@@ -1444,4 +1444,81 @@ T["cancels safely when the float or source closes mid-interaction"] = function()
     expect.equality(child.api.nvim_win_is_valid(child.api.nvim_get_current_win()), true)
 end
 
+T["maps clicks through the border and ignores border cells"] = function()
+    local child = new_child()
+    local setup = child.lua_func(function(config)
+        vim.o.mouse = "a"
+        local lines = {}
+        for index = 1, 200 do
+            lines[index] = "line " .. index
+        end
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        vim.cmd("split")
+        local source_win = vim.api.nvim_get_current_win()
+        vim.api.nvim_win_set_height(source_win, 10)
+
+        local active_config = require("scrollbar.config").set(config)
+        local renderer = require("scrollbar.renderer")
+        local scheduler = require("scrollbar.scheduler")
+        local mouse = require("scrollbar.mouse")
+        renderer.setup()
+        require("scrollbar.highlights").set_highlights()
+        scheduler.setup({ config = active_config, renderer = renderer })
+        mouse.setup({ config = active_config, renderer = renderer, scheduler = scheduler })
+        local state = assert(renderer.render(source_win))
+        vim.cmd("redraw")
+        -- `win_screenpos` is the one-based corner of the frame.
+        local position = vim.fn.win_screenpos(state.float_win)
+        return {
+            source_win = source_win,
+            top = position[1] - 1,
+            left = position[2] - 1,
+            height = state.height,
+            handle = state.handle,
+        }
+    end, mouse_config({ window = { border = "rounded" } }))
+
+    local function content(row, col)
+        return setup.top + 1 + row, setup.left + col
+    end
+    local function press_release(row, col)
+        input_mouse(child, "press", row, col)
+        input_mouse(child, "release", row, col)
+    end
+    local function reset()
+        child.api.nvim_win_set_cursor(setup.source_win, { 1, 0 })
+        child.lua([[require("scrollbar.renderer").render(vim.api.nvim_get_current_win())]])
+        vim.uv.sleep(30)
+    end
+    local function cursor()
+        return child.api.nvim_win_get_cursor(setup.source_win)[1]
+    end
+
+    expect.equality(setup.height, 8)
+    press_release(content(setup.height - 1, 1))
+    expect.equality(cursor(), 200)
+    expect.equality(child.api.nvim_get_current_win(), setup.source_win)
+
+    for _, cell in ipairs({
+        { setup.top, setup.left + 1 },
+        { setup.top + 1 + setup.height, setup.left + 1 },
+        { setup.top + setup.height, setup.left },
+        { setup.top + setup.height, setup.left + 3 },
+    }) do
+        reset()
+        press_release(cell[1], cell[2])
+        expect.equality(cursor(), 1)
+        expect.equality(child.api.nvim_get_current_win(), setup.source_win)
+        expect.equality(child.lua_get([[require("scrollbar.mouse").get_interaction()]]), vim.NIL)
+    end
+
+    reset()
+    local thumb_row, thumb_col = content(setup.handle.first_row, 2)
+    input_mouse(child, "press", thumb_row, thumb_col)
+    input_mouse(child, "drag", setup.top + 1 + setup.height, thumb_col)
+    input_mouse(child, "release", setup.top + 1 + setup.height, thumb_col)
+    expect.equality(cursor(), 200)
+    expect.equality(child.api.nvim_get_current_win(), setup.source_win)
+end
+
 return T
