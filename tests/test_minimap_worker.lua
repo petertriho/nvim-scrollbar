@@ -844,6 +844,67 @@ T["child mirror invalidation requeues the in-flight squash after resnapshot"] = 
     expect.equality(result.in_flight, nil)
 end
 
+T["a requeued squash keeps its semantic spans"] = function()
+    local child = new_child()
+    setup_worker(child, { backend = "worker", test = { chunk_size = 128 } })
+    expect.equality(wait_for_worker_ready(child), true)
+
+    local result = child.lua_func(function()
+        local lines = { "abcd" }
+        for index = 2, 10000 do
+            lines[index] = string.rep("x", 80)
+        end
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        local worker = require("scrollbar.minimap.worker")
+        worker.request({
+            bufnr = 0,
+            grid = {
+                width = 4,
+                first_row = 0,
+                row_count = 1,
+                scale_lines = 1,
+                scale_dots = 1,
+                columns_per_dot = 1,
+                encoding = "block",
+            },
+            filetype = "",
+            generation = 1,
+            signature = "requeued-spans",
+            semantic_revision = 1,
+            semantic_spans = {
+                parent = {
+                    { line = 0, start_col = 0, end_col = 4, highlight = "First", priority = 1 },
+                },
+            },
+        })
+        local dispatched = vim.wait(5000, function()
+            return worker.status().in_flight ~= nil
+        end)
+        if dispatched then
+            local status = worker.status()
+            -- selene: allow(global_usage)
+            _G.__scrollbar_minimap_worker_callback(status.session, "mirror_invalid", {
+                bufnr = vim.api.nvim_get_current_buf(),
+            })
+        end
+        local state = package.loaded["scrollbar.test.minimap_worker"]
+        local completed = vim.wait(10000, function()
+            return state.results[1] ~= nil
+        end)
+        return {
+            dispatched = dispatched,
+            completed = completed,
+            semantic_revision = state.results[1] and state.results[1].semantic_revision or nil,
+            cells = state.results[1] and state.results[1].cells or nil,
+        }
+    end)
+
+    expect.equality(result.dispatched, true)
+    expect.equality(result.completed, true)
+    expect.equality(result.semantic_revision, 1)
+    expect.equality(grid_highlights(result.cells)[1][1], "First")
+end
+
 T["on_lines deltas update child mirror after snapshot completes"] = function()
     local child = new_child()
     setup_worker(child, { backend = "worker" })
@@ -892,6 +953,133 @@ T["on_lines deltas update child mirror after snapshot completes"] = function()
     expect.equality(captured.ok, true)
     -- The edited first line fills all four cells of row 1.
     expect.equality(grid_chars(captured.payload.cells)[1], "████")
+end
+
+T["a result after a write carries the current changedtick"] = function()
+    local child = new_child()
+    setup_worker(child, { backend = "worker" })
+    expect.equality(wait_for_worker_ready(child), true)
+
+    local grid = {
+        width = 4,
+        first_row = 0,
+        row_count = 2,
+        scale_lines = 1,
+        scale_dots = 1,
+        columns_per_dot = 1,
+        encoding = "block",
+    }
+    local result = child.lua_func(function(request_grid)
+        local worker = require("scrollbar.minimap.worker")
+        local state = package.loaded["scrollbar.test.minimap_worker"]
+        vim.cmd("edit " .. vim.fn.fnameescape(vim.fn.tempname() .. ".txt"))
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, { "abc", "def" })
+        vim.cmd("silent write")
+        worker.request({ bufnr = 0, grid = request_grid, filetype = "", generation = 1, signature = "before" })
+        local first = vim.wait(3000, function()
+            return state.results[1] ~= nil
+        end)
+
+        -- Writing a modified buffer increments b:changedtick without a text change.
+        vim.api.nvim_buf_set_lines(0, 0, 1, false, { "ABCDEFGHIJ" })
+        local synchronized = vim.wait(3000, function()
+            local mirror = worker.status().mirrors[1]
+            return mirror ~= nil and mirror.changedtick == vim.api.nvim_buf_get_changedtick(0)
+        end)
+        vim.cmd("silent write")
+        worker.request({ bufnr = 0, grid = request_grid, filetype = "", generation = 2, signature = "after" })
+        local second = vim.wait(3000, function()
+            return state.results[2] ~= nil
+        end)
+        return {
+            first = first,
+            synchronized = synchronized,
+            second = second,
+            result_changedtick = second and state.results[2].changedtick or nil,
+            buffer_changedtick = vim.api.nvim_buf_get_changedtick(0),
+            first_row = second and table.concat(vim.tbl_map(function(cell)
+                return cell.char
+            end, state.results[2].cells[1])) or nil,
+        }
+    end, grid)
+
+    expect.equality(result.first, true)
+    expect.equality(result.synchronized, true)
+    expect.equality(result.second, true)
+    expect.equality(result.result_changedtick, result.buffer_changedtick)
+    expect.equality(result.first_row, "████")
+end
+
+T["the minimap fills rows outside the cached slice after a write"] = function()
+    local child = new_child()
+    local result = child.lua_func(function()
+        vim.cmd("edit " .. vim.fn.fnameescape(vim.fn.tempname() .. ".lua"))
+        local lines = {}
+        for index = 1, 20000 do
+            lines[index] = string.format("local value_%d = %d", index, index)
+        end
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        vim.cmd("silent write")
+        require("scrollbar").setup({
+            set_highlights = false,
+            scrollbar = { enabled = false },
+            minimap = { enabled = true, backend = "worker" },
+        })
+        local renderer = require("scrollbar.minimap.renderer")
+        local scheduler = require("scrollbar.minimap.scheduler")
+        local worker = require("scrollbar.minimap.worker")
+        local win = vim.api.nvim_get_current_win()
+        local function filled_rows()
+            local state = renderer.get_state(win)
+            if state == nil then
+                return 0
+            end
+            local count = 0
+            for _, row in ipairs(state.rows) do
+                if row:match("%S") then
+                    count = count + 1
+                end
+            end
+            return count
+        end
+        local function settle()
+            return vim.wait(5000, function()
+                scheduler.invalidate_all()
+                scheduler.flush()
+                local status = worker.status()
+                return status.in_flight == nil and status.pending_count == 0 and filled_rows() > 0
+            end, 20)
+        end
+
+        local ready = vim.wait(5000, function()
+            return worker.status().state == "ready"
+        end)
+        local initial = settle()
+        vim.api.nvim_buf_set_lines(0, 0, 1, false, { "-- edited" })
+        local edited = settle()
+        local synchronized = vim.wait(3000, function()
+            local mirror = worker.status().mirrors[1]
+            return mirror ~= nil and mirror.changedtick == vim.api.nvim_buf_get_changedtick(0)
+        end)
+        vim.cmd("silent write")
+        vim.cmd("normal! G")
+        local jumped = settle()
+        return {
+            ready = ready,
+            initial = initial,
+            edited = edited,
+            synchronized = synchronized,
+            jumped = jumped,
+            filled = filled_rows(),
+        }
+    end)
+
+    expect.equality(result.ready, true)
+    expect.equality(result.initial, true)
+    expect.equality(result.edited, true)
+    expect.equality(result.synchronized, true)
+    expect.equality(result.jumped, true)
+    expect.equality(result.filled > 0, true)
 end
 
 T["dispose cleans up child mirror buffers and tears down the worker"] = function()

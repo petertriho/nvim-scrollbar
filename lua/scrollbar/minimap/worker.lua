@@ -1,95 +1,69 @@
---- Minimap worker: mirrors source buffers into a headless child Neovim and
---- runs `minimap/squash.lua`, optionally with treesitter captures, returning
---- the cell rows of the requested grid slice to the parent. The `"sync"`
---- backend runs the same logic inline on the main thread; output is
---- bit-identical between backends.
+--- Minimap worker: runs `minimap/squash.lua`, optionally with treesitter
+--- captures, on buffers mirrored into a headless child Neovim, and returns the
+--- cell rows of the requested grid slice to the parent. `scrollbar.mirror`
+--- owns the child process and the buffer mirrors. The `"sync"` backend runs
+--- the same logic inline on the main thread, and the output of both backends
+--- is bit-identical.
 ---
---- Parallels `lua/scrollbar/providers/search_worker.lua`. On worker failure
---- the module emits exactly one warning and flips to the sync path for the
---- rest of the session.
+--- On worker failure the module emits exactly one warning and flips to the
+--- sync path for the rest of the session.
 
+local mirror_host = require("scrollbar.mirror")
 local squash_module = require("scrollbar.minimap.squash")
 local semantic_module = require("scrollbar.minimap.semantic")
 local treesitter_provider = require("scrollbar.providers.treesitter")
 
 local M = {}
 
-local DEFAULT_CHUNK_SIZE = 512
-local STARTUP_TIMEOUT_MS = 5000
-
---- Read a runtime file's source so we can inject it into the child. The
---- child runs with `--noplugin` so it cannot `require()` plugin modules
---- directly; we send the squash source over RPC at bootstrap time.
-local function read_runtime_source(rel_path)
-    local path = vim.api.nvim_get_runtime_file(rel_path, false)[1]
-    if not path then
-        return nil
-    end
-    local file = io.open(path, "r")
-    if not file then
-        return nil
-    end
-    local content = file:read("*a")
-    file:close()
-    return content
-end
-
-local CHILD_DISPATCH = [=[
-local session, kind, payload = ...
-local worker = rawget(_G, "__scrollbar_minimap_worker_child")
-if worker ~= nil and worker.session == session then
-    local ok, err = pcall(worker.handle, kind, payload)
-    if not ok then
-        worker.fail(tostring(err))
-    end
-end
-]=]
-
-local CHILD_BOOTSTRAP = [==[
-local session, options = ...
+-- Child code that adds the `semantic_snapshot` and `squash` request kinds. It
+-- runs after the mirror prelude. The child runs with `--noplugin` and cannot
+-- `require()` plugin modules, so the parent sends the module sources in the
+-- extension options.
+local CHILD_EXTENSION = [==[
+local child, options = ...
 local squash = loadstring(options.squash_source)()
 local semantic = loadstring(options.semantic_source)()
 local treesitter = loadstring(options.treesitter_source)()
-local mirrors = {}
 local trace_treesitter = options.trace_treesitter == true
-
-local callback_source = [=[
-local session, event, payload = ...
-local callback = rawget(_G, "__scrollbar_minimap_worker_callback")
-if callback ~= nil then
-    callback(session, event, payload)
-end
-]=]
-
-local function send(event, payload)
-    vim.rpcnotify(1, "nvim_exec_lua", callback_source, { session, event, payload })
-end
 
 local function trace(event, payload)
     if trace_treesitter then
         payload = payload or {}
         payload.event = event
-        send("trace", payload)
+        child.send("trace", payload)
     end
 end
 
-local function ensure_buffer(mirror)
-    if mirror.child_buf == nil or not vim.api.nvim_buf_is_valid(mirror.child_buf) then
-        mirror.child_buf = vim.api.nvim_create_buf(false, true)
-    end
-    return mirror.child_buf
+child.on_snapshot_start = function(mirror, payload)
+    mirror.lang = payload.lang
+    mirror.semantic_revision = 0
+    mirror.semantic_spans = {}
 end
 
-local function squash_payload(payload)
-    local mirror = mirrors[payload.bufnr]
-    if mirror == nil
-        or not mirror.complete
-        or mirror.id ~= payload.mirror.id
-        or mirror.version ~= payload.mirror.version
-        or mirror.changedtick ~= payload.mirror.changedtick
-        or mirror.semantic_revision ~= payload.semantic_revision
-    then
-        send("mirror_invalid", { bufnr = payload.bufnr })
+child.on_snapshot_complete = function(mirror, payload)
+    if mirror.lang ~= nil then
+        trace("treesitter_start", { bufnr = payload.bufnr })
+        pcall(vim.treesitter.start, mirror.child_buf, mirror.lang)
+    end
+end
+
+child.handlers.semantic_snapshot = function(payload)
+    local mirror = child.mirror(payload.bufnr)
+    if mirror == nil or mirror.id ~= payload.id then
+        child.send("mirror_invalid", { bufnr = payload.bufnr, id = payload.id })
+        return
+    end
+    mirror.semantic_revision = payload.revision
+    mirror.semantic_spans = payload.spans
+end
+
+child.handlers.squash = function(payload)
+    local mirror = child.current(payload)
+    if mirror == nil then
+        return
+    end
+    if mirror.semantic_revision ~= payload.semantic_revision then
+        child.send("mirror_invalid", { bufnr = payload.bufnr, id = payload.mirror.id })
         return
     end
 
@@ -110,7 +84,7 @@ local function squash_payload(payload)
         spans_by_provider.treesitter = worker_spans
     end
     local highlights = semantic.compose(lines, spans_by_provider, first)
-    send("result", {
+    child.send("result", {
         bufnr = payload.bufnr,
         generation = payload.generation,
         signature = payload.signature,
@@ -122,126 +96,35 @@ local function squash_payload(payload)
         worker_spans = worker_spans,
     })
 end
-
-local worker = { session = session }
-worker.fail = function(reason)
-    send("failure", { reason = reason })
-end
-worker.handle = function(kind, payload)
-    if kind == "snapshot_start" then
-        local previous = mirrors[payload.bufnr]
-        mirrors[payload.bufnr] = {
-            child_buf = previous and previous.child_buf or nil,
-            id = payload.id,
-            version = payload.version,
-            changedtick = nil,
-            complete = false,
-            lines = {},
-            lang = payload.lang,
-            semantic_revision = 0,
-            semantic_spans = {},
-        }
-    elseif kind == "snapshot_chunk" then
-        local mirror = mirrors[payload.bufnr]
-        if mirror ~= nil and mirror.id == payload.id and #mirror.lines == payload.start then
-            for _, line in ipairs(payload.lines) do
-                mirror.lines[#mirror.lines + 1] = line
-            end
-        end
-    elseif kind == "snapshot_complete" then
-        local mirror = mirrors[payload.bufnr]
-        if mirror == nil or mirror.id ~= payload.id or #mirror.lines ~= payload.line_count then
-            send("mirror_invalid", { bufnr = payload.bufnr })
-            return
-        end
-        local child_buf = ensure_buffer(mirror)
-        vim.api.nvim_buf_set_lines(child_buf, 0, -1, false, mirror.lines)
-        mirror.lines = nil
-        mirror.version = payload.version
-        mirror.changedtick = payload.changedtick
-        mirror.complete = true
-        if mirror.lang ~= nil then
-            trace("treesitter_start", { bufnr = payload.bufnr })
-            pcall(vim.treesitter.start, child_buf, mirror.lang)
-        end
-    elseif kind == "delta" then
-        local mirror = mirrors[payload.bufnr]
-        if mirror == nil
-            or not mirror.complete
-            or mirror.id ~= payload.id
-            or mirror.version ~= payload.from_version
-        then
-            send("mirror_invalid", { bufnr = payload.bufnr })
-            return
-        end
-        vim.api.nvim_buf_set_lines(mirror.child_buf, payload.first, payload.last, false, payload.lines)
-        mirror.version = payload.version
-        mirror.changedtick = payload.changedtick
-    elseif kind == "semantic_snapshot" then
-        local mirror = mirrors[payload.bufnr]
-        if mirror == nil or mirror.id ~= payload.id then
-            send("mirror_invalid", { bufnr = payload.bufnr })
-            return
-        end
-        mirror.semantic_revision = payload.revision
-        mirror.semantic_spans = payload.spans
-    elseif kind == "detach" then
-        local mirror = mirrors[payload.bufnr]
-        if mirror ~= nil and mirror.child_buf ~= nil and vim.api.nvim_buf_is_valid(mirror.child_buf) then
-            pcall(vim.api.nvim_buf_delete, mirror.child_buf, { force = true })
-        end
-        mirrors[payload.bufnr] = nil
-    elseif kind == "squash" then
-        squash_payload(payload)
-    elseif kind == "dispose" then
-        for _, mirror in pairs(mirrors) do
-            if mirror.child_buf ~= nil and vim.api.nvim_buf_is_valid(mirror.child_buf) then
-                pcall(vim.api.nvim_buf_delete, mirror.child_buf, { force = true })
-            end
-        end
-        mirrors = {}
-    end
-end
-
-_G.__scrollbar_minimap_worker_child = worker
-send("ready", {})
 ]==]
 
----@class ScrollbarMinimapWorkerMirror
----@field bufnr integer
----@field id integer
----@field version integer
----@field changedtick? integer
----@field complete boolean
----@field attached boolean
----@field lang? string
----@field snapshot_tick? integer
----@field snapshot_next? integer
----@field snapshot_line_count? integer
----@field semantic_revision integer
+---@class ScrollbarMinimapWorkerMirror: ScrollbarMirror
+---@field semantic_revision integer Semantic revision that the child mirror holds
 
+---@type ScrollbarMinimapBackend
 local backend = "sync"
+local sync_active = false
 local treesitter_enabled = false
-local worker_state = "disposed"
-local job_id
-local session
-local mirrors = {}
 local pending = {}
 local in_flight
+-- Semantic spans of the request in flight. The squash notification leaves
+-- them out, and a requeued request needs them again.
+---@type ScrollbarMinimapSpanStoreSnapshot?
+local in_flight_spans
 local on_result
 local on_failure
-local timing_hook
-local shutdown_group
-local session_sequence = 0
-local mirror_sequence = 0
 local request_sequence = 0
-local expected_exit = false
-local warned = false
-local chunk_size = DEFAULT_CHUNK_SIZE
-local argv
 
-local dispatch_pending
-local start_snapshot
+---@type ScrollbarMirrorHost
+local host
+
+---@return string
+local function worker_state()
+    if sync_active then
+        return "sync"
+    end
+    return host.state()
+end
 
 ---@param request ScrollbarMinimapWorkerRequest
 ---@return string
@@ -256,28 +139,6 @@ local function clear_pending_buffer(bufnr)
             pending[key] = nil
         end
     end
-end
-
-local function emit_timing(event, payload)
-    if timing_hook ~= nil then
-        pcall(timing_hook, event, payload or {})
-    end
-end
-
-local function notify_child(kind, payload)
-    if job_id == nil or worker_state == "failed" or worker_state == "disposed" then
-        return false
-    end
-    local ok = pcall(vim.rpcnotify, job_id, "nvim_exec_lua", CHILD_DISPATCH, { session, kind, payload })
-    return ok
-end
-
-local function warn_once(reason)
-    if warned then
-        return
-    end
-    warned = true
-    vim.notify("[nvim-scrollbar] minimap worker failed; using synchronous fallback: " .. reason, vim.log.levels.WARN)
 end
 
 --- Sync backend: run squash on the main thread and invoke `on_result`
@@ -316,335 +177,69 @@ local function sync_execute(request)
     end
 end
 
-local function detach_mirror(bufnr, notify)
-    local mirror = mirrors[bufnr]
-    if mirror == nil then
-        return
-    end
-    mirrors[bufnr] = nil
-    clear_pending_buffer(bufnr)
-    if mirror.attached and vim.api.nvim_buf_is_valid(bufnr) then
-        pcall(vim.api.nvim_buf_detach, bufnr)
-    end
-    if notify then
-        notify_child("detach", { bufnr = bufnr })
-    end
-end
-
-local function detach_all(notify)
-    local buffers = vim.tbl_keys(mirrors)
-    for _, bufnr in ipairs(buffers) do
-        detach_mirror(bufnr, notify)
-    end
-end
-
-local function failure(reason)
-    if worker_state == "failed" or worker_state == "disposed" then
-        return
-    end
-    worker_state = "failed"
-    expected_exit = true
-    local failed_job = job_id
-    job_id = nil
-    detach_all(false)
-    in_flight = nil
-    pending = {}
-    if failed_job ~= nil then
-        pcall(vim.fn.jobstop, failed_job)
-    end
-    warn_once(reason)
-    if on_failure ~= nil then
-        on_failure(reason)
-    end
-end
-
-dispatch_pending = function()
-    if worker_state ~= "ready" or in_flight ~= nil then
+local function dispatch_pending()
+    if host.state() ~= "ready" or in_flight ~= nil then
         return
     end
 
     local selected
+    local selected_mirror
     for _, request in pairs(pending) do
-        local mirror = mirrors[request.bufnr]
-        if
-            mirror ~= nil
-            and mirror.complete
-            and (selected == nil or request.worker_sequence > selected.worker_sequence)
-        then
+        local mirror = host.ready_mirror(request.bufnr)
+        if mirror ~= nil and (selected == nil or request.worker_sequence > selected.worker_sequence) then
             selected = request
+            selected_mirror = mirror
         end
     end
     if selected == nil then
         return
     end
+    ---@cast selected_mirror ScrollbarMinimapWorkerMirror
 
     pending[selected.pending_key] = nil
     selected.pending_key = nil
-    local mirror = mirrors[selected.bufnr]
     local semantic_revision = selected.semantic_revision or 0
     local semantic_spans = selected.semantic_spans or {}
-    if mirror.semantic_revision ~= semantic_revision then
+    if selected_mirror.semantic_revision ~= semantic_revision then
         if
-            not notify_child("semantic_snapshot", {
+            not host.notify("semantic_snapshot", {
                 bufnr = selected.bufnr,
-                id = mirror.id,
+                id = selected_mirror.id,
                 revision = semantic_revision,
                 spans = semantic_spans,
             })
         then
-            failure("semantic snapshot notification failed")
+            host.failure("semantic snapshot notification failed")
             return
         end
-        mirror.semantic_revision = semantic_revision
-        emit_timing("semantic_snapshot_sent", { bufnr = selected.bufnr, revision = semantic_revision })
+        selected_mirror.semantic_revision = semantic_revision
+        host.emit("semantic_snapshot_sent", { bufnr = selected.bufnr, revision = semantic_revision })
     end
     selected.semantic_spans = nil
     selected.mirror = {
-        session = session,
-        id = mirror.id,
-        version = mirror.version,
-        changedtick = mirror.changedtick,
+        session = host.session(),
+        id = selected_mirror.id,
+        version = selected_mirror.version,
+        changedtick = selected_mirror.changedtick,
     }
     in_flight = selected
-    if not notify_child("squash", selected) then
-        failure("squash notification failed")
+    in_flight_spans = semantic_spans
+    if not host.notify("squash", selected) then
+        host.failure("squash notification failed")
         return
     end
-    emit_timing("squash_dispatched", {
+    host.emit("squash_dispatched", {
         bufnr = selected.bufnr,
         generation = selected.generation,
         semantic_spans_sent = selected.semantic_spans ~= nil,
     })
 end
 
-start_snapshot = function(mirror)
-    if worker_state == "failed" or worker_state == "disposed" then
-        return
-    end
-    if not vim.api.nvim_buf_is_valid(mirror.bufnr) or not vim.api.nvim_buf_is_loaded(mirror.bufnr) then
-        detach_mirror(mirror.bufnr, true)
-        return
-    end
-
-    mirror_sequence = mirror_sequence + 1
-    mirror.id = mirror_sequence
-    mirror.version = 1
-    mirror.complete = false
-    mirror.semantic_revision = 0
-    mirror.snapshot_tick = vim.api.nvim_buf_get_changedtick(mirror.bufnr)
-    mirror.snapshot_next = 0
-    mirror.snapshot_line_count = vim.api.nvim_buf_line_count(mirror.bufnr)
-    emit_timing("snapshot_started", { bufnr = mirror.bufnr, id = mirror.id })
-    notify_child("snapshot_start", {
-        bufnr = mirror.bufnr,
-        id = mirror.id,
-        version = mirror.version,
-        lang = mirror.lang,
-    })
-
-    local snapshot_id = mirror.id
-    local function read_chunk()
-        if mirrors[mirror.bufnr] ~= mirror or mirror.id ~= snapshot_id or mirror.complete then
-            return
-        end
-        if not vim.api.nvim_buf_is_valid(mirror.bufnr) or not vim.api.nvim_buf_is_loaded(mirror.bufnr) then
-            detach_mirror(mirror.bufnr, true)
-            return
-        end
-        if vim.api.nvim_buf_get_changedtick(mirror.bufnr) ~= mirror.snapshot_tick then
-            start_snapshot(mirror)
-            return
-        end
-
-        local first = mirror.snapshot_next
-        local last = math.min(first + chunk_size, mirror.snapshot_line_count)
-        local chunk_started = vim.uv.hrtime()
-        local lines = vim.api.nvim_buf_get_lines(mirror.bufnr, first, last, true)
-        if vim.api.nvim_buf_get_changedtick(mirror.bufnr) ~= mirror.snapshot_tick then
-            start_snapshot(mirror)
-            return
-        end
-        if
-            not notify_child("snapshot_chunk", {
-                bufnr = mirror.bufnr,
-                id = mirror.id,
-                start = first,
-                lines = lines,
-            })
-        then
-            failure("buffer snapshot notification failed")
-            return
-        end
-        mirror.snapshot_next = last
-        emit_timing("snapshot_chunk", {
-            bufnr = mirror.bufnr,
-            id = mirror.id,
-            duration_ms = (vim.uv.hrtime() - chunk_started) / 1000000,
-        })
-
-        if last < mirror.snapshot_line_count then
-            vim.schedule(read_chunk)
-            return
-        end
-        if vim.api.nvim_buf_get_changedtick(mirror.bufnr) ~= mirror.snapshot_tick then
-            start_snapshot(mirror)
-            return
-        end
-
-        mirror.changedtick = mirror.snapshot_tick
-        mirror.complete = true
-        if
-            not notify_child("snapshot_complete", {
-                bufnr = mirror.bufnr,
-                id = mirror.id,
-                version = mirror.version,
-                changedtick = mirror.changedtick,
-                line_count = mirror.snapshot_line_count,
-            })
-        then
-            failure("buffer snapshot completion failed")
-            return
-        end
-        emit_timing("snapshot_parent_complete", { bufnr = mirror.bufnr, id = mirror.id })
-        dispatch_pending()
-    end
-    vim.schedule(read_chunk)
-end
-
-local function sync_buffer_worker(bufnr, filetype)
-    if worker_state == "failed" or worker_state == "disposed" then
-        return false
-    end
-    if not vim.api.nvim_buf_is_valid(bufnr) or not vim.api.nvim_buf_is_loaded(bufnr) then
-        return false
-    end
-
-    local desired_lang = treesitter_enabled and treesitter_provider.language_for(filetype) or nil
-    local mirror = mirrors[bufnr]
-    if mirror ~= nil and mirror.lang == desired_lang then
-        return true
-    end
-    if mirror ~= nil then
-        detach_mirror(bufnr, true)
-    end
-    mirror = {
-        bufnr = bufnr,
-        id = 0,
-        version = 0,
-        complete = false,
-        attached = false,
-        lang = desired_lang,
-        semantic_revision = 0,
-    }
-    mirrors[bufnr] = mirror
-    mirror.attached = vim.api.nvim_buf_attach(bufnr, false, {
-        on_lines = function(_, buffer, changedtick, first, last, new_last)
-            local current = mirrors[buffer]
-            if current ~= mirror then
-                return true
-            end
-            if not current.complete then
-                start_snapshot(current)
-                return false
-            end
-
-            local lines = vim.api.nvim_buf_get_lines(buffer, first, new_last, true)
-            local from_version = current.version
-            current.version = current.version + 1
-            current.changedtick = changedtick
-            if
-                not notify_child("delta", {
-                    bufnr = buffer,
-                    id = current.id,
-                    from_version = from_version,
-                    version = current.version,
-                    changedtick = changedtick,
-                    first = first,
-                    last = last,
-                    lines = lines,
-                })
-            then
-                vim.schedule(function()
-                    failure("buffer delta notification failed")
-                end)
-                return true
-            end
-            emit_timing("delta_sent", {
-                bufnr = buffer,
-                version = current.version,
-            })
-            dispatch_pending()
-            return false
-        end,
-        on_detach = function(_, buffer)
-            if mirrors[buffer] == mirror then
-                mirrors[buffer] = nil
-                clear_pending_buffer(buffer)
-                notify_child("detach", { bufnr = buffer })
-            end
-        end,
-    })
-    if not mirror.attached then
-        mirrors[bufnr] = nil
-        return false
-    end
-    start_snapshot(mirror)
-    return true
-end
-
-local function request_worker(request)
-    if not sync_buffer_worker(request.bufnr, request.filetype) then
-        return false
-    end
-    request_sequence = request_sequence + 1
-    local queued = {}
-    for key, value in pairs(request) do
-        queued[key] = value
-    end
-    queued.worker_sequence = request_sequence
-    queued.pending_key = pending_key(queued)
-    local mirror = mirrors[request.bufnr]
-    if mirror ~= nil and mirror.complete then
-        queued.changedtick = mirror.changedtick
-    elseif mirror ~= nil and mirror.snapshot_tick ~= nil then
-        queued.changedtick = mirror.snapshot_tick
-    end
-    pending[queued.pending_key] = queued
-    dispatch_pending()
-    return true
-end
-
-local function dispatch_callback(event, payload)
-    if event == "ready" then
-        if worker_state == "starting" then
-            worker_state = "ready"
-            emit_timing("worker_ready")
-            dispatch_pending()
-        end
-        return
-    end
-    if event == "mirror_invalid" then
-        if in_flight ~= nil and in_flight.bufnr == payload.bufnr then
-            local request = in_flight
-            in_flight = nil
-            request.pending_key = pending_key(request)
-            local queued = pending[request.pending_key]
-            if queued == nil or request.worker_sequence > queued.worker_sequence then
-                pending[request.pending_key] = request
-            end
-        end
-        local mirror = mirrors[payload.bufnr]
-        if mirror ~= nil then
-            start_snapshot(mirror)
-        end
-        return
-    end
+---@param event string
+---@param payload table
+local function handle_event(event, payload)
     if event == "trace" then
-        emit_timing(payload.event, payload)
-        return
-    end
-    if event == "failure" then
-        failure(payload.reason or "child protocol failure")
+        host.emit(payload.event, payload)
         return
     end
     if event ~= "result" or in_flight == nil then
@@ -662,6 +257,7 @@ local function dispatch_callback(event, payload)
         return
     end
     in_flight = nil
+    in_flight_spans = nil
     if on_result ~= nil then
         on_result({
             bufnr = payload.bufnr,
@@ -676,6 +272,117 @@ local function dispatch_callback(event, payload)
         })
     end
     dispatch_pending()
+end
+
+-- The child rejected work for mirror `id` of `bufnr`. The squash in flight goes
+-- back to the queue when it was made for that mirror, unless a newer request
+-- with the same key replaced it.
+---@param bufnr integer
+---@param id? integer
+local function requeue_in_flight(bufnr, id)
+    local request = in_flight
+    if request == nil or request.bufnr ~= bufnr or (id ~= nil and request.mirror.id ~= id) then
+        return
+    end
+    in_flight = nil
+    request.semantic_spans = in_flight_spans
+    in_flight_spans = nil
+    request.pending_key = pending_key(request)
+    local queued = pending[request.pending_key]
+    if queued == nil or request.worker_sequence > queued.worker_sequence then
+        pending[request.pending_key] = request
+    end
+end
+
+---@param entry table
+---@param mirror ScrollbarMinimapWorkerMirror
+local function decorate_status(entry, mirror)
+    entry.semantic_revision = mirror.semantic_revision
+end
+
+host = mirror_host.new({
+    name = "minimap",
+    augroup = "ScrollbarMinimapWorker",
+    child_global = "__scrollbar_minimap_worker_child",
+    callback_global = "__scrollbar_minimap_worker_callback",
+    extension = CHILD_EXTENSION,
+    dispatch_pending = dispatch_pending,
+    on_event = handle_event,
+    on_mirror_invalid = requeue_in_flight,
+    on_detach = clear_pending_buffer,
+    on_reset = function()
+        pending = {}
+        in_flight = nil
+        in_flight_spans = nil
+    end,
+    on_failure = function(reason)
+        if on_failure ~= nil then
+            on_failure(reason)
+        end
+    end,
+    on_leave = function()
+        M.dispose()
+    end,
+    ---@param mirror ScrollbarMinimapWorkerMirror
+    on_snapshot_start = function(mirror)
+        mirror.semantic_revision = 0
+    end,
+    exit_reason = function(code)
+        return "worker exit code " .. tostring(code)
+    end,
+})
+
+---@param filetype? string
+---@return string?
+local function mirror_lang(filetype)
+    return treesitter_enabled and treesitter_provider.language_for(filetype) or nil
+end
+
+local function request_worker(request)
+    if not host.sync(request.bufnr, mirror_lang(request.filetype)) then
+        return false
+    end
+    request_sequence = request_sequence + 1
+    local queued = {}
+    for key, value in pairs(request) do
+        queued[key] = value
+    end
+    queued.worker_sequence = request_sequence
+    queued.pending_key = pending_key(queued)
+    local mirror = host.mirror(request.bufnr)
+    if mirror ~= nil and mirror.complete then
+        queued.changedtick = mirror.changedtick
+    elseif mirror ~= nil and mirror.snapshot_tick ~= nil then
+        queued.changedtick = mirror.snapshot_tick
+    end
+    pending[queued.pending_key] = queued
+    dispatch_pending()
+    return true
+end
+
+--- Read the module sources that the child code loads.
+---@param trace_treesitter boolean
+---@return table? options
+---@return string? reason
+local function child_options(trace_treesitter)
+    local squash_source = mirror_host.read_runtime_source("lua/scrollbar/minimap/squash.lua")
+    if squash_source == nil then
+        return nil, "could not read squash.lua source"
+    end
+    local semantic_source = mirror_host.read_runtime_source("lua/scrollbar/minimap/semantic.lua")
+    if semantic_source == nil then
+        return nil, "could not read semantic.lua source"
+    end
+    local treesitter_source = mirror_host.read_runtime_source("lua/scrollbar/providers/treesitter.lua")
+    if treesitter_source == nil then
+        return nil, "could not read treesitter provider source"
+    end
+    return {
+        squash_source = squash_source,
+        semantic_source = semantic_source,
+        treesitter_source = treesitter_source,
+        trace_treesitter = trace_treesitter,
+    }
 end
 
 ---@class ScrollbarMinimapWorkerRequest
@@ -702,100 +409,27 @@ M.setup = function(options)
     on_result = options.on_result
     on_failure = options.on_failure
     local test_options = options.test or {}
-    timing_hook = test_options.on_timing
-    chunk_size = test_options.chunk_size or DEFAULT_CHUNK_SIZE
-    warned = false
-    expected_exit = false
-    mirrors = {}
     pending = {}
     in_flight = nil
-    session_sequence = session_sequence + 1
-    session = string.format("%d:%s", session_sequence, tostring(vim.uv.hrtime()))
+    in_flight_spans = nil
 
     if backend == "sync" then
-        worker_state = "sync"
+        sync_active = true
         return true
     end
 
-    worker_state = "starting"
-    emit_timing("startup_started")
-    shutdown_group = vim.api.nvim_create_augroup("ScrollbarMinimapWorker", { clear = true })
-    vim.api.nvim_create_autocmd("VimLeavePre", {
-        group = shutdown_group,
-        callback = function()
-            M.dispose()
-        end,
-    })
-
+    local extension_options, fail_reason
     if test_options.fail_start then
-        failure("injected startup failure")
-        return false
+        fail_reason = "injected startup failure"
+    else
+        extension_options, fail_reason = child_options(test_options.trace_treesitter == true)
     end
-
-    local squash_source = read_runtime_source("lua/scrollbar/minimap/squash.lua")
-    if squash_source == nil then
-        failure("could not read squash.lua source")
-        return false
-    end
-    local semantic_source = read_runtime_source("lua/scrollbar/minimap/semantic.lua")
-    if semantic_source == nil then
-        failure("could not read semantic.lua source")
-        return false
-    end
-    local treesitter_source = read_runtime_source("lua/scrollbar/providers/treesitter.lua")
-    if treesitter_source == nil then
-        failure("could not read treesitter provider source")
-        return false
-    end
-
-    local token = session
-    argv = {
-        vim.v.progpath,
-        "--embed",
-        "--headless",
-        "-u",
-        "NONE",
-        "-i",
-        "NONE",
-        "--noplugin",
-    }
-    job_id = vim.fn.jobstart(argv, {
-        rpc = true,
-        on_exit = function(_, code)
-            vim.schedule(function()
-                if token ~= session or expected_exit or worker_state == "disposed" or worker_state == "failed" then
-                    return
-                end
-                failure("worker exit code " .. tostring(code))
-            end)
-        end,
+    return host.start({
+        chunk_size = test_options.chunk_size,
+        timing = test_options.on_timing,
+        fail_reason = fail_reason,
+        extension_options = extension_options,
     })
-    if job_id == nil or job_id <= 0 then
-        local code = job_id
-        job_id = nil
-        failure("jobstart returned " .. tostring(code))
-        return false
-    end
-
-    local ok = pcall(vim.rpcnotify, job_id, "nvim_exec_lua", CHILD_BOOTSTRAP, {
-        session,
-        {
-            squash_source = squash_source,
-            semantic_source = semantic_source,
-            treesitter_source = treesitter_source,
-            trace_treesitter = test_options.trace_treesitter == true,
-        },
-    })
-    if not ok then
-        failure("bootstrap notification failed")
-        return false
-    end
-    vim.defer_fn(function()
-        if token == session and worker_state == "starting" then
-            failure("startup timed out")
-        end
-    end, STARTUP_TIMEOUT_MS)
-    return true
 end
 
 local function resolve_bufnr(bufnr)
@@ -806,98 +440,68 @@ local function resolve_bufnr(bufnr)
 end
 
 M.sync_buffer = function(bufnr, filetype)
-    if worker_state == "sync" or worker_state == "disposed" or worker_state == "failed" then
+    local state = worker_state()
+    if state == "sync" or state == "disposed" or state == "failed" then
         return true
     end
-    return sync_buffer_worker(resolve_bufnr(bufnr), filetype)
+    return host.sync(resolve_bufnr(bufnr), mirror_lang(filetype))
 end
 
 M.detach_buffer = function(bufnr)
-    if worker_state == "sync" or worker_state == "disposed" or worker_state == "failed" then
+    local state = worker_state()
+    if state == "sync" or state == "disposed" or state == "failed" then
         return
     end
-    detach_mirror(resolve_bufnr(bufnr), true)
+    host.detach(resolve_bufnr(bufnr), true)
 end
 
 M.request = function(request)
-    if worker_state == "disposed" then
+    local state = worker_state()
+    if state == "disposed" then
         return false
     end
     request.bufnr = resolve_bufnr(request.bufnr)
     request.filetype = request.filetype or ""
     request.semantic_revision = request.semantic_revision or 0
     request.semantic_spans = request.semantic_spans or {}
-    if worker_state == "sync" or worker_state == "failed" then
+    if state == "sync" or state == "failed" then
         sync_execute(request)
         return true
     end
-    if worker_state == "starting" or worker_state == "ready" then
+    if state == "starting" or state == "ready" then
         return request_worker(request)
     end
     return false
 end
 
 M.dispose = function()
-    if shutdown_group ~= nil then
-        pcall(vim.api.nvim_del_augroup_by_id, shutdown_group)
-        shutdown_group = nil
-    end
-    expected_exit = true
-    if job_id ~= nil then
-        notify_child("dispose", {})
-    end
-    detach_all(false)
-    local disposed_job = job_id
-    job_id = nil
-    if disposed_job ~= nil then
-        pcall(vim.fn.jobstop, disposed_job)
-    end
-    pending = {}
-    in_flight = nil
+    host.dispose()
+    sync_active = false
     on_result = nil
     on_failure = nil
-    timing_hook = nil
     treesitter_enabled = false
-    worker_state = "disposed"
 end
 
 M.status = function()
-    local mirror_status = {}
-    for bufnr, mirror in pairs(mirrors) do
-        mirror_status[#mirror_status + 1] = {
-            bufnr = bufnr,
-            id = mirror.id,
-            version = mirror.version,
-            changedtick = mirror.changedtick,
-            complete = mirror.complete,
-            semantic_revision = mirror.semantic_revision,
-        }
-    end
-    table.sort(mirror_status, function(left, right)
-        return left.bufnr < right.bufnr
-    end)
     return {
         backend = backend,
-        state = worker_state,
-        session = session,
-        job_id = job_id,
-        mirrors = mirror_status,
+        state = worker_state(),
+        session = host.session(),
+        job_id = host.job_id(),
+        mirrors = host.status_mirrors(decorate_status),
         in_flight = in_flight and {
             bufnr = in_flight.bufnr,
             generation = in_flight.generation,
             signature = in_flight.signature,
         } or nil,
         pending_count = vim.tbl_count(pending),
-        argv = argv and vim.deepcopy(argv) or nil,
+        argv = host.argv(),
     }
 end
 
 -- selene: allow(global_usage)
 _G.__scrollbar_minimap_worker_callback = function(callback_session, event, payload)
-    if callback_session ~= session then
-        return
-    end
-    dispatch_callback(event, payload)
+    host.dispatch(callback_session, event, payload)
 end
 
 return M

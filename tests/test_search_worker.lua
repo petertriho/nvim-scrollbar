@@ -108,6 +108,64 @@ T["incremental deltas update worker mirrors"] = function()
     expect.equality(helpers.wait_for_mark_lines(child, { 1, 2 }), true)
 end
 
+T["a write after an edit does not stall the next search"] = function()
+    local child = new_worker_child(false)
+    expect.equality(helpers.wait_for_worker_status(child, "ready"), true)
+    child.lua([[
+        vim.cmd("edit " .. vim.fn.fnameescape(vim.fn.tempname() .. ".txt"))
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, { "foo", "bar", "foo", "bar", "baz" })
+        vim.api.nvim_win_set_cursor(0, { 1, 0 })
+        vim.cmd("silent write")
+    ]])
+    helpers.accept_search(child, "/", "foo")
+    expect.equality(helpers.wait_for_mark_lines(child, { 0, 2 }), true)
+
+    -- Writing a modified buffer increments b:changedtick without a text change.
+    local synchronized = child.lua_get([[(function()
+        vim.api.nvim_buf_set_lines(0, 4, 5, false, { "edited" })
+        vim.api.nvim_exec_autocmds("TextChanged", { buffer = 0 })
+        local worker = require("scrollbar.providers.search_worker")
+        local synchronized = vim.wait(3000, function()
+            local mirror = worker.status().mirrors[1]
+            return mirror ~= nil and mirror.changedtick == vim.api.nvim_buf_get_changedtick(0)
+        end)
+        vim.cmd("silent write")
+        return synchronized
+    end)()]])
+    expect.equality(synchronized, true)
+
+    helpers.accept_search(child, "/", "bar")
+    expect.equality(helpers.wait_for_mark_lines(child, { 1, 3 }), true)
+end
+
+T["a scan that the child rejects is requeued after the mirror resynchronizes"] = function()
+    local child = new_worker_child(false)
+    helpers.set_lines(child, { "start", "target", "none" })
+    helpers.accept_search(child, "/", "target")
+    expect.equality(helpers.wait_for_mark_lines(child, { 1 }), true)
+
+    -- Reset the child mirror without telling the parent, so that the child
+    -- answers the next scan with mirror_invalid instead of a result.
+    child.lua([[
+        vim.rpcnotify(
+            require("scrollbar.providers.search_worker").status().job_id,
+            "nvim_exec_lua",
+            "local child_worker = rawget(_G, '__scrollbar_search_worker_child') "
+                .. "child_worker.handle('snapshot_start', { bufnr = ..., id = -1, version = 1 })",
+            { vim.api.nvim_get_current_buf() }
+        )
+    ]])
+    helpers.accept_search(child, "/", "none")
+
+    expect.equality(helpers.wait_for_mark_lines(child, { 2 }), true)
+    expect.equality(
+        child.lua_get([[vim.wait(1000, function()
+            return require("scrollbar.providers.search_worker").status().in_flight == nil
+        end)]]),
+        true
+    )
+end
+
 T["one child is shared across mirrored buffers"] = function()
     local child = new_worker_child(false)
     helpers.set_lines(child, { "start", "match" })
