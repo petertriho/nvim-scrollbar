@@ -6,7 +6,7 @@ local T = MiniTest.new_set({
         pre_case = function()
             package.loaded["scrollbar.config"] = nil
             package.loaded["scrollbar.renderer"] = nil
-            package.loaded["scrollbar.store"] = nil
+            package.loaded["scrollbar.shared.store"] = nil
             package.loaded["scrollbar.providers"] = nil
             package.loaded["scrollbar.providers.marks"] = nil
             require("scrollbar.config").set({
@@ -90,7 +90,7 @@ local function await_mark_reconciliation(bufnr, predicate)
 end
 
 T["collects letter marks with literal names in source order by default"] = function()
-    local store = require("scrollbar.store")
+    local store = require("scrollbar.shared.store")
     local target = new_buffer({ "one", "two", "three", "four", "five" })
     local foreign = new_buffer({ "alpha", "beta" })
 
@@ -116,7 +116,7 @@ end
 
 T["collects numbered marks independently from letter marks"] = function()
     local config = require("scrollbar.config")
-    local store = require("scrollbar.store")
+    local store = require("scrollbar.shared.store")
     local target = new_buffer({ "one", "two", "three" })
     vim.api.nvim_buf_set_mark(target, "a", 1, 0, {})
     vim.api.nvim_buf_set_mark(target, "A", 2, 0, {})
@@ -138,7 +138,7 @@ T["collects numbered marks independently from letter marks"] = function()
 end
 
 T["text changes move marks while unchanged and empty refreshes preserve revisions"] = function()
-    local store = require("scrollbar.store")
+    local store = require("scrollbar.shared.store")
     local target = new_buffer({ "one", "two", "three", "four" })
     vim.api.nvim_buf_set_mark(target, "a", 2, 0, {})
     vim.api.nvim_buf_set_mark(target, "A", 4, 0, {})
@@ -169,7 +169,7 @@ end
 
 T["owned buffer events clear excluded and oversized state"] = function()
     local config = require("scrollbar.config")
-    local store = require("scrollbar.store")
+    local store = require("scrollbar.shared.store")
     local target = new_buffer({ "one", "two", "three" })
     vim.api.nvim_buf_set_mark(target, "a", 2, 0, {})
     local active_config = config.set({
@@ -199,7 +199,7 @@ T["owned buffer events clear excluded and oversized state"] = function()
 end
 
 T["named-mark reconciliation moves and deletes uppercase marks across source buffers"] = function()
-    local store = require("scrollbar.store")
+    local store = require("scrollbar.shared.store")
     local first = new_buffer({ "one", "two", "three" })
     local second = new_buffer({ "alpha", "beta", "gamma" })
     local first_win = show_buffer(first)
@@ -235,7 +235,7 @@ end
 
 T["mark reconciliation moves and deletes numbered marks across source buffers"] = function()
     local config = require("scrollbar.config")
-    local store = require("scrollbar.store")
+    local store = require("scrollbar.shared.store")
     local first = new_buffer({ "one", "two", "three" })
     local second = new_buffer({ "alpha", "beta", "gamma" })
     local first_win = show_buffer(first)
@@ -279,7 +279,7 @@ T["mark reconciliation moves and deletes numbered marks across source buffers"] 
 end
 
 T["does not load or publish an unloaded uppercase-mark target"] = function()
-    local store = require("scrollbar.store")
+    local store = require("scrollbar.shared.store")
     local visible = new_buffer({ "one", "two" })
     local unloaded = new_buffer({ "alpha", "beta" })
     local unloaded_name = vim.fn.tempname()
@@ -296,7 +296,7 @@ T["does not load or publish an unloaded uppercase-mark target"] = function()
 end
 
 T["owns the version-gated event path and disposes all state"] = function()
-    local store = require("scrollbar.store")
+    local store = require("scrollbar.shared.store")
     local target = new_buffer({ "one", "two" })
     local target_win = show_buffer(target)
     vim.api.nvim_set_current_win(target_win)
@@ -380,7 +380,7 @@ T["delegates buffer eligibility before collecting marks"] = function()
     vim.api.nvim_exec_autocmds("TextChanged", { buffer = target })
 
     expect.equality(calls, 0)
-    expect.equality(require("scrollbar.store").get(target), {})
+    expect.equality(require("scrollbar.shared.store").get(target), {})
 end
 
 return T

@@ -831,7 +831,7 @@ T["M.screen projects compact_search rows aligned with equivalent expanded marks"
         vim.api.nvim_win_set_height(source_win, 10)
 
         local layout_module = require("scrollbar.layout")
-        local compact = require("scrollbar.providers.search_compact")
+        local compact = require("scrollbar.providers.search.compact")
         local match_lines = { 0, 5, 10, 15, 20, 25 }
         local reference_marks = {}
         for index, line in ipairs(match_lines) do

@@ -87,7 +87,7 @@ T["production setup starts one shared search worker"] = function()
 
     expect.equality(helpers.wait_for_mark_lines(child, { 1, 2 }), true)
     expect.equality(child.lua_get([=[package.loaded["scrollbar.test.jobstarts"]]=]), 1)
-    expect.equality(child.lua_get([[require("scrollbar.providers.search_worker").status().state]]), "ready")
+    expect.equality(child.lua_get([[require("scrollbar.providers.search.worker").status().state]]), "ready")
 end
 
 T["providers.search.backend=sync disables child startup"] = function()
@@ -107,7 +107,7 @@ T["providers.search.backend=sync disables child startup"] = function()
 
     expect.equality(helpers.wait_for_mark_lines(child, { 1, 2 }), true)
     expect.equality(child.lua_get([=[package.loaded["scrollbar.test.jobstarts"]]=]), 0)
-    expect.equality(child.lua_get([[require("scrollbar.providers.search_worker").status().state]]), "disposed")
+    expect.equality(child.lua_get([[require("scrollbar.providers.search.worker").status().state]]), "disposed")
 end
 
 T["repeated provider manager setup is idempotent"] = function()

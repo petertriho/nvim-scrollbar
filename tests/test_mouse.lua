@@ -13,7 +13,7 @@ local function new_child()
 end
 
 local function mouse_config(overrides, top)
-    local schema = require("scrollbar.schema")
+    local schema = require("scrollbar.config.schema")
     return schema.merge({
         set_highlights = true,
         providers = {
@@ -95,18 +95,18 @@ local function setup_single(child, options)
         local active_config = require("scrollbar.config").set(opts.config)
         local source_buf = vim.api.nvim_win_get_buf(source_win)
         if opts.marks and #opts.marks > 0 then
-            assert(require("scrollbar.store").set(opts.mark_provider, source_buf, opts.marks))
+            assert(require("scrollbar.shared.store").set(opts.mark_provider, source_buf, opts.marks))
         end
         if opts.compact_search then
-            local compact = require("scrollbar.providers.search_compact").encode(opts.compact_search)
-            assert(require("scrollbar.store")._set_search_compact(source_buf, compact))
+            local compact = require("scrollbar.providers.search.compact").encode(opts.compact_search)
+            assert(require("scrollbar.shared.store")._set_search_compact(source_buf, compact))
         end
         local renderer = require("scrollbar.renderer")
         local scheduler = require("scrollbar.scheduler")
         local mouse = require("scrollbar.mouse")
         renderer.setup()
         if active_config.set_highlights then
-            require("scrollbar.utils").set_highlights()
+            require("scrollbar.highlights").set_highlights()
         end
         scheduler.setup({ config = active_config, renderer = renderer })
         mouse.setup({ config = active_config, renderer = renderer, scheduler = scheduler })
@@ -300,7 +300,7 @@ T["clicks an empty track cell proportionally and restores source focus"] = funct
         local mouse = require("scrollbar.mouse")
         renderer.setup()
         if active_config.set_highlights then
-            require("scrollbar.utils").set_highlights()
+            require("scrollbar.highlights").set_highlights()
         end
         scheduler.setup({ config = active_config, renderer = renderer })
         mouse.setup({ config = active_config, renderer = renderer, scheduler = scheduler })
@@ -750,7 +750,7 @@ T["keeps an east handle press stationary when expansion changes relative columns
     input_mouse(child, "press", screen_row, screen_col)
     expect.equality(child.lua_get([[require("scrollbar.mouse").get_interaction().pressed_col]]), 1)
     local grown = child.lua_func(function(source_win, source_buf)
-        assert(require("scrollbar.store").set("marks", source_buf, {
+        assert(require("scrollbar.shared.store").set("marks", source_buf, {
             { line = 0, type = "Mark", text = "a" },
             { line = 1, type = "Mark", text = "b" },
             { line = 2, type = "Mark", text = "c" },
@@ -936,7 +936,7 @@ T["keeps independent ownership for multiple source windows"] = function()
         local mouse = require("scrollbar.mouse")
         renderer.setup()
         if active_config.set_highlights then
-            require("scrollbar.utils").set_highlights()
+            require("scrollbar.highlights").set_highlights()
         end
         scheduler.setup({ config = active_config, renderer = renderer })
         mouse.setup({ config = active_config, renderer = renderer, scheduler = scheduler })

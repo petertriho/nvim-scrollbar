@@ -1,5 +1,5 @@
 --- Scrollbar mouse: the press, drag, and release policy of the scrollbar
---- float. `scrollbar.mouse_core` owns the runtime, the mappings, focus, and
+--- float. `scrollbar.shared.mouse` owns the runtime, the mappings, focus, and
 --- the autohide hold.
 ---
 --- A press reads the hit map of the last render. A press on a mark or the
@@ -9,7 +9,7 @@
 --- click on the track jumps to the line of the pressed row.
 
 local layout = require("scrollbar.layout")
-local mouse_core = require("scrollbar.mouse_core")
+local mouse_core = require("scrollbar.shared.mouse")
 
 local M = {}
 

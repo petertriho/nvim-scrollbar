@@ -210,7 +210,7 @@ T["routes mark span and point store events and unsubscribes on dispose"] = funct
             return original_invalidate_window(source_win)
         end)
 
-        local store = require("scrollbar.store")
+        local store = require("scrollbar.shared.store")
         local providers = require("scrollbar.providers")
         providers.register({ name = "marks", targets = { minimap = true } })
         providers.register({ name = "semantic", targets = { minimap = true } })
@@ -310,7 +310,7 @@ T["store publications invalidate matching buffer windows and only the published 
             },
         })
 
-        local store = require("scrollbar.store")
+        local store = require("scrollbar.shared.store")
         require("scrollbar.providers").register({ name = "diagnostic", targets = { minimap = true } })
         store.set("diagnostic", shared_buf, { { line = 0, type = "Misc" } })
         local after_buffer = scheduler.status().dirty_windows
@@ -344,7 +344,7 @@ T["mark events invalidate windows when only a profile shows marks"] = function()
         vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "one", "two" })
         vim.bo[bufnr].filetype = "lua"
         require("scrollbar.providers").register({ name = "diagnostic", targets = { minimap = true } })
-        local store = require("scrollbar.store")
+        local store = require("scrollbar.shared.store")
         local scheduler = require("scrollbar.minimap.scheduler")
 
         local function dirty_after_mark_event(overrides)

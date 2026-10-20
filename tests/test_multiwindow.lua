@@ -288,7 +288,7 @@ T["window-local mark revisions rebuild only the affected static layer"] = functi
                 thumb = { text = "H", hide_if_all_visible = false },
             },
         })
-        local store = require("scrollbar.store")
+        local store = require("scrollbar.shared.store")
         assert(store.set_window("test", first, { { line = 10, type = "Misc" } }))
         assert(store.set_window("test", second, { { line = 180, type = "Misc" } }))
 
@@ -462,7 +462,7 @@ T["simultaneous windows render selected profile layouts geometry and filtering"]
         local providers = require("scrollbar.providers")
         providers.register({ name = "profile-test" })
         providers.register({ name = "marks" })
-        local store = require("scrollbar.store")
+        local store = require("scrollbar.shared.store")
         store.set("profile-test", first_buf, {
             { line = 10, type = "Error" },
             { line = 20, type = "Search" },

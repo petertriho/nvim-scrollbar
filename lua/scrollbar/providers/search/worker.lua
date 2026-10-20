@@ -1,11 +1,11 @@
 --- Search worker: scans mirrored buffers for the search pattern in a headless
---- child Neovim. `scrollbar.mirror` owns the child process and the buffer
---- mirrors. This module keeps one pending scan for each buffer and one scan in
---- flight. On worker failure the module emits exactly one warning, and the
---- search provider uses the synchronous scan for the rest of the session.
+--- child Neovim. `scrollbar.shared.mirror` owns the child process and the
+--- buffer mirrors. This module keeps one pending scan for each buffer and one
+--- scan in flight. On worker failure the module emits exactly one warning, and
+--- the search provider uses the synchronous scan for the rest of the session.
 
-local mirror_host = require("scrollbar.mirror")
-local text_tick = require("scrollbar.text_tick")
+local mirror_host = require("scrollbar.shared.mirror")
+local text_tick = require("scrollbar.shared.text_tick")
 
 local M = {}
 

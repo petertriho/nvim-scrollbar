@@ -1,8 +1,8 @@
 --- Top-level configuration shared by the scrollbar and the minimap: the
 --- highlight policy, the mark-type registry, and the exclusion lists.
 
-local const = require("scrollbar.const")
-local schema = require("scrollbar.schema")
+local const = require("scrollbar.config.const")
+local schema = require("scrollbar.config.schema")
 
 local M = {}
 

@@ -1,4 +1,4 @@
-local const = require("scrollbar.const")
+local const = require("scrollbar.config.const")
 
 local M = {}
 local GENERATED_PREFIX = const.NAME_PREFIX .. "Generated."

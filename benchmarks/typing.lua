@@ -64,7 +64,7 @@ end
 -- `setup` replaces the previous runtime, but no public function removes it,
 -- so the cleanup disposes the loaded modules in the order that setup uses.
 local function dispose_plugin()
-    local stack = package.loaded["scrollbar.stack"]
+    local stack = package.loaded["scrollbar.shared.stack"]
     if stack ~= nil then
         stack.reset()
     end
@@ -156,7 +156,7 @@ local scrollbar_and_minimap = measure_scenario("scrollbar + minimap (enabled)", 
             },
         })
         if semantic_enabled then
-            require("scrollbar.store").set_minimap_spans(
+            require("scrollbar.shared.store").set_minimap_spans(
                 "lsp_semantic_tokens",
                 buf,
                 make_semantic_spans(vim.api.nvim_buf_line_count(buf))

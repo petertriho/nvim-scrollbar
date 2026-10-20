@@ -121,7 +121,7 @@ T["disabling native incsearch rejects a queued incremental request"] = function(
         vim.o.incsearch = false
         vim.wait(100)
 
-        local marks = require("scrollbar.store").get(vim.api.nvim_get_current_buf()).search
+        local marks = require("scrollbar.shared.store").get(vim.api.nvim_get_current_buf()).search
         return {
             calls = package.loaded["scrollbar.test.search_scans"].calls,
             lines = marks and vim.tbl_map(function(mark)

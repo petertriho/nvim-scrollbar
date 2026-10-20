@@ -1,4 +1,4 @@
-local schema = require("scrollbar.schema")
+local schema = require("scrollbar.config.schema")
 
 local DIAGNOSTIC_TYPES = { "Error", "Warn", "Info", "Hint" }
 local GIT_TYPES = {

@@ -9,14 +9,14 @@
 --- `new` creates the functions of an instance once as closures, so the
 --- per-event paths read upvalues and allocate nothing.
 
-local float = require("scrollbar.float")
-local source_policy = require("scrollbar.source_policy")
-local stack = require("scrollbar.stack")
+local float = require("scrollbar.shared.float")
+local source_policy = require("scrollbar.shared.source_policy")
+local stack = require("scrollbar.shared.stack")
 
 local M = {}
 
 ---@class ScrollbarFloatStatesOptions
----@field renderer ScrollbarStackRenderer Name of the renderer in `scrollbar.stack`
+---@field renderer ScrollbarStackRenderer Name of the renderer in `scrollbar.shared.stack`
 ---@field config ScrollbarSourcePolicyConfigModule Read at call time, so a replaced function applies at once
 ---@field owned_var string Window and buffer variable that marks a float of this renderer, also from an earlier setup
 ---@field augroup string Name of the lifecycle augroup

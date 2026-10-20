@@ -46,11 +46,11 @@ local function scan(lines, pattern, options, backend)
         require("scrollbar.providers").refresh(vim.api.nvim_get_current_buf())
         assert(
             vim.wait(3000, function()
-                return require("scrollbar.store").get(vim.api.nvim_get_current_buf()).search ~= nil
+                return require("scrollbar.shared.store").get(vim.api.nvim_get_current_buf()).search ~= nil
             end),
             "scan did not publish marks"
         )
-        local store = require("scrollbar.store")
+        local store = require("scrollbar.shared.store")
         local marks = store.get(vim.api.nvim_get_current_buf()).search
         local compact = store._get_snapshot(vim.api.nvim_get_current_buf()).compact_search
         return {
@@ -156,7 +156,7 @@ T["sync partial result does not clear prior marks on accepted-search pattern cha
         vim.api.nvim_buf_set_lines(0, 0, -1, false, { "foo line", "middle line", "bar line" })
         vim.api.nvim_win_set_cursor(0, { 1, 0 })
 
-        local store = require("scrollbar.store")
+        local store = require("scrollbar.shared.store")
         local providers = require("scrollbar.providers")
 
         vim.fn.setreg("/", "foo")

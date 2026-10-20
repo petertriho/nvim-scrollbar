@@ -6,7 +6,7 @@ local T = MiniTest.new_set({
         pre_case = function()
             package.loaded["scrollbar.config"] = nil
             package.loaded["scrollbar.renderer"] = nil
-            package.loaded["scrollbar.store"] = nil
+            package.loaded["scrollbar.shared.store"] = nil
             package.loaded["scrollbar.providers"] = nil
             require("scrollbar.config").set({
                 marks = {
@@ -298,10 +298,10 @@ T["registers before setup and initially refreshes eligible loaded buffers"] = fu
     })
 
     expect.equality(calls, { setup = 1, refresh = { target } })
-    expect.equality(require("scrollbar.store").get(target), {
+    expect.equality(require("scrollbar.shared.store").get(target), {
         custom = { { line = 1, type = "Custom" } },
     })
-    expect.equality(require("scrollbar.store").get(ignored), {})
+    expect.equality(require("scrollbar.shared.store").get(ignored), {})
 end
 
 T["keeps providers without targets scrollbar-only"] = function()
@@ -378,14 +378,14 @@ T["registers after setup and immediately sets up and refreshes"] = function()
     })
 
     expect.equality(calls, { "setup", "refresh:" .. target })
-    expect.equality(require("scrollbar.store").get(target), {
+    expect.equality(require("scrollbar.shared.store").get(target), {
         late = { { line = 0, type = "Custom" } },
     })
 end
 
 T["activates custom minimap targets and publishes manager-owned outputs"] = function()
     local providers = require("scrollbar.providers")
-    local store = require("scrollbar.store")
+    local store = require("scrollbar.shared.store")
     local target = new_buffer({ "one", "two" })
     local winid = show_buffer(target)
     local calls = { setup = 0, buffer = 0, window = 0 }
@@ -448,7 +448,7 @@ end
 
 T["scopes provider-owned publication and policy queries to requested consumer unions"] = function()
     local providers = require("scrollbar.providers")
-    local store = require("scrollbar.store")
+    local store = require("scrollbar.shared.store")
     local scrollbar_buffer = new_buffer({ "scrollbar" })
     local minimap_buffer = new_buffer({ "minimap" })
     local scrollbar_window = show_buffer(scrollbar_buffer)
@@ -741,7 +741,7 @@ end
 
 T["applies consumer eligibility to consumer-filtered mark refreshes"] = function()
     local providers = require("scrollbar.providers")
-    local store = require("scrollbar.store")
+    local store = require("scrollbar.shared.store")
     local scrollbar_buffer = new_buffer({ "scrollbar" })
     local minimap_buffer = new_buffer({ "minimap" })
     local scrollbar_window = show_buffer(scrollbar_buffer)
@@ -803,7 +803,7 @@ end
 
 T["refreshes window providers initially, manually, and on disposal"] = function()
     local providers = require("scrollbar.providers")
-    local store = require("scrollbar.store")
+    local store = require("scrollbar.shared.store")
     local target = new_buffer({ "one", "two" })
     local winid = show_buffer(target)
     local calls = {}
@@ -915,7 +915,7 @@ T["unregister disposes resources, clears marks, and invalidates changed buffers"
 
     expect.equality(disposed, 1)
     expect.equality(cleaned, 1)
-    expect.equality(require("scrollbar.store").get(target), {})
+    expect.equality(require("scrollbar.shared.store").get(target), {})
     expect.equality(invalidated, { target })
     expect.equality(pcall(vim.api.nvim_get_autocmds, { group = group }), false)
 end
@@ -973,10 +973,10 @@ T["isolates setup failures and releases partially created resources"] = function
     providers.setup(options)
 
     expect.equality(good_setup, 1)
-    expect.equality(require("scrollbar.store").get(target), {
+    expect.equality(require("scrollbar.shared.store").get(target), {
         ["good-setup"] = { { line = 0, type = "Custom" } },
     })
-    expect.equality(require("scrollbar.store").get_window(winid), {})
+    expect.equality(require("scrollbar.shared.store").get_window(winid), {})
     expect.equality(failed_refreshes, { buffer = 0, window = 0 })
     expect.equality(pcall(vim.api.nvim_get_autocmds, { group = failed_group }), false)
     expect.equality(#notifications, 1)
@@ -989,7 +989,7 @@ end
 
 T["clears refresh-only window marks when the window becomes ineligible"] = function()
     local providers = require("scrollbar.providers")
-    local store = require("scrollbar.store")
+    local store = require("scrollbar.shared.store")
     local target = new_buffer({ "one" })
     local excluded = new_buffer({ "excluded" })
     local winid = show_buffer(target)
@@ -1032,7 +1032,7 @@ end
 
 T["clears refresh-only marks before an eligible window changes buffers"] = function()
     local providers = require("scrollbar.providers")
-    local store = require("scrollbar.store")
+    local store = require("scrollbar.shared.store")
     local first = new_buffer({ "one" })
     local second = new_buffer({ "two" })
     local winid = show_buffer(first)
@@ -1100,7 +1100,7 @@ T["clears only a failing refresher and resets warning suppression after recovery
     should_fail = true
     providers.refresh(target)
     providers.refresh(target)
-    expect.equality(require("scrollbar.store").get(target), {
+    expect.equality(require("scrollbar.shared.store").get(target), {
         ["good-refresh"] = { { line = 0, type = "Custom", text = "g" } },
     })
     expect.equality(#notifications, 1)
@@ -1116,7 +1116,7 @@ end
 T["isolates failing window refreshes and resets warnings after recovery"] = function()
     local notifications = capture_notifications()
     local providers = require("scrollbar.providers")
-    local store = require("scrollbar.store")
+    local store = require("scrollbar.shared.store")
     local target = new_buffer({ "one" })
     local winid = show_buffer(target)
     local should_fail = false
@@ -1160,7 +1160,7 @@ end
 T["isolates minimap callback failures from other providers and channels"] = function()
     local notifications = capture_notifications()
     local providers = require("scrollbar.providers")
-    local store = require("scrollbar.store")
+    local store = require("scrollbar.shared.store")
     local target = new_buffer({ "one" })
     local winid = show_buffer(target)
     local fail = { marks = false, spans = false, points = false }
@@ -1281,14 +1281,14 @@ T["isolates dispose failures while still releasing resources and marks"] = funct
 
     expect.equality(providers.unregister("bad-dispose"), true)
     expect.equality(cleaned, 1)
-    expect.equality(require("scrollbar.store").get(target), {})
+    expect.equality(require("scrollbar.shared.store").get(target), {})
     expect.equality(#notifications, 1)
     expect.no_equality(notifications[1].message:match("provider 'bad%-dispose' dispose failed.*dispose exploded"), nil)
 end
 
 T["clears every owned channel on unregister and dispose through store events"] = function()
     local providers = require("scrollbar.providers")
-    local store = require("scrollbar.store")
+    local store = require("scrollbar.shared.store")
     local target = new_buffer({ "one" })
     local winid = show_buffer(target)
     local invalidated_buffers = {}
@@ -1578,14 +1578,14 @@ T["provides isolated config, store, window, and invalidation context operations"
     expect.equality(rawget(root_config, "presets"), nil)
     expect.equality(rawget(root_config, "providers"), nil)
     expect.equality(source_result, { 22, 11 })
-    expect.equality(require("scrollbar.store").get(target), {})
+    expect.equality(require("scrollbar.shared.store").get(target), {})
     expect.equality(invalidated_buffers, { target, target, target })
     expect.equality(invalidated_windows, { 22 })
 end
 
 T["provides window-scoped store operations through provider contexts"] = function()
     local providers = require("scrollbar.providers")
-    local store = require("scrollbar.store")
+    local store = require("scrollbar.shared.store")
     local target = new_buffer({ "one" })
     local winid = show_buffer(target)
     local invalidated = {}
@@ -1629,7 +1629,7 @@ end
 T["silently clears valid ineligible direct publications before validation"] = function()
     local notifications = capture_notifications()
     local providers = require("scrollbar.providers")
-    local store = require("scrollbar.store")
+    local store = require("scrollbar.shared.store")
     local target = new_buffer({ "one" })
     local winid = show_buffer(target)
     local buffer_allowed = true
@@ -1697,7 +1697,7 @@ end
 
 T["skips pre-ineligible refreshes and rejects eligibility races"] = function()
     local providers = require("scrollbar.providers")
-    local store = require("scrollbar.store")
+    local store = require("scrollbar.shared.store")
     local target = new_buffer({ "one" })
     local winid = show_buffer(target)
     local buffer_allowed = true
@@ -1762,8 +1762,8 @@ end
 
 T["guards private compact search publication with buffer policy"] = function()
     local providers = require("scrollbar.providers")
-    local store = require("scrollbar.store")
-    local compact = require("scrollbar.providers.search_compact")
+    local store = require("scrollbar.shared.store")
+    local compact = require("scrollbar.providers.search.compact")
     local target = new_buffer({ "one", "two" })
     local allowed = true
     local invalidated = {}
@@ -1863,7 +1863,7 @@ T["drops the provider demand of disabled renderers"] = function()
 
     config.set({ scrollbar = { enabled = false } })
     plan = config.get_provider_plan()
-    for _, name in ipairs(require("scrollbar.provider_config").ORDER) do
+    for _, name in ipairs(require("scrollbar.config.providers").ORDER) do
         expect.equality(consumers(plan, name), { false, false })
         expect.equality(plan[name].options, false)
     end

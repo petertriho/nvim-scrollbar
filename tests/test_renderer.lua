@@ -31,7 +31,7 @@ local function new_child()
 end
 
 local function renderer_config(overrides)
-    return require("scrollbar.schema").merge({
+    return require("scrollbar.config.schema").merge({
         show = true,
         throttle_ms = 0,
         unit = "line",
@@ -396,7 +396,7 @@ T["keeps same-buffer source windows independent and writes only float buffers"] 
         end)
 
         require("scrollbar.test.set_config")(config)
-        local store = require("scrollbar.store")
+        local store = require("scrollbar.shared.store")
         assert(store.set("test", vim.api.nvim_win_get_buf(first), { { line = 199, type = "Misc" } }))
         assert(store.set_window("test", first, { { line = 0, type = "Misc" } }))
         local set_extmark = vim.api.nvim_buf_set_extmark
@@ -489,7 +489,11 @@ T["switches canonical Thumb spans to pressed groups without losing priorities"] 
             local source_win = vim.api.nvim_get_current_win()
             require("scrollbar.test.set_config")(config)
             assert(
-                require("scrollbar.store").set("test", vim.api.nvim_get_current_buf(), { { line = 0, type = "Misc" } })
+                require("scrollbar.shared.store").set(
+                    "test",
+                    vim.api.nvim_get_current_buf(),
+                    { { line = 0, type = "Misc" } }
+                )
             )
             local renderer = require("scrollbar.renderer")
             renderer.setup()
@@ -537,7 +541,7 @@ T["renders track only in declared columns over a transparent float base"] = func
             vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
             local source_win = vim.api.nvim_get_current_win()
             require("scrollbar.test.set_config")(config)
-            assert(require("scrollbar.store").set("test", vim.api.nvim_get_current_buf(), {
+            assert(require("scrollbar.shared.store").set("test", vim.api.nvim_get_current_buf(), {
                 { line = 0, type = "Misc" },
             }))
             local renderer = require("scrollbar.renderer")
@@ -744,7 +748,7 @@ T["retains line caches only across transient concealment"] = function()
         local source_buf = vim.api.nvim_get_current_buf()
         base_config.autohide = { delay_ms = 500 }
         require("scrollbar.test.set_config")(base_config)
-        assert(require("scrollbar.store").set("test", source_buf, { { line = 100, type = "Misc" } }))
+        assert(require("scrollbar.shared.store").set("test", source_buf, { { line = 100, type = "Misc" } }))
 
         local layout = require("scrollbar.layout")
         local original_mark_layer = layout.mark_layer
@@ -1590,7 +1594,7 @@ T["aligns short-buffer marks without shrinking the track"] = function()
         local source_win = vim.api.nvim_get_current_win()
         vim.api.nvim_win_set_height(source_win, 10)
         local source_buf = vim.api.nvim_win_get_buf(source_win)
-        assert(require("scrollbar.store").set("test", source_buf, {
+        assert(require("scrollbar.shared.store").set("test", source_buf, {
             { line = 0, type = "Misc" },
             { line = 2, type = "Misc" },
             { line = 4, type = "Misc" },
@@ -1642,8 +1646,8 @@ T["renders compact built-in search exactly and invalidates it by revision"] = fu
             local source_win = vim.api.nvim_get_current_win()
             vim.api.nvim_win_set_height(source_win, 10)
             local source_buf = vim.api.nvim_win_get_buf(source_win)
-            local store = require("scrollbar.store")
-            local compact = require("scrollbar.providers.search_compact")
+            local store = require("scrollbar.shared.store")
+            local compact = require("scrollbar.providers.search.compact")
             local renderer = require("scrollbar.renderer")
             assert(store.set("alpha", source_buf, { { line = 20, type = "Search", text = "A" } }))
 
@@ -1730,8 +1734,8 @@ T["screenline unit renders dense compact search identically to expanded marks"] 
             local source_win = vim.api.nvim_get_current_win()
             vim.api.nvim_win_set_height(source_win, 10)
             local source_buf = vim.api.nvim_win_get_buf(source_win)
-            local store = require("scrollbar.store")
-            local compact = require("scrollbar.providers.search_compact")
+            local store = require("scrollbar.shared.store")
+            local compact = require("scrollbar.providers.search.compact")
             local renderer = require("scrollbar.renderer")
 
             local match_lines = {}
@@ -1802,7 +1806,7 @@ T["updates only dirty rows and fully replaces rows when dimensions change"] = fu
         vim.api.nvim_win_set_height(source_win, 8)
 
         require("scrollbar.test.set_config")(config)
-        local store = require("scrollbar.store")
+        local store = require("scrollbar.shared.store")
         local source_buf = vim.api.nvim_win_get_buf(source_win)
         assert(store.set("test", source_buf, { { line = 60, type = "Misc", text = "A" } }))
         local renderer = require("scrollbar.renderer")
@@ -1854,7 +1858,7 @@ end
 T["the row writer toggles modifiable once and keeps the extmarks of unchanged rows"] = function()
     local child = new_child()
     local result = child.lua_func(function()
-        local float = require("scrollbar.float")
+        local float = require("scrollbar.shared.float")
         local namespace = vim.api.nvim_create_namespace("ScrollbarTestRowWriter")
         local bufnr = vim.api.nvim_create_buf(false, true)
         vim.bo[bufnr].modifiable = false
@@ -1953,7 +1957,7 @@ T["grows and shrinks expanded floats in place while pinning base cells for every
         local source_win = vim.api.nvim_get_current_win()
         vim.api.nvim_win_set_height(source_win, 8)
         local source_buf = vim.api.nvim_win_get_buf(source_win)
-        local store = require("scrollbar.store")
+        local store = require("scrollbar.shared.store")
         assert(store.set("test", source_buf, { { line = 100, type = "Misc" } }))
 
         local renderer = require("scrollbar.renderer")
@@ -2089,7 +2093,7 @@ T["uses window and editor placement containers and resolves width per source win
         local second = vim.api.nvim_get_current_win()
         vim.api.nvim_win_set_height(second, 4)
         local source_buf = vim.api.nvim_get_current_buf()
-        assert(require("scrollbar.store").set("marks", source_buf, {
+        assert(require("scrollbar.shared.store").set("marks", source_buf, {
             { line = 0, type = "Mark", text = "a" },
             { line = 10, type = "Mark", text = "b" },
             { line = 20, type = "Mark", text = "c" },
@@ -2124,7 +2128,7 @@ T["uses window and editor placement containers and resolves width per source win
         for index = 1, 8 do
             dense_marks[index] = { line = index - 1, type = "Mark", text = string.char(96 + index) }
         end
-        assert(require("scrollbar.store").set("marks", source_buf, dense_marks))
+        assert(require("scrollbar.shared.store").set("marks", source_buf, dense_marks))
         local narrow = assert(renderer.render(narrow_win))
         local narrow_state_width = narrow.width
 
@@ -2191,7 +2195,7 @@ T["repositions in place and rebuilds expansion when the live gutter width change
         for index = 1, 12 do
             marks[index] = { line = 0, type = "Mark", text = string.char(96 + index) }
         end
-        assert(require("scrollbar.store").set("marks", source_buf, marks))
+        assert(require("scrollbar.shared.store").set("marks", source_buf, marks))
 
         base_config.hide_on_cursor = false
         base_config.placement = {
@@ -2287,7 +2291,7 @@ T["caches line mark work while keeping handle geometry current and invalidating 
         local source_buf = vim.api.nvim_win_get_buf(source_win)
 
         require("scrollbar.test.set_config")(base_config)
-        local store = require("scrollbar.store")
+        local store = require("scrollbar.shared.store")
         local buffer_marks = { { line = 120, type = "Misc", text = "A" } }
         assert(store.set("buffer", source_buf, buffer_marks))
         assert(store.set_window("window", source_win, { { line = 30, type = "Misc", text = "W" } }))
@@ -2498,7 +2502,7 @@ T["profile switches compare explicit cache inputs and invalidate only their sour
 
         require("scrollbar.test.set_config")(base_config)
         local source_buf = vim.api.nvim_win_get_buf(first)
-        require("scrollbar.store").set("test", source_buf, { { line = 100, type = "Misc" } })
+        require("scrollbar.shared.store").set("test", source_buf, { { line = 100, type = "Misc" } })
         local layout = require("scrollbar.layout")
         local original_mark_layer = layout.mark_layer
         local builds = 0
@@ -2641,7 +2645,7 @@ T["screen renders reuse flattened marks and skip text-height measurements while 
         local active_config = vim.deepcopy(base_config)
         active_config.unit = "screenline"
         require("scrollbar.test.set_config")(active_config)
-        assert(require("scrollbar.store").set("test", source_buf, {
+        assert(require("scrollbar.shared.store").set("test", source_buf, {
             { line = 10, type = "Misc" },
             { line = 150, type = "Misc" },
         }))
@@ -2945,7 +2949,7 @@ T["uses the full expanded width for cursor hiding"] = function()
             { "track", "marks", "thumb" },
         }
         require("scrollbar.test.set_config")(base_config)
-        assert(require("scrollbar.store").set("marks", source_buf, {
+        assert(require("scrollbar.shared.store").set("marks", source_buf, {
             { line = 0, type = "Mark", text = "a" },
             { line = 1, type = "Mark", text = "b" },
             { line = 2, type = "Mark", text = "c" },
@@ -3566,9 +3570,9 @@ T["filters minimap-only marks and compact search before flattening"] = function(
             minimap = { enabled = true },
         })
 
-        local store = require("scrollbar.store")
+        local store = require("scrollbar.shared.store")
         assert(store.set("diagnostic", source_buf, { { line = 199, type = "Misc" } }))
-        assert(store._set_search_compact(source_buf, require("scrollbar.providers.search_compact").encode({ 0 })))
+        assert(store._set_search_compact(source_buf, require("scrollbar.providers.search.compact").encode({ 0 })))
 
         local renderer = require("scrollbar.renderer")
         renderer.setup()
@@ -3598,7 +3602,7 @@ T["accepts marks of a hidden type from a custom provider without drawing them"] 
         local source_win = vim.api.nvim_get_current_win()
         local source_buf = vim.api.nvim_get_current_buf()
         local scrollbar_config = require("scrollbar.config")
-        local store = require("scrollbar.store")
+        local store = require("scrollbar.shared.store")
         local renderer = require("scrollbar.renderer")
         local shared = { marks = { Custom = { text = "C", priority = 0, highlight = "Title" } } }
         local marks = {

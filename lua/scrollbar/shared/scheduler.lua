@@ -13,8 +13,8 @@
 --- per-event paths read upvalues and allocate nothing.
 
 local providers = require("scrollbar.providers")
-local shared_config = require("scrollbar.shared_config")
-local store = require("scrollbar.store")
+local shared_config = require("scrollbar.config.shared")
+local store = require("scrollbar.shared.store")
 
 local M = {}
 

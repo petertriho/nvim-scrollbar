@@ -1,4 +1,5 @@
 local config = require("scrollbar.config")
+local highlights = require("scrollbar.highlights")
 local minimap = require("scrollbar.minimap")
 local minimap_renderer = require("scrollbar.minimap.renderer")
 local minimap_scheduler = require("scrollbar.minimap.scheduler")
@@ -6,9 +7,8 @@ local mouse = require("scrollbar.mouse")
 local providers = require("scrollbar.providers")
 local renderer = require("scrollbar.renderer")
 local scheduler = require("scrollbar.scheduler")
-local stack = require("scrollbar.stack")
-local text_tick = require("scrollbar.text_tick")
-local utils = require("scrollbar.utils")
+local stack = require("scrollbar.shared.stack")
+local text_tick = require("scrollbar.shared.text_tick")
 
 local M = {}
 
@@ -106,7 +106,7 @@ M.setup = function(overrides)
     reconcile_builtins(provider_plan)
 
     if active_config.set_highlights then
-        utils.set_highlights()
+        highlights.set_highlights()
     end
     update_commands(active_config.enabled)
 
@@ -148,7 +148,7 @@ M.setup = function(overrides)
     end
 end
 
-local controls = require("scrollbar.controls").new({
+local controls = require("scrollbar.shared.controls").new({
     renderer = renderer,
     scheduler = scheduler,
     consumer = "scrollbar",

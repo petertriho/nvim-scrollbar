@@ -970,7 +970,7 @@ T["a result after a write carries the current text tick"] = function()
         encoding = "block",
     }
     local result = child.lua_func(function(request_grid)
-        local text_tick = require("scrollbar.text_tick")
+        local text_tick = require("scrollbar.shared.text_tick")
         text_tick.setup()
         local worker = require("scrollbar.minimap.worker")
         local state = package.loaded["scrollbar.test.minimap_worker"]

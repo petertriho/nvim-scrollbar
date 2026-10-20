@@ -17,7 +17,7 @@ local function reset_modules(child)
         for _, module in pairs({
             "scrollbar.config",
             "scrollbar.providers",
-            "scrollbar.store",
+            "scrollbar.shared.store",
             "scrollbar.minimap.config",
             "scrollbar.minimap.highlights",
             "scrollbar.minimap.semantic",
@@ -578,7 +578,7 @@ T["content viewport marks and points share one terminal-row projection"] = funct
         vim.api.nvim_win_set_cursor(source_win, { 11, 0 })
         vim.cmd("normal! zt")
 
-        local store = require("scrollbar.store")
+        local store = require("scrollbar.shared.store")
         store.set("diagnostic", vim.api.nvim_get_current_buf(), { { line = 10, type = "Error" } })
         store.set_minimap_points("cursor", source_win, {
             { line = 10, col = 0, highlight = "ScrollbarMinimapCursor", priority = 14 },
@@ -636,7 +636,7 @@ T["cursor points project exact text whitespace and end-of-line columns"] = funct
         local lines = { "abcd", "", "", "", "a   b", "", "", "", "abcdefghij", "" }
         vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
         local source_win = vim.api.nvim_get_current_win()
-        require("scrollbar.store").set_minimap_points("cursor", source_win, {
+        require("scrollbar.shared.store").set_minimap_points("cursor", source_win, {
             { line = 0, col = 2, highlight = "ScrollbarMinimapCursor", priority = 14 },
             { line = 4, col = 2, highlight = "ScrollbarMinimapCursor", priority = 14 },
             { line = 8, col = 10, highlight = "ScrollbarMinimapCursor", priority = 14 },
@@ -693,7 +693,7 @@ T["disabled cursor provider suppresses stored cursor points"] = function()
     local result = child.lua_func(function()
         vim.api.nvim_buf_set_lines(0, 0, -1, false, { "abcd", "" })
         local source_win = vim.api.nvim_get_current_win()
-        require("scrollbar.store").set_minimap_points("cursor", source_win, {
+        require("scrollbar.shared.store").set_minimap_points("cursor", source_win, {
             { line = 0, col = 2, highlight = "ScrollbarMinimapCursor", priority = 14 },
         })
         local renderer = require("scrollbar.minimap.renderer")
@@ -727,7 +727,7 @@ T["mark and point changes rerender without requesting new cells"] = function()
     local result = child.lua_func(function()
         vim.api.nvim_buf_set_lines(0, 0, -1, false, { "abcdefgh", "" })
         local source_win = vim.api.nvim_get_current_win()
-        local store = require("scrollbar.store")
+        local store = require("scrollbar.shared.store")
         local worker = require("scrollbar.minimap.worker")
         local requests = 0
         local original_request = worker.request
@@ -778,7 +778,7 @@ T["overlay cells highlight projected rows when overlays are enabled"] = function
     })
 
     local result = child.lua_func(function()
-        local store = require("scrollbar.store")
+        local store = require("scrollbar.shared.store")
         local lines = {}
         for index = 1, 16 do
             lines[index] = string.rep("a", index)
@@ -896,7 +896,7 @@ T["parent semantic spans recolor occupied cells and invalidate once per revision
     local result = child.lua_func(function()
         vim.api.nvim_buf_set_lines(0, 0, -1, false, { "a   b", "" })
         local bufnr = vim.api.nvim_get_current_buf()
-        local store = require("scrollbar.store")
+        local store = require("scrollbar.shared.store")
         local worker = require("scrollbar.minimap.worker")
         local requests = 0
         local original_request = worker.request
@@ -988,7 +988,7 @@ T["hide and show keep worker semantic revisions monotonic"] = function()
         })
 
         local bufnr = vim.api.nvim_get_current_buf()
-        local store = require("scrollbar.store")
+        local store = require("scrollbar.shared.store")
         store.set_minimap_spans("lsp_semantic_tokens", bufnr, {
             { line = 0, start_col = 0, end_col = 1, highlight = "Old", priority = 1 },
         })
@@ -1064,7 +1064,7 @@ T["semantic input skips empty providers and mark-point recomputation"] = functio
 
         local bufnr = vim.api.nvim_get_current_buf()
         local winid = vim.api.nvim_get_current_win()
-        local store = require("scrollbar.store")
+        local store = require("scrollbar.shared.store")
         renderer.render(0)
         store.set_minimap_spans("lsp_semantic_tokens", bufnr, {})
         renderer.render(0)
@@ -1123,7 +1123,7 @@ T["semantic revisions refresh every active dimension once"] = function()
         renderer.render(second)
         local initial_requests = requests
 
-        require("scrollbar.store").set_minimap_spans("lsp_semantic_tokens", vim.api.nvim_get_current_buf(), {
+        require("scrollbar.shared.store").set_minimap_spans("lsp_semantic_tokens", vim.api.nvim_get_current_buf(), {
             { line = 0, start_col = 0, end_col = 20, highlight = "Semantic", priority = 1 },
         })
         renderer.render(first)
@@ -1177,7 +1177,7 @@ T["renderer rejects stale semantic results without clearing newer pending work"]
         })
 
         local bufnr = vim.api.nvim_get_current_buf()
-        local store = require("scrollbar.store")
+        local store = require("scrollbar.shared.store")
         store.set_minimap_spans("lsp_semantic_tokens", bufnr, {
             { line = 0, start_col = 0, end_col = 1, highlight = "Old", priority = 1 },
         })
@@ -1269,7 +1269,7 @@ T["worker-native span publication reuses the accepted cell result"] = function()
         return {
             requests = requests,
             highlight = state.highlights[1][1] and state.highlights[1][1].highlight or nil,
-            spans = require("scrollbar.store").get_minimap_spans(vim.api.nvim_get_current_buf()).treesitter,
+            spans = require("scrollbar.shared.store").get_minimap_spans(vim.api.nvim_get_current_buf()).treesitter,
         }
     end)
 
@@ -1297,7 +1297,7 @@ T["LSP semantic spans override overlapping Treesitter spans"] = function()
         })
         vim.api.nvim_buf_set_lines(0, 0, -1, false, { "a" })
         local bufnr = vim.api.nvim_get_current_buf()
-        local store = require("scrollbar.store")
+        local store = require("scrollbar.shared.store")
         local treesitter_span = {
             line = 0,
             start_col = 0,
@@ -1789,7 +1789,7 @@ T["numeric background blend isolates base and background-bearing layers"] = func
                 end,
             },
         })
-        require("scrollbar.store").set_minimap_points("cursor", vim.api.nvim_get_current_win(), {
+        require("scrollbar.shared.store").set_minimap_points("cursor", vim.api.nvim_get_current_win(), {
             { line = 0, col = 3, highlight = "ScrollbarMinimapCursor", priority = 14 },
         })
 

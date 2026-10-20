@@ -3,9 +3,9 @@ local M = {
     targets = { scrollbar = true, minimap = true },
     refresh_owner = { buffer = "provider" },
 }
-local compact_search = require("scrollbar.providers.search_compact")
-local text_tick = require("scrollbar.text_tick")
-local worker = require("scrollbar.providers.search_worker")
+local compact_search = require("scrollbar.providers.search.compact")
+local text_tick = require("scrollbar.shared.text_tick")
+local worker = require("scrollbar.providers.search.worker")
 
 -- Command-line types of a search. In an autocmd pattern, `?` matches any one
 -- character, so the backward search type is escaped.
@@ -53,7 +53,7 @@ local commandline
 ---@class ScrollbarSearchRequest
 ---@field bufnr integer
 ---@field generation integer
----@field changedtick integer Text tick (`scrollbar.text_tick`) of the buffer when the request was made
+---@field changedtick integer Text tick (`scrollbar.shared.text_tick`) of the buffer when the request was made
 ---@field pattern string
 ---@field visible boolean
 ---@field signature string

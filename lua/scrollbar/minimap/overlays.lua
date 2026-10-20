@@ -1,13 +1,14 @@
---- Minimap overlays: project marks published to `lua/scrollbar/store.lua` onto
---- the minimap grid. Read-only — never mutates the store. Filtering uses the
---- minimap's provider demand and the shown mark types of the selected minimap
---- variant; collision resolution uses their priority (lowest wins).
+--- Minimap overlays: project marks published to
+--- `lua/scrollbar/shared/store.lua` onto the minimap grid. Read-only — never
+--- mutates the store. Filtering uses the minimap's provider demand and the
+--- shown mark types of the selected minimap variant; collision resolution uses
+--- their priority (lowest wins).
 
 local minimap_config = require("scrollbar.minimap.config")
 local projection_module = require("scrollbar.minimap.projection")
 local providers = require("scrollbar.providers")
-local search_compact = require("scrollbar.providers.search_compact")
-local store = require("scrollbar.store")
+local search_compact = require("scrollbar.providers.search.compact")
+local store = require("scrollbar.shared.store")
 
 local M = {}
 

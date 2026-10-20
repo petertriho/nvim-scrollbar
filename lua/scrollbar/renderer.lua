@@ -1,11 +1,11 @@
 local config = require("scrollbar.config")
-local float = require("scrollbar.float")
-local float_states = require("scrollbar.float_states")
+local float = require("scrollbar.shared.float")
+local float_states = require("scrollbar.shared.float_states")
 local layout = require("scrollbar.layout")
 local providers = require("scrollbar.providers")
-local source_policy = require("scrollbar.source_policy")
-local stack = require("scrollbar.stack")
-local store = require("scrollbar.store")
+local source_policy = require("scrollbar.shared.source_policy")
+local stack = require("scrollbar.shared.stack")
+local store = require("scrollbar.shared.store")
 
 local M = {}
 

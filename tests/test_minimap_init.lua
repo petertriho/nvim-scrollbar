@@ -25,7 +25,7 @@ local function reset_modules(child)
             "scrollbar.minimap.scheduler",
             "scrollbar.minimap.mouse",
             "scrollbar.minimap",
-            "scrollbar.store",
+            "scrollbar.shared.store",
         }) do
             package.loaded[module] = nil
         end
@@ -846,7 +846,7 @@ T["treesitter results publish spans once without recomputing the same cells"] = 
         scheduler.flush()
         worker.request = original_request
 
-        local spans = require("scrollbar.store").get_minimap_spans(vim.api.nvim_get_current_buf()).treesitter
+        local spans = require("scrollbar.shared.store").get_minimap_spans(vim.api.nvim_get_current_buf()).treesitter
         local priority_ok = true
         for _, span in ipairs(spans or {}) do
             if span.priority ~= require("scrollbar.providers.treesitter").priority then
@@ -929,10 +929,10 @@ T["MinimapRefresh recollects only minimap provider capabilities and preserves hi
         })
         calls = { shared_marks = 0, shared_spans = 0, shared_window = 0, shared_points = 0, scrollbar = 0 }
         local bufnr = vim.api.nvim_get_current_buf()
-        local before = require("scrollbar.store")._get_snapshot(bufnr)
+        local before = require("scrollbar.shared.store")._get_snapshot(bufnr)
         vim.cmd("MinimapHide")
         vim.cmd("MinimapRefresh")
-        local after = require("scrollbar.store")._get_snapshot(bufnr)
+        local after = require("scrollbar.shared.store")._get_snapshot(bufnr)
         return {
             calls = calls,
             mark_revision = { before.revision, after.revision },
@@ -984,7 +984,7 @@ T["custom treesitter shadow stays parent-executed and keeps its spans"] = functi
         local state = require("scrollbar.minimap.renderer").get_state(vim.api.nvim_get_current_win())
         return {
             execution = require("scrollbar.providers")._execution_mode("treesitter"),
-            spans = require("scrollbar.store").get_minimap_spans(vim.api.nvim_get_current_buf()).treesitter,
+            spans = require("scrollbar.shared.store").get_minimap_spans(vim.api.nvim_get_current_buf()).treesitter,
             highlight = state and state.highlights[1][1] and state.highlights[1][1].highlight or nil,
         }
     end)

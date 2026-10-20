@@ -1,5 +1,5 @@
 --- Minimap mouse: the press, drag, and release policy of the minimap float.
---- `scrollbar.mouse_core` owns the runtime, the mappings, focus, and the
+--- `scrollbar.shared.mouse` owns the runtime, the mappings, focus, and the
 --- autohide hold.
 ---
 --- A press jumps to the first line of the pressed row, which the projection
@@ -12,7 +12,7 @@
 --- invalidates the source window through the scheduler, and the scheduler's
 --- `throttle_ms` coalesces the resulting flushes.
 
-local mouse_core = require("scrollbar.mouse_core")
+local mouse_core = require("scrollbar.shared.mouse")
 local projection_module = require("scrollbar.minimap.projection")
 
 local M = {}

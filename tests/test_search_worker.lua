@@ -45,10 +45,10 @@ T["worker applies case, magic, and iskeyword options explicitly"] = function()
         vim.fn.search([[\<foo\>]], "cw")
         require("scrollbar.providers").refresh(vim.api.nvim_get_current_buf())
         local completed = vim.wait(3000, function()
-            local marks = require("scrollbar.store").get(vim.api.nvim_get_current_buf()).search
+            local marks = require("scrollbar.shared.store").get(vim.api.nvim_get_current_buf()).search
             return marks ~= nil
         end)
-        local marks = require("scrollbar.store").get(vim.api.nvim_get_current_buf()).search
+        local marks = require("scrollbar.shared.store").get(vim.api.nvim_get_current_buf()).search
         return {
             completed = completed,
             lines = marks and vim.tbl_map(function(mark)
@@ -77,16 +77,16 @@ T["initial snapshots restart after edits and only complete versions scan"] = fun
             vim.api.nvim_exec_autocmds("TextChanged", { buffer = 0 })
         end)
         local completed = vim.wait(5000, function()
-            local marks = require("scrollbar.store").get(vim.api.nvim_get_current_buf()).search
+            local marks = require("scrollbar.shared.store").get(vim.api.nvim_get_current_buf()).search
             return marks ~= nil and #marks == 2
         end)
-        local marks = require("scrollbar.store").get(vim.api.nvim_get_current_buf()).search
+        local marks = require("scrollbar.shared.store").get(vim.api.nvim_get_current_buf()).search
         return {
             completed = completed,
             lines = marks and vim.tbl_map(function(mark)
                 return mark.line
             end, marks) or nil,
-            status = require("scrollbar.providers.search_worker").status(),
+            status = require("scrollbar.providers.search.worker").status(),
         }
     end)()]])
 
@@ -124,7 +124,7 @@ T["a write after an edit does not stall the next search"] = function()
     local synchronized = child.lua_get([[(function()
         vim.api.nvim_buf_set_lines(0, 4, 5, false, { "edited" })
         vim.api.nvim_exec_autocmds("TextChanged", { buffer = 0 })
-        local worker = require("scrollbar.providers.search_worker")
+        local worker = require("scrollbar.providers.search.worker")
         local synchronized = vim.wait(3000, function()
             local mirror = worker.status().mirrors[1]
             return mirror ~= nil and mirror.changedtick == vim.api.nvim_buf_get_changedtick(0)
@@ -148,7 +148,7 @@ T["a scan that the child rejects is requeued after the mirror resynchronizes"] =
     -- answers the next scan with mirror_invalid instead of a result.
     child.lua([[
         vim.rpcnotify(
-            require("scrollbar.providers.search_worker").status().job_id,
+            require("scrollbar.providers.search.worker").status().job_id,
             "nvim_exec_lua",
             "local child_worker = rawget(_G, '__scrollbar_search_worker_child') "
                 .. "child_worker.handle('snapshot_start', { bufnr = ..., id = -1, version = 1 })",
@@ -160,7 +160,7 @@ T["a scan that the child rejects is requeued after the mirror resynchronizes"] =
     expect.equality(helpers.wait_for_mark_lines(child, { 2 }), true)
     expect.equality(
         child.lua_get([[vim.wait(1000, function()
-            return require("scrollbar.providers.search_worker").status().in_flight == nil
+            return require("scrollbar.providers.search.worker").status().in_flight == nil
         end)]]),
         true
     )
@@ -179,13 +179,13 @@ T["one child is shared across mirrored buffers"] = function()
         vim.api.nvim_buf_set_lines(second, 0, -1, false, { "none", "match" })
         vim.api.nvim_win_set_buf(0, second)
         local completed = vim.wait(3000, function()
-            local marks = require("scrollbar.store").get(second).search
+            local marks = require("scrollbar.shared.store").get(second).search
             return marks ~= nil and #marks == 1 and marks[1].line == 1
         end)
-        local status = require("scrollbar.providers.search_worker").status()
+        local status = require("scrollbar.providers.search.worker").status()
         vim.api.nvim_buf_delete(second, { force = true })
         local detached = vim.wait(1000, function()
-            return #require("scrollbar.providers.search_worker").status().mirrors == 1
+            return #require("scrollbar.providers.search.worker").status().mirrors == 1
         end)
         return {
             completed = completed,
@@ -231,7 +231,7 @@ T["rapid replacements retain one scan and publish only the newest request"] = fu
     helpers.accept_search(child, "/", "first")
     expect.equality(
         child.lua_get([[vim.wait(3000, function()
-            return require("scrollbar.providers.search_worker").status().in_flight ~= nil
+            return require("scrollbar.providers.search.worker").status().in_flight ~= nil
         end)]]),
         true
     )
@@ -254,9 +254,9 @@ T["rapid replacements retain one scan and publish only the newest request"] = fu
     expect.equality(responsive, true)
     expect.equality(helpers.wait_for_mark_lines(child, { 3 }), true)
     local result = child.lua_get([[(function()
-        local snapshot = require("scrollbar.store")._get_snapshot(vim.api.nvim_get_current_buf())
+        local snapshot = require("scrollbar.shared.store")._get_snapshot(vim.api.nvim_get_current_buf())
         return {
-            status = require("scrollbar.providers.search_worker").status(),
+            status = require("scrollbar.providers.search.worker").status(),
             compact_count = snapshot.compact_search and snapshot.compact_search.count or nil,
             ordinary_search = snapshot.marks.search,
         }
@@ -290,7 +290,7 @@ T["delayed worker results clear prior search data after eligibility changes"] = 
     helpers.accept_search(child, "/", "racing")
     expect.equality(
         child.lua_get([[vim.wait(3000, function()
-            return require("scrollbar.store").get(vim.api.nvim_get_current_buf()).search == nil
+            return require("scrollbar.shared.store").get(vim.api.nvim_get_current_buf()).search == nil
         end)]]),
         true
     )
@@ -304,7 +304,7 @@ end
 T["obsolete worker callbacks cannot publish into a new session"] = function()
     local child = new_worker_child(false)
     expect.equality(helpers.wait_for_worker_status(child, "ready"), true)
-    local old_session = child.lua_get([[require("scrollbar.providers.search_worker").status().session]])
+    local old_session = child.lua_get([[require("scrollbar.providers.search.worker").status().session]])
 
     child.lua([[
         local providers = require("scrollbar.providers")
@@ -345,10 +345,10 @@ T["startup failure warns once and falls back through the synchronous scheduler"]
 
     expect.equality(helpers.wait_for_mark_lines(child, { 0, 1 }), true)
     expect.equality(child.lua_get([=[#package.loaded["scrollbar.test.notifications"]]=]), 1)
-    expect.equality(child.lua_get([[require("scrollbar.providers.search_worker").status().state]]), "failed")
+    expect.equality(child.lua_get([[require("scrollbar.providers.search.worker").status().state]]), "failed")
     expect.equality(
         child.lua_get([[(function()
-            local snapshot = require("scrollbar.store")._get_snapshot(vim.api.nvim_get_current_buf())
+            local snapshot = require("scrollbar.shared.store")._get_snapshot(vim.api.nvim_get_current_buf())
             return snapshot.compact_search ~= nil and snapshot.compact_search.count == 2 and snapshot.marks.search == nil
         end)()]]),
         true
@@ -371,13 +371,13 @@ T["worker crashes reroute in-flight and future requests through exact fallback"]
     helpers.accept_search(child, "/", "worker")
     expect.equality(
         child.lua_get([[vim.wait(3000, function()
-            return require("scrollbar.providers.search_worker").status().in_flight ~= nil
+            return require("scrollbar.providers.search.worker").status().in_flight ~= nil
         end)]]),
         true
     )
 
     child.lua([[
-        vim.fn.jobstop(require("scrollbar.providers.search_worker").status().job_id)
+        vim.fn.jobstop(require("scrollbar.providers.search.worker").status().job_id)
     ]])
     expect.equality(helpers.wait_for_worker_status(child, "failed"), true)
     expect.equality(helpers.wait_for_mark_lines(child, { 1 }), true)
@@ -390,7 +390,7 @@ end
 T["repeated setup, disposal, and parent shutdown clean worker ownership"] = function()
     local child = new_worker_child(false)
     expect.equality(helpers.wait_for_worker_status(child, "ready"), true)
-    local first = child.lua_get([[require("scrollbar.providers.search_worker").status()]])
+    local first = child.lua_get([[require("scrollbar.providers.search.worker").status()]])
 
     child.lua([[
         local providers = require("scrollbar.providers")
@@ -398,13 +398,13 @@ T["repeated setup, disposal, and parent shutdown clean worker ownership"] = func
         providers.setup({ config = require("scrollbar.config").get() })
     ]])
     expect.equality(helpers.wait_for_worker_status(child, "ready"), true)
-    local second = child.lua_get([[require("scrollbar.providers.search_worker").status()]])
+    local second = child.lua_get([[require("scrollbar.providers.search.worker").status()]])
     expect.no_equality(second.session, first.session)
     expect.no_equality(second.job_id, first.job_id)
     expect.equality(child.fn.jobwait({ first.job_id }, 0)[1] ~= -1, true)
 
     child.api.nvim_exec_autocmds("VimLeavePre", {})
-    expect.equality(child.lua_get([[require("scrollbar.providers.search_worker").status().state]]), "disposed")
+    expect.equality(child.lua_get([[require("scrollbar.providers.search.worker").status().state]]), "disposed")
     expect.equality(child.fn.jobwait({ second.job_id }, 1000)[1] ~= -1, true)
 end
 
@@ -434,7 +434,7 @@ T["refreshes while a scan runs keep the scan"] = function()
     helpers.accept_search(child, "/", "match")
     expect.equality(
         child.lua_get([[vim.wait(3000, function()
-            return require("scrollbar.providers.search_worker").status().in_flight ~= nil
+            return require("scrollbar.providers.search.worker").status().in_flight ~= nil
         end)]]),
         true
     )
@@ -466,7 +466,7 @@ T["a write while a scan runs publishes its result without another scan"] = funct
         vim.api.nvim_buf_set_lines(0, 1, 2, false, { "foo" })
         vim.api.nvim_exec_autocmds("TextChanged", { buffer = 0 })
         local dispatched = vim.wait(3000, function()
-            return require("scrollbar.providers.search_worker").status().in_flight ~= nil
+            return require("scrollbar.providers.search.worker").status().in_flight ~= nil
         end)
         -- The write increases b:changedtick without a text change.
         vim.cmd("silent write")

@@ -1,10 +1,10 @@
 --- Minimap block of the configuration. The top-level dispatcher
---- (`lua/scrollbar/config.lua`) compiles it with the shared sections and
+--- (`lua/scrollbar/config/init.lua`) compiles it with the shared sections and
 --- commits it together with the scrollbar block.
 
-local block_config = require("scrollbar.block_config")
-local schema = require("scrollbar.schema")
-local shared_config = require("scrollbar.shared_config")
+local block_config = require("scrollbar.config.block")
+local schema = require("scrollbar.config.schema")
+local shared_config = require("scrollbar.config.shared")
 
 local invalid = schema.invalid
 

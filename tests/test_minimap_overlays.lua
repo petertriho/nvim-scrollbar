@@ -6,7 +6,7 @@ local T = MiniTest.new_set({
         pre_case = function()
             package.loaded["scrollbar.config"] = nil
             package.loaded["scrollbar.providers"] = nil
-            package.loaded["scrollbar.store"] = nil
+            package.loaded["scrollbar.shared.store"] = nil
             package.loaded["scrollbar.minimap.config"] = nil
             package.loaded["scrollbar.minimap.overlays"] = nil
             require("scrollbar.config").set({
@@ -37,7 +37,7 @@ local function overlays()
 end
 
 local function store()
-    return require("scrollbar.store")
+    return require("scrollbar.shared.store")
 end
 
 local function minimap_config()
@@ -410,7 +410,7 @@ end
 T["projects compact search by iterating it without mark expansion"] = function()
     setup_with()
     local bufnr = new_buffer(numbered(16))
-    local compact = require("scrollbar.providers.search_compact")
+    local compact = require("scrollbar.providers.search.compact")
     assert(store()._set_search_compact(bufnr, compact.encode({ 1, 9 })))
 
     local each = compact.each

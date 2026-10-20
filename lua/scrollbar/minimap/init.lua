@@ -11,14 +11,14 @@
 --- without spawning the worker or creating floats when disabled.
 
 local config = require("scrollbar.minimap.config")
-local controls_module = require("scrollbar.controls")
+local controls_module = require("scrollbar.shared.controls")
 local highlights = require("scrollbar.minimap.highlights")
 local mouse = require("scrollbar.minimap.mouse")
 local overlays = require("scrollbar.minimap.overlays")
 local providers = require("scrollbar.providers")
 local renderer = require("scrollbar.minimap.renderer")
 local scheduler = require("scrollbar.minimap.scheduler")
-local stack = require("scrollbar.stack")
+local stack = require("scrollbar.shared.stack")
 local worker = require("scrollbar.minimap.worker")
 
 local M = {}

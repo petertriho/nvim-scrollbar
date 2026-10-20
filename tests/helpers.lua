@@ -25,7 +25,7 @@ end
 local function setup_search_provider(child, search_config, worker_test)
     child.lua_func(function(value)
         package.loaded["scrollbar.test.search_worker"] = value.worker_test
-        require("scrollbar.text_tick").setup()
+        require("scrollbar.shared.text_tick").setup()
         vim.o.hlsearch = true
         vim.o.wrapscan = false
 
@@ -106,7 +106,7 @@ M.search_marks = function(child, bufnr)
         if buffer == nil or buffer == 0 then
             buffer = vim.api.nvim_get_current_buf()
         end
-        return require("scrollbar.store").get(buffer).search
+        return require("scrollbar.shared.store").get(buffer).search
     end, bufnr)
     if marks == vim.NIL then
         return nil
@@ -119,7 +119,7 @@ M.mark_lines = function(child, bufnr)
         if buffer == nil or buffer == 0 then
             buffer = vim.api.nvim_get_current_buf()
         end
-        local marks = require("scrollbar.store").get(buffer).search
+        local marks = require("scrollbar.shared.store").get(buffer).search
         if marks == nil then
             return nil
         end
@@ -137,7 +137,7 @@ end
 M.wait_for_mark_lines = function(child, expected)
     return child.lua_func(function(value)
         return vim.wait(1000, function()
-            local marks = require("scrollbar.store").get(vim.api.nvim_get_current_buf()).search
+            local marks = require("scrollbar.shared.store").get(vim.api.nvim_get_current_buf()).search
             if marks == nil then
                 return value == nil
             end
@@ -153,7 +153,7 @@ end
 M.wait_for_worker_status = function(child, expected)
     return child.lua_func(function(value)
         return vim.wait(3000, function()
-            return require("scrollbar.providers.search_worker").status().state == value
+            return require("scrollbar.providers.search.worker").status().state == value
         end)
     end, expected)
 end
@@ -172,7 +172,7 @@ M.inspect_during_cmdline = function(child, direction, pattern)
     child.type_keys(10, "<Left>")
     vim.uv.sleep(100)
     local capture = child.lua_get([[(function()
-        local marks = require("scrollbar.store").get(vim.api.nvim_get_current_buf()).search
+        local marks = require("scrollbar.shared.store").get(vim.api.nvim_get_current_buf()).search
         return {
             mode = vim.api.nvim_get_mode().mode,
             lines = marks and vim.tbl_map(function(mark)

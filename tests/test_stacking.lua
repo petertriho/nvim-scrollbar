@@ -417,7 +417,7 @@ T["a disabled minimap leaves the scrollbar float config unchanged"] = function()
         return {
             col = config.col,
             zindex = config.zindex,
-            minimap_footprints = require("scrollbar.stack").windows("minimap"),
+            minimap_footprints = require("scrollbar.shared.stack").windows("minimap"),
         }
     end)
     expect.equality(result, { col = 80, zindex = 50, minimap_footprints = {} })
@@ -444,8 +444,8 @@ T["each split stacks on its own and a closed split drops its footprints"] = func
     child.cmd("close")
     flush(child)
     local remaining = child.lua_get([[{
-        scrollbar = require("scrollbar.stack").windows("scrollbar"),
-        minimap = require("scrollbar.stack").windows("minimap"),
+        scrollbar = require("scrollbar.shared.stack").windows("scrollbar"),
+        minimap = require("scrollbar.shared.stack").windows("minimap"),
     }]])
     expect.equality(vim.tbl_contains(remaining.scrollbar, closed), false)
     expect.equality(vim.tbl_contains(remaining.minimap, closed), false)

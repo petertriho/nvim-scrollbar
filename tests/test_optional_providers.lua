@@ -31,7 +31,7 @@ local T = MiniTest.new_set({
             for _, module in ipairs({
                 "scrollbar.config",
                 "scrollbar.renderer",
-                "scrollbar.store",
+                "scrollbar.shared.store",
                 "scrollbar.providers",
                 "scrollbar.providers.gitsigns",
                 "scrollbar.providers.mini_diff",
@@ -201,11 +201,11 @@ T["gitsigns fans out fallback updates, clears marks, and disposes its augroup"] 
     vim.api.nvim_exec_autocmds("User", { pattern = "GitSignsUpdate" })
 
     expect.equality(sorted(calls), sorted({ first, second }))
-    expect.equality(require("scrollbar.store").get(first).gitsigns, {
+    expect.equality(require("scrollbar.shared.store").get(first).gitsigns, {
         { line = 1, type = "GitAdd" },
         { line = 2, type = "GitAdd" },
     })
-    expect.equality(require("scrollbar.store").get(second).gitsigns, {
+    expect.equality(require("scrollbar.shared.store").get(second).gitsigns, {
         { line = 2, type = "GitDelete" },
     })
     expect.equality(sorted(invalidated), sorted({ first, second }))
@@ -214,15 +214,15 @@ T["gitsigns fans out fallback updates, clears marks, and disposes its augroup"] 
     hunks[first] = {}
     hunks[second] = {}
     vim.api.nvim_exec_autocmds("User", { pattern = "GitSignsUpdate" })
-    expect.equality(require("scrollbar.store").get(first).gitsigns, {})
-    expect.equality(require("scrollbar.store").get(second).gitsigns, {})
+    expect.equality(require("scrollbar.shared.store").get(first).gitsigns, {})
+    expect.equality(require("scrollbar.shared.store").get(second).gitsigns, {})
     expect.equality(sorted(invalidated), sorted({ first, second }))
 
     expect.equality(#vim.api.nvim_get_autocmds({ event = "User", pattern = "GitSignsUpdate" }), 1)
     providers.dispose()
     expect.equality(#vim.api.nvim_get_autocmds({ event = "User", pattern = "GitSignsUpdate" }), 0)
-    expect.equality(require("scrollbar.store").get(first), {})
-    expect.equality(require("scrollbar.store").get(second), {})
+    expect.equality(require("scrollbar.shared.store").get(first), {})
+    expect.equality(require("scrollbar.shared.store").get(second), {})
 end
 
 T["gitsigns bounds change marks to the surviving added range"] = function()
@@ -248,7 +248,7 @@ T["gitsigns bounds change marks to the surviving added range"] = function()
         { type = "change", added = { start = 2, count = 1 }, removed = { count = 1 } },
     }
     providers.refresh(target)
-    expect.equality(require("scrollbar.store").get(target).gitsigns, {
+    expect.equality(require("scrollbar.shared.store").get(target).gitsigns, {
         { line = 1, type = "GitChange" },
     })
 
@@ -256,7 +256,7 @@ T["gitsigns bounds change marks to the surviving added range"] = function()
         { type = "change", added = { start = 2, count = 3 }, removed = { count = 1 } },
     }
     providers.refresh(target)
-    expect.equality(require("scrollbar.store").get(target).gitsigns, {
+    expect.equality(require("scrollbar.shared.store").get(target).gitsigns, {
         { line = 1, type = "GitChange" },
         { line = 2, type = "GitAdd" },
         { line = 3, type = "GitAdd" },
@@ -266,7 +266,7 @@ T["gitsigns bounds change marks to the surviving added range"] = function()
         { type = "change", added = { start = 2, count = 1 }, removed = { count = 3 } },
     }
     providers.refresh(target)
-    expect.equality(require("scrollbar.store").get(target).gitsigns, {
+    expect.equality(require("scrollbar.shared.store").get(target).gitsigns, {
         { line = 1, type = "GitChange" },
     })
 end
@@ -307,14 +307,14 @@ T["mini.diff maps hunks directly and updates only the event buffer"] = function(
         end,
     })
 
-    expect.equality(require("scrollbar.store").get(first).mini_diff, {
+    expect.equality(require("scrollbar.shared.store").get(first).mini_diff, {
         { line = 1, type = "MiniDiffAdd" },
         { line = 2, type = "MiniDiffAdd" },
         { line = 3, type = "MiniDiffChange" },
         { line = 4, type = "MiniDiffChange" },
         { line = 0, type = "MiniDiffDelete" },
     })
-    expect.equality(require("scrollbar.store").get(second).mini_diff, {
+    expect.equality(require("scrollbar.shared.store").get(second).mini_diff, {
         { line = 0, type = "MiniDiffAdd" },
     })
 
@@ -325,16 +325,16 @@ T["mini.diff maps hunks directly and updates only the event buffer"] = function(
     vim.api.nvim_exec_autocmds("User", { pattern = "MiniDiffUpdated" })
     expect.equality(calls, { first })
     expect.equality(invalidated, { first })
-    expect.equality(require("scrollbar.store").get(first).mini_diff, {
+    expect.equality(require("scrollbar.shared.store").get(first).mini_diff, {
         { line = 2, type = "MiniDiffChange" },
     })
-    expect.equality(require("scrollbar.store").get(second).mini_diff, {
+    expect.equality(require("scrollbar.shared.store").get(second).mini_diff, {
         { line = 0, type = "MiniDiffAdd" },
     })
 
     data[first] = nil
     providers.refresh(first)
-    expect.equality(require("scrollbar.store").get(first).mini_diff, {})
+    expect.equality(require("scrollbar.shared.store").get(first).mini_diff, {})
 end
 
 T["mini.diff event failures clear only its marks"] = function()
@@ -369,7 +369,7 @@ T["mini.diff event failures clear only its marks"] = function()
     fail = true
     vim.api.nvim_set_current_buf(target)
     expect.equality(pcall(vim.api.nvim_exec_autocmds, "User", { pattern = "MiniDiffUpdated" }), true)
-    expect.equality(require("scrollbar.store").get(target), {
+    expect.equality(require("scrollbar.shared.store").get(target), {
         other = { { line = 1, type = "Error" } },
     })
 end
@@ -390,12 +390,12 @@ T["missing mini.diff still owns and disposes its update autocmd"] = function()
         }),
         true
     )
-    expect.equality(require("scrollbar.store").get(target).mini_diff, {})
+    expect.equality(require("scrollbar.shared.store").get(target).mini_diff, {})
     expect.equality(#vim.api.nvim_get_autocmds({ event = "User", pattern = "MiniDiffUpdated" }), 1)
 
     providers.dispose()
     expect.equality(#vim.api.nvim_get_autocmds({ event = "User", pattern = "MiniDiffUpdated" }), 0)
-    expect.equality(require("scrollbar.store").get(target), {})
+    expect.equality(require("scrollbar.shared.store").get(target), {})
 end
 
 T["late-loaded diff modules attach without rerunning setup"] = function()
@@ -412,7 +412,7 @@ T["late-loaded diff modules attach without rerunning setup"] = function()
             return bufnr == target
         end,
     })
-    expect.equality(require("scrollbar.store").get(target), {
+    expect.equality(require("scrollbar.shared.store").get(target), {
         gitsigns = {},
         mini_diff = {},
     })
@@ -431,7 +431,7 @@ T["late-loaded diff modules attach without rerunning setup"] = function()
     vim.api.nvim_set_current_buf(target)
     vim.api.nvim_exec_autocmds("User", { pattern = "GitSignsUpdate", data = { buffer = target } })
     vim.api.nvim_exec_autocmds("User", { pattern = "MiniDiffUpdated" })
-    expect.equality(require("scrollbar.store").get(target), {
+    expect.equality(require("scrollbar.shared.store").get(target), {
         gitsigns = { { line = 0, type = "GitAdd" } },
         mini_diff = { { line = 1, type = "MiniDiffChange" } },
     })
@@ -463,7 +463,7 @@ T["signify maps placed Signify signs to add/change/delete marks"] = function()
         end,
     })
 
-    expect.equality(require("scrollbar.store").get(target).signify, {
+    expect.equality(require("scrollbar.shared.store").get(target).signify, {
         { line = 0, type = "SignifyAdd" },
         { line = 1, type = "SignifyChange" },
         { line = 2, type = "SignifyChange" },
@@ -495,17 +495,17 @@ T["signify fans out User Signify updates and clears marks"] = function()
         end,
     })
 
-    expect.equality(require("scrollbar.store").get(first).signify, {})
-    expect.equality(require("scrollbar.store").get(second).signify, {})
+    expect.equality(require("scrollbar.shared.store").get(first).signify, {})
+    expect.equality(require("scrollbar.shared.store").get(second).signify, {})
 
     invalidated = {}
     vim.fn.sign_place(0, "", "SignifyAdd", first, { lnum = 2 })
     vim.fn.sign_place(0, "", "SignifyChange", second, { lnum = 3 })
     vim.api.nvim_exec_autocmds("User", { pattern = "Signify" })
-    expect.equality(require("scrollbar.store").get(first).signify, {
+    expect.equality(require("scrollbar.shared.store").get(first).signify, {
         { line = 1, type = "SignifyAdd" },
     })
-    expect.equality(require("scrollbar.store").get(second).signify, {
+    expect.equality(require("scrollbar.shared.store").get(second).signify, {
         { line = 2, type = "SignifyChange" },
     })
     expect.equality(sorted(invalidated), sorted({ first, second }))
@@ -514,11 +514,11 @@ T["signify fans out User Signify updates and clears marks"] = function()
     vim.fn.sign_place(0, "", "SignifyDelete5", first, { lnum = 4 })
     vim.fn.sign_place(0, "", "SignifyDelete5", second, { lnum = 1 })
     vim.api.nvim_exec_autocmds("User", { pattern = "Signify" })
-    expect.equality(require("scrollbar.store").get(first).signify, {
+    expect.equality(require("scrollbar.shared.store").get(first).signify, {
         { line = 1, type = "SignifyAdd" },
         { line = 3, type = "SignifyDelete" },
     })
-    expect.equality(require("scrollbar.store").get(second).signify, {
+    expect.equality(require("scrollbar.shared.store").get(second).signify, {
         { line = 0, type = "SignifyDelete" },
         { line = 2, type = "SignifyChange" },
     })
@@ -528,15 +528,15 @@ T["signify fans out User Signify updates and clears marks"] = function()
     vim.fn.sign_unplace("*", { buffer = first })
     vim.fn.sign_unplace("*", { buffer = second })
     vim.api.nvim_exec_autocmds("User", { pattern = "Signify" })
-    expect.equality(require("scrollbar.store").get(first).signify, {})
-    expect.equality(require("scrollbar.store").get(second).signify, {})
+    expect.equality(require("scrollbar.shared.store").get(first).signify, {})
+    expect.equality(require("scrollbar.shared.store").get(second).signify, {})
     expect.equality(sorted(invalidated), sorted({ first, second }))
 
     expect.equality(#vim.api.nvim_get_autocmds({ event = "User", pattern = "Signify" }), 1)
     providers.dispose()
     expect.equality(#vim.api.nvim_get_autocmds({ event = "User", pattern = "Signify" }), 0)
-    expect.equality(require("scrollbar.store").get(first), {})
-    expect.equality(require("scrollbar.store").get(second), {})
+    expect.equality(require("scrollbar.shared.store").get(first), {})
+    expect.equality(require("scrollbar.shared.store").get(second), {})
 end
 
 T["missing signify dependency still owns and disposes its autocmd"] = function()
@@ -552,12 +552,12 @@ T["missing signify dependency still owns and disposes its autocmd"] = function()
         }),
         true
     )
-    expect.equality(require("scrollbar.store").get(target).signify, {})
+    expect.equality(require("scrollbar.shared.store").get(target).signify, {})
     expect.equality(#vim.api.nvim_get_autocmds({ event = "User", pattern = "Signify" }), 1)
 
     providers.dispose()
     expect.equality(#vim.api.nvim_get_autocmds({ event = "User", pattern = "Signify" }), 0)
-    expect.equality(require("scrollbar.store").get(target), {})
+    expect.equality(require("scrollbar.shared.store").get(target), {})
 end
 
 T["late-loaded signify attaches marks after User Signify"] = function()
@@ -571,7 +571,7 @@ T["late-loaded signify attaches marks after User Signify"] = function()
             return bufnr == target
         end,
     })
-    expect.equality(require("scrollbar.store").get(target).signify, {})
+    expect.equality(require("scrollbar.shared.store").get(target).signify, {})
 
     vim.fn.sign_place(0, "", "SignifyAdd", target, { lnum = 1 })
     vim.fn.sign_place(0, "", "SignifyChange", target, { lnum = 2 })
@@ -579,7 +579,7 @@ T["late-loaded signify attaches marks after User Signify"] = function()
     vim.api.nvim_set_current_buf(target)
     vim.api.nvim_exec_autocmds("User", { pattern = "Signify" })
 
-    expect.equality(require("scrollbar.store").get(target).signify, {
+    expect.equality(require("scrollbar.shared.store").get(target).signify, {
         { line = 0, type = "SignifyAdd" },
         { line = 1, type = "SignifyChange" },
     })
@@ -619,12 +619,12 @@ T["vgit maps state.signs to VGitAdd/VGitChange/VGitDelete via usage.main"] = fun
         end,
     })
 
-    expect.equality(require("scrollbar.store").get(first).vgit, {
+    expect.equality(require("scrollbar.shared.store").get(first).vgit, {
         { line = 1, type = "VGitAdd" },
         { line = 2, type = "VGitChange" },
         { line = 0, type = "VGitDelete" },
     })
-    expect.equality(require("scrollbar.store").get(second).vgit, {
+    expect.equality(require("scrollbar.shared.store").get(second).vgit, {
         { line = 4, type = "VGitAdd" },
     })
 end
@@ -665,10 +665,10 @@ T["vgit sync event updates marks per buffer and clears on dispose"] = function()
     dispatch_vgit_event(handlers, "sync", second)
     vim.wait(50)
 
-    expect.equality(require("scrollbar.store").get(first).vgit, {
+    expect.equality(require("scrollbar.shared.store").get(first).vgit, {
         { line = 1, type = "VGitAdd" },
     })
-    expect.equality(require("scrollbar.store").get(second).vgit, {
+    expect.equality(require("scrollbar.shared.store").get(second).vgit, {
         { line = 2, type = "VGitDelete" },
     })
     expect.equality(sorted(invalidated), sorted({ first, second }))
@@ -679,13 +679,13 @@ T["vgit sync event updates marks per buffer and clears on dispose"] = function()
     dispatch_vgit_event(handlers, "sync", first)
     dispatch_vgit_event(handlers, "sync", second)
     vim.wait(50)
-    expect.equality(require("scrollbar.store").get(first).vgit, {})
-    expect.equality(require("scrollbar.store").get(second).vgit, {})
+    expect.equality(require("scrollbar.shared.store").get(first).vgit, {})
+    expect.equality(require("scrollbar.shared.store").get(second).vgit, {})
     expect.equality(sorted(invalidated), sorted({ first, second }))
 
     providers.dispose()
-    expect.equality(require("scrollbar.store").get(first), {})
-    expect.equality(require("scrollbar.store").get(second), {})
+    expect.equality(require("scrollbar.shared.store").get(first), {})
+    expect.equality(require("scrollbar.shared.store").get(second), {})
 end
 
 T["vgit change event refreshes only the event buffer"] = function()
@@ -717,10 +717,10 @@ T["vgit change event refreshes only the event buffer"] = function()
         end,
     })
 
-    expect.equality(require("scrollbar.store").get(first).vgit, {
+    expect.equality(require("scrollbar.shared.store").get(first).vgit, {
         { line = 0, type = "VGitAdd" },
     })
-    expect.equality(require("scrollbar.store").get(second).vgit, {
+    expect.equality(require("scrollbar.shared.store").get(second).vgit, {
         { line = 1, type = "VGitChange" },
     })
 
@@ -731,10 +731,10 @@ T["vgit change event refreshes only the event buffer"] = function()
     dispatch_vgit_event(handlers, "change", first)
     vim.wait(50)
 
-    expect.equality(require("scrollbar.store").get(first).vgit, {
+    expect.equality(require("scrollbar.shared.store").get(first).vgit, {
         { line = 2, type = "VGitDelete" },
     })
-    expect.equality(require("scrollbar.store").get(second).vgit, {
+    expect.equality(require("scrollbar.shared.store").get(second).vgit, {
         { line = 1, type = "VGitChange" },
     })
     expect.equality(invalidated, { first })
@@ -755,7 +755,7 @@ T["late-loaded vgit subscribes on manual refresh"] = function()
             table.insert(invalidated, bufnr)
         end,
     })
-    expect.equality(require("scrollbar.store").get(target).vgit, {})
+    expect.equality(require("scrollbar.shared.store").get(target).vgit, {})
 
     local data = {
         [tostring(target)] = {
@@ -767,7 +767,7 @@ T["late-loaded vgit subscribes on manual refresh"] = function()
 
     providers.refresh(target)
     expect.equality(stats.get_calls, 1)
-    expect.equality(require("scrollbar.store").get(target).vgit, {
+    expect.equality(require("scrollbar.shared.store").get(target).vgit, {
         { line = 0, type = "VGitAdd" },
     })
     for _, event_type in ipairs({ "attach", "reload", "change", "sync" }) do
@@ -788,7 +788,7 @@ T["late-loaded vgit subscribes on manual refresh"] = function()
     vim.wait(50)
     expect.equality(stats.get_calls, 3)
     expect.equality(invalidated, { target })
-    expect.equality(require("scrollbar.store").get(target).vgit, {
+    expect.equality(require("scrollbar.shared.store").get(target).vgit, {
         { line = 1, type = "VGitChange" },
     })
 end
@@ -831,7 +831,7 @@ T["vgit retained callbacks are generation-aware"] = function()
     vim.wait(50)
     expect.equality(stats.get_calls, 0)
     expect.equality(invalidated, {})
-    expect.equality(require("scrollbar.store").get(target).vgit, {
+    expect.equality(require("scrollbar.shared.store").get(target).vgit, {
         { line = 0, type = "VGitAdd" },
     })
 
@@ -839,7 +839,7 @@ T["vgit retained callbacks are generation-aware"] = function()
     vim.wait(50)
     expect.equality(stats.get_calls, 1)
     expect.equality(invalidated, { target })
-    expect.equality(require("scrollbar.store").get(target).vgit, {
+    expect.equality(require("scrollbar.shared.store").get(target).vgit, {
         { line = 1, type = "VGitChange" },
     })
 
@@ -850,7 +850,7 @@ T["vgit retained callbacks are generation-aware"] = function()
     vim.wait(50)
     expect.equality(stats.get_calls, 0)
     expect.equality(invalidated, {})
-    expect.equality(require("scrollbar.store").get(target), {})
+    expect.equality(require("scrollbar.shared.store").get(target), {})
 end
 
 T["vgit subscriptions follow the active store identity"] = function()
@@ -885,7 +885,7 @@ T["vgit subscriptions follow the active store identity"] = function()
     local handlers_b, store_b, stats_b = install_vgit_store(data_b)
     package.loaded["vgit.git.git_buffer_store"] = store_b
     providers.refresh(target)
-    expect.equality(require("scrollbar.store").get(target).vgit, {
+    expect.equality(require("scrollbar.shared.store").get(target).vgit, {
         { line = 1, type = "VGitChange" },
     })
     expect.equality(#handlers_a.sync, 1)
@@ -900,7 +900,7 @@ T["vgit subscriptions follow the active store identity"] = function()
     vim.wait(50)
     expect.equality(stats_b.get_calls, 0)
     expect.equality(invalidated, {})
-    expect.equality(require("scrollbar.store").get(target).vgit, {
+    expect.equality(require("scrollbar.shared.store").get(target).vgit, {
         { line = 1, type = "VGitChange" },
     })
 
@@ -908,7 +908,7 @@ T["vgit subscriptions follow the active store identity"] = function()
     vim.wait(50)
     expect.equality(stats_b.get_calls, 1)
     expect.equality(invalidated, { target })
-    expect.equality(require("scrollbar.store").get(target).vgit, {
+    expect.equality(require("scrollbar.shared.store").get(target).vgit, {
         { line = 2, type = "VGitDelete" },
     })
 end
@@ -932,7 +932,7 @@ T["vgit collection survives unavailable subscriptions"] = function()
         end,
     }
     providers.setup(options)
-    expect.equality(require("scrollbar.store").get(target).vgit, {
+    expect.equality(require("scrollbar.shared.store").get(target).vgit, {
         { line = 0, type = "VGitAdd" },
     })
 
@@ -940,7 +940,7 @@ T["vgit collection survives unavailable subscriptions"] = function()
         error("vgit subscription failed")
     end
     providers.setup(options)
-    expect.equality(require("scrollbar.store").get(target).vgit, {
+    expect.equality(require("scrollbar.shared.store").get(target).vgit, {
         { line = 0, type = "VGitAdd" },
     })
 end
@@ -964,10 +964,10 @@ T["missing vgit dependency leaves provider setup usable"] = function()
         }),
         true
     )
-    expect.equality(require("scrollbar.store").get(target).vgit, {})
+    expect.equality(require("scrollbar.shared.store").get(target).vgit, {})
 
     providers.dispose()
-    expect.equality(require("scrollbar.store").get(target), {})
+    expect.equality(require("scrollbar.shared.store").get(target), {})
 end
 
 T["vgit event failures clear only vgit marks"] = function()
@@ -1015,14 +1015,14 @@ T["vgit event failures clear only vgit marks"] = function()
         end,
     })
 
-    expect.equality(require("scrollbar.store").get(target).vgit, {
+    expect.equality(require("scrollbar.shared.store").get(target).vgit, {
         { line = 0, type = "VGitAdd" },
     })
 
     fail = true
     dispatch_vgit_event(event_handlers, "sync", target)
     vim.wait(50)
-    expect.equality(require("scrollbar.store").get(target), {
+    expect.equality(require("scrollbar.shared.store").get(target), {
         other = { { line = 1, type = "Error" } },
     })
 end
@@ -1056,11 +1056,11 @@ T["ALE converts one-based lines and updates only each event buffer"] = function(
         end,
     })
 
-    expect.equality(require("scrollbar.store").get(first).ale, {
+    expect.equality(require("scrollbar.shared.store").get(first).ale, {
         { line = 0, type = "Error" },
         { line = 2, type = "Warn" },
     })
-    expect.equality(require("scrollbar.store").get(second).ale, {
+    expect.equality(require("scrollbar.shared.store").get(second).ale, {
         { line = 1, type = "Error" },
     })
 
@@ -1076,8 +1076,8 @@ T["ALE converts one-based lines and updates only each event buffer"] = function(
     vim.api.nvim_set_current_buf(first)
     vim.api.nvim_exec_autocmds("User", { pattern = "ALELintPost" })
 
-    expect.equality(require("scrollbar.store").get(first).ale, {})
-    expect.equality(require("scrollbar.store").get(second).ale, {
+    expect.equality(require("scrollbar.shared.store").get(first).ale, {})
+    expect.equality(require("scrollbar.shared.store").get(second).ale, {
         { line = 1, type = "Error" },
     })
     expect.equality(invalidated, { first })
@@ -1085,8 +1085,8 @@ T["ALE converts one-based lines and updates only each event buffer"] = function(
     expect.equality(#vim.api.nvim_get_autocmds({ event = "User", pattern = "ALELintPost" }), 1)
     providers.dispose()
     expect.equality(#vim.api.nvim_get_autocmds({ event = "User", pattern = "ALELintPost" }), 0)
-    expect.equality(require("scrollbar.store").get(first), {})
-    expect.equality(require("scrollbar.store").get(second), {})
+    expect.equality(require("scrollbar.shared.store").get(first), {})
+    expect.equality(require("scrollbar.shared.store").get(second), {})
 end
 
 T["Coc asynchronously replaces all URI diagnostics and preserves severity mapping"] = function()
@@ -1127,17 +1127,17 @@ T["Coc asynchronously replaces all URI diagnostics and preserves severity mappin
         },
     })
 
-    expect.equality(require("scrollbar.store").get(first).coc, {
+    expect.equality(require("scrollbar.shared.store").get(first).coc, {
         { line = 0, type = "Error" },
         { line = 2, type = "Info" },
     })
-    expect.equality(require("scrollbar.store").get(second).coc, {
+    expect.equality(require("scrollbar.shared.store").get(second).coc, {
         { line = 1, type = "Warn" },
     })
     expect.equality(sorted(invalidated), sorted({ first, second }))
 
     callbacks[1]("request failed", {})
-    expect.equality(require("scrollbar.store").get(first).coc, {
+    expect.equality(require("scrollbar.shared.store").get(first).coc, {
         { line = 0, type = "Error" },
         { line = 2, type = "Info" },
     })
@@ -1152,16 +1152,16 @@ T["Coc asynchronously replaces all URI diagnostics and preserves severity mappin
         },
     })
 
-    expect.equality(require("scrollbar.store").get(first).coc, {})
-    expect.equality(require("scrollbar.store").get(second).coc, {
+    expect.equality(require("scrollbar.shared.store").get(first).coc, {})
+    expect.equality(require("scrollbar.shared.store").get(second).coc, {
         { line = 3, type = "Hint" },
     })
     expect.equality(sorted(invalidated), sorted({ first, second }))
 
     providers.dispose()
     expect.equality(#vim.api.nvim_get_autocmds({ event = "User", pattern = "CocDiagnosticChange" }), 0)
-    expect.equality(require("scrollbar.store").get(first), {})
-    expect.equality(require("scrollbar.store").get(second), {})
+    expect.equality(require("scrollbar.shared.store").get(first), {})
+    expect.equality(require("scrollbar.shared.store").get(second), {})
     expect.equality(
         pcall(callbacks[2], vim.NIL, {
             {
@@ -1171,7 +1171,7 @@ T["Coc asynchronously replaces all URI diagnostics and preserves severity mappin
         }),
         true
     )
-    expect.equality(require("scrollbar.store").get(first), {})
+    expect.equality(require("scrollbar.shared.store").get(first), {})
 end
 
 T["Coc ignores diagnostic responses older than the latest request"] = function()
@@ -1204,7 +1204,7 @@ T["Coc ignores diagnostic responses older than the latest request"] = function()
         },
     })
 
-    expect.equality(require("scrollbar.store").get(target).coc, {
+    expect.equality(require("scrollbar.shared.store").get(target).coc, {
         { line = 1, type = "Warn" },
     })
 end
@@ -1256,7 +1256,7 @@ T["optional event routes preflight ineligible buffers before collection"] = func
         end,
     })
 
-    local store = require("scrollbar.store")
+    local store = require("scrollbar.shared.store")
     for _, name in ipairs({ "gitsigns", "mini_diff", "signify", "ale" }) do
         assert(store.set(name, target, { { line = 0, type = "Error" } }))
     end
@@ -1302,7 +1302,7 @@ T["vgit deferred callbacks recheck policy before collection"] = function()
             return bufnr == target and allowed
         end,
     })
-    expect.equality(require("scrollbar.store").get(target).vgit, {
+    expect.equality(require("scrollbar.shared.store").get(target).vgit, {
         { line = 0, type = "VGitAdd" },
     })
 
@@ -1312,7 +1312,7 @@ T["vgit deferred callbacks recheck policy before collection"] = function()
     vim.wait(100)
 
     expect.equality(calls, 0)
-    expect.equality(require("scrollbar.store").get(target), {})
+    expect.equality(require("scrollbar.shared.store").get(target), {})
 end
 
 T["Coc does not retain diagnostics collected for ineligible URI buffers"] = function()
@@ -1337,16 +1337,16 @@ T["Coc does not retain diagnostics collected for ineligible URI buffers"] = func
         },
     }
     callbacks[1](vim.NIL, diagnostics)
-    expect.equality(require("scrollbar.store").get(target).coc, { { line = 0, type = "Error" } })
+    expect.equality(require("scrollbar.shared.store").get(target).coc, { { line = 0, type = "Error" } })
 
     vim.api.nvim_exec_autocmds("User", { pattern = "CocDiagnosticChange" })
     allowed = false
     callbacks[2](vim.NIL, diagnostics)
-    expect.equality(require("scrollbar.store").get(target), {})
+    expect.equality(require("scrollbar.shared.store").get(target), {})
 
     allowed = true
     providers.refresh(target)
-    expect.equality(require("scrollbar.store").get(target).coc, { { line = 0, type = "Error" } })
+    expect.equality(require("scrollbar.shared.store").get(target).coc, { { line = 0, type = "Error" } })
 end
 
 T["missing optional dependencies leave runtime and provider setup usable"] = function()
@@ -1369,7 +1369,7 @@ T["missing optional dependencies leave runtime and provider setup usable"] = fun
         }),
         true
     )
-    expect.equality(require("scrollbar.store").get(target), {
+    expect.equality(require("scrollbar.shared.store").get(target), {
         ale = {},
         coc = {},
         gitsigns = {},
@@ -1419,7 +1419,7 @@ T["manager clears only gitsigns marks when its refresh fails"] = function()
 
     fail = true
     providers.refresh(target)
-    expect.equality(require("scrollbar.store").get(target), {
+    expect.equality(require("scrollbar.shared.store").get(target), {
         other = { { line = 1, type = "Error" } },
     })
 end

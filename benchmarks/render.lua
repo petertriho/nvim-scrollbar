@@ -33,7 +33,7 @@ require("scrollbar.providers").register({
     name = "benchmark",
     targets = { scrollbar = true },
 })
-assert(require("scrollbar.store").set("benchmark", source_buf, marks))
+assert(require("scrollbar.shared.store").set("benchmark", source_buf, marks))
 
 local function pack(...)
     return select("#", ...), { ... }
@@ -359,7 +359,7 @@ for index = 1, mark_count do
         type = "Misc",
     }
 end
-assert(require("scrollbar.store").set("benchmark", wrapped_buf, wrapped_marks))
+assert(require("scrollbar.shared.store").set("benchmark", wrapped_buf, wrapped_marks))
 vim.api.nvim_win_set_cursor(wrapped_win, { 1, 0 })
 measure_case("screenline", "1 window wrapped steady", { wrapped_win })
 measure_case("screenline", "1 window wrapped scroll", { wrapped_win }, {

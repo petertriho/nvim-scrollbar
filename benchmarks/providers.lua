@@ -9,7 +9,7 @@ vim.o.swapfile = false
 local warmup_count = 10
 local iteration_count = 300
 
-local store = require("scrollbar.store")
+local store = require("scrollbar.shared.store")
 local providers = require("scrollbar.providers")
 
 local function percentile(sorted, fraction)

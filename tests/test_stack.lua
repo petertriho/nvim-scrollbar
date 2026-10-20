@@ -4,13 +4,13 @@ local expect = MiniTest.expect
 local T = MiniTest.new_set({
     hooks = {
         pre_case = function()
-            package.loaded["scrollbar.stack"] = nil
+            package.loaded["scrollbar.shared.stack"] = nil
         end,
     },
 })
 
 local function stack()
-    return require("scrollbar.stack")
+    return require("scrollbar.shared.stack")
 end
 
 local function scrollbar(overrides)

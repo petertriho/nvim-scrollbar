@@ -1,14 +1,15 @@
---- Minimap renderer: per-source-window float lifecycle, composes squashed
---- cells plus semantic, viewport, and cursor highlight layers into a visible
---- scratch buffer. It shares the float lifecycle (`scrollbar.float_states`), the
---- source-window policy (`scrollbar.source_policy`), and the float placement and
---- row writer (`scrollbar.float`) with the scrollbar renderer.
+--- Minimap renderer: per-source-window float lifecycle, composes squashed cells
+--- plus semantic, viewport, and cursor highlight layers into a visible scratch
+--- buffer. It shares the float lifecycle (`scrollbar.shared.float_states`), the
+--- source-window policy (`scrollbar.shared.source_policy`), and the float
+--- placement and row writer (`scrollbar.shared.float`) with the scrollbar
+--- renderer.
 ---
---- `scrollbar.stack` resolves the origin and z-index against a scrollbar on the
---- same side of the source window. Squash output is the only source of row
---- text; viewport, cursor, and semantic overlays are non-destructive extmark
---- highlights. `lua/scrollbar/minimap/projection.lua` maps source lines to
---- float rows for every layer, so all layers agree on the row of a line.
+--- `scrollbar.shared.stack` resolves the origin and z-index against a scrollbar
+--- on the same side of the source window. Squash output is the only source of
+--- row text; viewport, cursor, and semantic overlays are non-destructive
+--- extmark highlights. `lua/scrollbar/minimap/projection.lua` maps source lines
+--- to float rows for every layer, so all layers agree on the row of a line.
 ---
 --- The worker squashes a slice of map rows around the visible rows. Scrolling
 --- inside the slice redraws from the cache; a new slice is requested when the
@@ -19,16 +20,16 @@
 --- whose text or highlights changed.
 
 local config_module = require("scrollbar.minimap.config")
-local float = require("scrollbar.float")
-local float_states = require("scrollbar.float_states")
+local float = require("scrollbar.shared.float")
+local float_states = require("scrollbar.shared.float_states")
 local highlight_module = require("scrollbar.minimap.highlights")
 local projection_module = require("scrollbar.minimap.projection")
 local providers = require("scrollbar.providers")
 local semantic = require("scrollbar.minimap.semantic")
-local source_policy = require("scrollbar.source_policy")
-local stack = require("scrollbar.stack")
-local store = require("scrollbar.store")
-local text_tick = require("scrollbar.text_tick")
+local source_policy = require("scrollbar.shared.source_policy")
+local stack = require("scrollbar.shared.stack")
+local store = require("scrollbar.shared.store")
+local text_tick = require("scrollbar.shared.text_tick")
 
 local M = {}
 

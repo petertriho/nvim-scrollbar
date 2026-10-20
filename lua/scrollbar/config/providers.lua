@@ -1,4 +1,4 @@
-local schema = require("scrollbar.schema")
+local schema = require("scrollbar.config.schema")
 
 local M = {}
 

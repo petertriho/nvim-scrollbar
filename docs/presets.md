@@ -60,7 +60,7 @@ name also pairs with the minimap preset of the same name. See
   marks. This preset intentionally omits diagnostic, search, Git, and catch-all
   marks.
 
-[`lua/scrollbar/presets.lua`](../lua/scrollbar/presets.lua) defines the
+[`lua/scrollbar/config/presets.lua`](../lua/scrollbar/config/presets.lua) defines the
 exact layout and `thumb.blend` value of each built-in preset.
 
 ## Minimap Presets

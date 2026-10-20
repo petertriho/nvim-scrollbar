@@ -2,7 +2,7 @@
 --- the minimap worker. Each worker creates one host. A host starts a headless
 --- child Neovim, copies each requested buffer into it with chunked snapshots,
 --- and sends every later text change from `on_lines` as a delta. The child side
---- is `lua/scrollbar/mirror_child.lua`.
+--- is `lua/scrollbar/shared/mirror_child.lua`.
 ---
 --- The worker keeps its own request queue and child request kinds. The host
 --- calls the hooks of the worker when a mirror can serve a request, when the
@@ -341,7 +341,7 @@ end
             return false
         end
 
-        local prelude = M.read_runtime_source("lua/scrollbar/mirror_child.lua")
+        local prelude = M.read_runtime_source("lua/scrollbar/shared/mirror_child.lua")
         if prelude == nil then
             failure("could not read mirror_child.lua source")
             return false

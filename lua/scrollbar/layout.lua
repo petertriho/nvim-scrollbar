@@ -1,7 +1,7 @@
 local M = {}
 
-local store = require("scrollbar.store")
-local search_compact = require("scrollbar.providers.search_compact")
+local store = require("scrollbar.shared.store")
+local search_compact = require("scrollbar.providers.search.compact")
 
 local function clamp(value, minimum, maximum)
     return math.max(minimum, math.min(value, maximum))

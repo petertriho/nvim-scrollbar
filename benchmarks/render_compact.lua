@@ -37,7 +37,7 @@ for index, line in ipairs(match_lines) do
     ordinary_marks[index] = { line = line, type = "Search" }
 end
 
-local compact_blob = require("scrollbar.providers.search_compact").encode(match_lines)
+local compact_blob = require("scrollbar.providers.search.compact").encode(match_lines)
 
 local function pack(...)
     return select("#", ...), { ... }
@@ -188,7 +188,7 @@ local phases = {
 
 local function measure_phases(name, publish)
     local renderer = require("scrollbar.renderer")
-    local store = require("scrollbar.store")
+    local store = require("scrollbar.shared.store")
     local winid = vim.api.nvim_get_current_win()
     vim.api.nvim_win_set_cursor(winid, { 1, 0 })
     vim.cmd("normal! zt")

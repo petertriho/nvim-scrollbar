@@ -2,9 +2,9 @@
 --- checks and their hints, the profile list, the global options, and the loop
 --- that compiles the root and each profile into variants.
 
-local presets = require("scrollbar.presets")
-local schema = require("scrollbar.schema")
-local shared_config = require("scrollbar.shared_config")
+local presets = require("scrollbar.config.presets")
+local schema = require("scrollbar.config.schema")
+local shared_config = require("scrollbar.config.shared")
 
 local M = {}
 

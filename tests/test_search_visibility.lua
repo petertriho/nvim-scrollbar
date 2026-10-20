@@ -82,7 +82,7 @@ end
 T["CursorMoved does not rescan an unchanged visible search"] = function()
     local child = search_child()
     child.lua([[
-        require("scrollbar.store").set("search", vim.api.nvim_get_current_buf(), {
+        require("scrollbar.shared.store").set("search", vim.api.nvim_get_current_buf(), {
             { line = 0, type = "Search" },
         })
     ]])
@@ -93,7 +93,7 @@ end
 T["WinScrolled does not rescan an unchanged visible search"] = function()
     local child = search_child()
     child.lua([[
-        require("scrollbar.store").set("search", vim.api.nvim_get_current_buf(), {
+        require("scrollbar.shared.store").set("search", vim.api.nvim_get_current_buf(), {
             { line = 0, type = "Search" },
         })
     ]])

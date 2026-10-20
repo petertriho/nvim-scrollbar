@@ -5,7 +5,7 @@ local T = MiniTest.new_set({
     hooks = {
         pre_case = function()
             package.loaded["scrollbar.config"] = nil
-            package.loaded["scrollbar.store"] = nil
+            package.loaded["scrollbar.shared.store"] = nil
             require("scrollbar.config").set({
                 marks = {
                     Custom = { text = "!", priority = 1, highlight = "WarningMsg" },
@@ -55,7 +55,7 @@ local function capture_notifications()
 end
 
 T["isolates providers and buffers and returns copied snapshots"] = function()
-    local store = require("scrollbar.store")
+    local store = require("scrollbar.shared.store")
     local first = new_buffer({ "one", "two", "three" })
     local second = new_buffer({ "one", "two" })
     local marks = { { line = 1, type = "Custom", text = "x" } }
@@ -81,7 +81,7 @@ T["isolates providers and buffers and returns copied snapshots"] = function()
 end
 
 T["reuses unchanged normalized elements while replacing changed marks"] = function()
-    local store = require("scrollbar.store")
+    local store = require("scrollbar.shared.store")
     local bufnr = new_buffer({ "one", "two", "three", "four" })
 
     assert(store.set("alpha", bufnr, {
@@ -107,7 +107,7 @@ T["reuses unchanged normalized elements while replacing changed marks"] = functi
 end
 
 T["replaces lists atomically and reports only changed buffers"] = function()
-    local store = require("scrollbar.store")
+    local store = require("scrollbar.shared.store")
     local bufnr = new_buffer({ "one", "two", "three" })
 
     expect.equality(select(2, store.set("alpha", bufnr, { { line = 0, type = "Custom" } })), { [bufnr] = true })
@@ -119,7 +119,7 @@ T["replaces lists atomically and reports only changed buffers"] = function()
 end
 
 T["stores provider-scoped minimap spans as complete copied replacements"] = function()
-    local store = require("scrollbar.store")
+    local store = require("scrollbar.shared.store")
     local bufnr = new_buffer({ "one", "two", "three" })
     local spans = {
         { line = 0, start_col = 0, end_col = 2, highlight = "@keyword", priority = 10 },
@@ -164,7 +164,7 @@ T["stores provider-scoped minimap spans as complete copied replacements"] = func
 end
 
 T["stores provider-scoped minimap points as complete copied replacements"] = function()
-    local store = require("scrollbar.store")
+    local store = require("scrollbar.shared.store")
     local bufnr = new_buffer({ "one", "two", "three" })
     local winid = show_buffer(bufnr)
     local points = {
@@ -211,7 +211,7 @@ end
 
 T["validates minimap spans atomically and clears only that channel"] = function()
     local notifications = capture_notifications()
-    local store = require("scrollbar.store")
+    local store = require("scrollbar.shared.store")
     local bufnr = new_buffer({ "one", "two" })
     local valid = { { line = 0, start_col = 0, end_col = 1, highlight = "Normal", priority = 0 } }
     local invalid_lists = {
@@ -265,7 +265,7 @@ end
 
 T["validates minimap points atomically and clears only that channel"] = function()
     local notifications = capture_notifications()
-    local store = require("scrollbar.store")
+    local store = require("scrollbar.shared.store")
     local bufnr = new_buffer({ "one", "two" })
     local winid = show_buffer(bufnr)
     local valid = { { line = 0, col = 0, highlight = "Normal", priority = 0 } }
@@ -319,7 +319,7 @@ T["validates minimap points atomically and clears only that channel"] = function
 end
 
 T["advances mark span and point revisions independently and skips equal output"] = function()
-    local store = require("scrollbar.store")
+    local store = require("scrollbar.shared.store")
     local bufnr = new_buffer({ "one", "two" })
     local winid = show_buffer(bufnr)
     local spans = { { line = 0, start_col = 0, end_col = 1, highlight = "Normal", priority = 1 } }
@@ -350,7 +350,7 @@ T["advances mark span and point revisions independently and skips equal output"]
 end
 
 T["notifies channel-aware subscribers and unsubscribe is idempotent"] = function()
-    local store = require("scrollbar.store")
+    local store = require("scrollbar.shared.store")
     local bufnr = new_buffer({ "one", "two" })
     local winid = show_buffer(bufnr)
     local events = {}
@@ -385,7 +385,7 @@ T["notifies channel-aware subscribers and unsubscribe is idempotent"] = function
 end
 
 T["provider cleanup clears every owned channel with provider-aware events"] = function()
-    local store = require("scrollbar.store")
+    local store = require("scrollbar.shared.store")
     local bufnr = new_buffer({ "one", "two" })
     local winid = show_buffer(bufnr)
     store.set("alpha", bufnr, { { line = 0, type = "Custom" } })
@@ -428,7 +428,7 @@ T["provider cleanup clears every owned channel with provider-aware events"] = fu
 end
 
 T["buffer and window lifecycle cleanup emits every provider channel once"] = function()
-    local store = require("scrollbar.store")
+    local store = require("scrollbar.shared.store")
     local buffer_target = new_buffer({ "one", "two" })
     local window_buffer = new_buffer({ "one", "two" })
     local window_target = show_buffer(window_buffer)
@@ -475,7 +475,7 @@ T["buffer and window lifecycle cleanup emits every provider channel once"] = fun
 end
 
 T["tracks independent revisions and preserves trusted snapshots across no-op updates"] = function()
-    local store = require("scrollbar.store")
+    local store = require("scrollbar.shared.store")
     local bufnr = new_buffer({ "one", "two", "three" })
     local winid = show_buffer(bufnr)
 
@@ -519,7 +519,7 @@ end
 
 T["filters stale buffer marks before replacement and revision checks"] = function()
     local notifications = capture_notifications()
-    local store = require("scrollbar.store")
+    local store = require("scrollbar.shared.store")
     local bufnr = new_buffer({ "one", "two", "three", "four" })
     store.set("alpha", bufnr, {
         { line = 0, type = "Custom" },
@@ -567,7 +567,7 @@ end
 
 T["filters stale window marks before replacement and revision checks"] = function()
     local notifications = capture_notifications()
-    local store = require("scrollbar.store")
+    local store = require("scrollbar.shared.store")
     local bufnr = new_buffer({ "one", "two", "three", "four" })
     local winid = show_buffer(bufnr)
     store.set_window("alpha", winid, {
@@ -615,8 +615,8 @@ T["filters stale window marks before replacement and revision checks"] = functio
 end
 
 T["stores built-in search compactly while preserving ordinary public snapshots"] = function()
-    local compact = require("scrollbar.providers.search_compact")
-    local store = require("scrollbar.store")
+    local compact = require("scrollbar.providers.search.compact")
+    local store = require("scrollbar.shared.store")
     local bufnr = new_buffer({ "one", "two", "three", "four" })
     local encoded = compact.encode({ 0, 1, 1, 3 })
 
@@ -644,8 +644,8 @@ T["stores built-in search compactly while preserving ordinary public snapshots"]
 end
 
 T["ordinary providers keep the public mark contract when compact search exists"] = function()
-    local compact = require("scrollbar.providers.search_compact")
-    local store = require("scrollbar.store")
+    local compact = require("scrollbar.providers.search.compact")
+    local store = require("scrollbar.shared.store")
     local bufnr = new_buffer({ "one", "two", "three" })
 
     store._set_search_compact(bufnr, compact.encode({ 0, 2 }))
@@ -666,7 +666,7 @@ T["ordinary providers keep the public mark contract when compact search exists"]
 end
 
 T["clears one entry, a provider, or a buffer with targeted change reporting"] = function()
-    local store = require("scrollbar.store")
+    local store = require("scrollbar.shared.store")
     local first = new_buffer({ "one", "two" })
     local second = new_buffer({ "one", "two" })
 
@@ -687,7 +687,7 @@ T["clears one entry, a provider, or a buffer with targeted change reporting"] = 
 end
 
 T["advances revisions only for effective clear operations"] = function()
-    local store = require("scrollbar.store")
+    local store = require("scrollbar.shared.store")
     local bufnr = new_buffer({ "one", "two" })
     local winid = show_buffer(bufnr)
     store.set("alpha", bufnr, { { line = 0, type = "Custom" } })
@@ -719,7 +719,7 @@ T["advances revisions only for effective clear operations"] = function()
 end
 
 T["provider disposal advances only affected buffer and window revisions"] = function()
-    local store = require("scrollbar.store")
+    local store = require("scrollbar.shared.store")
     local first = new_buffer({ "one", "two" })
     local second = new_buffer({ "one", "two" })
     local winid = show_buffer(first)
@@ -755,7 +755,7 @@ end
 
 T["validates complete lists against the current config and mark contract"] = function()
     local notifications = capture_notifications()
-    local store = require("scrollbar.store")
+    local store = require("scrollbar.shared.store")
     local bufnr = new_buffer({ "one", "two" })
     local invalid_lists = {
         false,
@@ -815,7 +815,7 @@ T["accepts registered types that both renderers hide"] = function()
     end
     expect.equality(require("scrollbar.minimap.config").get().marks.Hidden, nil)
 
-    local store = require("scrollbar.store")
+    local store = require("scrollbar.shared.store")
     local bufnr = new_buffer({ "one", "two" })
     local ok, changed = store.set("alpha", bufnr, {
         { line = 0, type = "Hidden" },
@@ -838,7 +838,7 @@ T["rejects types missing from the mark registry"] = function()
             Registered = { text = "r", priority = 1, highlight = "Special" },
         },
     })
-    local store = require("scrollbar.store")
+    local store = require("scrollbar.shared.store")
     local bufnr = new_buffer({ "one", "two" })
 
     local ok, changed = store.set("alpha", bufnr, {
@@ -854,7 +854,7 @@ end
 
 T["stale positions do not hide malformed fields in atomic replacements"] = function()
     capture_notifications()
-    local store = require("scrollbar.store")
+    local store = require("scrollbar.shared.store")
     local bufnr = new_buffer({ "one", "two" })
     store.set("alpha", bufnr, { { line = 0, type = "Custom" } })
 
@@ -870,7 +870,7 @@ end
 
 T["rate limits warnings by provider, buffer, and signature until success"] = function()
     local notifications = capture_notifications()
-    local store = require("scrollbar.store")
+    local store = require("scrollbar.shared.store")
     local first = new_buffer({ "one" })
     local second = new_buffer({ "one" })
     local invalid_line = { { line = -1, type = "Custom" } }
@@ -893,7 +893,7 @@ T["rate limits warnings by provider, buffer, and signature until success"] = fun
 end
 
 T["removes marks when a buffer is deleted"] = function()
-    local store = require("scrollbar.store")
+    local store = require("scrollbar.shared.store")
     local bufnr = vim.api.nvim_create_buf(false, true)
     vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "one" })
     store.set("alpha", bufnr, { { line = 0, type = "Custom" } })
@@ -913,7 +913,7 @@ T["removes marks when a buffer is deleted"] = function()
 end
 
 T["isolates window marks and removes them when a window closes"] = function()
-    local store = require("scrollbar.store")
+    local store = require("scrollbar.shared.store")
     local bufnr = new_buffer({ "one", "two", "three" })
     local first = show_buffer(bufnr)
     local second = show_buffer(bufnr)
@@ -951,7 +951,7 @@ end
 
 T["validates and clears window marks with targeted change reporting"] = function()
     local notifications = capture_notifications()
-    local store = require("scrollbar.store")
+    local store = require("scrollbar.shared.store")
     local bufnr = new_buffer({ "one", "two" })
     local first = show_buffer(bufnr)
     local second = show_buffer(bufnr)

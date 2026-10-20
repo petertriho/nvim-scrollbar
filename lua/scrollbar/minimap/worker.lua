@@ -1,17 +1,17 @@
 --- Minimap worker: runs `minimap/squash.lua`, optionally with treesitter
 --- captures, on buffers mirrored into a headless child Neovim, and returns the
---- cell rows of the requested grid slice to the parent. `scrollbar.mirror`
---- owns the child process and the buffer mirrors. The `"sync"` backend runs
---- the same logic inline on the main thread, and the output of both backends
---- is bit-identical.
+--- cell rows of the requested grid slice to the parent.
+--- `scrollbar.shared.mirror` owns the child process and the buffer mirrors. The
+--- `"sync"` backend runs the same logic inline on the main thread, and the
+--- output of both backends is bit-identical.
 ---
 --- On worker failure the module emits exactly one warning and flips to the
 --- sync path for the rest of the session.
 
-local mirror_host = require("scrollbar.mirror")
+local mirror_host = require("scrollbar.shared.mirror")
 local squash_module = require("scrollbar.minimap.squash")
 local semantic_module = require("scrollbar.minimap.semantic")
-local text_tick = require("scrollbar.text_tick")
+local text_tick = require("scrollbar.shared.text_tick")
 local treesitter_provider = require("scrollbar.providers.treesitter")
 
 local M = {}

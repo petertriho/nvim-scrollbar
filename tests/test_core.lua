@@ -13,7 +13,7 @@ local function new_child()
 end
 
 local function root_config(overrides)
-    return require("scrollbar.schema").merge({
+    return require("scrollbar.config.schema").merge({
         set_highlights = false,
         providers = {
             cursor = false,
@@ -221,7 +221,7 @@ T["reconciles shared and reserved builtins from union demand"] = function()
         setup(true, { treesitter = true, lsp_semantic_tokens = true })
         local treesitter = providers.get("treesitter")
         local lsp = providers.get("lsp_semantic_tokens")
-        local spans = require("scrollbar.store").get_minimap_spans(vim.api.nvim_get_current_buf())
+        local spans = require("scrollbar.shared.store").get_minimap_spans(vim.api.nvim_get_current_buf())
 
         setup(false, {
             diagnostic = { scrollbar = false },
@@ -332,7 +332,7 @@ T["repeated setup keeps one store callback and disabled minimap installs none"] 
             return minimap_invalidate(target_buf)
         end)
 
-        local store = require("scrollbar.store")
+        local store = require("scrollbar.shared.store")
         store.set("cursor", bufnr, { { line = 0, type = "Cursor" } })
         local repeated = vim.deepcopy(calls)
 
@@ -364,7 +364,7 @@ T["registers both marks modes and fully removes the disabled builtin"] = functio
 
         local scrollbar = require("scrollbar")
         local providers = require("scrollbar.providers")
-        local store = require("scrollbar.store")
+        local store = require("scrollbar.shared.store")
         local disabled_by_default = vim.deepcopy(config)
         scrollbar.setup(disabled_by_default)
         local default_registered = providers.get("marks") ~= nil
@@ -419,7 +419,7 @@ T["scheduler-hosted text-change subscription reconciles marks through the defaul
         local wired = vim.deepcopy(config)
         wired.providers.marks = true
         scrollbar.setup(wired)
-        local store = require("scrollbar.store")
+        local store = require("scrollbar.shared.store")
         local bufnr = vim.api.nvim_get_current_buf()
         vim.api.nvim_exec_autocmds("BufEnter", { buffer = bufnr })
         local settled = vim.wait(300, function()
@@ -471,7 +471,7 @@ T["configured cursor and diagnostics publish only through the central store"] = 
                 message = "root diagnostic",
             },
         })
-        local store = require("scrollbar.store")
+        local store = require("scrollbar.shared.store")
         local snapshot = store.get(bufnr)
         local legacy_variable = pcall(vim.api.nvim_buf_get_var, bufnr, "scrollbar_marks")
         vim.diagnostic.reset(namespace, bufnr)
@@ -814,8 +814,8 @@ T["public refresh recollects displayed buffers through providers and schedules r
             window_refreshes = window_refreshes,
             manager_refreshes = manager_refreshes,
             manager_window_refreshes = manager_window_refreshes,
-            marks = require("scrollbar.store").get(bufnr).custom,
-            manager_marks = require("scrollbar.store").get(bufnr)["manager-custom"],
+            marks = require("scrollbar.shared.store").get(bufnr).custom,
+            manager_marks = require("scrollbar.shared.store").get(bufnr)["manager-custom"],
             queued = #queued,
             source_windows = #require("scrollbar.renderer").source_windows(bufnr),
         }
@@ -853,10 +853,10 @@ T["root setup enables both diff providers and refresh clears disabled mini.diff 
 
         require("scrollbar").setup(config)
         local bufnr = vim.api.nvim_get_current_buf()
-        local before = require("scrollbar.store").get(bufnr)
+        local before = require("scrollbar.shared.store").get(bufnr)
         mini_data = nil
         vim.cmd("ScrollbarRefresh")
-        local after = require("scrollbar.store").get(bufnr)
+        local after = require("scrollbar.shared.store").get(bufnr)
         return {
             before = before,
             after = after,

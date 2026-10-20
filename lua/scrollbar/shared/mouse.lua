@@ -15,7 +15,7 @@
 --- Each renderer keeps its own policy: what a press starts, and what a drag
 --- and a release do.
 
-local float_focus = require("scrollbar.float_focus")
+local float_focus = require("scrollbar.shared.float_focus")
 
 local M = {}
 

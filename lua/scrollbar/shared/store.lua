@@ -1,5 +1,5 @@
 local config = require("scrollbar.config")
-local search_compact = require("scrollbar.providers.search_compact")
+local search_compact = require("scrollbar.providers.search.compact")
 
 local M = {}
 

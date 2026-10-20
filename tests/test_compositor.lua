@@ -7,7 +7,7 @@ local T = MiniTest.new_set({
     hooks = {
         pre_case = function()
             package.loaded["scrollbar.config"] = nil
-            package.loaded["scrollbar.presets"] = nil
+            package.loaded["scrollbar.config.presets"] = nil
         end,
     },
 })
@@ -243,7 +243,7 @@ T["keeps compact search exactly equivalent to ordinary search marks"] = function
         config = active_config,
         height = 2,
         line_count = 100,
-        compact_search = require("scrollbar.providers.search_compact").encode({ 10, 10, 11, 99 }),
+        compact_search = require("scrollbar.providers.search.compact").encode({ 10, 10, 11, 99 }),
         marks = { { provider = "alpha", line = 20, type = "Search", text = "A" } },
         mark_rows = { 0 },
     })
@@ -273,7 +273,7 @@ T["screen compact search via compact_mark_rows stays equivalent to ordinary mark
     local compact = compose({
         config = active_config,
         height = 2,
-        compact_search = require("scrollbar.providers.search_compact").encode({ 10, 10, 11, 99 }),
+        compact_search = require("scrollbar.providers.search.compact").encode({ 10, 10, 11, 99 }),
         compact_mark_rows = { 0, 0, 0, 1 },
         marks = { { provider = "alpha", line = 20, type = "Search", text = "A" } },
         mark_rows = { 0 },

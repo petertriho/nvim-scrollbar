@@ -41,7 +41,7 @@ T["accepted requests coalesce and retain previous marks while pending"] = functi
             vim.fn.setreg("/", pattern)
             vim.api.nvim_exec_autocmds("SafeState", { buffer = 0 })
         end
-        local marks = require("scrollbar.store").get(vim.api.nvim_get_current_buf()).search
+        local marks = require("scrollbar.shared.store").get(vim.api.nvim_get_current_buf()).search
         return vim.tbl_map(function(mark)
             return mark.line
         end, marks)
@@ -108,7 +108,7 @@ T["synchronous results clear prior search data when eligibility changes during s
 
     expect.equality(
         child.lua_get([[vim.wait(1000, function()
-            return require("scrollbar.store").get(vim.api.nvim_get_current_buf()).search == nil
+            return require("scrollbar.shared.store").get(vim.api.nvim_get_current_buf()).search == nil
         end)]]),
         true
     )
@@ -135,7 +135,7 @@ T["repeated edits debounce to one scan and retain previous marks"] = function()
         vim.api.nvim_buf_set_lines(bufnr, 1, 2, false, { "none" })
         vim.api.nvim_exec_autocmds("TextChangedP", { buffer = bufnr })
 
-        local marks = require("scrollbar.store").get(bufnr).search
+        local marks = require("scrollbar.shared.store").get(bufnr).search
         return vim.tbl_map(function(mark)
             return mark.line
         end, marks)
@@ -192,7 +192,7 @@ T["visible buffers debounce independently"] = function()
 
     local completed = child.lua_func(function(value)
         local function mark_lines(bufnr)
-            local marks = require("scrollbar.store").get(bufnr).search
+            local marks = require("scrollbar.shared.store").get(bufnr).search
             return marks and vim.tbl_map(function(mark)
                 return mark.line
             end, marks) or nil
@@ -278,7 +278,7 @@ T["unchanged signatures do not enqueue scans"] = function()
 
     child.lua([[
         local bufnr = vim.api.nvim_get_current_buf()
-        require("scrollbar.store").set("search", bufnr, { { line = 0, type = "Search" } })
+        require("scrollbar.shared.store").set("search", bufnr, { { line = 0, type = "Search" } })
         vim.api.nvim_exec_autocmds("CursorMoved", { buffer = bufnr })
         vim.api.nvim_exec_autocmds("SafeState", { buffer = bufnr })
         vim.api.nvim_exec_autocmds("CursorMoved", { buffer = bufnr })

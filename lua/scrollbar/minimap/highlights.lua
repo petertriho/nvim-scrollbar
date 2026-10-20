@@ -1,5 +1,5 @@
 local config = require("scrollbar.minimap.config")
-local utils = require("scrollbar.utils")
+local highlights = require("scrollbar.highlights")
 
 local M = {}
 local PREFIX = "ScrollbarMinimap"
@@ -13,7 +13,7 @@ local function definition(source)
         return vim.deepcopy(source)
     end
     return {
-        fg = utils.highlight_to_hex_color(source, "foreground", "Normal", "#000000"),
+        fg = highlights.highlight_to_hex_color(source, "foreground", "Normal", "#000000"),
     }
 end
 

@@ -6,7 +6,7 @@ local T = MiniTest.new_set({
         pre_case = function()
             package.loaded["scrollbar.config"] = nil
             package.loaded["scrollbar.renderer"] = nil
-            package.loaded["scrollbar.store"] = nil
+            package.loaded["scrollbar.shared.store"] = nil
             package.loaded["scrollbar.providers"] = nil
             package.loaded["scrollbar.providers.diagnostic"] = nil
             require("scrollbar.config").set({
@@ -89,7 +89,7 @@ end
 
 T["DiagnosticChanged maps zero-based severities, replaces marks, and clears all source windows"] = function()
     local providers = require("scrollbar.providers")
-    local store = require("scrollbar.store")
+    local store = require("scrollbar.shared.store")
     local target = new_buffer({ "one", "two", "three", "four" })
     local target_win = show_buffer(target)
     show_buffer(target)
@@ -142,7 +142,7 @@ end
 
 T["diagnostic events update only their buffer"] = function()
     local providers = require("scrollbar.providers")
-    local store = require("scrollbar.store")
+    local store = require("scrollbar.shared.store")
     local target = new_buffer({ "one", "two" })
     local other = new_buffer({ "alpha", "beta" })
     local namespace = vim.api.nvim_create_namespace("ScrollbarDiagnosticProviderIsolationTest")
@@ -169,7 +169,7 @@ end
 T["manual refresh omits native diagnostics left past EOF after a buffer shrink"] = function()
     local notifications = capture_notifications()
     local providers = require("scrollbar.providers")
-    local store = require("scrollbar.store")
+    local store = require("scrollbar.shared.store")
     local target = new_buffer({ "one", "two", "three", "four" })
     local namespace = vim.api.nvim_create_namespace("ScrollbarDiagnosticProviderStaleTest")
 
@@ -202,7 +202,7 @@ end
 
 T["diagnostic provider ignores excluded buffers"] = function()
     local providers = require("scrollbar.providers")
-    local store = require("scrollbar.store")
+    local store = require("scrollbar.shared.store")
     local excluded = new_buffer({ "one", "two" }, "scrollbar-excluded")
     local namespace = vim.api.nvim_create_namespace("ScrollbarDiagnosticProviderExcludedTest")
     local invalidated = {}
@@ -227,7 +227,7 @@ end
 
 T["diagnostic setup is idempotent and disposal removes events and marks"] = function()
     local providers = require("scrollbar.providers")
-    local store = require("scrollbar.store")
+    local store = require("scrollbar.shared.store")
     local target = new_buffer({ "one", "two" })
     local namespace = vim.api.nvim_create_namespace("ScrollbarDiagnosticProviderDisposeTest")
 
@@ -278,7 +278,7 @@ T["delegates buffer eligibility before collecting diagnostics"] = function()
     vim.api.nvim_exec_autocmds("DiagnosticChanged", { buffer = target })
 
     expect.equality(calls, 0)
-    expect.equality(require("scrollbar.store").get(target), {})
+    expect.equality(require("scrollbar.shared.store").get(target), {})
 end
 
 return T

@@ -1,5 +1,5 @@
---- Child side of the buffer mirror protocol. `scrollbar.mirror` sends this
---- file as source to a headless child Neovim. The child runs with
+--- Child side of the buffer mirror protocol. `scrollbar.shared.mirror` sends
+--- this file as source to a headless child Neovim. The child runs with
 --- `--noplugin` and cannot `require()` plugin modules, so this file uses only
 --- the `vim` API.
 ---

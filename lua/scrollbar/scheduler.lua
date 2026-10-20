@@ -1,10 +1,10 @@
---- Render scheduler of the scrollbar, built on `scrollbar.scheduler_core`. It
+--- Render scheduler of the scrollbar, built on `scrollbar.shared.scheduler`. It
 --- also hosts the text-change and cursor-activity dispatch that providers and
 --- the minimap scheduler subscribe to.
 
 local config = require("scrollbar.config")
 local layout = require("scrollbar.layout")
-local scheduler_core = require("scrollbar.scheduler_core")
+local scheduler_core = require("scrollbar.shared.scheduler")
 
 local M = {}
 
@@ -72,7 +72,7 @@ M.setup = function(options)
         renderer = options.renderer or require("scrollbar.renderer"),
         on_colorscheme = options.on_colorscheme or function()
             if active_config.set_highlights then
-                require("scrollbar.utils").set_highlights()
+                require("scrollbar.highlights").set_highlights()
             end
         end,
         channels = STORE_CHANNELS,

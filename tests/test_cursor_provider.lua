@@ -6,7 +6,7 @@ local T = MiniTest.new_set({
         pre_case = function()
             package.loaded["scrollbar.config"] = nil
             package.loaded["scrollbar.renderer"] = nil
-            package.loaded["scrollbar.store"] = nil
+            package.loaded["scrollbar.shared.store"] = nil
             package.loaded["scrollbar.providers"] = nil
             package.loaded["scrollbar.providers.cursor"] = nil
             require("scrollbar.config").set({
@@ -55,7 +55,7 @@ end
 
 T["cursor movement updates and invalidates only the event window"] = function()
     local providers = require("scrollbar.providers")
-    local store = require("scrollbar.store")
+    local store = require("scrollbar.shared.store")
     local target = new_buffer({ "one", "two", "three" })
     local other = new_buffer({ "alpha", "beta" })
     local target_win = show_buffer(target)
@@ -104,7 +104,7 @@ end
 
 T["one cursor read publishes matching marks and minimap points"] = function()
     local providers = require("scrollbar.providers")
-    local store = require("scrollbar.store")
+    local store = require("scrollbar.shared.store")
     local target = new_buffer({ "one", "a\tbc", "three" })
     local target_win = show_buffer(target)
     local eligible = true
@@ -163,7 +163,7 @@ end
 
 T["cursor provider ignores excluded buffers"] = function()
     local providers = require("scrollbar.providers")
-    local store = require("scrollbar.store")
+    local store = require("scrollbar.shared.store")
     local excluded = new_buffer({ "one", "two" }, "scrollbar-excluded")
     local excluded_win = show_buffer(excluded)
     local invalidated = {}
@@ -185,7 +185,7 @@ end
 
 T["cursor setup is idempotent and disposal removes events and marks"] = function()
     local providers = require("scrollbar.providers")
-    local store = require("scrollbar.store")
+    local store = require("scrollbar.shared.store")
     local target = new_buffer({ "one", "two" })
     local target_win = show_buffer(target)
 
@@ -208,7 +208,7 @@ end
 
 T["entering a same-buffer split initializes its window cursor mark"] = function()
     local providers = require("scrollbar.providers")
-    local store = require("scrollbar.store")
+    local store = require("scrollbar.shared.store")
     local target = new_buffer({ "one", "two", "three" })
     local first = show_buffer(target)
 
@@ -252,7 +252,7 @@ T["delegates exact source membership to provider context"] = function()
     vim.api.nvim_exec_autocmds("CursorMoved", { buffer = target })
 
     expect.equality(source_lookups, 0)
-    expect.equality(require("scrollbar.store").get_window(winid), {})
+    expect.equality(require("scrollbar.shared.store").get_window(winid), {})
 end
 
 return T

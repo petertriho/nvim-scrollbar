@@ -25,7 +25,7 @@ local function new_child(before_setup)
     if before_setup ~= nil then
         child.lua(before_setup)
     end
-    child.lua([[require("scrollbar.text_tick").setup()]])
+    child.lua([[require("scrollbar.shared.text_tick").setup()]])
     return child
 end
 
@@ -33,7 +33,7 @@ end
 local function increases(child, code)
     return child.lua_get(string.format(
         [[(function()
-            local text_tick = require("scrollbar.text_tick")
+            local text_tick = require("scrollbar.shared.text_tick")
             local text, changed = text_tick.get(0), vim.b.changedtick
             %s
             return { text = text_tick.get(0) - text, changed = vim.b.changedtick - changed }
@@ -76,7 +76,7 @@ T["dispose forgets the writes"] = function()
     local child = new_child()
     child.lua([[vim.cmd("silent write")]])
     local result = child.lua_get([[(function()
-        local text_tick = require("scrollbar.text_tick")
+        local text_tick = require("scrollbar.shared.text_tick")
         local before = text_tick.get(0)
         text_tick.dispose()
         return { before = before, after = text_tick.get(0), changed = vim.b.changedtick }

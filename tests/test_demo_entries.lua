@@ -7,7 +7,7 @@ local T = MiniTest.new_set({
     hooks = {
         pre_case = function()
             package.loaded["scrollbar.config"] = nil
-            package.loaded["scrollbar.presets"] = nil
+            package.loaded["scrollbar.config.presets"] = nil
             package.loaded["scrollbar.minimap.config"] = nil
         end,
     },

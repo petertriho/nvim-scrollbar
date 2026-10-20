@@ -189,14 +189,14 @@
 ---@field scale_lines integer
 ---@field scale_dots integer
 ---@field revision integer
----@field changedtick integer Text tick (`scrollbar.text_tick`) of the buffer that the cells show
+---@field changedtick integer Text tick (`scrollbar.shared.text_tick`) of the buffer that the cells show
 ---@field semantic_revision integer
 ---@field filetype string
 ---@field source_line_count integer
 ---@field mirror_signature string
 
 ---@class ScrollbarMinimapPendingCells
----@field changedtick integer Text tick (`scrollbar.text_tick`) of the buffer when the request was made
+---@field changedtick integer Text tick (`scrollbar.shared.text_tick`) of the buffer when the request was made
 ---@field semantic_revision integer
 ---@field generation integer
 ---@field filetype string

@@ -335,7 +335,7 @@ local function measure_render(_label, line_count, options)
     renderer.setup({ worker = worker, overlays = overlays })
 
     if options.overlays ~= false then
-        local store = require("scrollbar.store")
+        local store = require("scrollbar.shared.store")
         local marks = {}
         for index = 0, math.min(line_count - 1, 200) do
             marks[#marks + 1] = { line = index, type = "Error" }
@@ -343,7 +343,7 @@ local function measure_render(_label, line_count, options)
         store.set("diagnostic", buf, marks)
     end
     if semantic_enabled then
-        require("scrollbar.store").set_minimap_spans("lsp_semantic_tokens", buf, make_semantic_spans(line_count))
+        require("scrollbar.shared.store").set_minimap_spans("lsp_semantic_tokens", buf, make_semantic_spans(line_count))
     end
 
     -- Warm up the renderer cache.

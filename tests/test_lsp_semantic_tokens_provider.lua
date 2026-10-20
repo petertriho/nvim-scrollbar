@@ -8,7 +8,7 @@ local T = MiniTest.new_set({
                 "scrollbar.config",
                 "scrollbar.providers",
                 "scrollbar.providers.lsp_semantic_tokens",
-                "scrollbar.store",
+                "scrollbar.shared.store",
             }) do
                 package.loaded[module] = nil
             end
@@ -206,7 +206,7 @@ T["requests full or whole-document range and decodes all offset encodings"] = fu
 
     local provider = harness.provider
     expect.equality(provider.priorities.base > require("scrollbar.providers.treesitter").priority, true)
-    local spans = require("scrollbar.store").get_minimap_spans(bufnr).lsp_semantic_tokens
+    local spans = require("scrollbar.shared.store").get_minimap_spans(bufnr).lsp_semantic_tokens
     expect.equality(spans, {
         {
             line = 0,
@@ -269,7 +269,7 @@ T["splits multiline tokens and keeps prior output through stale and error respon
     expect.equality(wait_for_requests({ client }, 1), true)
 
     respond(client, 1, bufnr, nil, { data = { 0, 1, 3, 0, 0 } })
-    local store = require("scrollbar.store")
+    local store = require("scrollbar.shared.store")
     expect.equality(store.get_minimap_spans(bufnr).lsp_semantic_tokens, {
         {
             line = 0,
@@ -326,7 +326,7 @@ T["attach token-update detach and dispose isolate client lifecycle"] = function(
     expect.equality(wait_for_requests({ first, second }, 3), true)
     respond(first, 2, bufnr, nil, { data = { 0, 0, 1, 0, 0 } })
     respond(second, 1, bufnr, nil, { data = { 0, 1, 1, 0, 0 } })
-    expect.equality(#require("scrollbar.store").get_minimap_spans(bufnr).lsp_semantic_tokens, 2)
+    expect.equality(#require("scrollbar.shared.store").get_minimap_spans(bufnr).lsp_semantic_tokens, 2)
 
     vim.api.nvim_exec_autocmds("LspTokenUpdate", {
         buffer = bufnr,
@@ -336,12 +336,12 @@ T["attach token-update detach and dispose isolate client lifecycle"] = function(
 
     harness.attached[first.id] = nil
     vim.api.nvim_exec_autocmds("LspDetach", { buffer = bufnr, data = { client_id = first.id } })
-    local spans = require("scrollbar.store").get_minimap_spans(bufnr).lsp_semantic_tokens
+    local spans = require("scrollbar.shared.store").get_minimap_spans(bufnr).lsp_semantic_tokens
     expect.equality(#spans, 1)
     expect.equality(spans[1].highlight, "@lsp.type.function.lua")
 
     harness.providers.dispose()
-    expect.equality(require("scrollbar.store").get_minimap_spans(bufnr), {})
+    expect.equality(require("scrollbar.shared.store").get_minimap_spans(bufnr), {})
     expect.equality(#second.cancelled > 0, true)
 end
 

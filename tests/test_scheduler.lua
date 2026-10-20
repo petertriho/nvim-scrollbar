@@ -171,7 +171,7 @@ T["subscribes only to mark store events and unsubscribes on dispose"] = function
             return original_invalidate_window(source_win)
         end)
 
-        local store = require("scrollbar.store")
+        local store = require("scrollbar.shared.store")
         local providers = require("scrollbar.providers")
         providers.register({ name = "marks" })
         providers.register({ name = "window-marks" })
@@ -1041,7 +1041,7 @@ end
 T["an instance without the dispatch rejects subscribers"] = function()
     local child = new_child()
     local result = child.lua_func(function()
-        local core = require("scrollbar.scheduler_core").new({
+        local core = require("scrollbar.shared.scheduler").new({
             augroup = "ScrollbarSchedulerCoreTest",
             label = "test ",
             consumer = "scrollbar",
@@ -1076,7 +1076,7 @@ end
 T["reconciles dynamic source-policy transitions through scheduler enumeration"] = function()
     local child = new_child()
     local result = child.lua_func(function()
-        local schema = require("scrollbar.schema")
+        local schema = require("scrollbar.config.schema")
         local config = require("scrollbar.config")
         local renderer = require("scrollbar.renderer")
         local scheduler = require("scrollbar.scheduler")

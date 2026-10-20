@@ -58,7 +58,7 @@ end
 local config = require("scrollbar.config")
 local providers = require("scrollbar.providers")
 local search = require("scrollbar.providers.search")
-local store = require("scrollbar.store")
+local store = require("scrollbar.shared.store")
 providers.register(search)
 
 local active_sample
@@ -363,7 +363,7 @@ end
 
 local scheduler = require("scrollbar.scheduler")
 local renderer = require("scrollbar.renderer")
-local worker = require("scrollbar.providers.search_worker")
+local worker = require("scrollbar.providers.search.worker")
 
 local worker_timing = {}
 

@@ -1,4 +1,4 @@
---- Render scheduler of the minimap, built on `scrollbar.scheduler_core`.
+--- Render scheduler of the minimap, built on `scrollbar.shared.scheduler`.
 ---
 --- Coalesces invalidations within `minimap.throttle_ms` (default 50) from
 --- mirror changes (worker callbacks), viewport changes (`WinScrolled` on
@@ -10,7 +10,7 @@
 --- no-op.
 
 local config = require("scrollbar.minimap.config")
-local scheduler_core = require("scrollbar.scheduler_core")
+local scheduler_core = require("scrollbar.shared.scheduler")
 
 local M = {}
 

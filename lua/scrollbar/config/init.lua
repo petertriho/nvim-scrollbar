@@ -3,13 +3,13 @@
 --- `scrollbar.minimap.config`, and builds the provider plan. Setup either
 --- commits every part or fails without changing the active configuration.
 
-local block_config = require("scrollbar.block_config")
-local const = require("scrollbar.const")
+local block_config = require("scrollbar.config.block")
+local const = require("scrollbar.config.const")
+local highlights = require("scrollbar.highlights")
 local minimap_config = require("scrollbar.minimap.config")
-local provider_config = require("scrollbar.provider_config")
-local schema = require("scrollbar.schema")
-local shared_config = require("scrollbar.shared_config")
-local utils = require("scrollbar.utils")
+local provider_config = require("scrollbar.config.providers")
+local schema = require("scrollbar.config.schema")
+local shared_config = require("scrollbar.config.shared")
 
 local invalid = schema.invalid
 
@@ -397,7 +397,7 @@ local function normalize(value, shared, path, variant_id)
             fields = { "text", "priority", "highlight" },
         }),
     })
-    result.highlights = utils.get_highlight_groups(result, variant_id, shared.set_highlights)
+    result.highlights = highlights.get_highlight_groups(result, variant_id, shared.set_highlights)
     result.layout_cache = layout_config(result)
     ---@cast result ScrollbarConfig
     return result

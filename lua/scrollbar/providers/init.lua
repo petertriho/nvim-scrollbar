@@ -1,5 +1,5 @@
 local config = require("scrollbar.config")
-local store = require("scrollbar.store")
+local store = require("scrollbar.shared.store")
 
 local M = {}
 
