@@ -416,6 +416,65 @@ T["options set on the floats of one renderer do not queue windows of the other"]
     expect.equality(result.dirty, { { 0, 0 }, { 0, 0 }, { 1, 1 } })
 end
 
+T["a scroll while a float of one renderer is current reaches the other renderer"] = function()
+    local child = new_child()
+    reset_modules(child)
+    child.lua([[
+        local lines = {}
+        for index = 1, 500 do
+            lines[index] = "local x = " .. index
+        end
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        require("scrollbar").setup({
+            set_highlights = false,
+            scrollbar = { throttle_ms = 10000 },
+            minimap = { enabled = true, backend = "sync", throttle_ms = 10000 },
+        })
+        vim.cmd("redraw")
+    ]])
+    local source_win = child.api.nvim_get_current_win()
+
+    -- A press enters the float of one renderer, and a drag scrolls the source
+    -- window while that float is current. The real WinScrolled fires after
+    -- the call returns, with the source window in v:event.
+    local function scroll_from(renderer_module)
+        child.lua_func(function(module, win)
+            vim.cmd(("noautocmd call nvim_set_current_win(%d)"):format(win))
+            for _, name in ipairs({ "scrollbar.scheduler", "scrollbar.minimap.scheduler" }) do
+                local scheduler = require(name)
+                scheduler.invalidate_all()
+                -- A sync minimap render can queue the window once more.
+                for _ = 1, 5 do
+                    if not scheduler.flush() then
+                        break
+                    end
+                end
+            end
+            local state = assert(require(module).get_state(win))
+            vim.cmd(("noautocmd call nvim_set_current_win(%d)"):format(state.float_win))
+            vim.api.nvim_win_call(win, function()
+                vim.cmd("normal! 20\5")
+            end)
+        end, renderer_module, source_win)
+        vim.uv.sleep(50)
+        return child.lua_get([[{
+            current = vim.api.nvim_get_current_win(),
+            scrollbar = require("scrollbar.scheduler").status().dirty_windows,
+            minimap = require("scrollbar.minimap.scheduler").status().dirty_windows,
+        }]])
+    end
+
+    local minimap_drag = scroll_from("scrollbar.minimap.renderer")
+    expect.no_equality(minimap_drag.current, source_win)
+    expect.equality(minimap_drag.scrollbar, { source_win })
+    expect.equality(minimap_drag.minimap, {})
+
+    local scrollbar_drag = scroll_from("scrollbar.renderer")
+    expect.no_equality(scrollbar_drag.current, source_win)
+    expect.equality(scrollbar_drag.scrollbar, {})
+    expect.equality(scrollbar_drag.minimap, { source_win })
+end
+
 T["reconfigure via a second setup call disposes the previous worker and floats"] = function()
     local child = new_child()
     reset_modules(child)
