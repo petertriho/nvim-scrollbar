@@ -26,7 +26,7 @@ test: test-deps
 	$(NVIM) --headless --noplugin -u scripts/minimal_init.lua -c "lua MiniTest.run()"
 
 test-file: test-deps
-	@test -n "$(FILE)" || (printf '%s\n' 'Usage: make test-file FILE=tests/test_*.lua' >&2; exit 2)
+	@test -n "$(FILE)" || (printf '%s\n' 'Usage: make test-file FILE=tests/**/test_*.lua' >&2; exit 2)
 	TEST_FILE="$(FILE)" $(NVIM) --headless --noplugin -u scripts/minimal_init.lua \
 		-c "lua MiniTest.run_file(vim.env.TEST_FILE)"
 
