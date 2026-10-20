@@ -381,8 +381,8 @@ T["screen geometry cache hits issue zero nvim_win_text_height calls beyond the c
         vim.cmd("normal! 30,80fold")
 
         local layout_module = require("scrollbar.layout")
-        -- Tighten the sweep interval: consecutive passes otherwise share a
-        -- sweep window and legitimately issue zero measurements.
+        -- Tighten the sweep interval. Otherwise, consecutive passes share a
+        -- sweep window and correctly issue zero measurements.
         layout_module.screen_extent_sweep_interval_ms = 0
         local source_win = vim.api.nvim_get_current_win()
         local marks = {}
@@ -564,8 +564,8 @@ T["screen geometry cache invalidates on fold close without an autocmd"] = functi
     local child = new_child()
     local result = child.lua_func(function(factory_code)
         local layout_module = require("scrollbar.layout")
-        -- Tighten the uniform verify interval so the silent fold change is
-        -- observed deterministically on the next screen pass.
+        -- Tighten the uniform verify interval, so that the next screen pass
+        -- always observes the silent fold change.
         layout_module.screen_extent_verify_interval_ms = 0
         local counter = loadstring(factory_code)()
         local lines = {}
@@ -610,9 +610,9 @@ T["screen geometry cache invalidates on window option change"] = function()
     local result = child.lua_func(function(factory_code)
         local counter = loadstring(factory_code)()
         vim.o.columns = 30
-        -- Tighten the digest interval: consecutive standalone calls otherwise
-        -- share a digest window and legitimately reuse the cached digest
-        -- (wired setups clear it immediately on OptionSet instead).
+        -- Tighten the digest interval. Otherwise, consecutive standalone calls
+        -- share a digest window and correctly reuse the cached digest. Wired
+        -- setups clear the cached digest immediately on OptionSet instead.
         require("scrollbar.layout").screen_extent_digest_interval_ms = 0
         local lines = {}
         for index = 1, 100 do
@@ -687,8 +687,8 @@ T["screen geometry skips measurements on layout-only option changes"] = function
     end, COUNTER_FACTORY_CODE)
 
     expect.equality(result.g2_extent == result.g1_extent, true)
-    -- 'number' cannot change vertical extents; a uniform window keeps its
-    -- verified extent without re-measuring.
+    -- 'number' cannot change vertical extents. A uniform window keeps its
+    -- verified extent and does not measure it again.
     expect.equality(result.number_calls, 0)
 end
 

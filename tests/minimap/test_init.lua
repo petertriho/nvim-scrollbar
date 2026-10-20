@@ -52,7 +52,7 @@ T["setup with default config (disabled) does not spawn a worker"] = function()
 
     expect.equality(result.worker_state, "disposed")
     expect.equality(result.renderer_visible, false)
-    -- Commands are not registered when disabled.
+    -- When the minimap is disabled, setup registers no commands.
     expect.equality(result.has_toggle, false)
 end
 

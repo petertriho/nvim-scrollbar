@@ -426,8 +426,8 @@ T["scheduler-hosted text-change subscription reconciles marks through the defaul
             return (store.get(bufnr).marks or {})[1] ~= nil
         end, 20)
 
-        -- The marks provider rides the scheduler's TextChanged dispatch: its
-        -- own augroup must not carry text-change rows in the wired setup.
+        -- The marks provider uses the TextChanged dispatch of the scheduler. In
+        -- the wired setup, its own augroup must not carry text-change rows.
         local standalone_text_rows = 0
         for _, autocmd in
             ipairs(vim.api.nvim_get_autocmds({
@@ -558,9 +558,9 @@ T["repeated setup replaces all owned runtime resources without duplication"] = f
     expect.equality(result.new_float, true)
     expect.equality(result.scheduler_group_replaced, true)
     expect.equality(result.scheduler_autocmds > 0, true)
-    -- No built-in provider uses manager-owned refresh, so the manager
-    -- registers no dispatch autocmds by default (they would be a per-keystroke
-    -- registry walk that cannot dispatch anything).
+    -- No built-in provider uses manager-owned refresh, so by default the
+    -- manager registers no dispatch autocmds. With these autocmds, each
+    -- keystroke pays for a registry walk that cannot dispatch anything.
     expect.equality(result.provider_manager_autocmds, 0)
     expect.equality(result.mouse_autocmds, 4)
     expect.equality(result.mappings, 3)

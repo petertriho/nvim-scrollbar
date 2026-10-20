@@ -49,9 +49,10 @@ return {
                 update(winid, context)
             end
         end
-        -- Ride the scheduler's cursor-activity dispatch when wired: one
-        -- autocmd invocation per cursor move covers scheduling and the cursor
-        -- update. Falls back to own registration in standalone setups.
+        -- When the scheduler is wired, the provider uses its dispatch for
+        -- cursor activity. Then one autocmd invocation for each cursor move
+        -- does the scheduling and the cursor update. In a standalone setup,
+        -- the provider registers its own autocmds.
         if type(context.on_cursor_activity) == "function" then
             if context.on_cursor_activity(refresh, { "CursorMoved", "CursorMovedI" }) then
                 vim.api.nvim_create_autocmd({ "BufWinEnter", "WinEnter" }, {

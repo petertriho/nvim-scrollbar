@@ -36,7 +36,7 @@ T["wrapped text edits keep extent accurate through the chunk table"] = function(
         for index = 1, 400 do
             lines[index] = "line " .. index
         end
-        -- long lines wrap at 60 columns -> non-uniform
+        -- Long lines wrap at 60 columns, so the window is non-uniform.
         for index = 60, 400, 40 do
             lines[index] = string.rep("w", 150)
         end
@@ -56,13 +56,13 @@ T["wrapped text edits keep extent accurate through the chunk table"] = function(
             })
         end
 
-        -- warm the extent layer, chunk table, and prefix memo
+        -- Warm the extent layer, the chunk table, and the prefix memo.
         geometry()
         geometry()
         local extents = {}
 
-        -- sequential edits across the buffer, verifying against the raw
-        -- full-buffer measurement every time
+        -- Make sequential edits across the buffer. After each edit, compare
+        -- the computed extent with a raw measurement of the full buffer.
         for step = 1, 6 do
             local row = 40 * step
             if step % 2 == 0 then
@@ -119,10 +119,10 @@ T["mark walks after edits stay bounded instead of rescanning from row zero"] = f
         geometry()
         geometry()
         local before_edit = counter.count()
-        -- One edit near the end: only the affected chunk's memo entries are
-        -- rebuilt (~500 marks); a full rewalk would remeasure every mark
-        -- (2500+ calls), and the historical regression rescanned from row
-        -- zero per mark (seconds).
+        -- One edit near the end rebuilds only the memo entries of the affected
+        -- chunk (about 500 marks). A full rewalk measures every mark again
+        -- (2500+ calls). The historical regression rescanned from row zero for
+        -- each mark (seconds).
         vim.api.nvim_buf_set_text(source_buf, 4500, 0, 4500, 4, { string.rep("q", 200) })
         local started = vim.uv.hrtime()
         geometry()

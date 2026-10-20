@@ -120,8 +120,8 @@ a minimap preset.
 
 ## Customize a Preset
 
-Options next to `preset` win over the preset. Use this to change part of a
-built-in preset:
+Options next to `preset` win over the preset. You can use these options to
+change part of a built-in preset:
 
 ```lua
 require("scrollbar").setup({

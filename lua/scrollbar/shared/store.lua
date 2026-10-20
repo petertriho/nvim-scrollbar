@@ -94,10 +94,10 @@ local function copy_snapshot(snapshot)
 end
 
 -- Specialized equality for stored normalized payloads. `vim.deep_equal`
--- costs ~250 ns per mark (type dispatch + generic table walking); provider
--- refreshes re-publish identical payloads on every event, so the no-op path
--- is the hot one. Field-wise comparison keeps semantics identical because
--- validation guarantees the exact field sets.
+-- costs about 250 ns for each mark (type dispatch and a generic table walk).
+-- Provider refreshes publish identical payloads again on every event, so the
+-- no-op path is the hot path. A comparison field by field gives the same
+-- result, because validation guarantees the exact field sets.
 
 local function marks_equal(left, right)
     local count = #left
@@ -255,10 +255,11 @@ local function is_dense_list(value)
     return count == maximum
 end
 
--- Memo of already-validated text values. Strings are immutable, so a value
--- that passed once (string type, no control characters, positive display
--- width) always will; provider refreshes publish repetitive glyph texts, and
--- the pcall'd strdisplaywidth API per mark dominated text-bearing validation.
+-- Memo of text values that passed validation. Strings are immutable, so a
+-- value that passed once (string type, no control characters, positive
+-- display width) always passes. Provider refreshes publish the same glyph
+-- texts many times. Without the memo, the `strdisplaywidth` call in `pcall`
+-- for each mark is the largest cost of the validation of marks with text.
 local validated_text = {}
 local validated_text_count = 0
 
@@ -292,7 +293,7 @@ end
 ---@param previous? ScrollbarMark[] trusted normalized payload from the previous revision
 ---@return ScrollbarMark[]? normalized
 ---@return string? error_signature
----@return boolean? unchanged true when every retained element matched and the count is stable; nil on error
+---@return boolean? unchanged true when every retained element matched and the count is stable, or nil on error
 local function validate_marks(bufnr, marks, previous)
     if not vim.api.nvim_buf_is_valid(bufnr) then
         return nil, "buffer is invalid"
@@ -333,11 +334,12 @@ local function validate_marks(bufnr, marks, previous)
 
         if mark.line < line_count then
             count = count + 1
-            -- Reuse the trusted normalized element when the value is unchanged:
-            -- provider refreshes typically move a few marks while the rest of the
-            -- payload stays identical, and re-allocating every element shows up
-            -- as GC pauses in publication p95 tails. Reused elements are already
-            -- store-owned, so callers can never gain write access through them.
+            -- Reuse the trusted normalized element when the value is unchanged.
+            -- A provider refresh typically moves a few marks, and the rest of the
+            -- payload stays identical. A new allocation for every element shows
+            -- up as GC pauses in the p95 tail of publication. The store already
+            -- owns the reused elements, so callers can never get write access
+            -- through them.
             local retained = previous and previous[count] or nil
             if
                 retained ~= nil
@@ -367,7 +369,7 @@ end
 ---@param previous? ScrollbarMinimapSourceSpan[] trusted normalized payload from the previous revision
 ---@return ScrollbarMinimapSourceSpan[]? normalized
 ---@return string? error_signature
----@return boolean? unchanged true when every retained element matched and the count is stable; nil on error
+---@return boolean? unchanged true when every retained element matched and the count is stable, or nil on error
 local function validate_minimap_spans(bufnr, spans, previous)
     if not vim.api.nvim_buf_is_valid(bufnr) then
         return nil, "buffer is invalid"
@@ -455,7 +457,7 @@ end
 ---@param previous? ScrollbarMinimapSourcePoint[] trusted normalized payload from the previous revision
 ---@return ScrollbarMinimapSourcePoint[]? normalized
 ---@return string? error_signature
----@return boolean? unchanged true when every retained element matched and the count is stable; nil on error
+---@return boolean? unchanged true when every retained element matched and the count is stable, or nil on error
 local function validate_minimap_points(winid, points, previous)
     if not vim.api.nvim_win_is_valid(winid) then
         return nil, "window is invalid"
@@ -616,7 +618,7 @@ M.get_minimap_spans = function(bufnr)
     return vim.deepcopy(M._get_snapshot(bufnr).minimap_spans)
 end
 
----Stores trusted built-in search matches without changing the public provider mark contract.
+---Stores trusted built-in search matches without a change to the public mark contract of providers.
 ---@param bufnr integer
 ---@param compact ScrollbarCompactSearch
 ---@return boolean success

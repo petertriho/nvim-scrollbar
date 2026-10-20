@@ -37,9 +37,9 @@ for one renderer, or hide the type with `false`. They cannot define a new type.
 A provider can still publish a hidden type, but that renderer does not draw it.
 
 Do not put custom provider names or options under `providers`. That table
-accepts only the built-in provider names, and it rejects unknown keys. Keep
-provider-specific configuration in your own module or closure. Register the
-provider through the manager API.
+accepts only the built-in provider names, and it rejects unknown keys. Keep the
+options of your provider in your own module or closure. Register the provider
+through the manager API.
 
 A new type needs `text`, `priority`, and `highlight`. Mark type names and the
 `text`, `priority`, and `highlight` fields follow the rules in
@@ -299,8 +299,8 @@ require("scrollbar.providers").register({
 ```
 
 The `refresh` method supplies the initial refresh and the manual refresh.
-Because the provider owns the buffer scope, the provider's own event supplies
-the automatic updates.
+Because the provider owns the buffer scope, the custom event of the provider
+supplies the automatic updates.
 
 ## Publishing Semantics
 
@@ -312,8 +312,9 @@ an incremental patch.
 - A returned `{}` explicitly stores an empty replacement and clears the visible
   output for that channel.
 - A `nil` return from any refresh callback means "do not publish". It normally
-  leaves that list unchanged. Policy is checked again after the callback, so a
-  target that became ineligible during collection is cleared instead.
+  leaves that list unchanged. The plugin checks the policy again after the
+  callback. If the target became ineligible during collection, the plugin
+  clears the list instead.
 - Passing `nil` to a context setter is not the same as returning `nil`. A `nil`
   argument is an invalid list. Use the corresponding clear method.
 
@@ -324,7 +325,7 @@ Minimap span and point setters always require minimap eligibility.
 
 Buffer-scoped publication does not require the buffer to be shown or currently
 selected. Window-scoped publication requires a valid normal non-renderer window
-in the relevant current source-window set. That renderer selects the set after
+in the relevant current source-window set. Each renderer selects its set after
 it applies eligibility, `visibility`, profiles, and editor-relative placement.
 
 For valid targets, the policy check occurs before payload validation. A
@@ -401,7 +402,8 @@ types. For spans and points, higher values win:
 
 ### Validation
 
-Each complete list is validated atomically. These faults reject a list:
+The plugin validates each complete list atomically. These faults reject a
+list:
 
 - A negative or non-integer position.
 - An unknown or missing field.
@@ -409,15 +411,16 @@ Each complete list is validated atomically. These faults reject a list:
 - An invalid ordinary type or text.
 - A malformed list.
 
-Each fault clears only the failing channel of this provider for that target,
-returns `false`, and emits a rate-limited warning. Other channels and
-providers stay intact.
+A fault clears only the failing channel of this provider for that target. The
+call returns `false`, and the plugin emits a rate-limited warning. Other
+channels and providers stay intact.
 
-As a narrow allowance for races, otherwise-valid entries whose zero-based
-`line` is past the current EOF are silently omitted in all three schemas. The
-remaining valid entries are published. A list that contains only stale entries
-becomes an accepted empty replacement. A stale line does not hide another
-malformed field on the same entry.
+As a narrow exception for races, the plugin silently omits an otherwise-valid
+entry whose zero-based `line` is past the current EOF. This exception applies
+to all three schemas. The plugin publishes the remaining valid entries. A list
+that contains only stale entries becomes an accepted empty replacement. The
+plugin checks all fields of a stale entry before it omits the entry. If another
+field of that entry is invalid, the plugin rejects the whole list.
 
 ## Context Operations
 
@@ -481,13 +484,14 @@ jobs, or cleanup callbacks. Registration has no option for worker execution.
 ## Lifecycle And Cleanup
 
 - Root `require("scrollbar").setup()` reconfigures the manager. Registered
-  custom providers stay registered. Successful instances are disposed,
-  cleaned, and activated again with a fresh context.
+  custom providers stay registered. The manager disposes and cleans each
+  successful instance, then activates it again with a fresh context.
 - Unregistration calls `dispose` after a successful setup. It also runs the
   registered cleanup callbacks in reverse order, removes the provider
   augroups, and clears all four kinds of output that the provider owns.
-- Provider marks and spans are removed when their buffer is deleted. Window
-  marks and points are removed when their window closes.
+- When a buffer is deleted, the plugin removes the provider marks and spans of
+  that buffer. When a window closes, the plugin removes the window marks and
+  points of that window.
 - Use `create_augroup` for autocmds. Use `add_cleanup` for timers, jobs,
   subscriptions, or other resources. Stop asynchronous work during cleanup.
   Guard late callbacks with your own active flag or generation. A retained
@@ -511,9 +515,9 @@ registered cleanup callbacks.
   provider for that buffer or window. Other channels and providers continue.
 - A dispose or cleanup failure causes a warning. It does not stop the cleanup
   of the remaining resources and publications.
-- Equivalent setup, refresh, dispose, and validation warnings are suppressed
-  until the relevant operation recovers. Cleanup warnings are rate-limited for
-  the registration lifetime of the provider.
+- The plugin suppresses equivalent setup, refresh, dispose, and validation
+  warnings until the relevant operation recovers. It rate-limits cleanup
+  warnings for the registration lifetime of the provider.
 
 This boundary does not wrap code that provider-owned autocmds, timers, jobs, or
 external callbacks invoke later. Handle errors inside those callbacks. Cancel
@@ -544,9 +548,9 @@ or detach them during cleanup.
   operations.
 - A setter returns `false` without a warning: the current renderer policy
   rejected the valid target. Query `is_buffer_eligible` or `is_source_window`.
-- Inactive window output does not appear later: window publication is accepted
-  only for current source windows. When the window becomes selected, republish
-  the output.
+- Inactive window output does not appear later: the plugin accepts window
+  publication only for current source windows. When the window becomes
+  selected, republish the output.
 - Minimap priority seems reversed: ordinary overlays use the priority of the
   mark type, where lower values win. Minimap spans and points use integer
   priority, where higher values win.

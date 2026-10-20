@@ -6,8 +6,9 @@
 --- The child keeps one scratch buffer for each mirrored parent buffer. A
 --- snapshot (`snapshot_start`, `snapshot_chunk`, `snapshot_complete`) copies
 --- the text, and each `delta` applies one parent `on_lines` change. The id of
---- a mirror changes with each snapshot and its version with each delta, so a
---- request whose mirror id and version match sees exactly the parent text.
+--- a mirror changes with each snapshot, and its version changes with each
+--- delta. Thus a request whose mirror id and version match sees exactly the
+--- parent text.
 ---
 --- A worker adds its own request kinds to `handlers` and can set the
 --- `on_snapshot_start` and `on_snapshot_complete` hooks.

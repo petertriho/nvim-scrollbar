@@ -1,7 +1,7 @@
---- Source-window policy of one renderer: which windows and buffers the
---- renderer owns, which windows are eligible sources, the selected
---- configuration variant of a source window, and the set of source windows.
---- The scrollbar renderer and the minimap renderer each build one policy over
+--- Source-window policy of one renderer. The policy tells which windows and
+--- buffers the renderer owns and which windows are eligible sources. It also
+--- gives the selected configuration variant of a source window and the set of
+--- source windows. The scrollbar renderer and the minimap renderer each build one policy over
 --- their own configuration module and float registries.
 ---
 --- The exported predicates serve hot event paths (provider collect and
@@ -15,8 +15,8 @@ local M = {}
 -- `basic_eligible` (window normality and buffer eligibility) costs about
 -- 2 µs. Its inputs are the window, the buffer and its line count
 -- (`max_lines`), and the static root excludes, never the profile matchers.
--- The schedulers clear the memo on topology and option events. The TTL bounds
--- the staleness of a filetype or buftype change for standalone use.
+-- The schedulers clear the memo on topology and option events. For standalone
+-- use, the TTL bounds the staleness of a filetype or buftype change.
 local ELIGIBILITY_TTL_MS = 50
 
 -- A full selection also resolves `config.select` and the active source
@@ -102,8 +102,8 @@ M.new = function(options)
         if not valid_window(winid) then
             return false
         end
-        -- `vim.w` returns nil for a missing variable instead of raising, which
-        -- keeps the lookup off the error path.
+        -- `vim.w` returns nil for a missing variable instead of raising an
+        -- error, so the lookup stays off the error path.
         return vim.w[winid][owned_var] == true
     end
 

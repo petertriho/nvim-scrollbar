@@ -224,9 +224,10 @@ local function request_state(bufnr)
     return state
 end
 
--- TextChanged autocmds are attached only while at least one buffer holds
--- pending or completed search state. With no live search they would run on
--- every keystroke only to prove there is nothing to refresh.
+-- This module attaches TextChanged autocmds only while at least one buffer
+-- holds pending or completed search state. If the autocmds stay attached
+-- without a live search, they run on every keystroke only to prove that
+-- there is nothing to refresh.
 local text_change_group ---@type integer?
 local text_change_attached = false
 
@@ -502,9 +503,9 @@ local function request_refresh(context, bufnr, pattern, mode, ignore_visibility)
     if state.pending ~= nil and same_request(state.pending, pending) then
         return false
     end
-    -- `SafeState` fires after every event, also while the worker scans. A new
-    -- generation for the same request would discard the result of the scan,
-    -- and the next event would discard the following one again.
+    -- `SafeState` fires after every event, also while the worker scans. If the
+    -- same request gets a new generation, that generation discards the result
+    -- of the scan. Then the next event discards the following result again.
     if state.pending == nil and state.worker_request ~= nil and covers(state.worker_request, pending) then
         return false
     end

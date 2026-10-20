@@ -10,7 +10,8 @@
 local root = vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":p:h:h:h")
 local demo_dir = root .. "/scripts/demo"
 local out_dir = demo_dir .. "/out"
--- Hidden, so that a file picker on out/ shows only the images.
+-- The work directory is hidden, so that a file picker on out/ shows only the
+-- images.
 local work_dir = out_dir .. "/.work"
 local manifest_path = demo_dir .. "/manifest.json"
 
@@ -107,7 +108,7 @@ local function png_tape(entry)
         "Hide",
         string.format('Type `DEMO_ENTRY=%s "$DEMO_NVIM" --clean -u scripts/demo/init.lua %s`', entry.id, catalog.file),
         "Enter",
-        -- The statusline shows the label at its right edge once the demo is ready.
+        -- The statusline shows the label at its right edge when the demo is ready.
         string.format("Wait+Screen@30s /(?m)%s$/", regex_escape(entry.label)),
         "Show",
         "Sleep 200ms",
@@ -129,7 +130,8 @@ local function build(ids)
     end
 
     local vhs = vim.split(os.getenv("VHS") or "vhs", "%s+", { trimempty = true })
-    -- Check before any image is replaced, so a missing VHS keeps the old images.
+    -- Check before any image is replaced, so that a missing VHS keeps the old
+    -- images.
     if vhs[1] == nil or vim.fn.executable(vhs[1]) == 0 then
         fail(
             string.format(

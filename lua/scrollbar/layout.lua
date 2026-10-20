@@ -39,10 +39,11 @@ M.handle_geometry = function(viewport_start, viewport_end, total_extent, height)
     return { first_row = first_row, last_row = math.max(first_row, last_row) }
 end
 
--- Smallest line value whose display row is >= r under (extent, height);
--- math.huge when unreachable. Row bands are contiguous line ranges, so a
--- mark can only change rows when it lies in the symmetric difference of the
--- old and new band edges — narrow bands around moved boundaries.
+-- Returns the smallest line value whose display row is >= r for the given
+-- extent and height, or math.huge when no line reaches row r. Row bands are
+-- contiguous line ranges. Thus a mark can change rows only when it lies in
+-- the symmetric difference of the old and new band edges. That difference is
+-- the narrow bands around the boundaries that moved.
 ---@param r number Display row
 ---@param extent number Total mapped extent
 ---@param height number Track height
@@ -68,15 +69,15 @@ M.normalized_mark_rows = function(input)
     local marks = input.marks
     local count = #marks
     local height = input.height
-    -- In-place fast path: when the caller still holds the rows array built for
-    -- this exact marks table (identity) at the same height, row values only
-    -- shift where a mark crosses a boundary after an extent change — a
-    -- handful of entries at realistic densities. With provider segments
-    -- (line-sorted index ranges) the shifted marks are located analytically:
-    -- only marks inside the symmetric difference of the old and new band
-    -- edges can change rows, so each band is binary-searched per segment
-    -- instead of rescanning every mark. Without segments, recompute all rows
-    -- but store only the diffs.
+    -- In-place fast path. It applies when the caller still holds the rows
+    -- array built for this exact marks table (identity) at the same height.
+    -- After an extent change, row values then shift only where a mark crosses
+    -- a boundary: a handful of entries at realistic densities. With provider
+    -- segments (line-sorted index ranges), the shifted marks are located
+    -- analytically. Only marks inside the symmetric difference of the old and
+    -- new band edges can change rows. Thus a binary search finds the marks of
+    -- each band in each segment, instead of a rescan of every mark. Without
+    -- segments, recompute all rows but store only the diffs.
     local previous = input.previous
     if previous ~= nil and type(previous.rows) == "table" and #previous.rows == count then
         local mark_rows = previous.rows
@@ -205,10 +206,11 @@ M.normalized = function(input)
 end
 
 -- Options that can change the mapping from buffer lines to display rows
--- (wrapping, folds, width-affecting settings, diff folds). Horizontal-only
--- options (number, signcolumn, winbar, statusline, ...) are deliberately
--- excluded: they cannot change vertical extents or prefixes. The scheduler's
--- `OPTION_PATTERNS` remains a superset used for OptionSet autocmd patterns.
+-- (wrapping, folds, options that affect width, diff folds). This list
+-- intentionally excludes horizontal-only options (number, signcolumn, winbar,
+-- statusline, and more), because they cannot change vertical extents or
+-- prefixes. The `OPTION_PATTERNS` list of the scheduler is a superset, which
+-- the scheduler uses for the OptionSet autocmd patterns.
 local EXTENT_OPTION_PATTERNS = {
     "ambiwidth",
     "breakindent",
@@ -231,8 +233,8 @@ local EXTENT_OPTION_PATTERNS = {
     "wrap",
 }
 
--- Capture each option's scope at module load so the digest can fetch the
--- effective value for the correct scope (win/buf/global/tab).
+-- Capture the scope of each option at module load, so that the digest can
+-- fetch the effective value for the correct scope (win/buf/global/tab).
 local EXTENT_OPTION_SCOPES = {}
 for _, name in ipairs(EXTENT_OPTION_PATTERNS) do
     local ok, info = pcall(vim.api.nvim_get_option_info2, name, {})
@@ -243,35 +245,40 @@ end
 
 local uv = vim.uv or vim.loop
 
--- Fold commands (za/zM/zR/...) fire no autocmd, so fold state can change
--- silently. Uniform extent layers are re-verified against the full buffer at
--- most this often; uniformity additionally lets text edits update the extent
--- by arithmetic (line_count) with no scan. Non-uniform windows verify on every
--- render. Exposed on the module so tests and users can tighten or disable the
--- window (0 verifies on every screen pass, matching the historical behavior).
+-- Fold commands (za/zM/zR/...) fire no autocmd, so the fold state can change
+-- silently. A uniform extent layer runs `uniform_probe` at most this often.
+-- The full verify runs only when the probe finds a mismatch. With manual
+-- folds, text edits update a uniform extent by arithmetic (line_count) and
+-- measure at most the edited spans. Non-uniform layers do not use this
+-- interval. They sweep a few chunks at most every SWEEP_INTERVAL_MS. Tests and
+-- users can set `M.screen_extent_verify_interval_ms` to tighten or disable the
+-- interval (0 probes on every screen pass).
 local EXTENT_VERIFY_INTERVAL_MS = 250
 
 -- Sorted anchor lines with known display prefixes. Prefix values are absolute
--- (rows before the line), and the array is retained with spread-preserving
--- halving, so dropping anchors keeps every remaining value sound and nearby.
+-- (the rows before the line). At the limit, the array drops every second
+-- anchor, which keeps the spread. Thus after a drop, every remaining value is
+-- still correct, and anchors stay near every region of the buffer.
 local ANCHOR_LIMIT = 512
 
--- Per-source-window extent layer: everything that depends only on the buffer
--- text (changedtick), extent-affecting options, and the window width. Viewport
--- state (topline/topfill/skipcol) deliberately does NOT invalidate it, so
--- scrolling reuses prefixes. `generation` bumps whenever the prefix-visible
--- state changes, gating the mark-row cache in `M.screen`.
+-- Extent layer for each source window: everything that depends only on the
+-- buffer text (changedtick), the options that affect the extent, and the
+-- window width. The viewport state (topline/topfill/skipcol) intentionally
+-- does NOT invalidate it, so a scroll reuses the prefixes. `generation`
+-- increments each time the state that the prefixes depend on changes. The
+-- mark-row cache in `M.screen` uses `generation` as a gate.
 local screen_extent_cache = {}
 
--- Per-source-window cache of `M.screen` mark rows, keyed by mark revisions,
--- track height, and the extent layer generation.
+-- Cache of the `M.screen` mark rows for each source window, keyed by the mark
+-- revisions, the track height, and the generation of the extent layer.
 local screen_marks_cache = {}
 
--- Option-digest cache: recomputing the digest reads ~20 options per render
--- (~7-8µs) just to prove nothing changed. Cached per window and refreshed at
--- most every DIGEST_INTERVAL_MS; wired setups clear it immediately on
--- OptionSet via `invalidate_screen_options`. Tests can tighten the interval
--- via `screen_extent_digest_interval_ms`.
+-- Cache for the option digest. A new digest reads about 20 options per
+-- render (about 7-8µs), only to prove that nothing changed. The cache keeps
+-- one digest per window and refreshes it at most every DIGEST_INTERVAL_MS.
+-- In a wired setup, `invalidate_screen_options` clears it immediately on
+-- OptionSet. Tests can tighten the interval with
+-- `screen_extent_digest_interval_ms`.
 local DIGEST_INTERVAL_MS = 50
 local digest_cache = {}
 
@@ -303,8 +310,8 @@ local function extent_option_digest(source_win)
     return digest
 end
 
----Clear cached option digests (all windows, or one). Wired to OptionSet by
----the scheduler; safe to call at any time.
+---Clear the cached option digests of all windows, or of one window. The
+---scheduler wires this function to OptionSet. It is safe to call at any time.
 ---@param source_win? integer
 M.invalidate_screen_options = function(source_win)
     if source_win == nil then
@@ -345,9 +352,10 @@ local function screen_range(source_win, start_line, end_line)
     }).all
 end
 
---- Display rows of the half-open range [start_line, end_line). Unlike
---- `screen_range`, `end_line` may equal `line_count`: nvim rejects end_row at
---- or beyond the buffer, so the final line is measured on its own.
+--- Display rows of the half-open range [start_line, end_line). Unlike in
+--- `screen_range`, `end_line` can equal `line_count`. Neovim rejects an
+--- end_row at or beyond the end of the buffer, so this function measures the
+--- final line separately.
 local function rows_between(source_win, start_line, end_line, line_count)
     if end_line <= start_line or line_count <= start_line then
         return 0
@@ -363,16 +371,16 @@ local function rows_between(source_win, start_line, end_line, line_count)
     return rows + vim.api.nvim_win_text_height(source_win, { start_row = line_count - 1, start_vcol = 0 }).all
 end
 
--- Display rows before `line` (0-based). Uniform layers short-circuit to the
--- identity mapping. Otherwise the nearest cached anchor at or below the line
--- is extended with one bounded range measurement, and the new line becomes an
--- anchor itself so consecutive queries walk forward incrementally.
--- Memo entries live per chunk, keyed relative to the chunk start: shifting a
--- chunk (or re-basing everything after an edit) never rewrites entries, so
--- maintenance stays O(#chunks + #anchors) instead of O(#memo).
+-- Display rows before `line` (0-based). A uniform layer returns the identity
+-- mapping. Otherwise, one bounded range measurement extends the nearest
+-- cached anchor at or before the line. The new line then becomes an anchor,
+-- so that consecutive queries walk forward incrementally.
+-- Memo entries are stored per chunk and keyed relative to the chunk start.
+-- A chunk shift (or a re-base of everything after an edit) never rewrites
+-- entries, so maintenance stays O(#chunks + #anchors) instead of O(#memo).
 local PREFIX_MAP_LIMIT = 32768
 
----Binary search for the chunk containing `line` (last chunk with start <= line).
+---Binary search for the chunk that contains `line` (the last chunk with start <= line).
 ---@return integer index 0 when line precedes the first chunk
 local function chunk_index_for(layer, line)
     local chunks = layer.chunks
@@ -398,8 +406,8 @@ local function anchor_prefix(layer, anchor)
     local chunk = chunks[index]
     local relative = chunk.memo[anchor - chunk.start]
     if relative == nil then
-        -- Anchors always carry a memo entry; rebuild conservatively when an
-        -- invariant slip leaves one behind.
+        -- Every anchor has a memo entry. If an invariant slip leaves an
+        -- anchor without one, the caller rebuilds conservatively.
         return nil
     end
     return chunk.base + relative
@@ -414,7 +422,7 @@ local function halve_anchors(layer)
     layer.anchors = compact
 end
 
----Bound total memo memory: clear every second chunk's memo (spread-preserving).
+---Bound the total memo memory: clear the memo of every second chunk (this keeps the spread).
 local function evict_memo(layer)
     local chunks = layer.chunks
     local kept_anchors = {}
@@ -484,8 +492,8 @@ local function prefix_for(source_win, line, layer)
     layer.prefix_count = layer.prefix_count + 1
     table.insert(anchors, position, line)
     if #anchors > ANCHOR_LIMIT then
-        -- Drop every second anchor instead of the oldest ones: keeping the
-        -- spread preserves nearby anchors for every region of the buffer.
+        -- Drop every second anchor instead of the oldest ones. This keeps the
+        -- spread, so every region of the buffer keeps nearby anchors.
         halve_anchors(layer)
     end
     if layer.prefix_count > PREFIX_MAP_LIMIT then
@@ -512,11 +520,12 @@ local function wrapped_offset(source_win, line, skipcol, layer)
     return offset
 end
 
--- Per-buffer record of recent text edits, captured through nvim_buf_attach
--- so extent maintenance can measure only the edited spans instead of the
--- whole buffer. Each edit is { first, last_old, updated, tick } in 0-based
--- rows. `overflow_tick` marks points where older edits were dropped; layers
--- whose changedtick predates it must fall back to a full verify.
+-- Record of the recent text edits of each buffer, captured through
+-- nvim_buf_attach. With it, extent maintenance can measure only the edited
+-- spans instead of the whole buffer. Each edit is
+-- { first, last_old, updated, tick } in 0-based rows. `overflow_tick` marks
+-- the point where older edits were dropped. A layer whose changedtick is older
+-- than `overflow_tick` must fall back to a full verify.
 local buffer_edits = {}
 
 local BUFFER_EDIT_HISTORY = 8
@@ -533,10 +542,11 @@ local function attach_buffer_edits(source_buf)
                 return true
             end
             if #tracked.edits >= BUFFER_EDIT_HISTORY then
-                -- Roll the oldest edit out instead of clearing the history:
-                -- overflow_tick becomes the tick of the newest DROPPED edit, so
-                -- consumers asking for edits after any surviving tick still
-                -- get a complete answer and never fall back to a full verify.
+                -- Roll the oldest edit out instead of clearing the history.
+                -- overflow_tick becomes the tick of the newest DROPPED edit.
+                -- Thus a consumer that asks for the edits after any surviving
+                -- tick still gets a complete answer and never falls back to a
+                -- full verify.
                 local dropped = table.remove(tracked.edits, 1)
                 tracked.overflow_tick = dropped[4]
             end
@@ -571,7 +581,7 @@ end
 
 -- Union of the edits recorded after `since_tick`, as sorted disjoint
 -- { first, updated } spans in current-buffer coordinates. Returns nil when
--- history for the range is unavailable.
+-- the history for the range is not available.
 local function edits_since(source_buf, since_tick)
     local state = buffer_edits[source_buf]
     if state == nil or (state.overflow_tick or 0) > since_tick then
@@ -606,8 +616,8 @@ end
 
 -- A uniform layer stays uniform through an edit set when every edited span
 -- still renders to exactly one row per line (measured on the current text).
--- Manual folds cannot be created by text, so unedited lines keep their height;
--- wrap-affecting edits are confined to the edited spans.
+-- Text cannot create manual folds, so unedited lines keep their height. Edits
+-- that affect wrapping stay inside the edited spans.
 local function uniform_after_edits(source_win, spans, line_count)
     for _, span in ipairs(spans) do
         local first = math.max(0, span[1])
@@ -620,32 +630,33 @@ local function uniform_after_edits(source_win, spans, line_count)
 end
 
 --- Non-uniform extent maintenance through a chunk table. Chunks tile the
---- buffer as { start, height } entries; the total extent is their sum. Text
---- edits recorded through `nvim_buf_attach` re-measure only the chunks they
---- overlap (bounded by edit size), and silent fold changes are caught by
---- re-measuring a few chunks per render (round-robin) instead of rescanning
---- the whole buffer every pass.
+--- buffer as { start, height } entries, and the total extent is their sum.
+--- A text edit recorded through `nvim_buf_attach` re-measures only the chunks
+--- that it overlaps (bounded by the edit size). To catch silent fold changes,
+--- each render re-measures a few chunks (round-robin) instead of a rescan of
+--- the whole buffer on every pass.
 local CHUNK_LINES = 512
--- Sub-span granularity for line-count-preserving edits: only the edited
--- 64-line span's height can change (per-line rendering is independent), so
--- a keystroke re-measures 64 lines instead of the whole 512-line chunk.
+-- Sub-span granularity for edits that keep the line count. Only the height of
+-- the edited 64-line span can change (each line renders independently), so a
+-- keystroke re-measures 64 lines instead of the whole 512-line chunk.
 local CHUNK_SUB_LINES = 64
 local CHUNK_SWEEP_PER_RENDER = 6
--- Minimum wall-clock spacing between chunk sweeps. Silent fold changes are
--- rare; re-measuring chunks on EVERY render (scroll bursts, steady
--- re-renders) spends the sweep budget on renders that cannot have observed a
--- change. Tests can tighten it via `screen_extent_sweep_interval_ms`.
+-- Minimum wall-clock time between chunk sweeps. Silent fold changes are rare.
+-- A re-measure of chunks on EVERY render (scroll bursts, steady re-renders)
+-- spends the sweep budget on renders that cannot have observed a change.
+-- Tests can tighten it with `screen_extent_sweep_interval_ms`.
 local SWEEP_INTERVAL_MS = 50
 
---- Cost ceiling for one render's fold sweep. A 512-line chunk measurement is
---- ~45-60µs on this code path; exceeding the budget defers the remaining
---- chunks to the next render (the round-robin cursor already advances only
---- over measured chunks, so coverage continues where it left off).
+--- Cost ceiling for the fold sweep of one render. The measurement of a
+--- 512-line chunk takes about 45-60µs on this code path. When a sweep exceeds
+--- the budget, the remaining chunks wait for the next render. The round-robin
+--- cursor advances only over measured chunks, so coverage continues where it
+--- stopped.
 local CHUNK_SWEEP_BUDGET_NS = 120 * 1000
 
--- Measure a chunk as fixed sub-spans: constructors capture PRE-edit
--- heights, and the edit fast path never builds them — it falls back to a
--- wholesale rebuild when subs are missing.
+-- Measure a chunk as fixed sub-spans. The constructors capture the PRE-edit
+-- heights. The edit fast path never builds sub-spans: when `subs` is missing,
+-- it falls back to a wholesale rebuild.
 local function measure_chunk(source_win, at, stop, current_count, base)
     local subs = {}
     local height = 0
@@ -697,8 +708,9 @@ local function verify_extent(source_win, layer)
             layer.chunks = nil
             layer.chunk_cursor = 1
         else
-            -- Non-uniform layers get their chunk table immediately so later
-            -- renders sweep a bounded number of chunks instead of rescanning.
+            -- A non-uniform layer gets its chunk table immediately, so that
+            -- later renders sweep a bounded number of chunks instead of a
+            -- rescan.
             build_chunks(source_win, layer)
         end
     end
@@ -754,13 +766,13 @@ local function sweep_chunks(source_win, layer)
     if lowest_changed_index ~= nil then
         layer.total_extent = layer.total_extent + total_delta
         local changed = chunks[lowest_changed_index]
-        -- The changed chunk's internal layout moved; everything after it
-        -- shifts wholesale through the chunk bases.
+        -- The internal layout of the changed chunk moved. Everything after
+        -- it shifts wholesale through the chunk bases.
         changed.memo = {}
         for index = lowest_changed_index + 1, #chunks do
             chunks[index].base = chunks[index].base + total_delta
         end
-        -- Drop anchors inside the changed chunk; later anchors resolve
+        -- Drop the anchors inside the changed chunk. Later anchors resolve
         -- through their (shifted) chunk bases automatically.
         local anchors = layer.anchors
         local kept = {}
@@ -781,7 +793,7 @@ local function sweep_chunks(source_win, layer)
 end
 
 ---Apply one recorded edit to the chunk table. Coordinates are in the buffer
----state before this edit; `current_count` is the line count in that state.
+---state before this edit, and `current_count` is the line count in that state.
 ---@return boolean applied false when a full rebuild is the cheaper path
 local function reindex_chunks_for_edit(source_win, layer, first, last, updated, current_count)
     local chunks = layer.chunks
@@ -792,10 +804,11 @@ local function reindex_chunks_for_edit(source_win, layer, first, last, updated, 
         return false
     end
 
-    -- Line-count-preserving edit: only the edited sub-spans' heights can
-    -- change. Gated to manual folds — with expr/indent/syntax folds an edit
-    -- can move other lines' fold boundaries, and the wholesale chunk rebuild
-    -- keeps catching that immediately (the sweep covers silent changes).
+    -- Edit that keeps the line count: only the heights of the edited
+    -- sub-spans can change. This path applies only to manual folds. With
+    -- expr/indent/syntax folds, an edit can move the fold boundaries of other
+    -- lines, and the wholesale chunk rebuild catches that immediately (the
+    -- sweep covers silent changes).
     if updated == last and layer.foldmethod == "manual" then
         local i = chunk_index_for(layer, first)
         if i > 0 then
@@ -884,8 +897,9 @@ local function reindex_chunks_for_edit(source_win, layer, first, last, updated, 
     layer.chunks = spliced
     layer.total_extent = layer.total_extent + height_delta
 
-    -- Anchors inside the rebuilt region are gone with its chunks; anchors
-    -- above it shift lines, and their prefixes follow the shifted bases.
+    -- Anchors inside the rebuilt region go away with its chunks. Anchors
+    -- after the region shift lines, and their prefixes follow the shifted
+    -- bases.
     local anchors = layer.anchors
     local kept = {}
     for _, anchor in ipairs(anchors) do
@@ -914,15 +928,16 @@ local function extent_layer_for(source_win)
         if layer.changedtick == changedtick and layer.line_count == line_count and layer.win_width == win_width then
             return layer
         end
-        -- Text or window width changed while every extent-affecting option
-        -- held. A uniform layer (no wraps, no closed folds, verified) can be
-        -- carried forward by arithmetic when manual folds make text-created
-        -- folds impossible: with 'wrap' off nothing can wrap, and with 'wrap'
-        -- on only the edited spans can start wrapping, so measure those.
+        -- The text or the window width changed, but no option that affects
+        -- the extent changed. A uniform layer (no wraps, no closed folds,
+        -- verified) can be carried forward by arithmetic when manual folds
+        -- make folds created by text impossible. With 'wrap' off, nothing can
+        -- wrap. With 'wrap' on, only the edited spans can start to wrap, so
+        -- measure those spans.
         if layer.uniform and layer.foldmethod == "manual" then
             local carried = false
             if not layer.wrap then
-                -- 'wrap' off: no edit can change any line height, and
+                -- 'wrap' off: no edit can change any line height, and the
                 -- window width cannot introduce wraps.
                 carried = true
             else
@@ -940,8 +955,8 @@ local function extent_layer_for(source_win)
             end
         elseif layer.chunks ~= nil and win_width == layer.win_width then
             -- Non-uniform layer with a chunk table: apply the recorded edits
-            -- to the chunks (measuring only the affected region) instead of
-            -- rescanning the buffer.
+            -- to the chunks (measure only the affected region) instead of a
+            -- rescan of the buffer.
             local edits = edits_list_since(source_buf, layer.changedtick)
             if edits ~= nil then
                 local applied = true
@@ -996,11 +1011,16 @@ local function extent_layer_for(source_win)
     return layer
 end
 
---- Bounded probe standing in for the periodic full verify on uniform
---- layers: the viewport and one rotating slice below it must still render
---- 1:1 (one row per line). A mismatch drops the layer to the full verify.
---- Together with slice rotation this bounds silent-fold detection latency to
---- roughly the verify interval, at ~1% of the full scan's cost.
+--- Bounded probe that stands in for the periodic full verify on uniform
+--- layers. The viewport and one slice below it must still render 1:1 (one row
+--- per line). A mismatch drops the layer to the full verify. Each slice is
+--- 1/UNIFORM_PROBE_SLICES of the lines below the viewport, and the slice
+--- changes on each probe. The cursor cycles through slots 1 to
+--- UNIFORM_PROBE_SLICES, so only the first probe of a layer checks slot 0 (the
+--- first slice). The last slot holds only the remainder lines. The probe never
+--- checks the lines above the viewport. A silent fold above the viewport, or in
+--- the first slice after the first probe, stays unknown until the viewport
+--- reaches it or a full verify runs for another reason.
 local UNIFORM_PROBE_SLICES = 4
 
 local function uniform_probe(source_win, layer, height)
@@ -1040,11 +1060,12 @@ local function extent_layer_current(source_win, layer, height)
             end
         end
     elseif uv.now() - layer.verified_at >= (M.screen_extent_sweep_interval_ms or SWEEP_INTERVAL_MS) then
-        -- Silent fold changes are caught by re-measuring a few chunks per pass
-        -- instead of rescanning the whole buffer, but no sooner than the sweep
-        -- interval: renders between sweeps (scroll bursts, steady re-renders)
-        -- cannot have observed a change. Windows with folding disabled cannot
-        -- compress rows at all, so their sweep is a no-op stamp.
+        -- To catch silent fold changes, each pass re-measures a few chunks
+        -- instead of a rescan of the whole buffer. A sweep runs no sooner
+        -- than the sweep interval, because renders between sweeps (scroll
+        -- bursts, steady re-renders) cannot have observed a change. Windows
+        -- with folding disabled cannot compress rows at all, so their sweep
+        -- only updates `verified_at`.
         if vim.wo[source_win].foldenable == false then
             layer.verified_at = uv.now()
         else
@@ -1105,9 +1126,9 @@ M.screen = function(input)
     local unique_lines
     local prefixes = {}
     if input.marks_sorted == true then
-        -- Renderer-flattened marks arrive in provider-major (line, text) runs;
-        -- equal lines are adjacent, and prefix anchors make out-of-order runs
-        -- cheap, so the dedup/sort pass is unnecessary.
+        -- Marks flattened by the renderer arrive in provider-major
+        -- (line, text) runs. Equal lines are adjacent, and prefix anchors make
+        -- out-of-order runs cheap, so the dedup and sort pass is not necessary.
         local previous = -1
         local marks_input = input.marks
         for index = 1, #marks_input do
@@ -1215,9 +1236,10 @@ M.track_row_to_line = function(source_win, row, height, unit, total_extent)
     end
 
     local layer = extent_layer_for(source_win)
-    -- The caller passes the extent the scrollbar was rendered with; dragging
-    -- should map rows against the geometry the user sees, not a fresher one.
-    -- Prefix lookups measure live, so no canary sweep is needed here.
+    -- The caller passes the extent that the scrollbar was rendered with. A
+    -- drag should map rows against the geometry that the user sees, not a
+    -- fresher one. Prefix lookups measure live, so no canary sweep is
+    -- necessary here.
     local extent = math.max(1, total_extent or layer.total_extent)
     local target = extent <= height and math.min(clamped_row, extent - 1)
         or math.floor(clamped_row * (extent - 1) / (height - 1) + 0.5)
@@ -1270,8 +1292,8 @@ local function display_glyphs(text)
     return glyphs
 end
 
--- Sort numerically only when the collected order is not already ascending;
--- provider-major mark streams leave single-provider groups presorted.
+-- Sort numerically only when the collected order is not already ascending.
+-- Provider-major mark streams leave single-provider groups presorted.
 local function ensure_ascending(values)
     for index = 2, #values do
         if values[index - 1] > values[index] then
@@ -1337,9 +1359,10 @@ end
 local function group_candidates(input, column_offset, expanded_lane_id)
     local groups = {}
     local by_row = {}
-    -- When the caller guarantees `input.marks_sorted` (renderer-flattened
-    -- marks are presorted per provider by line/text), group sources and lines
-    -- are appended in `source_less` order and the per-group sorts disappear.
+    -- When the caller guarantees `input.marks_sorted` (marks flattened by the
+    -- renderer are presorted per provider by line/text), group sources and
+    -- lines are appended in `source_less` order, and the per-group sorts are
+    -- skipped.
     local presorted = input.marks_sorted == true
 
     local function group_for(row, mark_type, mark_config, lane)
@@ -1357,8 +1380,8 @@ local function group_candidates(input, column_offset, expanded_lane_id)
         if group == nil then
             -- `sources` is materialized only on the cold paths that need the
             -- full per-mark list (unsorted callers, compact-search merge).
-            -- The presorted hot path tracks `source`, the first mark
-            -- appended, which is exactly `sources[1]` there.
+            -- The presorted hot path tracks `source` (the first mark
+            -- appended), which is exactly `sources[1]` on that path.
             local sources
             if presorted and input.compact_search == nil then
                 sources = nil
@@ -1383,7 +1406,7 @@ local function group_candidates(input, column_offset, expanded_lane_id)
         return group
     end
 
-    -- One mark-type lookup instead of a config walk per mark.
+    -- One lookup per mark type instead of a configuration walk per mark.
     local routes = {}
     local function route_for(mark_type)
         local route = routes[mark_type]
@@ -1400,16 +1423,17 @@ local function group_candidates(input, column_offset, expanded_lane_id)
     local mark_rows = input.geometry.mark_rows
     local marks = input.marks
     local count = #marks
-    -- Provider segments (index ranges with one provider's marks, contiguous
-    -- and line-sorted when the flatten emitted them). Rows are monotone in
-    -- line within a segment, which lets incremental rebuilds binary-search
-    -- the membership of any row.
+    -- Provider segments: index ranges that hold the marks of one provider,
+    -- contiguous and line-sorted when the flatten emitted them. Within a
+    -- segment, rows are monotone in line, so incremental rebuilds can
+    -- binary-search the membership of any row.
     local segments = nil
     local segment_provider = nil
     local segment_start = 0
     -- Consecutive marks frequently share a type (provider runs) and a row
-    -- (dense payloads); caching the last route and group skips the per-mark
-    -- hash lookups that dominated large-payload grouping.
+    -- (dense payloads). A cache of the last route and group skips the
+    -- per-mark hash lookups. Without the cache, these lookups take most of
+    -- the grouping time for large payloads.
     local last_type, last_route
     local last_group_row, last_group_type, last_group
     for index = 1, count do
@@ -1527,8 +1551,8 @@ local function group_candidates(input, column_offset, expanded_lane_id)
         else
             representative = group.source
         end
-        -- Group lines are a numeric-ascending contract (mouse navigation
-        -- order), independent of the provider-major source order.
+        -- Group lines must be in ascending numeric order (the mouse
+        -- navigation order), independent of the provider-major source order.
         ensure_ascending(group.lines)
         local variants = input.config.marks[group.type].text
         group.provider = representative.provider or ""
@@ -1673,10 +1697,11 @@ local function place_marks(input, groups)
 end
 
 -- Incremental layer rebuild: recompute only the rows whose membership
--- changed after an extent edit. A row's membership is derived by binary
--- search over each provider segment (rows are monotone in line within a
--- segment), so unchanged rows keep their exact placed objects and groups
--- are rebuilt from final membership — no in-place removal, no ambiguity.
+-- changed after an extent edit. A binary search over each provider segment
+-- finds the membership of a row (within a segment, rows are monotone in
+-- line). As a result, unchanged rows keep their exact placed objects, and
+-- groups are rebuilt from the final membership. There is no in-place removal
+-- and no ambiguity.
 local INCREMENTAL_CHANGE_LIMIT = 256
 
 local function rebuild_row_groups(input, row, mark_rows, segments)
@@ -1812,8 +1837,8 @@ local function resolve_mark_layer(input)
         local mark_rows = input.geometry.mark_rows
         local changed_rows = {}
         for _, entry in ipairs(previous.changed) do
-            -- entry = { index, old_row }; the new row is readable from the
-            -- already-mutated rows array.
+            -- entry = { index, old_row }. Read the new row from the rows
+            -- array, which is already mutated.
             changed_rows[entry[2]] = true
             changed_rows[mark_rows[entry[1]]] = true
         end
@@ -2120,23 +2145,27 @@ local function render_row(input, row, marks, width, column_offset, expanded_lane
     return table.concat(parts), spans, hit_cells
 end
 
--- Composed-output cache keyed by resolved mark-layer identity, holding the
--- handle rows, height, and compiled layout cache that fully determine the
--- compose result. Each window rebuild produces a distinct layer table, so
--- windows sharing a variant keep separate entries instead of evicting each
--- other; entries die with their layer on the next rebuild or clear_cache.
+-- Cache of the composed output, keyed by the identity of the resolved mark
+-- layer. Each entry holds the handle rows, the height, and the compiled
+-- layout cache, which fully determine the compose result. Each window
+-- rebuild produces a distinct layer table. Thus windows that share a variant
+-- keep separate entries and do not evict each other. The keys are strong, so
+-- an entry stays after a rebuild replaces its layer. Only clear_cache removes
+-- entries (on renderer hide, dispose, and setup).
 local compose_cache = {}
 
--- Per-row reuse across layer rebuilds that share the flattened-marks table
--- identity. After an edit only a couple of row assignments shift, so most
--- composed rows are byte-identical; weak keys keep entries alive exactly as
--- long as their marks table (entries never reference their key).
+-- Per-row reuse across layer rebuilds that share the identity of the
+-- flattened marks table. After an edit, only a couple of row assignments
+-- shift, so most composed rows are byte-identical. Weak keys keep an entry
+-- alive exactly as long as its marks table (an entry never references its
+-- key).
 local compose_reuse = setmetatable({}, { __mode = "k" })
 
--- Structural row equality. `lines` equality is checked as
--- count/first/last: with a stable marks table, row assignment is monotone in
--- line, so any membership change of a row's set alters its count or its
--- first/last element — the three-way check is exact under that invariant.
+-- Structural row equality. The check of `lines` compares the count, the first
+-- element, and the last element. With a stable marks table, row assignment
+-- is monotone in line. Thus any membership change in the set of a row alters
+-- its count, its first element, or its last element. Under that invariant,
+-- the three-way check is exact.
 local function row_equivalent(a, b)
     if a == nil or b == nil then
         return a == nil and b == nil
@@ -2214,9 +2243,10 @@ M.compose = function(input)
     local rows = {}
     local highlights = {}
     local hitmap = {}
-    -- Row-level reuse across rebuilds sharing the marks table identity: the
-    -- reference entry must agree on every output-determining input (handle
-    -- rows, height, layout cache, width, column offset, expansion lane).
+    -- Row-level reuse across rebuilds that share the identity of the marks
+    -- table. The reference entry must agree on every input that determines
+    -- the output (handle rows, height, layout cache, width, column offset,
+    -- expansion lane).
     local reuse = nil
     local identity = mark_layer.marks_identity
     if identity ~= nil then

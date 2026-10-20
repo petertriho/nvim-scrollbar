@@ -45,7 +45,7 @@ local DEFAULT_EXCLUDE = {
 }
 
 -- Autocmd events with a dedicated handler in both schedulers. Any other event
--- in a renderer's `events` option renders every window. Provider updates
+-- in the `events` option of a renderer renders every window. Provider updates
 -- arrive through the store instead.
 local EVENTS = {
     "BufEnter",
@@ -234,7 +234,7 @@ M.normalize = function(overrides)
     }
 end
 
--- Lowercase autocmd event names mapped to their canonical spelling. nvim
+-- Lowercase autocmd event names mapped to their canonical spelling. Neovim
 -- matches event names case-insensitively, but the schedulers dispatch on the
 -- canonical name.
 ---@type table<string, string>?
@@ -307,17 +307,18 @@ local function event_list_entry(item, path)
     return canonical_event(item.event, path .. ".event"), event_pattern(item.pattern, path .. ".pattern")
 end
 
---- Resolve one renderer's `events` option. A list replaces `defaults`. A table
---- keyed by event name merges with `defaults`: `true` adds the event, `false`
---- removes it, and a table sets its pattern. A list entry is an event name or
---- `{ event, pattern }`. Any autocmd event is valid, once. The result lists the
---- handled events in the order of `EVENTS`, then the other events sorted.
+--- Resolve the `events` option of one renderer. A list replaces `defaults`. A
+--- table keyed by event name merges with `defaults`: `true` adds the event,
+--- `false` removes it, and a table sets its pattern. A list entry is an event
+--- name or `{ event, pattern }`. Any autocmd event is valid, once. The result
+--- lists the handled events in the order of `EVENTS`, then the other events
+--- sorted.
 ---@param value any
 ---@param defaults string[]
 ---@param path string
 ---@return ScrollbarEventConfig[]
 M.resolve_events = function(value, defaults, path)
-    -- `false` selects the scheduler's default pattern for the event.
+    -- `false` selects the default pattern of the scheduler for the event.
     ---@type table<string, false|string[]>
     local enabled = {}
     if value == nil then
@@ -392,10 +393,10 @@ end
 ---@field fields string[] Spec fields that the renderer uses
 ---@field reject? table<string, string> Mark types that the renderer rejects, with the reason
 
---- Apply one renderer's layered `marks` overrides to the registry. `false`
---- hides every type. A type set to `false` is hidden. A table merges onto the
---- registry spec. A type that the registry hides stays hidden unless an
---- override table shows it again.
+--- Apply the layered `marks` overrides of one renderer to the registry.
+--- `false` hides every type. A type set to `false` is hidden. A table merges
+--- onto the registry spec. A type that the registry hides stays hidden unless
+--- an override table shows it again.
 ---@param registry ScrollbarMarkRegistry
 ---@param overrides any
 ---@param path string

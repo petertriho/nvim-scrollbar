@@ -241,8 +241,8 @@ T["click at a minimap row moves the source cursor to the first line of the row"]
         local renderer = require("scrollbar.minimap.renderer")
         local state = assert(renderer.render(0))
         local mouse = require("scrollbar.minimap.mouse")
-        -- Simulate a click on row 2 by calling press directly with the
-        -- state's float window; press uses getmousepos, so we stub it.
+        -- Simulate a click on row 2: call press directly with the float window
+        -- of the state. Press uses getmousepos, so the test stubs it.
         local original_getmousepos = vim.fn.getmousepos
         ---@diagnostic disable-next-line: duplicate-set-field
         vim.fn.getmousepos = function()
@@ -522,8 +522,8 @@ T["augroup is independent of the scrollbar mouse augroup"] = function()
     end)
 
     expect.equality(result.has_minimap, true)
-    -- ScrollbarMouse may or may not exist depending on whether scrollbar
-    -- mouse.setup was called. The augroup name is what we care about.
+    -- ScrollbarMouse exists only if scrollbar mouse.setup was called. This
+    -- test checks only the augroup name.
 end
 
 return T

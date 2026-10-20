@@ -53,8 +53,8 @@ target, for example `ale = { minimap = false }`.
 - `:ScrollbarRefresh` rereads the ALE state of the buffers in the current
   source windows.
 
-If ALE loads after scrollbar, the next `ALELintPost` event shows its marks. You
-do not have to run scrollbar setup again.
+If ALE loads after scrollbar, the next `ALELintPost` event shows the ALE marks.
+You do not have to run scrollbar setup again.
 
 ## Limitations
 
@@ -70,8 +70,8 @@ do not have to run scrollbar setup again.
   `:lua print(vim.inspect(vim.g.ale_buffer_info[tostring(vim.api.nvim_get_current_buf())]))`.
 - If the ALE state changed and no `ALELintPost` event followed, run
   `:ScrollbarRefresh`.
-- If informational ALE entries look like warnings, this is the expected
-  behavior. Every type other than `E` maps to `Warn`.
+- If informational ALE entries look like warnings, the provider works
+  correctly. Every type other than `E` maps to `Warn`.
 
 ## Related Links
 

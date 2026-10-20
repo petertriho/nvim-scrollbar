@@ -21,8 +21,8 @@ local M = {}
 ---@field source_windows? fun(bufnr?: integer): integer[]
 ---@field is_buffer_eligible? fun(bufnr: integer): boolean
 ---@field is_source_window? fun(winid: integer): boolean
----@field on_text_change? fun(fn: fun(args: table), events?: string[]): boolean? Scheduler text-change dispatch; returns false or nil when the hub is inactive
----@field on_cursor_activity? fun(fn: fun(args: table), events?: string[]): boolean? Scheduler cursor-activity dispatch; returns false or nil when the hub is inactive
+---@field on_text_change? fun(fn: fun(args: table), events?: string[]): boolean? Scheduler text-change dispatch. Returns false or nil when the hub is inactive
+---@field on_cursor_activity? fun(fn: fun(args: table), events?: string[]): boolean? Scheduler cursor-activity dispatch. Returns false or nil when the hub is inactive
 
 ---@class ScrollbarProviderConsumerPolicy
 ---@field source_windows fun(bufnr?: integer): integer[]
@@ -35,8 +35,8 @@ local M = {}
 ---@field consumer_policies table<"scrollbar"|"minimap", ScrollbarProviderConsumerPolicy>
 ---@field invalidate_buffer fun(bufnr: integer)
 ---@field invalidate_window fun(winid: integer)
----@field on_text_change? fun(fn: fun(args: table), events?: string[]): boolean? Scheduler text-change dispatch; nil in standalone setups
----@field on_cursor_activity? fun(fn: fun(args: table), events?: string[]): boolean? Scheduler cursor-activity dispatch; nil in standalone setups
+---@field on_text_change? fun(fn: fun(args: table), events?: string[]): boolean? Scheduler text-change dispatch. Nil in standalone setups
+---@field on_cursor_activity? fun(fn: fun(args: table), events?: string[]): boolean? Scheduler cursor-activity dispatch. Nil in standalone setups
 
 ---@type table<string, ScrollbarManagedProvider>
 local registry = {}
@@ -397,9 +397,9 @@ local function make_context(entry)
             end
             table.insert(entry.cleanups, cleanup)
         end,
-        -- Shared TextChanged dispatch hosted by the scheduler (when wired by
-        -- init.lua); providers use it instead of their own augroup so a
-        -- keystroke pays one autocmd invocation. Absent in standalone setups.
+        -- Shared TextChanged dispatch of the scheduler, if init.lua wires it.
+        -- Providers use it instead of their own augroup, so each keystroke
+        -- costs one autocmd invocation. It is nil in standalone setups.
         on_text_change = manager.on_text_change,
         on_cursor_activity = manager.on_cursor_activity,
         source_windows = function(bufnr)
@@ -1082,10 +1082,10 @@ M.setup = function(options)
     end
 
     manager_group = vim.api.nvim_create_augroup("ScrollbarProviderManager", { clear = true })
-    -- Register manager-owned refresh dispatch only when at least one active
-    -- provider claims it. Built-in providers all own their refresh, so the
-    -- default installation registers no manager autocmds at all; every
-    -- TextChanged* keystroke otherwise paid a registry walk that could not
+    -- Register the refresh dispatch that the manager owns only when at least
+    -- one active provider claims it. All built-in providers own their refresh,
+    -- so the default installation registers no manager autocmds. Without this
+    -- check, every TextChanged* keystroke pays for a registry walk that cannot
     -- dispatch anything.
     local manager_buffer_refresh = false
     local manager_window_refresh = false

@@ -719,9 +719,10 @@ T["autohide hide-timer restarts on activity when minimap.autohide is enabled"] =
         })
 
         vim.api.nvim_exec_autocmds("CursorMoved", {})
-        -- The first activity creates a hide timer. With three new_timer calls
-        -- expected (1 main flush timer + 1 hide timer), the hide timer is the
-        -- second timer created.
+        -- The first activity creates a hide timer. The scheduler creates two
+        -- timers: the main flush timer in setup, then this hide timer. Thus
+        -- the hide timer is the second timer. The `vim.wait` call below
+        -- creates a third timer.
         local hide_timer = timers[2]
         local starts_after_first = hide_timer.starts
 
@@ -830,7 +831,8 @@ T["dispose stops all timers including pending hide timers"] = function()
         }
     end)
 
-    -- Before dispose, only hide timers exist; the main timer is not closed.
+    -- Before dispose, no timer is closed: the main flush timer and the hide
+    -- timer of each window.
     for _, state in ipairs(result.closed_before_dispose) do
         expect.equality(state, false)
     end

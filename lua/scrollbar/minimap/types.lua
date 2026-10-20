@@ -14,9 +14,10 @@
 --- `block` draws `█` for a cell with any dot.
 ---@alias ScrollbarMinimapEncoding "braille"|"block"
 
---- Arrangement with a scrollbar on the same side of the source window.
---- `inner` and `outer` place the floats side by side, with the minimap beside
---- the text or at the window edge. `above` and `below` overlap them.
+--- The arrangement of the minimap with a scrollbar on the same side of the
+--- source window. `inner` and `outer` place the floats side by side, with the
+--- minimap beside the text or at the window edge. `above` and `below` overlap
+--- them.
 ---@alias ScrollbarMinimapStack "inner"|"outer"|"above"|"below"
 
 ---@class ScrollbarMinimapUserPlacement
@@ -29,10 +30,10 @@
 
 ---@class ScrollbarMinimapUserMarkTypeConfig
 ---@field priority? integer Lower values win overlay collisions
----@field highlight? ScrollbarHighlight Highlight source group or direct definition
+---@field highlight? ScrollbarHighlight A source highlight group or a direct definition
 
 ---@class ScrollbarMinimapUserAppearance
----@field preset? string Built-in minimap preset name
+---@field preset? string The name of a built-in minimap preset
 ---@field width? integer
 ---@field height? false|integer
 ---@field scale? ScrollbarMinimapScale
@@ -55,7 +56,7 @@
 ---@field autohide? boolean|ScrollbarUserAutohideConfig
 ---@field max_lines? false|integer
 ---@field throttle_ms? integer
----@field events? ScrollbarUserEventList Autocmd events that update the minimap. A list replaces the defaults; a table keyed by event name merges with them
+---@field events? ScrollbarUserEventList Autocmd events that update the minimap. A list replaces the defaults. A table keyed by event name merges with them
 ---@field backend? ScrollbarMinimapBackend
 ---@field background_blend? false|integer Root-only blend of the base surface
 ---@field profiles? ScrollbarMinimapUserProfile[]
@@ -70,8 +71,8 @@
 
 ---@class ScrollbarMinimapMarkSpec
 ---@field priority integer Lower values win overlay collisions
----@field highlight ScrollbarHighlight Highlight source used by automatic generation
----@field group string Compiled renderer-facing minimap highlight group
+---@field highlight ScrollbarHighlight The highlight source that automatic generation uses
+---@field group string The compiled minimap highlight group that the renderer uses
 
 ---@class ScrollbarMinimapConfig
 ---@field enabled boolean
@@ -95,10 +96,10 @@
 ---@field hide_on_cursor boolean
 ---@field mouse boolean
 ---@field viewport boolean
----@field marks table<string, ScrollbarMinimapMarkSpec> Shown mark types
+---@field marks table<string, ScrollbarMinimapMarkSpec> The mark types that the minimap shows
 
 ---@class ScrollbarMinimapCompiledVariant
----@field id integer Root is 0; profile variants use their one-based declaration index
+---@field id integer Root is 0. A profile variant uses the one-based index of its declaration
 ---@field matcher false|ScrollbarCompiledMatcher
 ---@field config ScrollbarMinimapConfig
 
@@ -108,9 +109,9 @@
 
 ---@class ScrollbarMinimapSquashHighlight
 ---@field hl_group string
----@field col_start integer 1-indexed display column, inclusive
----@field col_end integer 1-indexed display column, inclusive
----@field order? integer Lower values win semantic composition; omitted preserves legacy tuple order
+---@field col_start integer One-based display column, inclusive
+---@field col_end integer One-based display column, inclusive
+---@field order? integer Lower values win semantic composition. Without it, the legacy tuple order applies
 
 ---@class ScrollbarMinimapCell
 ---@field char string A space, a Braille character, or `█`
@@ -144,14 +145,14 @@
 
 ---@class ScrollbarMinimapOverlay
 ---@field source_line integer Zero-based source buffer line
----@field minimap_row integer 1-based target row in the minimap grid
----@field mark_type string Mark type (e.g. "Error", "Search")
----@field priority integer Lower wins collisions using the selected minimap mark spec
----@field highlight string Compiled minimap highlight group (e.g. "ScrollbarMinimapError")
----@field provider string Publishing provider name; used for deterministic tiebreaks
+---@field minimap_row integer One-based target row in the minimap grid
+---@field mark_type string Mark type, for example "Error" or "Search"
+---@field priority integer Lower values win collisions. The value comes from the selected minimap mark spec
+---@field highlight string Compiled minimap highlight group, for example "ScrollbarMinimapError"
+---@field provider string Name of the publishing provider, for deterministic tiebreaks
 
 ---@class ScrollbarMinimapOverlaysOptions
----@field config ScrollbarMinimapConfig Active minimap config slice
+---@field config ScrollbarMinimapConfig Active slice of the minimap configuration
 
 ---@class ScrollbarMinimapSchedulerRenderer
 ---@field source_windows fun(bufnr?: integer): integer[]
@@ -172,7 +173,7 @@
 ---@field config? ScrollbarMinimapConfig
 ---@field renderer? ScrollbarMinimapSchedulerRenderer
 ---@field on_colorscheme? fun()
----@field on_text_change? fun(fn: fun(args: table), events?: string[]): boolean Shared TextChanged dispatch hosted by the scrollbar scheduler; returns false when the hub is inactive so the caller keeps its own registration
+---@field on_text_change? fun(fn: fun(args: table), events?: string[]): boolean Shared TextChanged dispatch of the scrollbar scheduler. Returns false when the hub is inactive, so the caller keeps its own registration
 ---@field peers? ScrollbarSchedulerPeer[] Renderers whose floats the scheduler ignores
 
 ---@class ScrollbarMinimapHighlightSpan
@@ -226,13 +227,13 @@
 ---@field viewport_top integer
 ---@field viewport_bottom integer
 ---@field cursor_row? integer
----@field cursor_col? integer 1-based projected minimap cursor column
+---@field cursor_col? integer One-based minimap column of the projected cursor
 ---@field overlay_signature string
 ---@field cells_signature string
 ---@field hidden_by_cursor boolean
 ---@field winblend integer
 ---@field winhighlight string
----@field footprint ScrollbarStackFootprint Own stacking footprint from the last render
+---@field footprint ScrollbarStackFootprint Stacking footprint of this minimap from the last render
 
 ---@class ScrollbarMinimapRendererWorker
 ---@field request fun(request: table): boolean
@@ -268,9 +269,9 @@
 ---@field height integer
 ---@field width integer
 ---@field projection ScrollbarMinimapProjection Projection of the render before the press
----@field pressed_row integer 0-based minimap row at press time
----@field pressed_topline integer 0-based source topline after the press jump
+---@field pressed_row integer Zero-based minimap row at press time
+---@field pressed_topline integer Zero-based source topline after the press jump
 ---@field dragging boolean
----@field held boolean Whether the scheduler deadline was paused; always true because every press navigates
+---@field held boolean Whether the scheduler deadline was paused. Always true, because every press navigates
 
 return {}

@@ -156,7 +156,8 @@ local function release_statuscolumn(source_win)
 end
 
 ---Apply the statuscolumn wrapper of a reservation and draw it once. The
----reservation is released when the wrapper fails or another value replaces it.
+---function releases the reservation when the wrapper fails or when another
+---value replaces it.
 ---@param source_win integer
 ---@param reservation ScrollbarStatuscolumnReservation
 ---@return boolean applied
@@ -315,8 +316,9 @@ M._statuscolumn = function(owner_win)
     return value
 end
 
--- Defined after the float states, because it clears the source selection
--- memo. The float states drop the caches of a deleted buffer through it.
+-- `clear_buffer_caches` is defined after the float states, because it clears
+-- the memo of the source selection. The float states call it to drop the
+-- caches of a deleted buffer.
 local clear_buffer_caches
 
 local floats = float_states.new({
@@ -417,8 +419,8 @@ local function placement_origin(active_config, source_win, area)
     return placement.relative == "window" and area.width or vim.o.columns
 end
 
--- Compiled configs do not change, so each one keeps one placement table and
--- a steady render allocates nothing for stacking.
+-- Compiled configurations do not change, so each one keeps one placement
+-- table. As a result, a steady render allocates nothing for stacking.
 ---@type table<ScrollbarConfig, ScrollbarStackPlacement>
 local stack_placements = setmetatable({}, { __mode = "k" })
 
@@ -583,10 +585,11 @@ local function flattened_marks(source_win, source_buf)
     end
     table.sort(provider_names)
 
-    -- Providers are emitted in name order with each provider's marks sorted
-    -- by (line, text), so the flattened array is in `source_less` order. The
-    -- layout then skips per-group sorts on rebuilds; the sort cost is paid
-    -- only when a revision change rebuilds this cache anyway.
+    -- This loop emits the providers in name order and sorts the marks of each
+    -- provider by (line, text), so the flattened array is in `source_less`
+    -- order. The layout then skips the sort of each group on rebuilds. This
+    -- code pays the sort cost only when a revision change rebuilds this cache
+    -- anyway.
     local marks = {}
     for _, provider in ipairs(provider_names) do
         local base = #marks
@@ -695,10 +698,11 @@ local function line_mark_layer(
     end
 
     -- Rows and the mark layer depend only on marks, line_count, height,
-    -- container_width, and layout config — not on the revisions. When the
-    -- flattened marks table is the same object as last build, recompute rows
-    -- in place (storing only shifted entries); when nothing shifted, every
-    -- layer input is provably identical and the cached layer is reused.
+    -- container_width, and the layout configuration. They do not depend on
+    -- the revisions. When the flattened marks table is the same object as in
+    -- the last build, the rows are computed again in place, and only the
+    -- shifted entries are stored. When no row shifted, every layer input is
+    -- provably identical, and the cached layer is reused.
     local rows_changed = nil
     local mark_rows
     if
@@ -741,8 +745,8 @@ local function line_mark_layer(
         return cached
     end
 
-    -- A few shifted rows with everything else identical: hand the layout
-    -- the previous layer so it rebuilds only the affected rows.
+    -- When a few rows shifted and all other inputs are identical, the layout
+    -- gets the previous layer, so that it rebuilds only the affected rows.
     local previous_layer_input = nil
     if
         rows_changed ~= nil
@@ -1150,8 +1154,8 @@ end
 
 --- Resolve the stacked origin and z-index of one scrollbar float again, after
 --- the minimap footprint of its source window changes. The content does not
---- render again, so the caller schedules a render when this returns true: the
---- container for named-mark growth depends on the origin.
+--- render again. When this function returns true, the caller schedules a
+--- render, because the container for named-mark growth depends on the origin.
 ---@param source_win integer
 ---@return boolean changed
 M.reposition = function(source_win)
@@ -1246,8 +1250,9 @@ M.is_buffer_eligible = floats.is_buffer_eligible
 ---@type fun(winid: integer): boolean
 M.is_source_window = policy.is_source_window
 
----Clear cached source eligibility (one window or all). Wired to the
----scheduler's topology/option events; safe to call at any time.
+---Clear the cached source eligibility of one window, or of all windows. The
+---topology and option events of the scheduler call this function. It is safe
+---to call at any time.
 ---@type fun(source_win?: integer)
 M.invalidate_source_selection = policy.invalidate
 

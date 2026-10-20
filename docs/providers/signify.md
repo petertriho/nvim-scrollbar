@@ -35,9 +35,10 @@ With lazy.nvim:
 }
 ```
 
-If vim-signify loads after scrollbar, the provider starts to use it at the next
-`User Signify` event or `:ScrollbarRefresh` after vim-signify sets
-`g:loaded_signify = 1`. Scrollbar does not configure vim-signify itself.
+If vim-signify loads after scrollbar, the provider shows no marks until
+vim-signify sets `g:loaded_signify = 1`. After that, the provider starts to use
+vim-signify at the next `User Signify` event or `:ScrollbarRefresh`. Scrollbar
+does not configure vim-signify itself.
 
 ## Marks
 
@@ -78,9 +79,9 @@ top-level `marks` table. To change it in one renderer only, use
 
 ## Limitations
 
-- `:SignifyDisable`, or stale signs after an external change, may not emit
-  `User Signify`. To force an update, run `:SignifyRefresh`, then run
-  `:ScrollbarRefresh`.
+- `:SignifyDisable` may not emit `User Signify`. Signs that become stale after
+  an external change may also not cause this event. To force an update, run
+  `:SignifyRefresh`, then run `:ScrollbarRefresh`.
 - If vim-signify is not loaded, the provider shows no marks, and scrollbar
   setup still succeeds.
 - You can enable `signify` together with `gitsigns`, `mini_diff`, or `vgit`.

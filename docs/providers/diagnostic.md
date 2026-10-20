@@ -39,12 +39,12 @@ The provider reads `vim.diagnostic.get(bufnr)`, which includes diagnostics from
 all native diagnostic namespaces. It emits one mark for each diagnostic.
 
 Marks are buffer-scoped. Every source window that shows the buffer shares
-them. Invalid, unloaded, excluded, or over-`max_lines` buffers produce no
-diagnostic marks.
+them. Buffers that are invalid, unloaded, or excluded produce no diagnostic
+marks. Buffers that have more lines than `max_lines` also produce none.
 
 This provider does not read ALE or Coc data, unless those tools also publish
-into `vim.diagnostic`. ALE and Coc have separate dedicated providers, which are
-disabled by default.
+into `vim.diagnostic`. ALE and Coc have their own providers, which are disabled
+by default.
 
 ## Updates
 
@@ -96,7 +96,7 @@ from a [custom provider](custom.md).
   provider mirrors the complete result of `vim.diagnostic.get(bufnr)`.
 - Rendering can combine marks that map to the same scrollbar row. Density,
   lanes, stack order, and priorities determine the visible cells. A click on a
-  visible mark uses its exact stored source-line target.
+  visible mark uses the exact source line that the mark stores.
 - To examine the source data, run
   `:lua print(vim.inspect(vim.diagnostic.get(0)))`. If the result is empty, the
   cause is upstream of the scrollbar provider.

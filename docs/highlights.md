@@ -2,9 +2,10 @@
 
 The scrollbar and the minimap generate automatic highlights independently. When
 the top-level `set_highlights = true` (the default), setup creates the scrollbar
-groups, and the minimap groups when the minimap is enabled. The plugin updates
-them after each `ColorScheme` event. Public groups are created only as
-`default = true` links, so existing user or colorscheme definitions are kept.
+groups. It also creates the minimap groups when the minimap is enabled. The
+plugin updates these groups after each `ColorScheme` event. The plugin creates
+public groups only as `default = true` links, so it keeps existing user or
+colorscheme definitions.
 
 ## Sources
 
@@ -14,7 +15,7 @@ them after each `ColorScheme` event. Public groups are created only as
   top-level `marks.<Type>.highlight` applies to both renderers.
   `scrollbar.marks.<Type>.highlight` and `minimap.marks.<Type>.highlight`
   override it for one renderer.
-- A table is used as a direct `nvim_set_hl()` definition.
+- The plugin uses a table as a direct `nvim_set_hl()` definition.
 
 ```lua
 require("scrollbar").setup({
@@ -28,8 +29,8 @@ require("scrollbar").setup({
 })
 ```
 
-The resting thumb uses `PmenuThumb` by default. Pressed thumb backgrounds are
-derived from `PmenuSel`. When the resolved or direct definition does not
+The resting thumb uses `PmenuThumb` by default. The plugin derives pressed thumb
+backgrounds from `PmenuSel`. When the resolved or direct definition does not
 already set `blend`, the plugin adds `thumb.blend`. Mark-over-thumb groups
 deep-merge the thumb background and the mark definition. Mark fields take
 precedence.
@@ -85,16 +86,16 @@ vim.api.nvim_set_hl(0, "ScrollbarMinimapError", { link = "ScrollbarError" })
 With the top-level `set_highlights = false`, the plugin creates and changes no
 scrollbar groups, including the base group and the legacy aliases. A manual
 configuration must define the canonical Thumb names. It is not sufficient to
-define only the old Handle names.
+define only the legacy Handle names.
 
 In manual mode, every profile uses the same canonical groups. As a result,
 profile-specific highlight sources and blend values need
 `set_highlights = true`. There is no public API for profile-specific manual
 highlights.
 
-The same option also stops the plugin from writing minimap groups. Every
-minimap profile then uses the canonical `ScrollbarMinimap<Type>` names. Define
-those groups manually.
+With the same option, the plugin also writes no minimap groups. Every minimap
+profile then uses the canonical `ScrollbarMinimap<Type>` names. Define those
+groups manually.
 
 ## Related
 

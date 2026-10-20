@@ -1,14 +1,15 @@
---- Minimap lifecycle: wires config + worker + renderer + scheduler +
---- overlays + mouse into a single setup/dispose lifecycle, and registers
---- the user commands `MinimapShow`, `MinimapHide`, `MinimapToggle`,
---- `MinimapRefresh`.
+--- Minimap lifecycle: connects the configuration, worker, renderer,
+--- scheduler, overlays, and mouse modules in one setup and dispose lifecycle.
+--- It also registers the user commands `MinimapShow`, `MinimapHide`,
+--- `MinimapToggle`, and `MinimapRefresh`.
 ---
 --- The top-level dispatcher (`lua/scrollbar/init.lua`) commits the minimap
 --- configuration, calls `require("scrollbar.minimap").setup()`, and disposes
 --- both subsystems on reconfigure.
 ---
---- Default `minimap.enabled = false` means the dispatcher must early-return
---- without spawning the worker or creating floats when disabled.
+--- The default is `minimap.enabled = false`. The dispatcher calls `M.setup`
+--- also when the minimap is disabled. In that case, `M.setup` must return early.
+--- It must not spawn the worker or create floats.
 
 local config = require("scrollbar.minimap.config")
 local controls_module = require("scrollbar.shared.controls")
@@ -54,7 +55,7 @@ end
 M.setup = function(overrides, wiring)
     local root_config
     if overrides == nil then
-        -- Config was already validated by the top-level dispatcher.
+        -- The top-level dispatcher already validated the configuration.
         root_config = config.get()
     else
         root_config = config.set(overrides)

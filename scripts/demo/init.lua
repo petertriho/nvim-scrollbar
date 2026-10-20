@@ -58,7 +58,7 @@ vim.o.hlsearch = true
 vim.o.incsearch = true
 vim.opt.shortmess:append("FI")
 
--- The statusline shows the label once the demo is ready. The tapes wait for it.
+-- The statusline shows the label when the demo is ready. The tapes wait for it.
 vim.o.statusline = " %f"
 
 require("tokyonight").setup({
@@ -79,7 +79,8 @@ minidiff.setup({
 
 vim.diagnostic.config({ virtual_text = true, signs = false })
 
--- Autocommands restore the search pattern when they finish, so set it here.
+-- Autocommands restore the search pattern when they finish, so the pattern is
+-- set here, outside an autocommand.
 if entry.search ~= false then
     vim.fn.setreg("/", catalog.search_pattern)
 end

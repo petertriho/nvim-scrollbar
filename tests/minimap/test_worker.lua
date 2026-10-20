@@ -765,7 +765,8 @@ T["mirror invalidation triggers a re-snapshot when buffer edits during snapshot"
             signature = "race",
         })
 
-        -- Edit during snapshot to trigger changedtick drift + restart
+        -- Edit the buffer during the snapshot. The changedtick drift then
+        -- restarts the snapshot.
         vim.schedule(function()
             vim.api.nvim_buf_set_lines(0, 39, 40, false, { "EDITED" })
             vim.api.nvim_exec_autocmds("TextChanged", { buffer = 0 })
@@ -1287,7 +1288,7 @@ T["worker crash flips to sync and emits exactly one warning"] = function()
         true
     )
 
-    -- Subsequent requests should route through sync.
+    -- Subsequent requests must route through sync.
     local result = child.lua_func(function()
         vim.api.nvim_buf_set_lines(0, 0, -1, false, { "def" })
         require("scrollbar.minimap.worker").request({

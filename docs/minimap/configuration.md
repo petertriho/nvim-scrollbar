@@ -65,9 +65,9 @@ You set global options only at the root of the `minimap` block.
 | Option | Default | Meaning |
 | --- | --- | --- |
 | `enabled` | `false` | Main toggle. When `false`, the minimap requests no providers, shows no floats, and creates no `:Minimap*` commands. |
-| `show` | `true` | Initial visibility. `false` starts hidden. `:MinimapShow` shows it. |
+| `show` | `true` | Initial visibility. With `false`, the minimap starts hidden. `:MinimapShow` shows it. |
 | `visibility` | `"all"` | Uses the same rules as the scrollbar. See [Visibility](../visibility.md). |
-| `autohide` | `false` | `true` hides each minimap after 1000 ms without cursor or scroll activity in its window. `{ delay_ms = n }` sets the delay. |
+| `autohide` | `false` | `true` conceals each minimap after 1000 ms without cursor or scroll activity in its window. `{ delay_ms = n }` sets the delay. |
 | `max_lines` | `false` | A buffer with more lines than this number gets no minimap. |
 | `throttle_ms` | `50` | Renders that are queued within this interval combine into one frame. `0` renders as fast as possible. |
 | `events` | see Defaults | Autocommand events that update the minimap. See [Events](#events). |
@@ -83,7 +83,7 @@ You set appearance options at the root of the `minimap` block or in a
 | --- | --- | --- |
 | `preset` | `nil` | A built-in minimap preset. The options next to it win. See [Minimap presets](../presets.md#minimap-presets). |
 | `width` | `16` | Width of the minimap grid in cells. A positive integer. |
-| `height` | `false` | Height of the minimap grid. `false` uses the height of the source window. |
+| `height` | `false` | Height of the minimap grid. `false` uses the height of the text area of the source window. |
 | `scale` | `"fixed"` | `"fixed"` gives each dot row one source line and scrolls the map with the source window. A positive integer gives each dot row that number of lines and also scrolls. `"fit"` shrinks the whole buffer into the float. See [The Map](README.md#the-map). |
 | `encoding` | `"braille"` | `"braille"` draws the 2 x 4 dots of each cell as a Braille character. `"block"` draws `█` for each cell that has a dot. |
 | `columns_per_dot` | `4` | Source display columns in each dot column. A cell covers twice this number. Columns past the minimap are clipped. A positive integer. |
@@ -103,7 +103,7 @@ You set appearance options at the root of the `minimap` block or in a
 
 `minimap.events` uses the same format and the same rules as
 [`scrollbar.events`](../configuration.md#events). The minimap defaults do not
-contain `TabEnter`, `TermEnter`, `CmdwinLeave`, `OptionSet`, and `TabClosed`.
+contain `TabEnter`, `TermEnter`, `CmdwinLeave`, `OptionSet`, or `TabClosed`.
 To add an event, set it to `true`:
 
 ```lua
@@ -115,8 +115,8 @@ minimap = {
 In the minimap, `OptionSet` without a `pattern` renders all windows when any
 option changes.
 
-With `autohide`, only `CursorMoved`, `CursorMovedI`, and `WinScrolled` show a
-hidden minimap again.
+With `autohide`, only `CursorMoved`, `CursorMovedI`, and `WinScrolled` reveal a
+concealed minimap.
 
 ## Placement Beside the Scrollbar
 
@@ -155,13 +155,15 @@ scrollbar can overlap in the rightmost window.
 - When the scrollbar is at the window edge and its width changes, for example
   when named marks collide, the minimap moves at once.
 - When the scrollbar is nearer the text, its named marks can grow only up to
-  the far edge of the window.
+  the opposite edge of the window: the left edge on the east side, and the
+  right edge on the west side. With an editor-relative placement, the limit is
+  the opposite edge of the editor.
 
 A float that hides for a short time keeps its place, so the other float does
 not move:
 
 - `hide_on_cursor` hides a float while the cursor is inside it.
-- `autohide` hides a float after a period without activity.
+- `autohide` conceals a float after a period without activity.
 
 When the float at the window edge hides for a lasting reason, the other float
 moves to the window edge. The lasting reasons are:
@@ -174,11 +176,11 @@ moves to the window edge. The lasting reasons are:
   placement.
 
 On the west side, the scrollbar can reserve gutter cells with
-`scrollbar.placement.gutter`. The reservation does not change. With `"inner"`,
-the minimap starts after the reserved scrollbar cells, so the line numbers stay
-visible. With `"outer"`, the scrollbar moves beside the minimap, and its
-reserved cells stay blank. For that combination, set
-`scrollbar.placement.gutter = "overlap"`.
+`scrollbar.placement.gutter`. The `stack` value does not move or remove this
+reservation. With `"inner"`, the minimap starts after the reserved scrollbar
+cells, so the line numbers stay visible. With `"outer"`, the scrollbar moves
+beside the minimap, and its reserved cells stay blank. For that combination,
+set `scrollbar.placement.gutter = "overlap"`.
 
 A window that is narrower than both floats gets no special handling. Neovim
 keeps each float inside the editor, so the floats can overlap in a very narrow
@@ -264,8 +266,8 @@ When several marks project onto one row, the lowest `priority` wins.
   `ScrollbarMinimapBase`. It works even when `blend = 0`. As a result, the base
   can blend while the viewport, cursor, overlay, and syntax backgrounds stay
   solid. It is a global option.
-- An explicit `blend` in a source highlight is kept. Groups that have only a
-  foreground keep their dots above the base surface.
+- The plugin keeps an explicit `blend` in a source highlight. Groups that have
+  only a foreground keep their dots above the base surface.
 
 The plugin never rewrites the public `ScrollbarMinimap*` groups.
 
@@ -288,16 +290,17 @@ more information, see [Visibility](../visibility.md).
 
 The backend squashes only a slice of the map: the rows in the float and one
 float height of rows above and below. Treesitter captures only the lines of
-the slice. Scrolling inside the slice uses the cached rows. When less than half
-a float height of rows is left on a side that is not an end of the buffer, the
-minimap requests a new slice. Until the new slice arrives, the rows outside the
-cached slice are blank. With `scale = "fit"`, the slice is the whole buffer.
+the slice. A scroll inside the slice uses the cached rows. The minimap requests
+a new slice when less than half a float height of rows is left on a side. A
+side that is an end of the buffer does not count. Until the new slice arrives,
+the rows outside the cached slice are blank. With `scale = "fit"`, the slice is
+the whole buffer.
 
 Treesitter collection runs only when the `treesitter` provider targets the
 minimap. If the worker fails, the minimap switches to the sync backend. A later
 `setup()` may try to start a new worker. LSP semantic-token requests always run
-in the main process, for both backends. `backend` does not change the
-`search` provider backend, which is `providers.search.backend`.
+in the main process, for both backends. `backend` does not change the backend
+of the `search` provider, which `providers.search.backend` sets.
 
 ## Profiles
 
@@ -332,9 +335,9 @@ Later layers win:
 4. The profile `preset`.
 5. The profile options.
 
-Mark overrides apply on top of the shared `marks` definitions.
-If a `when` predicate raises an error, that render uses the root options. A
-notification appears once for each distinct pair of profile and error message.
+Mark overrides apply on top of the shared `marks` definitions. If a `when`
+predicate raises an error, that render uses the root options. A notification
+appears once for each distinct pair of profile and error message.
 
 ## Highlights
 
@@ -351,9 +354,10 @@ with theme-owned default links:
 Each shown mark type also gets a public `ScrollbarMinimap<Type>` group, such as
 `ScrollbarMinimapError`, `ScrollbarMinimapSearch`, or
 `ScrollbarMinimapGitAdd`. A string source contributes its resolved foreground.
-A direct table is copied. A public definition that already exists is not
-overwritten. In automatic mode, each profile gets its own internal groups, so
-that profiles that show at the same time can use different definitions.
+The plugin copies a direct table. It does not overwrite a public definition
+that already exists. In automatic mode, each profile gets its own internal
+groups, so that profiles that show at the same time can use different
+definitions.
 
 With `set_highlights = false`, setup and `ColorScheme` write no minimap groups.
 Every profile renders through the canonical `ScrollbarMinimap<Type>` names. In
@@ -396,8 +400,8 @@ starts with `[nvim-scrollbar]` and gives the full option path.
   types, because their `ScrollbarMinimap<Name>` groups belong to the static
   layers. The minimap does not show a shared type with one of these names.
 
-When the minimap is enabled, setup also rejects a scrollbar and minimap type
-pair that claims the same public highlight group, such as a scrollbar type
+When the minimap is enabled, setup also rejects a scrollbar type and a minimap
+type that claim the same public highlight group. An example is a scrollbar type
 `MinimapSearch` and the minimap type `Search`. The same ownership check rejects
 scrollbar names such as `Track`, `Handle`, or `SearchThumb` when they collide
 with fixed, overlap, pressed, or legacy groups.

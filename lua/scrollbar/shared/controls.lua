@@ -20,7 +20,7 @@ local M = {}
 ---@field renderer ScrollbarControlsRenderer
 ---@field scheduler ScrollbarControlsScheduler
 ---@field consumer "scrollbar"|"minimap" Consumer whose provider demand a refresh collects
----@field autohide fun(): boolean Whether the active configuration hides the floats after a delay
+---@field autohide fun(): boolean Whether the active configuration conceals the floats after a delay
 
 ---@class ScrollbarControls
 ---@field show fun()
@@ -41,8 +41,8 @@ M.new = function(options)
 
     controls.show = function()
         renderer.show()
-        -- With autohide, showing reveals every source window and starts its
-        -- hide delay.
+        -- With autohide, this control reveals every source window and starts
+        -- its hide delay.
         if autohide() then
             scheduler.reveal_all()
         else

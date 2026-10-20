@@ -12,8 +12,8 @@
 --- of its display columns. A cell with dots draws a Braille character
 --- (`encoding = "braille"`) or `█` (`encoding = "block"`). An empty cell is a
 --- space. The cell highlight is the ordered semantic highlight with the lowest
---- order among the filled source columns of the cell. Legacy unordered tuples
---- keep source and tuple order.
+--- order among the filled source columns of the cell. Among legacy tuples
+--- without `order`, the first tuple in source and tuple order wins.
 ---
 --- The worker child loads this file with `loadstring`, so it must not
 --- `require` plugin modules.
@@ -56,7 +56,7 @@ local function with_bit(mask, bit)
     return mask
 end
 
---- First source line (0-based) of dot row `dot`.
+--- First source line (zero-based) of dot row `dot`.
 ---@param dot integer Zero-based dot row of the whole map
 ---@param grid { scale_lines: integer, scale_dots: integer }
 ---@return integer
@@ -64,7 +64,7 @@ M.dot_first_line = function(dot, grid)
     return math.floor(dot * grid.scale_lines / grid.scale_dots)
 end
 
---- Dot row (0-based) that owns source line `line`.
+--- Dot row (zero-based) that owns source line `line`.
 ---@param line integer Zero-based source line
 ---@param grid { scale_lines: integer, scale_dots: integer }
 ---@return integer

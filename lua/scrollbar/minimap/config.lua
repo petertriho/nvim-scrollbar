@@ -38,8 +38,8 @@ local DEFAULTS = {
 }
 
 -- Autocmd events that can change minimap content, the viewport, or the window
--- and buffer lifecycle. The list stays out of DEFAULTS, where a keyed `events`
--- override would merge into it.
+-- and buffer lifecycle. If the list is in DEFAULTS, a keyed `events` override
+-- merges into it. Thus the list is not in DEFAULTS.
 local DEFAULT_EVENTS = {
     "BufEnter",
     "BufWinEnter",

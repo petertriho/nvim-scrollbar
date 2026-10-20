@@ -1,5 +1,5 @@
-# docs/providers/search.md: incremental search marks while typing a pattern,
-# then jumps to the next matches.
+# docs/providers/search.md: incremental search marks show while the demo types
+# a pattern. Then the demo jumps to the next matches.
 
 Source "scripts/demo/settings.tape"
 Output "scripts/demo/out/search.gif"

@@ -121,7 +121,8 @@ assert(
     "event-loop timer did not start"
 )
 
--- TextChanged attaches lazily to its own group while a search is active.
+-- The TextChanged autocommand attaches lazily to its own group while a search
+-- is active.
 local CALLBACK_GROUPS = { "ScrollbarProvider_search_events", "ScrollbarProvider_search_text_change" }
 
 local function callback(event)

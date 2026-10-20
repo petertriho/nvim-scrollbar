@@ -1,12 +1,12 @@
---- Minimap worker: runs `minimap/squash.lua`, optionally with treesitter
---- captures, on buffers mirrored into a headless child Neovim, and returns the
+--- Minimap worker: runs `minimap/squash.lua` on buffers that are mirrored into
+--- a headless child Neovim, optionally with treesitter captures. It returns the
 --- cell rows of the requested grid slice to the parent.
 --- `scrollbar.shared.mirror` owns the child process and the buffer mirrors. The
 --- `"sync"` backend runs the same logic inline on the main thread, and the
 --- output of both backends is bit-identical.
 ---
---- On worker failure the module emits exactly one warning and flips to the
---- sync path for the rest of the session.
+--- If the worker fails, the module emits exactly one warning and switches to
+--- the sync path for the rest of the session.
 
 local mirror_host = require("scrollbar.shared.mirror")
 local squash_module = require("scrollbar.minimap.squash")
@@ -277,8 +277,8 @@ local function handle_event(event, payload)
     dispatch_pending()
 end
 
--- The child rejected work for mirror `id` of `bufnr`. The squash in flight goes
--- back to the queue when it was made for that mirror, unless a newer request
+-- The child rejected work for mirror `id` of `bufnr`. If the squash in flight
+-- was made for that mirror, it goes back to the queue, unless a newer request
 -- with the same key replaced it.
 ---@param bufnr integer
 ---@param id? integer
@@ -386,10 +386,10 @@ end
 ---@field bufnr integer
 ---@field grid ScrollbarMinimapGrid Rows to squash
 ---@field filetype? string
----@field generation integer Caller-defined monotonic id; mismatched results are dropped
----@field signature string Caller-defined dedup key; mismatched results are dropped
----@field semantic_revision? integer Parent semantic input revision
----@field semantic_spans? ScrollbarMinimapSpanStoreSnapshot Parent-published spans grouped by provider
+---@field generation integer Monotonic id that the caller defines. Results that do not match it are dropped
+---@field signature string Dedup key that the caller defines. Results that do not match it are dropped
+---@field semantic_revision? integer Revision of the semantic input in the parent
+---@field semantic_spans? ScrollbarMinimapSpanStoreSnapshot Spans that the parent published, grouped by provider
 
 ---@class ScrollbarMinimapWorkerOptions
 ---@field backend? ScrollbarMinimapBackend

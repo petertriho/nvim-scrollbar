@@ -28,14 +28,15 @@ the provider.
 
 ## Requirements
 
-The source buffer must have a Treesitter language mapping, an installed parser,
-and a `highlights` query. The provider maps the filetype to a language with
-`vim.treesitter.language.get_lang`. If one of these is missing, the minimap
-content stays monochrome. Setup does not fail.
+The provider maps the filetype to a language with
+`vim.treesitter.language.get_lang`. The source buffer must have a Treesitter
+language mapping, an installed parser, and a `highlights` query. If one of
+these items is missing, the minimap content stays monochrome, and setup does
+not fail.
 
-Only captures on one line color the minimap. Captures that span more than one
-line are ignored. The provider captures only the lines of the map slice that
-the minimap squashes. See [Backends](../minimap/configuration.md#backends).
+Only captures on one line color the minimap. The provider ignores captures that
+span more than one line. It captures only the lines of the map slice that the
+minimap squashes. See [Backends](../minimap/configuration.md#backends).
 
 ## Backend Behavior
 
@@ -54,8 +55,8 @@ through `202`, so overlapping LSP spans override Treesitter captures.
 
 Treesitter color applies only to occupied source columns. It does not fill
 whitespace or change the minimap dots. When a cell covers columns with
-different captures, the capture with the highest priority wins, then the
-capture that comes first.
+different captures, the capture with the highest priority wins. If the
+priorities are equal, the capture that comes first wins.
 
 ## Related
 

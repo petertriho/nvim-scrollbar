@@ -1,5 +1,5 @@
 # Shared settings for every demo tape. The theme copies the stylix tokyonight
-# palette of the author's Ghostty config.
+# palette from the Ghostty configuration of the author.
 
 Set Shell bash
 Set FontFamily "JetBrainsMono Nerd Font Mono"

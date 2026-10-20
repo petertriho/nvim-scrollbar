@@ -4,7 +4,7 @@ This guide lists the changes from v1 to v2 that need a change in your
 configuration. v2 rejects unknown options and has no compatibility layer for
 v1 options. A v1 configuration fails setup until you migrate it. For most
 removed options, the error names the replacement. The error for a top-level v1
-option or a v1 mark color also links this guide. A call without options,
+option or a v1 mark color also links to this guide. A call without options,
 `require("scrollbar").setup()`, works in both versions.
 
 ## Stay On v1
@@ -96,7 +96,7 @@ These options keep their names and meaning: `show`, `set_highlights`,
 | `handle.color`, `handle.color_nr` | A `scrollbar.thumb.highlight` table, for example `{ bg = "#3b4261", ctermbg = 238 }` |
 | `marks.<Type>.color`, `gui`, `cterm`, `color_nr` | A `marks.<Type>.highlight` table. See [Colors](#colors). |
 | `autocmd.render` | `scrollbar.events` and `minimap.events`. See [Events](configuration.md#events). |
-| `autocmd.clear` | Removed. To show only the active window, use `scrollbar.visibility = "active"`. |
+| `autocmd.clear` | Removed. To show only the scrollbar of the active window, use `scrollbar.visibility = "active"`. |
 | `handlers` | `providers`. See [Handlers](#handlers). |
 | `handlers.handle = false` | Remove `"thumb"` from `scrollbar.layout.columns`, for example `layout = { columns = { { "track", "marks" } } }` |
 
@@ -257,7 +257,7 @@ require("scrollbar.providers").register({
   `TextChangedI`, and `TextChangedP`.
 - v1 called a handler on every `autocmd.render` event, including
   `WinScrolled`. If your marks must update on other events, use
-  `refresh_owner = { buffer = "provider" }` and publish the marks from your
+  `refresh_owner = { buffer = "provider" }`. Then publish the marks from your
   own autocmds.
 - Every mark needs a `type`. v1 used `Misc` when `type` was missing. The type
   must be registered in the top-level `marks` table.

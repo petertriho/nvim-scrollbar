@@ -14,8 +14,8 @@ viewport tint, a cursor accent, provider marks, and mouse navigation.
 ## Requirements
 
 - Neovim 0.11 or newer
-- The user's Neovim `mouse` option must enable the desired modes for mouse
-  interaction, for example `set mouse=a`. The plugin never changes `mouse`.
+- For mouse interaction, the Neovim `mouse` option must enable the modes that
+  you want, for example `set mouse=a`. The plugin never changes `mouse`.
 - Optional integrations:
   [gitsigns.nvim](https://github.com/lewis6991/gitsigns.nvim),
   [mini.diff](https://github.com/nvim-mini/mini.diff),
@@ -39,7 +39,7 @@ If you are not ready to migrate, pin the `v1` branch, for example
 }
 ```
 
-`opts = {}` calls `require("scrollbar").setup({})` automatically. Put any
+With `opts = {}`, lazy.nvim calls `require("scrollbar").setup({})`. Put any
 configuration overrides inside `opts`.
 
 [vim-plug](https://github.com/junegunn/vim-plug):
@@ -73,8 +73,8 @@ require("scrollbar").setup({
 })
 ```
 
-This example enables autohide. The scrollbars start hidden. Cursor movement or
-scrolling in a source window shows its scrollbar.
+This example enables autohide. The scrollbars start concealed. Cursor movement
+or scrolling in a source window reveals the scrollbar of that window.
 
 The built-in scrollbar presets are `vscode`, `zed`, `intellij`, `minimal`,
 `review`, `search`, `navigate`, `gvim`, `eclipse`, `sublime`, `emacs`, and
@@ -102,7 +102,7 @@ require("scrollbar").setup({
 })
 ```
 
-The first profile that matches is used. Profiles change only appearance
+The plugin uses the first profile that matches. Profiles change only appearance
 options. Providers, exclusions, visibility, autohide, and `max_lines` are
 global.
 
@@ -159,7 +159,7 @@ require("scrollbar").setup({
 
 Provider marks, such as diagnostics, search matches, and Git hunks, tint the
 occupied cells of their row. `minimap.marks` changes the priority or the
-highlight of a mark type for the minimap. `false` hides a type:
+highlight of a mark type for the minimap. The value `false` hides a type:
 
 ```lua
 require("scrollbar").setup({
@@ -177,11 +177,11 @@ require("scrollbar").setup({
 sets the blend of only the base surface. See
 [Minimap configuration](docs/minimap/configuration.md#blend). By default, the
 minimap of the active source window hides while the editing cursor is inside
-it.
+the minimap.
 
-The automatic minimap groups have their own public names, such as
-`ScrollbarMinimapSearch`. Setup keeps your existing definitions of the public
-scrollbar and minimap groups.
+The automatic highlight groups of the minimap have their own public names,
+such as `ScrollbarMinimapSearch`. Setup keeps your existing definitions of the
+public scrollbar and minimap groups.
 
 See the [minimap documentation](docs/minimap/README.md) for the map, placement,
 marks, and mouse behavior.

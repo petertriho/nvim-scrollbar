@@ -82,9 +82,9 @@ M.new = function(spec)
     local runtime
     local timer_closed = false
 
-    -- Text-change subscriptions: providers (e.g. marks) and the minimap
-    -- scheduler can ride the TextChanged dispatch instead of registering their
-    -- own augroup, so one autocmd invocation per keystroke covers scheduling
+    -- Text-change subscriptions. Providers (for example, marks) and the
+    -- minimap scheduler can ride the TextChanged dispatch instead of their own
+    -- augroup. Then one autocmd call for each keystroke covers the scheduling
     -- and the subscribers. Only an instance with `hub` dispatches.
     ---@type fun(args: table)[]
     local text_change_subscribers = {}
@@ -141,15 +141,17 @@ M.new = function(spec)
     ---@param bufnr integer
     ---@return boolean
     local function owned_buffer(current, bufnr)
-        -- `0` is nvim's current-buffer alias (e.g. OptionSet args). Resolve it
-        -- to the real buffer: during renderer float configuration the current
-        -- buffer is the float buffer, which the registry covers.
+        -- `0` is the Neovim alias for the current buffer (for example, in the
+        -- OptionSet arguments). Resolve it to the real buffer: while a renderer
+        -- configures a float, the current buffer is the float buffer, which the
+        -- registry covers.
         if bufnr == 0 then
             bufnr = vim.api.nvim_get_current_buf()
         end
-        -- Registry-only fast path: a pure table lookup, safe because queueing
-        -- an ineligible window is harmless (flush re-checks eligibility) while
-        -- the registry can never claim a source resource.
+        -- Fast path with only the registry: a pure table lookup. It is safe for
+        -- two reasons. A queued ineligible window does no harm, because the
+        -- flush checks eligibility again. Also, the registry can never claim a
+        -- source resource.
         local renderer = current.renderer
         local fast = renderer.is_owned_float_buffer
         if type(fast) == "function" then
@@ -165,7 +167,7 @@ M.new = function(spec)
         return peer_buffer(current, bufnr)
     end
 
-    --- Whether `winid` is a float of this instance's renderer.
+    --- Whether `winid` is a float of the renderer of this instance.
     ---@param current ScrollbarSchedulerCoreRuntime
     ---@param winid integer
     ---@return boolean
@@ -370,11 +372,11 @@ M.new = function(spec)
         return true
     end
 
-    --- Whether an event belongs to a float of this renderer or of a peer, so
-    --- the rows skip it. While the current window is a float of this renderer,
-    --- every event is owned. A peer float as the current window does not own
-    --- the event: a peer drag scrolls a source window, and the scroll must
-    --- reach this renderer.
+    --- Whether an event belongs to a float of this renderer or of a peer. The
+    --- rows skip an owned event. While the current window is a float of this
+    --- renderer, every event is owned. If the current window is a peer float,
+    --- that does not make the event owned. A peer drag scrolls a source window,
+    --- and the scroll must reach this renderer.
     ---@param args table
     ---@return boolean
     local function event_is_owned(args)
@@ -457,7 +459,7 @@ M.new = function(spec)
     ---pattern gets its own autocmd with that pattern.
     ---@param group integer Augroup id.
     ---@param events string[] Events this registration covers.
-    ---@param enabled table<string, true|string[]> Enabled events and their configured patterns; `true` selects the default pattern.
+    ---@param enabled table<string, true|string[]> Enabled events and their configured patterns. `true` selects the default pattern.
     ---@param callback fun(args: table) Autocmd callback.
     ---@param default_pattern? string[] Pattern of the events without a configured pattern.
     local function register_group(group, events, enabled, callback, default_pattern)
@@ -579,9 +581,9 @@ M.new = function(spec)
         end)
     end
 
-    --- Route the text rows through the dispatch of another instance. Its rows
-    --- have no pattern, so a text event with a configured pattern keeps its
-    --- own row here.
+    --- Route the text rows through the dispatch of another instance. The rows
+    --- of that dispatch have no pattern, so a text event with a configured
+    --- pattern keeps its own row here.
     ---@param subscribe fun(fn: fun(args: table), events?: string[]): boolean
     ---@param enabled table<string, true|string[]>
     local function ride_text_change(subscribe, enabled)
@@ -665,11 +667,11 @@ M.new = function(spec)
             ride_text_change(options.on_text_change, events_enabled)
         end
         create_autocmds(augroup, events_enabled, options.option_pattern)
-        -- A pending update timer firing during nvim teardown re-enters
-        -- rendering on half-torn-down state (nvim 0.13 runs scheduled Lua
-        -- callbacks in proc_teardown; a redraw there crashes in
-        -- grid_clear_line). Disposing on VimLeavePre stops the timer and
-        -- removes this augroup first.
+        -- If a pending update timer fires during the teardown of Neovim, it
+        -- enters the render code again on a state that is half torn down.
+        -- Neovim 0.13 runs scheduled Lua callbacks in proc_teardown, and a
+        -- redraw there crashes in grid_clear_line. A dispose on VimLeavePre
+        -- stops the timer and removes this augroup first.
         vim.api.nvim_create_autocmd("VimLeavePre", {
             group = augroup,
             callback = function()
@@ -733,12 +735,12 @@ M.new = function(spec)
         return true
     end
 
-    ---Subscribe to the TextChanged dispatch. The callback runs on text-change
-    ---events fired for non-owned buffers, before invalidation. `events` lists
-    ---the event names that the subscriber needs. Each event without a row, or
-    ---with a row that has a configured pattern, gets a subscriber-only row
-    ---without a pattern. Returns false when the dispatch is inactive so the
-    ---caller keeps its own registration.
+    ---Subscribe to the TextChanged dispatch. The callback runs on the
+    ---text-change events of buffers that are not owned, before invalidation.
+    ---`events` lists the event names that the subscriber needs. Each event
+    ---without a row, or with a row that has a configured pattern, gets a
+    ---subscriber-only row without a pattern. Returns false when the dispatch
+    ---is inactive, so the caller keeps its own registration.
     ---@param fn fun(args: table)
     ---@param events? string[]
     ---@return boolean
@@ -754,11 +756,11 @@ M.new = function(spec)
     end
 
     ---Subscribe to the cursor-activity dispatch (CursorMoved(I)). The callback
-    ---runs after the scheduler's own activity handling, for non-owned events.
-    ---`events` lists the event names that the subscriber needs. Each event
-    ---without a row, or with a row that has a configured pattern, gets a
-    ---subscriber-only row without a pattern. Returns false when the dispatch
-    ---is inactive so the caller keeps its own registration.
+    ---runs for events that are not owned, after the scheduler handles the
+    ---activity itself. `events` lists the event names that the subscriber
+    ---needs. Each event without a row, or with a row that has a configured
+    ---pattern, gets a subscriber-only row without a pattern. Returns false
+    ---when the dispatch is inactive, so the caller keeps its own registration.
     ---@param fn fun(args: table)
     ---@param events? string[]
     ---@return boolean
@@ -792,10 +794,10 @@ M.new = function(spec)
             return 0
         end
 
-        -- Enumerating raw windows showing the buffer avoids the per-window
-        -- eligibility/config checks on every text change. Queueing an
-        -- ineligible window is harmless: flush re-checks eligibility before
-        -- rendering.
+        -- The raw list of windows that show the buffer avoids the eligibility
+        -- and configuration checks of each window on every text change. A
+        -- queued ineligible window does no harm: the flush checks eligibility
+        -- again before it renders.
         local windows
         local enumerate = current.renderer.windows_showing_buffer
         if type(enumerate) == "function" then

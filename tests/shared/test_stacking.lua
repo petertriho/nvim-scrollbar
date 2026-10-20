@@ -45,9 +45,9 @@ local function setup(child, options)
     end, options)
 end
 
--- Two rounds: creating the minimap float sets window options, and the
--- scrollbar scheduler can close an editor-relative scrollbar during that
--- OptionSet until its next flush.
+-- Flush in two rounds. The minimap sets window options when it creates its
+-- float. During that OptionSet, the scrollbar scheduler can close an
+-- editor-relative scrollbar until its next flush.
 local function flush(child)
     child.lua([[
         local scheduler = require("scrollbar.scheduler")
@@ -64,7 +64,7 @@ end
 -- `left` is the zero-based column of the left float edge, relative to the
 -- source window for a window-relative float and to the editor otherwise.
 -- Headless Neovim does not apply the anchor in nvim_win_get_position(), so
--- the column comes from the float config.
+-- the column comes from the float configuration.
 local function floats(child, source_win)
     return child.lua_func(function(win)
         win = win or vim.api.nvim_get_current_win()
@@ -223,7 +223,8 @@ T["a cursor-hidden outer scrollbar keeps the minimap slot"] = function()
     local child = new_child()
     setup(child, { scrollbar = { hide_on_cursor = true } })
     -- Headless Neovim does not settle anchored float positions, so place the
-    -- cursor on the last screen column and resolve positions from the config.
+    -- cursor on the last screen column and resolve positions from the float
+    -- configuration.
     child.lua([[
         rawset(vim.fn, "screenrow", function()
             return 1

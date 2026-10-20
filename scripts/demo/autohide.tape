@@ -1,5 +1,5 @@
-# docs/visibility.md: with autohide, the scrollbar shows while scrolling and
-# hides after one second without activity.
+# docs/visibility.md: with autohide, the scrollbar shows while the window
+# scrolls and hides after one second without activity.
 
 Source "scripts/demo/settings.tape"
 Output "scripts/demo/out/autohide.gif"

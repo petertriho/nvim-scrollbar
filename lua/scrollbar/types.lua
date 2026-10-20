@@ -23,7 +23,7 @@
 
 ---@class ScrollbarUserMarkLayer
 ---@field types string[] Mark types routed to this lane
----@field max_width? integer Total named-Mark lane width including declared columns
+---@field max_width? integer Total width of a lane that selects `Mark`, including declared columns
 
 ---@alias ScrollbarUserLayoutLayer "track"|"thumb"|"marks"|ScrollbarUserMarkLayer
 
@@ -57,8 +57,8 @@
 ---@field numbers boolean
 
 ---@class ScrollbarUserProviderTargets
----@field scrollbar? boolean Default true when the provider supports the scrollbar
----@field minimap? boolean Default true
+---@field scrollbar? boolean Defaults to true when the provider supports the scrollbar
+---@field minimap? boolean Defaults to true
 
 ---@class ScrollbarUserSearchProviderConfig: ScrollbarUserProviderTargets
 ---@field incsearch? boolean
@@ -96,11 +96,11 @@
 
 ---@class ScrollbarEventConfig
 ---@field event string Canonical autocmd event name
----@field pattern false|string[] Autocmd patterns; false uses the default pattern of the event
+---@field pattern false|string[] Autocmd patterns, or false for the default pattern of the event
 
 ---@class ScrollbarUserExcludeConfig
----@field buftypes? ScrollbarUserExcludeList A list replaces the defaults; a table keyed by name merges with them
----@field filetypes? ScrollbarUserExcludeList A list replaces the defaults; a table keyed by name merges with them
+---@field buftypes? ScrollbarUserExcludeList A list replaces the defaults. A table keyed by name merges with them
+---@field filetypes? ScrollbarUserExcludeList A list replaces the defaults. A table keyed by name merges with them
 
 ---@class ScrollbarUserProfileMatcher
 ---@field filetypes? string[]
@@ -108,7 +108,7 @@
 ---@field when? fun(context: ScrollbarProfileContext): boolean
 
 ---@class ScrollbarUserAppearance
----@field preset? string Built-in preset applied below the options at the same level
+---@field preset? string Built-in preset. The options at the same level win over it
 ---@field unit? ScrollbarUnit
 ---@field placement? ScrollbarUserPlacement
 ---@field hide_on_cursor? boolean
@@ -129,8 +129,8 @@
 ---@field autohide? boolean|ScrollbarUserAutohideConfig
 ---@field max_lines? false|integer
 ---@field throttle_ms? integer
----@field events? ScrollbarUserEventList Autocmd events that update the scrollbar. A list replaces the defaults; a table keyed by event name merges with them
----@field profiles? ScrollbarUserProfile[] Ordered contextual variants; first match wins
+---@field events? ScrollbarUserEventList Autocmd events that update the scrollbar. A list replaces the defaults. A table keyed by event name merges with them
+---@field profiles? ScrollbarUserProfile[] Ordered contextual variants. The first match wins
 
 ---@class ScrollbarUserConfig
 ---@field set_highlights? boolean
@@ -166,7 +166,7 @@
 ---@field columns integer[] Physical base columns
 ---@field first_column integer
 ---@field last_column integer
----@field max_width false|integer Total lane width including declared columns
+---@field max_width false|integer Total width of the lane, including declared columns
 
 ---@class ScrollbarNormalizedThumbSpan
 ---@field first_column integer
@@ -176,13 +176,13 @@
 ---@class ScrollbarLayoutConfig
 ---@field direction ScrollbarLayoutDirection
 ---@field width integer Derived declared width
----@field inward "left"|"right" Dynamic named-mark growth side
+---@field inward "left"|"right" Side to which named marks grow dynamically
 ---@field columns ScrollbarNormalizedLayoutLayer[][] Physical columns with bottom-to-top layers
 ---@field lanes ScrollbarNormalizedMarkLane[]
 ---@field routes table<string, integer> Explicit type-to-lane routing
 ---@field catchall_lane false|integer
 ---@field thumb false|ScrollbarNormalizedThumbSpan
----@field cache table Cache-relevant normalized layout snapshot
+---@field cache table Cache-relevant snapshot of the normalized layout
 
 ---@class ScrollbarTrackConfig
 ---@field highlight ScrollbarHighlight
@@ -197,7 +197,7 @@
 ---@field hide_if_all_visible boolean
 
 ---@class ScrollbarMarkTypeConfig
----@field text string[] Density variants ordered from least to most dense; an empty Mark list uses provider text
+---@field text string[] Density variants from least to most dense. An empty list for `Mark` uses the provider text
 ---@field priority integer
 ---@field highlight ScrollbarHighlight Source highlight group or direct definition
 
@@ -256,7 +256,7 @@
 ---@field minimap boolean
 
 ---@class ScrollbarEffectiveProvider
----@field consumers ScrollbarProviderConsumers Consumers whose enabled config requests this provider
+---@field consumers ScrollbarProviderConsumers Consumers whose enabled configuration requests this provider
 ---@field options ScrollbarProviderOption One normalized option set, or false when inactive
 ---@field targets ScrollbarProviderTargets Built-in capabilities independent of current demand
 ---@field execution ScrollbarProviderExecutionMode
@@ -283,7 +283,7 @@
 ---@field thumb ScrollbarThumbConfig
 ---@field marks table<string, ScrollbarMarkTypeConfig> Shown mark types
 ---@field highlights ScrollbarHighlightGroups Compiled canonical or profile-internal group names
----@field layout_cache table Precompiled static line-layer cache inputs
+---@field layout_cache table Precompiled static inputs for the line-layer cache
 ---@field providers? ScrollbarProvidersConfig Present only in provider context snapshots
 
 ---@class ScrollbarProfileContext
@@ -301,7 +301,7 @@
 ---@field when false|fun(context: ScrollbarProfileContext): boolean
 
 ---@class ScrollbarCompiledVariant
----@field id integer Root is 0; profile variants use their one-based declaration index
+---@field id integer The root variant has ID 0. A profile variant uses its one-based declaration index
 ---@field matcher false|ScrollbarCompiledMatcher
 ---@field config ScrollbarConfig
 
@@ -329,14 +329,14 @@
 
 ---@class ScrollbarCompactSearch
 ---@field data string Big-endian zero-based line numbers, four bytes per exact match
----@field count integer Exact match count
+---@field count integer Number of exact matches
 ---@field partial? boolean True when any sync-budget bound fired during the scan
 
 ---@class ScrollbarLayoutMark: ScrollbarMark
----@field provider string Owning provider name used for deterministic ties and hit metadata
+---@field provider string Name of the owning provider, used for deterministic tie-breaks and for hit metadata
 
 ---@class ScrollbarProviderContext
----@field config ScrollbarConfig Provider-local snapshot; mutations cannot change root configuration
+---@field config ScrollbarConfig Provider-local snapshot. Mutations of it cannot change the root configuration
 ---@field set_marks fun(bufnr: integer, marks: ScrollbarMark[]): boolean Whether publication was accepted
 ---@field clear_marks fun(bufnr?: integer): boolean
 ---@field set_minimap_spans fun(bufnr: integer, spans: ScrollbarMinimapSourceSpan[]): boolean Whether publication was accepted
@@ -347,8 +347,8 @@
 ---@field clear_minimap_points fun(winid?: integer): boolean
 ---@field create_augroup fun(name: string): integer
 ---@field add_cleanup fun(cleanup: fun())
----@field on_text_change? fun(fn: fun(args: table), events?: string[]) Shared TextChanged dispatch hosted by the scheduler; absent in standalone provider setups
----@field on_cursor_activity? fun(fn: fun(args: table), events?: string[]): boolean Shared cursor-activity dispatch hosted by the scheduler; absent in standalone provider setups
+---@field on_text_change? fun(fn: fun(args: table), events?: string[]) Shared TextChanged dispatch hosted by the scheduler. Absent in standalone provider setups
+---@field on_cursor_activity? fun(fn: fun(args: table), events?: string[]): boolean Shared cursor-activity dispatch hosted by the scheduler. Absent in standalone provider setups
 ---@field is_buffer_eligible fun(bufnr: integer): boolean
 ---@field is_source_window fun(winid: integer): boolean
 ---@field source_windows fun(bufnr?: integer): integer[]
@@ -369,7 +369,7 @@
 
 ---@class ScrollbarProvider
 ---@field name string
----@field targets? { scrollbar?: boolean, minimap?: boolean } Omitted defaults to scrollbar-only
+---@field targets? { scrollbar?: boolean, minimap?: boolean } If omitted, defaults to scrollbar-only
 ---@field refresh_owner? ScrollbarProviderRefreshOwnership
 ---@field setup? fun(context: ScrollbarProviderContext)
 ---@field refresh? fun(bufnr: integer, context: ScrollbarProviderContext): ScrollbarMark[]?
@@ -393,17 +393,17 @@
 ---@field provider string
 
 ---@class ScrollbarStoreTrustedSnapshot
----@field marks ScrollbarStoreSnapshot Immutable by convention; internal callers must not mutate it
----@field revision integer Monotonic revision for this buffer's mark collection
+---@field marks ScrollbarStoreSnapshot Immutable by convention. Internal callers must not mutate it
+---@field revision integer Monotonic revision for the mark collection of this buffer
 ---@field compact_search? ScrollbarCompactSearch Private built-in search representation
----@field minimap_spans ScrollbarMinimapSpanStoreSnapshot Immutable by convention; internal callers must not mutate it
----@field minimap_span_revision integer Monotonic revision for this buffer's minimap spans
+---@field minimap_spans ScrollbarMinimapSpanStoreSnapshot Immutable by convention. Internal callers must not mutate it
+---@field minimap_span_revision integer Monotonic revision for the minimap spans of this buffer
 
 ---@class ScrollbarWindowStoreTrustedSnapshot
----@field marks ScrollbarWindowStoreSnapshot Immutable by convention; internal callers must not mutate it
----@field revision integer Monotonic revision for this window's mark collection
----@field minimap_points ScrollbarMinimapPointStoreSnapshot Immutable by convention; internal callers must not mutate it
----@field minimap_point_revision integer Monotonic revision for this window's minimap points
+---@field marks ScrollbarWindowStoreSnapshot Immutable by convention. Internal callers must not mutate it
+---@field revision integer Monotonic revision for the mark collection of this window
+---@field minimap_points ScrollbarMinimapPointStoreSnapshot Immutable by convention. Internal callers must not mutate it
+---@field minimap_point_revision integer Monotonic revision for the minimap points of this window
 
 ---@alias ScrollbarChangedBuffers table<integer, true>
 ---@alias ScrollbarChangedWindows table<integer, true>
@@ -412,7 +412,7 @@
 ---@field start_col integer Zero-based byte column
 ---@field end_col integer Exclusive zero-based byte column
 ---@field highlight string
----@field priority integer Stable compositor stack priority
+---@field priority integer Stable stack priority in the compositor
 
 ---@class ScrollbarHitCell
 ---@field track boolean Whether this display cell declares a track layer
@@ -434,7 +434,7 @@
 
 ---@class ScrollbarNormalizedGeometryInput
 ---@field height integer Track height in rows
----@field line_count integer Logical source-buffer line count
+---@field line_count integer Logical line count of the source buffer
 ---@field top_line integer Zero-based first visible logical line
 ---@field bottom_line integer Zero-based last visible logical line
 ---@field marks ScrollbarMark[]
@@ -442,7 +442,7 @@
 
 ---@class ScrollbarNormalizedMarkGeometryInput
 ---@field height integer Track height in rows
----@field line_count integer Logical source-buffer line count
+---@field line_count integer Logical line count of the source buffer
 ---@field marks ScrollbarMark[]
 ---@field previous? { rows: integer[], line_count: number, height?: integer, segments?: integer[][] } Prior rows plus the context needed to recompute only shifted entries
 
@@ -450,7 +450,7 @@
 ---@field source_win integer
 ---@field height integer Track height in rows
 ---@field marks ScrollbarMark[]
----@field marks_sorted? boolean Marks already ordered per provider by (line, text); skips the dedup/sort pass
+---@field marks_sorted? boolean Marks already ordered per provider by (line, text). Skips the dedup/sort pass
 ---@field compact_search? ScrollbarCompactSearch Private built-in search matches projected into compact_mark_rows
 
 ---@class ScrollbarGeometry
@@ -458,14 +458,14 @@
 ---@field viewport_start integer Zero-based document coordinate
 ---@field viewport_end integer Zero-based inclusive document coordinate
 ---@field mark_rows integer[] Track rows aligned with the input marks
----@field compact_mark_rows? integer[] Track rows aligned with compact_search entries; only produced by M.screen
+---@field compact_mark_rows? integer[] Track rows aligned with compact_search entries. Only M.screen produces them
 ---@field handle ScrollbarVerticalHandleGeometry
 
 ---@class ScrollbarLayoutInput
 ---@field config ScrollbarConfig
 ---@field height integer
 ---@field line_count? integer Logical line count required by compact line-mode search
----@field container_width? integer Placement container width; defaults to normalized layout width
+---@field container_width? integer Width of the placement container. Defaults to the normalized layout width
 ---@field geometry ScrollbarGeometry
 ---@field marks ScrollbarLayoutMark[] Marks aligned with geometry.mark_rows
 ---@field mark_layer? ScrollbarResolvedMarkLayer Precomputed static placed mark cells and resolved width
@@ -475,10 +475,10 @@
 ---@field config ScrollbarConfig
 ---@field height integer
 ---@field line_count? integer Logical line count required by compact line-mode search
----@field container_width? integer Placement container width; defaults to normalized layout width
+---@field container_width? integer Width of the placement container. Defaults to the normalized layout width
 ---@field geometry { mark_rows: integer[], compact_mark_rows?: integer[] }
 ---@field marks ScrollbarLayoutMark[]
----@field marks_sorted? boolean Marks already ordered per provider by (line, text); skips grouping sorts
+---@field marks_sorted? boolean Marks already ordered per provider by (line, text). Skips the grouping sorts
 ---@field compact_search? ScrollbarCompactSearch Private built-in search matches
 ---@field previous? { layer: table, changed: table[] } Previous layer plus the {index, old_row} shift list for incremental row rebuilds
 
@@ -498,9 +498,9 @@
 ---@field width integer Effective total layout width
 ---@field column_offset integer East-anchor translation applied to base content
 ---@field expanded_lane_id false|integer
----@field marks_identity ScrollbarLayoutMark[] Identity of the marks list the layer was built from
----@field segments? integer[][] Provider segments as [first, last] index ranges over line-sorted marks; nil when unavailable
----@field height integer Track height the layer was built for
+---@field marks_identity ScrollbarLayoutMark[] Identity of the marks list that the layer was built from
+---@field segments? integer[][] Provider segments as [first, last] index ranges over line-sorted marks. Nil when unavailable
+---@field height integer Track height that the layer was built for
 ---@field mark_rows integer[] Track rows aligned with marks_identity
 
 ---@class ScrollbarLayoutOutput
@@ -519,8 +519,8 @@
 ---@class ScrollbarWindowState
 ---@field source_win integer
 ---@field source_buf integer
----@field config ScrollbarConfig Effective config that produced this rendered state
----@field variant_id integer Stable selected variant ID; root is 0
+---@field config ScrollbarConfig Effective configuration that produced this rendered state
+---@field variant_id integer Stable ID of the selected variant. The root variant has ID 0
 ---@field float_win integer
 ---@field float_buf integer
 ---@field float_config table<string, any> Last applied floating-window configuration
@@ -551,7 +551,7 @@
 ---@field container_width integer
 ---@field height integer
 ---@field config table Precompiled cache-relevant inputs for the selected variant
----@field marks ScrollbarLayoutMark[] Identity of the flattened marks the rows and layer were built from
+---@field marks ScrollbarLayoutMark[] Identity of the flattened marks that the rows and the layer were built from
 ---@field mark_rows integer[]
 ---@field layer ScrollbarResolvedMarkLayer
 

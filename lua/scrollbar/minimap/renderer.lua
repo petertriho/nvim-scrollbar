@@ -1,19 +1,19 @@
---- Minimap renderer: per-source-window float lifecycle, composes squashed cells
---- plus semantic, viewport, and cursor highlight layers into a visible scratch
---- buffer. It shares the float lifecycle (`scrollbar.shared.float_states`), the
---- source-window policy (`scrollbar.shared.source_policy`), and the float
---- placement and row writer (`scrollbar.shared.float`) with the scrollbar
---- renderer.
+--- Minimap renderer: manages the float lifecycle of each source window. It
+--- composes the squashed cells and the semantic, viewport, and cursor
+--- highlight layers into a visible scratch buffer. It shares the float
+--- lifecycle (`scrollbar.shared.float_states`), the source-window policy
+--- (`scrollbar.shared.source_policy`), and the float placement and row writer
+--- (`scrollbar.shared.float`) with the scrollbar renderer.
 ---
 --- `scrollbar.shared.stack` resolves the origin and z-index against a scrollbar
 --- on the same side of the source window. Squash output is the only source of
---- row text; viewport, cursor, and semantic overlays are non-destructive
+--- row text. The viewport, cursor, and semantic overlays are non-destructive
 --- extmark highlights. `lua/scrollbar/minimap/projection.lua` maps source lines
 --- to float rows for every layer, so all layers agree on the row of a line.
 ---
 --- The worker squashes a slice of map rows around the visible rows. Scrolling
---- inside the slice redraws from the cache; a new slice is requested when the
---- visible rows get near the edge of the cached slice.
+--- inside the slice redraws from the cache. When the visible rows get near the
+--- edge of the cached slice, the renderer requests a new slice.
 ---
 --- Every render composes all rows and their highlights. The row writer then
 --- replaces only the rows whose text changed and sets extmarks only on the rows
@@ -171,14 +171,14 @@ local function source_top(source_win)
 end
 
 ---@param source_win integer
----@return integer top Zero-based screenrow
+---@return integer top Zero-based screen row
 ---@return integer height Available rows
 local function source_area(source_win)
     return source_top(source_win), source_height(source_win)
 end
 
 ---@param source_win integer
----@return integer top_line Zero-based, integer bottom_line Zero-based inclusive
+---@return { [1]: integer, [2]: integer } viewport Zero-based first and last visible source lines, both inclusive
 local function source_viewport(source_win)
     return vim.api.nvim_win_call(source_win, function()
         return { vim.fn.line("w0") - 1, vim.fn.line("w$") - 1 }
@@ -210,8 +210,9 @@ local function stack_footprint(active_config, source_win)
     }
 end
 
----Translate a canonical cell grid into buffer text rows + per-row highlight
----spans. Each cell is one character, so the span columns count cells.
+---Translate a canonical cell grid into buffer text rows and the highlight
+---spans of each row. Each cell is one character, so the span columns count
+---cells.
 ---@param cells ScrollbarMinimapCell[][]
 ---@return string[] rows
 ---@return ScrollbarMinimapHighlightSpan[][] highlights
@@ -288,8 +289,8 @@ end
 ---@field priority integer
 ---@field provider string
 
----Project provider-owned source byte points onto the float rows. Points on
----rows outside the float are skipped.
+---Project the source byte points that providers own onto the float rows. The
+---function skips points on rows outside the float.
 ---@param source_win integer
 ---@param source_buf integer
 ---@param projection ScrollbarMinimapProjection
@@ -339,14 +340,16 @@ local function project_points(source_win, source_buf, projection)
     return points, cursor_row, cursor_col
 end
 
--- Byte offset of each cell of the row being converted. The table is reused
--- across rows and renders, so entries past the current row are stale.
+-- Byte offset of each cell of the row that `rendered_highlights` converts. The
+-- function reuses the table across rows and renders, so entries past the
+-- current row are stale.
 ---@type integer[]
 local cell_offsets = {}
 
 ---Convert the cell spans of every row into the byte-column spans that the
 ---float buffer shows, with the layer highlight groups resolved. A boundary
----past the last cell maps to the end of the row, and empty spans are dropped.
+---past the last cell maps to the end of the row. The function drops empty
+---spans.
 ---@param cells ScrollbarMinimapCell[][]
 ---@param highlights ScrollbarMinimapHighlightSpan[][]
 ---@param active_config ScrollbarMinimapConfig
@@ -448,10 +451,10 @@ local function semantic_input(source_buf)
 end
 
 ---Compose the cache key of a source buffer. The key describes the grid
----shape. The slice position and the line scale are stored in the cache
----entry, so a stale entry can still draw while a new slice is pending.
----Viewport and overlay composition are layered on top during render and do
----not require fresh cells from the worker.
+---shape. The cache entry stores the slice position and the line scale, so a
+---stale entry can still draw while a new slice is pending. A render composes
+---the viewport and the overlays on top of the cells. These layers do not need
+---fresh cells from the worker.
 ---@param source_buf integer
 ---@param active_config ScrollbarMinimapConfig
 ---@param target_width integer
@@ -480,9 +483,9 @@ local function slice_serves(slice, projection, margin)
         and projection_module.covers(projection, slice.first_row, slice.row_count, margin)
 end
 
----Issue a worker request for a grid slice. The sync backend completes
----synchronously and updates the cache via `handle_worker_result` before
----returning; the worker backend returns immediately and the cache is
+---Send a worker request for a grid slice. The sync backend completes
+---synchronously and updates the cache through `handle_worker_result` before
+---it returns. The worker backend returns immediately, and the cache is
 ---updated asynchronously.
 ---@param source_buf integer
 ---@param filetype string
@@ -846,10 +849,10 @@ M.reveal = floats.reveal
 ---@type fun(source_win: integer): boolean
 M.conceal = floats.conceal
 
----Worker result callback. Updates the dimension-specific cell cache and bumps
----the revision so the next render picks up fresh content. `scrollbar.minimap`
----wires the worker's `on_result` to this handler plus a scheduler
----invalidation.
+---Worker result callback. Updates the dimension-specific cell cache and
+---increments the revision, so that the next render uses the fresh content.
+---`scrollbar.minimap` connects the `on_result` of the worker to this handler
+---and to a scheduler invalidation.
 ---@param payload table
 M.handle_worker_result = function(payload)
     if type(payload) ~= "table" or type(payload.bufnr) ~= "number" then
@@ -986,8 +989,9 @@ M.is_buffer_eligible = floats.is_buffer_eligible
 ---@type fun(winid: integer): boolean
 M.is_source_window = policy.is_source_window
 
----Clear cached source eligibility (one window or all). Wired to the
----scheduler's topology/option events; safe to call at any time.
+---Clear the cached source eligibility of one window, or of all windows. The
+---scheduler calls it on topology and option events. It is safe to call at
+---any time.
 ---@type fun(source_win?: integer)
 M.invalidate_source_selection = policy.invalidate
 
@@ -1015,7 +1019,7 @@ end
 ---@type fun(): boolean
 M.is_visible = is_visible
 
----@return integer namespace Nvim namespace id used for the minimap extmarks
+---@return integer namespace Neovim namespace id of the minimap extmarks
 M.namespace = function()
     return NAMESPACE
 end

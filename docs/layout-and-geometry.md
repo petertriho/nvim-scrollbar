@@ -20,7 +20,7 @@ layout = {
 The track paints only the background. The thumb paints its repeated text and
 its background while the viewport span is active. Mark layers paint the
 resolved glyphs. A later track can replace the background without replacing a
-lower content glyph. Marks above the thumb stay visible. The thumb hides the
+lower content glyph. Marks above the thumb stay visible. The thumb covers the
 marks below it.
 
 Plain `"marks"` receives every type that no explicit descriptor claims. A
@@ -71,14 +71,17 @@ layout = {
 When built-in named marks collide on a row, their lane grows only as much as
 necessary. `max_width` caps the total width of that lane, including its
 declared base span. It does not cap the whole float. The active placement
-container limits the growth. When the scrollbar is beside a minimap, nearer
-the text, the container ends at the far edge of the window. Dynamic cells contain only named marks and are
-inserted on the inward side that faces the editor. The screen cells of the
-declared track, thumb, and ordinary marks stay pinned as the float grows or
-shrinks.
+container limits the growth. When the scrollbar is beside a minimap and nearer
+the text, the container ends at the opposite edge of the window: the left edge
+for an east anchor, and the right edge for a west anchor. With an
+editor-relative placement, it ends at the opposite edge of the editor. Dynamic
+cells contain only named marks. The renderer inserts them on the inward side,
+toward the text: the left side of an east float, and the right side of a west
+float. The screen cells of the declared track, thumb, and ordinary marks stay
+pinned as the float grows or shrinks.
 
 Built-in names keep the source-line/name order. If the capacity is not
-sufficient, the ordered prefix stays and the tail is omitted. Marks with
+sufficient, the lane keeps the ordered prefix and omits the tail. Marks with
 `type = "Mark"` from custom providers stay collapsed in the declared base lane.
 
 ## Placement
@@ -132,9 +135,9 @@ stays visible, before an `"inner"` reservation or after an `"outer"`
 reservation. The plugin restores the original `statuscolumn` and `numberwidth`
 when the scrollbar is hidden, is disposed, becomes ineligible, or switches to a
 placement without a reservation. If you edit these options while the
-reservation is active, your edit is kept. Each split owns and restores its own
-reservation. This includes a split that you create from a window that already
-has a reservation.
+reservation is active, the plugin keeps your edit. Each split owns and restores
+its own reservation. This includes a split that you create from a window that
+already has a reservation.
 
 Neovim limits the maximum `statuscolumn` width. If a declared west layout is
 too wide to reserve completely, the plugin does not show that scrollbar. It
@@ -147,16 +150,16 @@ such as automatic sign column changes, apply at the next render.
 
 Contextual profiles resolve the placement per source window. With the root
 `visibility = "all"`, compatible window-relative variants can coexist, and an
-editor-relative variant shows only when its source is active. The root
-`visibility = "active"` always limits the entire renderer to the active source.
-When a different profile matches, the existing float takes the relative mode,
-anchor, offsets, width, z-index, cursor-hiding policy, and mouse behavior of
-that profile.
+editor-relative variant shows only when its source window is active. The root
+`visibility = "active"` always limits the entire renderer to the active source
+window. When a different profile matches, the existing float takes the relative
+mode, anchor, offsets, width, z-index, cursor-hiding policy, and mouse behavior
+of that profile.
 
-The float covers the buffer-text rows of the source. It excludes the source
-winbar and the rows already used by the tabline, the statusline, and the
-command line. The plugin derives the float width and height. The float options
-are `placement` and `hide_on_cursor`.
+The float covers the buffer-text rows of the source window. It excludes the
+winbar of the source window and the rows that the tabline, the statusline, and
+the command line already use. The plugin derives the float width and height.
+The float options are `placement` and `hide_on_cursor`.
 
 ## Units
 

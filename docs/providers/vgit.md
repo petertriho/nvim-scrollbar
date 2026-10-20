@@ -72,8 +72,9 @@ top-level `marks` table. To change it in one renderer only, use
 ## Updates
 
 - Setup does an initial refresh of the eligible loaded buffers.
-- When vgit attaches to a buffer, reloads it, sees a text edit, or syncs with
-  the Git index, the marks of that buffer update after a short delay.
+- When vgit attaches to a buffer or reloads it, the marks of that buffer update
+  after a short delay. The same occurs when vgit sees a text edit or syncs with
+  the Git index.
 - `:ScrollbarRefresh` rereads the vgit data of the buffers in the current
   source windows.
 

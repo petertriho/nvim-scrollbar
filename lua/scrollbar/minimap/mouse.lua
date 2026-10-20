@@ -8,16 +8,16 @@
 --- cursor only when the cursor leaves the visible lines. Every press holds
 --- the autohide deadline until the interaction ends.
 ---
---- Drag is frame-coalesced via the minimap scheduler: each `<LeftDrag>`
---- invalidates the source window through the scheduler, and the scheduler's
---- `throttle_ms` coalesces the resulting flushes.
+--- The minimap scheduler coalesces the frames of a drag. Each `<LeftDrag>`
+--- invalidates the source window through the scheduler, and the `throttle_ms`
+--- of the scheduler coalesces the flushes that result.
 
 local mouse_core = require("scrollbar.shared.mouse")
 local projection_module = require("scrollbar.minimap.projection")
 
 local M = {}
 
--- Bound for the scroll corrections of one drag event. Each pass moves the
+-- Maximum number of scroll corrections for one drag event. Each pass moves the
 -- topline, so a few passes reach the target unless folds or wrapped lines
 -- stop it.
 local MAX_SCROLL_PASSES = 8
@@ -27,7 +27,7 @@ local core
 
 ---Scroll the current window until its 0-based topline reaches `topline`.
 ---`CTRL-E` and `CTRL-Y` count a closed fold as one line, so the scroll can
----pass `topline`. A pass that passes `topline` or does not move ends the
+---go past `topline`. A pass that goes past `topline` or does not move ends the
 ---scroll.
 ---@param topline integer
 local function scroll_current(topline)
@@ -102,8 +102,8 @@ local function on_press(current)
 end
 
 ---Scroll the source so that the band moves by the rows that the pointer
----moved since the press. The pointer may leave the float; the topline
----clamps at the ends of the buffer.
+---moved since the press. The pointer can leave the float. The topline clamps
+---at the ends of the buffer.
 ---@param current ScrollbarMinimapMouseInteraction
 local function drag(current)
     if not mouse_core.valid_window(current.float_win) then

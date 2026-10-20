@@ -1400,11 +1400,13 @@ end
 T["OPTION_PATTERNS list matches the mirrored copy in layout.lua"] = function()
     local child = new_child()
     local result = child.lua_func(function()
-        -- OPTION_PATTERNS is a module-local in both scheduler.lua and
-        -- layout.lua (mirrored deliberately to avoid scheduler -> layout
-        -- requiring layout from scheduler; see comment at layout.lua:76-79).
-        -- The local is not directly reachable from any exported function, so
-        -- walk the upvalue graph of every exported closure until we find it.
+        -- `OPTION_PATTERNS` of scheduler.lua and `EXTENT_OPTION_PATTERNS` of
+        -- layout.lua are module-locals. The layout list keeps only the options
+        -- that affect extents. The scheduler list is a superset for the
+        -- OptionSet autocmd patterns (see the comment above
+        -- `EXTENT_OPTION_PATTERNS`). No exported function returns either
+        -- list, so walk the upvalue graph of every exported closure until the
+        -- name is found.
         local function find_upvalue_named(module, target)
             local seen = {}
             local queue = {}
@@ -1460,7 +1462,8 @@ T["OPTION_PATTERNS list matches the mirrored copy in layout.lua"] = function()
     expect.equality(#result.scheduler > 0, true)
     expect.equality(#result.layout > 0, true)
     -- The scheduler autocmd patterns must stay a superset of the layout
-    -- extent-option subset so every extent-affecting change schedules a render.
+    -- extent-option subset, so that every change that affects extents
+    -- schedules a render.
     expect.equality(result.layout_covered, true)
 end
 

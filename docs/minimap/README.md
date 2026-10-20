@@ -1,16 +1,16 @@
 # Minimap
 
-The minimap shows a scaled-down view of the source buffer in a floating window.
-It is **disabled** by default. The minimap has its own configuration block,
-profiles, visibility, mouse handling, and commands. Enabling the minimap does
-not show, hide, move, or resize the scrollbar. The minimap commands never show
-or hide the scrollbar.
+The minimap shows a scaled-down view of the source buffer in a float. It is
+**disabled** by default. The minimap has its own configuration block,
+profiles, visibility, mouse handling, and commands. When you enable the
+minimap, it does not show, hide, move, or resize the scrollbar. The minimap
+commands never show or hide the scrollbar.
 
 ![The minimap scrolls with the source window and tints the viewport](https://github.com/user-attachments/assets/c2844052-aa78-4896-b675-62b278d0d528)
 
 The scrollbar and the minimap share the top-level `providers`, `marks`, and
-`exclude` tables. Each built-in provider runs once, with one option set. Each
-renderer shows only the providers that target it. See
+`exclude` tables. Each built-in provider runs once, with one set of options.
+Each renderer shows only the providers that target it. See
 [Configuration](../configuration.md#providers).
 
 ## Quick Start
@@ -63,9 +63,9 @@ An empty cell is a space.
 
 `columns_per_dot` (default `4`) sets the number of source display columns in
 each dot column. A cell covers `2 * columns_per_dot` columns. The default
-16-cell minimap shows the first 128 display columns of each line. Columns
-past the right edge of the minimap are clipped, so a long line does not
-change the other lines.
+16-cell minimap shows the first 128 display columns of each line. The minimap
+clips the columns past its right edge, so a long line does not change the
+other lines.
 
 ```lua
 require("scrollbar").setup({
@@ -101,8 +101,8 @@ win over the preset. See [Minimap presets](../presets.md#minimap-presets).
 
 | Command | Behavior |
 | --- | --- |
-| `:MinimapShow` | Shows the minimap. If autohide is enabled, it also re-arms the autohide deadlines. |
-| `:MinimapHide` | Hides every minimap float and clears pending hide deadlines. |
+| `:MinimapShow` | Shows the minimap. If autohide is enabled, it also starts new autohide delays. |
+| `:MinimapHide` | Hides every minimap float and cancels pending autohide delays. |
 | `:MinimapToggle` | Switches between `Show` and `Hide`. |
 | `:MinimapRefresh` | Runs the refresh callbacks of the minimap providers and renders again. It does not show a hidden minimap or a minimap that autohide concealed. |
 
@@ -159,10 +159,10 @@ See [Placement Beside the Scrollbar](configuration.md#placement-beside-the-scrol
 ## Viewport and Cursor
 
 When `viewport = true` (the default), the rows that show the visible lines of
-the source window get the `ScrollbarMinimapViewport` background. The band
-includes every row that shows a visible line, so a row with only some visible
-lines is in the band. The tint spans the full minimap width and does not
-change the dots.
+the source window get the `ScrollbarMinimapViewport` background. The viewport
+band includes every row that shows a visible line, so a row with only some
+visible lines is in the band. The tint spans the full minimap width and does
+not change the dots.
 
 When the `cursor` provider targets the minimap (the default), the cell at the
 exact cursor position gets the `ScrollbarMinimapCursor` highlight. This group
@@ -173,7 +173,8 @@ disable the cursor point, set `providers.cursor = { minimap = false }`.
 
 Ordinary provider marks, such as diagnostics, search matches, and Git hunks,
 tint the occupied cells of their minimap row. A row with no occupied cells
-shows no overlay. A mark on a row that is outside the float does not show. The built-in mark types are:
+shows no overlay. A mark on a row that is outside the float does not show. The
+built-in mark types are:
 
 | Mark type | Source |
 | --- | --- |
@@ -238,8 +239,8 @@ mark in the list of that provider.
 `minimap.marks` rejects `Cursor`, `Base`, `Content`, and `Viewport`, because
 the static minimap layers own these names. The minimap does not show a
 registered type with one of these names. When the minimap is enabled, setup
-also rejects collisions between the two renderers, for example a scrollbar type
-`MinimapSearch` and the minimap type `Search`, which both claim
+also rejects collisions between the two renderers. For example, a scrollbar
+type `MinimapSearch` and the minimap type `Search` both claim
 `ScrollbarMinimapSearch`.
 
 Custom providers can also publish semantic spans and exact points for the
@@ -274,19 +275,18 @@ vim.o.mouse = "a"
 
 The click uses logical lines. It does not account for wrapped rows, or for
 folds beyond their first line. A drag scrolls with `CTRL-E` and `CTRL-Y`,
-which count a closed fold as one line, so a drag over closed folds can scroll
-past the band position.
+which count a closed fold as one line. As a result, a drag over closed folds
+can scroll past the band position.
 
-With `autohide`, a press or drag on the minimap pauses the deadline of that
-source window. Release or cancellation starts a new full delay.
+With `autohide`, a press or drag on the minimap pauses the autohide delay of
+its source window. Release or cancellation starts a new full delay.
 
 The minimap float is not focusable, and it uses the same focus rules as the
 scrollbar floats. See [Focus](../mouse.md#focus).
 
 With `minimap.mouse = false`, mouse input passes through the float, and the
-float has no mappings.
-A profile that sets `mouse = false` removes the mappings when the minimap
-renders with that profile.
+float has no mappings. A profile that sets `mouse = false` removes the mappings
+when the minimap renders with that profile.
 
 ## Related
 

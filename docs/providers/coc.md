@@ -73,11 +73,12 @@ in only one renderer, use a provider target, for example
 - Use `:CocInfo` to make sure that Coc is running and that Coc reports
   diagnostics for the file.
 - To make the provider request a new diagnostic list, run
-  `:doautocmd User CocDiagnosticChange`. `:ScrollbarRefresh` is not equivalent.
+  `:doautocmd User CocDiagnosticChange`. `:ScrollbarRefresh` does not request
+  a new list.
 - If old marks stay after a Coc error, wait for another successful
   diagnostic-change request, or start one.
 - If severity colors are unexpected, inspect or override the shared `Error`,
-  `Warn`, `Info`, and `Hint` mark configurations.
+  `Warn`, `Info`, and `Hint` mark types.
 
 ## Related Links
 

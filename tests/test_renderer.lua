@@ -2540,8 +2540,8 @@ T["profile switches compare explicit cache inputs and invalidate only their sour
         priority = 5,
         cap4 = 6,
         cap5 = 7,
-        -- Screen geometry now flows through the same cached mark-layer path
-        -- as line geometry.
+        -- Screen geometry uses the same cached mark-layer path as line
+        -- geometry.
         screen = 8,
         after_screen = 9,
         after_second = 9,

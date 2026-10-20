@@ -65,8 +65,8 @@ require("scrollbar").setup({
 Only `search` and `marks` have options. See [Search](search.md) and
 [Marks](marks.md). `treesitter` and `lsp_semantic_tokens` support only the
 minimap, so `scrollbar = true` on them is a setup error. Unknown provider
-names and unknown option keys are also errors. To add a
-custom data source, register it through the [custom provider API](custom.md).
+names and unknown option keys are also errors. To add a custom data source,
+register it through the [custom provider API](custom.md).
 
 ## Shared Providers
 
@@ -80,9 +80,9 @@ Provider targets control what runs. Mark types control what shows. Each
 provider publishes types from the top-level `marks` registry, which sets
 `text`, `priority`, and `highlight` for both renderers. `scrollbar.marks.<Type>`
 and `minimap.marks.<Type>` override these fields for one renderer, or hide the
-type with `false`. A hidden type is still accepted from providers. It is not
-drawn. Route the scrollbar types into explicit or catch-all lanes under
-scrollbar `layout`. See [Configuration](../configuration.md#marks).
+type with `false`. Providers can still publish a hidden type, but that renderer
+does not draw it. Route the scrollbar types into explicit or catch-all lanes
+under the scrollbar `layout`. See [Configuration](../configuration.md#marks).
 
 In one scrollbar lane or one minimap row, the lower numeric priority wins.
 Minimap spans and points use the opposite direction: the higher numeric value
@@ -100,7 +100,7 @@ concealed.
 ## Optional Integrations
 
 If the dependency of an optional integration is unavailable, the integration
-safely emits no marks.
+emits no marks, and setup still succeeds.
 
 You can enable more than one diff provider at the same time. Each provider owns
 its data separately, but the marks can overlap visually. If they overlap, use

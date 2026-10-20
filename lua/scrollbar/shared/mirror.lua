@@ -177,8 +177,9 @@ end
         )
     end
 
-    -- A Lua `on_lines` callback cannot be detached directly. It returns true
-    -- on its next call, when its mirror is no longer registered.
+    -- A Lua `on_lines` callback cannot be detached directly. Instead, the
+    -- callback returns true on its next call, when its mirror is not
+    -- registered.
     ---@param bufnr integer
     ---@param notify_child boolean
     local function detach(bufnr, notify_child)
@@ -548,9 +549,9 @@ end
         end
         if event == "mirror_invalid" then
             -- The child names the mirror id of the rejected work. An id of an
-            -- older mirror still rejects the in-flight request made for it,
-            -- but the current mirror needs no new snapshot, and the requeued
-            -- request can go to it now.
+            -- older mirror still rejects the in-flight request made for that
+            -- mirror. But the current mirror needs no new snapshot, and the
+            -- requeued request can go to it immediately.
             on_mirror_invalid(payload.bufnr, payload.id)
             local mirror = mirrors[payload.bufnr]
             if mirror ~= nil and (payload.id == nil or payload.id == mirror.id) then

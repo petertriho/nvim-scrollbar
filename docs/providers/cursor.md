@@ -30,14 +30,14 @@ precedence over every other built-in mark type in the same display cells.
 ## Scope
 
 The provider is window-scoped. If two splits show the same buffer, each split
-keeps a separate cursor mark at its own cursor position. Invalid windows and
-buffers excluded by `max_lines` or the top-level `exclude` table produce no
-cursor mark.
+keeps a separate cursor mark at its own cursor position. Invalid windows
+produce no cursor mark. Buffers that `max_lines` or the top-level `exclude`
+table excludes also produce no cursor mark.
 
 ## Updates
 
-The provider initializes the mark during setup and when a source window is
-entered. It updates the mark for the current event window on these events:
+The provider initializes the mark during setup and when you enter a source
+window. It updates the mark for the current event window on these events:
 
 - `CursorMoved`
 - `CursorMovedI`
@@ -45,8 +45,8 @@ entered. It updates the mark for the current event window on these events:
 - `WinEnter`
 
 `:ScrollbarRefresh` explicitly refreshes every eligible source window. If you
-disable the provider or run setup again, the cursor marks that the previous
-provider instance owns are cleared.
+disable the provider or run setup again, scrollbar clears the cursor marks that
+the previous provider instance owns.
 
 ## Customization
 
@@ -78,15 +78,17 @@ rejects `Cursor`. To turn off the accent, set
   selections, remote cursors, or plugin-specific multi-cursor positions.
 - With `scrollbar.hide_on_cursor = true`, the entire scrollbar can hide when the
   active editing cursor intersects the actual screen rectangle of the
-  scrollbar. This is overlay visibility behavior, not a missing cursor mark. If
-  you prefer an uninterrupted overlay, set the option to `false`.
+  scrollbar. This behavior is part of the overlay visibility. It does not mean
+  that the cursor mark is missing. If you prefer an uninterrupted overlay, set
+  the option to `false`.
 - If no mark appears, do these steps:
   1. Make sure that `providers.cursor` targets the scrollbar.
   2. Examine the top-level `exclude` table and `max_lines`.
   3. Enter the affected window.
   4. Run `:ScrollbarRefresh`.
-- If the mark is covered after customization, compare the lane stack order and
-  the priorities. Lower priority numbers win within one mark lane.
+- If another mark covers the cursor mark after customization, compare the lane
+  stack order and the priorities. Lower priority numbers win within one mark
+  lane.
 
 ## Related
 

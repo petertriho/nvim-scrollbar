@@ -20,9 +20,8 @@ require("scrollbar").setup({
 `providers.lsp_semantic_tokens` is a boolean, or a table that contains only the
 `scrollbar` and `minimap` target flags. The provider runs only when the minimap
 is enabled. Setup rejects `scrollbar = true`. A minimap profile cannot select
-the provider. Each eligible buffer also needs at least one attached
-client with a semantic-token legend and support for full-document or range
-requests.
+the provider. Each eligible buffer also needs at least one attached client
+with a semantic-token legend and support for full-document or range requests.
 
 When the provider activates, every eligible loaded buffer gets an initial
 refresh. A buffer without a supporting attached client gets no LSP semantic
@@ -54,7 +53,7 @@ Every decoded token can publish three highlight layers:
 Higher numeric semantic priority wins. Thus, the type-plus-modifier layer
 overrides the modifier and type layers. All LSP layers override the Treesitter
 priority `100`. The groups are normal Neovim highlight groups, and they follow
-the user's LSP highlight configuration.
+the LSP highlight configuration of the user.
 
 ## Stale Results
 

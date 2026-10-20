@@ -1,21 +1,22 @@
 --- Render scheduler of the minimap, built on `scrollbar.shared.scheduler`.
 ---
---- Coalesces invalidations within `minimap.throttle_ms` (default 50) from
---- mirror changes (worker callbacks), viewport changes (`WinScrolled` on
---- source windows), shared store mark/span/point notifications, and
---- eligibility changes.
+--- The scheduler coalesces invalidations within `minimap.throttle_ms`
+--- (default 50). The invalidations come from mirror changes (worker
+--- callbacks), viewport changes (`WinScrolled` on source windows), the mark,
+--- span, and point notifications of the shared store, and eligibility changes.
 ---
---- Autohide hide-timer logic is engaged only when `minimap.autohide` is
---- enabled; otherwise the timers are not created and the hold/resume API is a
---- no-op.
+--- The autohide timer logic runs only when `minimap.autohide` is enabled.
+--- Otherwise, the scheduler does not create the timers, and the hold and
+--- resume API is a no-op.
 
 local config = require("scrollbar.minimap.config")
 local scheduler_core = require("scrollbar.shared.scheduler")
 
 local M = {}
 
--- The minimap `OptionSet` row has no default pattern: without a configured
--- pattern it renders all windows when any option changes, as documented.
+-- The minimap `OptionSet` row has no default pattern. Without a configured
+-- pattern, the scheduler renders all windows when any option changes, as
+-- documented.
 local core = scheduler_core.new({
     augroup = "ScrollbarMinimapScheduler",
     label = "minimap ",
@@ -47,10 +48,10 @@ M.setup = function(options)
         on_colorscheme = options.on_colorscheme or function() end,
         channels = channels,
         peers = options.peers,
-        -- Ride the scrollbar scheduler's shared TextChanged dispatch when
-        -- wired: one autocmd invocation per keystroke covers both schedulers.
-        -- Without the dispatch (standalone setups) the minimap keeps its own
-        -- text rows.
+        -- If the shared TextChanged dispatch of the scrollbar scheduler is
+        -- wired, use it. Then one autocmd invocation for each keystroke covers
+        -- both schedulers. Without the dispatch (standalone setups), the
+        -- minimap keeps its own text rows.
         on_text_change = options.on_text_change,
     })
 end

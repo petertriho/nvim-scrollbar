@@ -5,8 +5,9 @@
 --- interaction, the buffer-local mouse mappings of the floats, and the
 --- lifecycle of an interaction:
 ---
---- - A press that the policy accepts holds the autohide deadline of its
----   source window when the policy marks it as held, and focuses the float.
+--- - A press that the policy accepts focuses the float. If the policy marks
+---   the press as held, the press first holds the autohide deadline of its
+---   source window.
 --- - The end of an interaction returns focus to the source window, resumes a
 ---   held deadline with a full delay, and attaches the mappings again.
 --- - A closed float or source window, or a deleted buffer, cancels the
@@ -52,7 +53,7 @@ local MAPPINGS = { "<LeftMouse>", "<LeftDrag>", "<LeftRelease>" }
 ---@field start fun(state: ScrollbarMouseCoreState, row: integer, col: integer, screen_row: integer, screen_col: integer): ScrollbarMouseCoreInteraction? Interaction of a press inside the float, or nil to ignore the press
 ---@field on_press? fun(current: ScrollbarMouseCoreInteraction, state: ScrollbarMouseCoreState, active: ScrollbarMouseCoreRuntime) Runs after the hold and before the float takes focus
 ---@field drag fun(current: ScrollbarMouseCoreInteraction)
----@field release fun(current: ScrollbarMouseCoreInteraction) The controller ends the interaction after it
+---@field release fun(current: ScrollbarMouseCoreInteraction) The controller ends the interaction after this call
 ---@field on_finish? fun(current: ScrollbarMouseCoreInteraction, active?: ScrollbarMouseCoreRuntime)
 
 ---@class ScrollbarMouseCore
@@ -183,7 +184,7 @@ M.new = function(spec)
         end
     end
 
-    --- The state of the interaction's float, or nil when the float, its
+    --- The state of the float of the interaction, or nil when the float, its
     --- source window, or their buffers changed since the press.
     ---@param current ScrollbarMouseCoreInteraction
     ---@return ScrollbarMouseCoreState?
@@ -405,8 +406,8 @@ M.new = function(spec)
         pcall(vim.api.nvim_del_augroup_by_id, active.augroup)
     end
 
-    --- A copy of the active interaction. An interaction that does not hold the
-    --- autohide deadline is not reported.
+    --- A copy of the active interaction, or nil when no active interaction
+    --- holds the autohide deadline.
     ---@return ScrollbarMouseCoreInteraction?
     core.get_interaction = function()
         return interaction and interaction.held and vim.deepcopy(interaction) or nil

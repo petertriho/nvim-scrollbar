@@ -7,9 +7,9 @@ Visibility is controlled globally, per source window, and by buffer eligibility.
 - `visibility = "all"` creates an independent scrollbar for every eligible
   normal window. Two windows that show the same buffer keep different thumbs.
 - `visibility = "active"` keeps only the scrollbar of the active source window.
-- `placement.relative = "editor"` also renders only the active source window,
-  for every `visibility` value. As a result, editor-relative floats cannot
-  overlap.
+- `placement.relative = "editor"` also renders only the scrollbar of the active
+  source window, for every `visibility` value. As a result, editor-relative
+  floats cannot overlap.
 
 `visibility` is a global option, so a profile cannot set it. With contextual
 profiles and `visibility = "all"`, each source window gets the placement of its
@@ -30,16 +30,16 @@ windows.
 
 | Command | Lua API | Effect |
 | --- | --- | --- |
-| `:ScrollbarShow` | `require("scrollbar").show()` | Enables master visibility. With autohide, shows every eligible window and starts its hide delay |
+| `:ScrollbarShow` | `require("scrollbar").show()` | Enables master visibility. With autohide, shows every eligible window and starts its autohide delay |
 | `:ScrollbarHide` | `require("scrollbar").hide()` | Disables master visibility, hides floats, and cancels pending autohide delays |
-| `:ScrollbarToggle` | `require("scrollbar").toggle()` | Toggles master visibility, also when autohide has concealed every float |
-| `:ScrollbarRefresh` | `require("scrollbar").refresh()` | Refreshes providers and rerenders, but does not reveal concealed autohide windows |
+| `:ScrollbarToggle` | `require("scrollbar").toggle()` | Toggles master visibility, also when autohide conceals every float |
+| `:ScrollbarRefresh` | `require("scrollbar").refresh()` | Refreshes providers and rerenders, but does not reveal windows that autohide conceals |
 
 ## Autohide
 
-With `autohide = true`, each eligible window starts concealed. The
-`CursorMoved`, `CursorMovedI`, or `WinScrolled` activity of that window reveals
-it, if the event is in [`events`](configuration.md#events). After 1000 ms of
+With `autohide = true`, each eligible window starts concealed. `CursorMoved`,
+`CursorMovedI`, or `WinScrolled` activity of a window reveals that window. The
+event must be in [`events`](configuration.md#events). After 1000 ms of
 inactivity, autohide conceals that window independently. To change the delay,
 use `autohide = { delay_ms = 500 }`.
 
@@ -47,11 +47,12 @@ use `autohide = { delay_ms = 500 }`.
 
 Provider updates, option changes, resizes, colorscheme changes, and
 `:ScrollbarRefresh` can rerender a revealed scrollbar. They do not reveal a
-concealed scrollbar. A press or drag on a scrollbar pauses the deadline of that
-source window. Release or cancellation starts a new full delay.
+concealed scrollbar. A press or drag on a scrollbar pauses the autohide delay of
+its source window. Release or cancellation starts a new full delay.
 
 Autohide, master visibility, and `max_lines` are global options. The top-level
-`exclude` table also applies to every profile. A profile cannot change them.
+`exclude` table also applies to every profile. A profile cannot change these
+options or this table.
 
 ## Documents That Fit
 

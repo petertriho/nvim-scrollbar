@@ -21,8 +21,10 @@ require("scrollbar").setup({
 | `numbers` | `false` | Include `0-9` |
 
 `true` uses these defaults. `false` disables the provider. The table also
-accepts the `scrollbar` and `minimap` target flags. Width is a layout policy,
-and setup rejects it under `providers.marks`.
+accepts the `scrollbar` and `minimap` target flags. Setup rejects all other
+keys under `providers.marks`, for example `width` and `max_width`. The width of
+named marks is part of the layout: set `max_width` on the `Mark` lane, as the
+next section shows.
 
 The defaults for the `Mark` type in the top-level `marks` table are
 `text = {}`, `priority = 1`, and `highlight = "Special"`. The empty text list
@@ -74,15 +76,16 @@ beyond the lane cap or the active placement container. Dynamic cells hold only
 marks. They grow inward, while declared track, thumb, and ordinary mark cells
 stay pinned.
 
-Visible names keep their ordered prefix from left to right. Excess tail names
-are omitted. Each visible name owns its exact source line. Expansion applies
-only to `Mark` values emitted by the built-in provider named `marks`. Custom
-`Mark` sources stay collapsed.
+The lane shows the first of the sorted names, from left to right. It omits the
+remaining names that do not fit. Each visible name owns its exact source line.
+Expansion applies only to `Mark` values that the built-in provider named
+`marks` emits. Custom `Mark` sources stay collapsed.
 
 ## Mouse
 
 A click on a visible name jumps to its exact line and opens the fold that
-contains it. The click also centers the source and restores focus.
+contains it. The click also centers that line in the source window and
+restores focus.
 
 A name in a layer above the thumb has two behaviors. A release without movement
 clicks the name. Movement starts a thumb drag.

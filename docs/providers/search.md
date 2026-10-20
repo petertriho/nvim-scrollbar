@@ -90,10 +90,10 @@ While an incremental `/` or `?` command line is active, the provider can show
 the preview even when the previous accepted search is hidden. After the command
 line closes, accepted marks again obey the native visibility rules above.
 
-The scrollbar also does not show search marks when it has one of these states:
+The scrollbar also does not show search marks in these cases:
 
 - It is excluded.
-- It is globally hidden.
+- Master visibility is disabled.
 - `max_lines` limits it.
 - Autohide conceals it.
 - It is hidden because the document fits.
@@ -141,8 +141,8 @@ worker also stops when the parent Neovim exits.
 
 ### Synchronous
 
-Use the synchronous backend when you do not want to start a child process. Also
-use it when a pattern depends on source-window state that the worker does not
+If you do not want to start a child process, use the synchronous backend. Also
+use it if a pattern depends on source-window state that the worker does not
 have:
 
 ```lua
@@ -177,11 +177,11 @@ require("scrollbar").setup({
   default worker backend.
 - If incremental feedback is not essential, set `incsearch = false`. This
   applies especially while you edit large files.
-- Use synchronous mode for state-dependent Vim patterns, or for environments
-  that do not permit the embedded child process. Synchronous mode is not a
-  performance optimization.
-- Every scan runs the real Vim regex. As a result, pathological patterns can
-  stay expensive.
+- Use the synchronous backend for state-dependent Vim patterns, or for
+  environments that do not permit the embedded child process. The synchronous
+  backend is not a performance optimization.
+- Every scan runs the real Vim regular-expression engine. As a result,
+  pathological patterns can stay expensive.
 
 ## Worker Fallback
 
@@ -189,14 +189,14 @@ If the worker cannot start or exits unexpectedly, the provider warns once. Then
 it uses the synchronous backend for the rest of that setup.
 
 After a failure, the worker does not restart automatically within the same
-setup. A new `require("scrollbar").setup(...)` call replaces the failed setup.
+setup. A new `require("scrollbar").setup(...)` call replaces that setup.
 Depending on the new configuration, the new setup can start a new worker.
 
 ## Appearance
 
-Search marks use the `Search` mark type. Customize the glyphs, the priority, or
-the highlight in the top-level `marks.Search`. To put the type in its own lane,
-use `scrollbar.layout`:
+Search marks use the `Search` mark type. To put the type in its own lane, use
+`scrollbar.layout`. Customize the glyphs, the priority, or the highlight in the
+top-level `marks.Search`:
 
 ```lua
 require("scrollbar").setup({
@@ -211,7 +211,7 @@ require("scrollbar").setup({
 ```
 
 The text list contains density variants. When multiple matches compress into
-the same rendered row, later entries are used. For the complete appearance
+the same rendered row, the row uses later entries. For the complete appearance
 rules, see [Highlights](../highlights.md) and
 [Layout and geometry](../layout-and-geometry.md).
 
@@ -225,7 +225,7 @@ rules, see [Highlights](../highlights.md) and
 - Make sure that `providers.search` is enabled.
 - Make sure that the buffer is displayed in an eligible source window.
 
-If marks exist but the scrollbar is not visible, examine these items: global
+If marks exist but the scrollbar is not visible, examine these items: master
 visibility, autohide, the top-level `exclude` table, `max_lines`, and the
 hide-if-all-visible options. `:ScrollbarRefresh` refreshes data, but it does not
 show a window that autohide conceals.
@@ -237,8 +237,8 @@ omitted, the provider uses that native value. To force previews regardless of
 the native option, set `providers.search.incsearch = true`.
 
 Incremental preview applies only while you edit a `/` or `?` command line. An
-empty pattern keeps the accepted marks. An invalid Vim pattern produces no
-preview, on purpose.
+empty pattern keeps the accepted marks. By design, an invalid Vim pattern
+produces no preview.
 
 ### Worker fallback warning
 
@@ -248,9 +248,9 @@ The warning gives the reason after this text:
 [nvim-scrollbar] search worker failed; using synchronous fallback:
 ```
 
-Search is expected to continue through the synchronous fallback. If the
-environment does not allow an embedded headless Neovim process on purpose,
-configure `backend = "sync"`.
+Search continues with the synchronous fallback. If your environment
+intentionally blocks an embedded headless Neovim process, configure
+`backend = "sync"`.
 
 ### Results differ for a stateful pattern
 
@@ -260,17 +260,17 @@ synchronous scan still uses one eligible source window as its context.
 
 ### Editing pauses during search
 
-Examine the configured backend, and look for a worker fallback warning. With a
-synchronous configuration or after a worker fallback, scans run on the main
+Examine the configured backend. Then look for a worker fallback warning. With
+the synchronous backend, or after a worker fallback, scans run on the main
 loop of Neovim. For expensive searches, prefer the worker backend and set
 `incsearch = false`. You can also reduce the cost of the buffer or the pattern.
 
 ### Marks look briefly out of date
 
-While a new scan runs, the previous accepted marks stay visible. This prevents
-flicker during rapid searches and continuous edits. A new accepted search or
-`:ScrollbarRefresh` can request a refresh, but a slow scan must still finish
-before new marks show.
+While a new scan runs, the previous accepted marks stay visible. This behavior
+prevents flicker during rapid searches and continuous edits. A new accepted
+search or `:ScrollbarRefresh` can request a refresh, but a slow scan must still
+finish before new marks show.
 
 ## Related Links
 

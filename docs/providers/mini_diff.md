@@ -50,7 +50,7 @@ If mini.diff loads after scrollbar, the provider starts to use it at the next
 | --- | --- | --- |
 | `add` | `MiniDiffAdd` | All buffer lines in the hunk |
 | `change` | `MiniDiffChange` | All buffer lines in the hunk, also when the reference and buffer counts are not equal |
-| `delete` | `MiniDiffDelete` | One surviving position, clamped to the first buffer line |
+| `delete` | `MiniDiffDelete` | One line at the deletion position: the line above the deleted lines, or line 1 when the deletion is at the top |
 
 The provider ignores unknown hunk types. If mini.diff has no data for a buffer,
 that buffer has no MiniDiff marks.

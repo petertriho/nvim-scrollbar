@@ -21,10 +21,11 @@ vim.o.mouse = "a"
   as one rectangle.
 - If a visible mark is above the thumb, a release without movement clicks the
   mark, and movement starts a thumb drag.
-- If the thumb is above a mark layer, the hidden mark is not clickable.
+- If the thumb is above a mark layer, the covered mark is not clickable.
 
-Navigation opens only the folds that contain the target with `zv`, and centers
-with `zz`. After release or cancellation, focus returns to the source window.
+Navigation uses `zv` to open only the folds that contain the target. Then it
+centers the target with `zz`. After release or cancellation, focus returns to
+the source window.
 The pressed thumb highlight stays active during the full drag.
 
 Each window uses the mouse options of its own profile, so windows that are open
@@ -32,8 +33,8 @@ at the same time can be interactive or inert independently. If a different
 profile starts to match during a click or drag, the change applies from the
 next interaction.
 
-When autohide is enabled, a press on an interactive cell pauses the hide delay
-of that source window. Release or cancellation starts a new full delay.
+When autohide is enabled, a press on an interactive cell pauses the autohide
+delay of its source window. Release or cancellation starts a new full delay.
 
 ## Focus
 
@@ -52,8 +53,8 @@ The minimap float uses the same focus rules.
 ## Disabling
 
 `scrollbar.mouse = false` makes mouse input pass through the floats and
-installs no mappings. A profile can change `mouse` for the windows that it matches. A float
-that `hide_on_cursor` hides does not capture mouse input.
+installs no mappings. A profile can change `mouse` for the windows that it
+matches. A float that `hide_on_cursor` hides does not capture mouse input.
 
 ## Related
 

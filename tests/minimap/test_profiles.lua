@@ -197,7 +197,7 @@ T["profile presets follow the settled precedence"] = function()
     expect.equality(root.encoding, "block")
     expect.equality(root.columns_per_dot, 4)
 
-    -- Profile preset wins over the root options, and the profile options
+    -- The profile preset wins over the root options, and the profile options
     -- win over the profile preset.
     expect.equality(lua.width, 10)
     expect.equality(lua.encoding, "braille")
@@ -205,7 +205,8 @@ T["profile presets follow the settled precedence"] = function()
     -- Root values that the profile preset does not set stay in effect.
     expect.equality(lua.height, 20)
 
-    -- A profile marks table replaces the marks false of the profile preset.
+    -- A `marks` table in the profile replaces `marks = false` of the profile
+    -- preset.
     expect.equality(help.width, 12)
     expect.equality(help.marks.Error.priority, 1)
     expect.no_equality(help.marks.Warn, nil)

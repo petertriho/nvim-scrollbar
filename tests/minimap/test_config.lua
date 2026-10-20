@@ -471,7 +471,8 @@ T["rejects mark overrides for static minimap groups and the cursor"] = function(
     )
     expect_invalid({ marks = { Cursor = {} } }, "providers%.cursor = { minimap = false }")
 
-    -- A registered type with a static minimap name stays out of the minimap only.
+    -- A registered mark type with the name of a static minimap group stays out
+    -- of the minimap only. The scrollbar keeps it.
     top().set({ marks = { Content = { text = "c", priority = 1, highlight = "Special" } } })
     expect.equality(top().get_minimap().marks.Content, nil)
     expect.no_equality(top().get().marks.Content, nil)

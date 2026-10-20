@@ -1,8 +1,9 @@
---- Minimap overlays: project marks published to
---- `lua/scrollbar/shared/store.lua` onto the minimap grid. Read-only — never
---- mutates the store. Filtering uses the minimap's provider demand and the
---- shown mark types of the selected minimap variant; collision resolution uses
---- their priority (lowest wins).
+--- Minimap overlays: project the marks that are published to
+--- `lua/scrollbar/shared/store.lua` onto the minimap grid. The module only
+--- reads the store and never changes it. The filter uses the provider demand
+--- of the minimap and the shown mark types of the selected minimap variant.
+--- Collision resolution uses the priority of the mark type (the lowest value
+--- wins).
 
 local minimap_config = require("scrollbar.minimap.config")
 local projection_module = require("scrollbar.minimap.projection")
@@ -36,13 +37,13 @@ M.is_active = function()
 end
 
 --- Read-only projection of all published marks for `source_win` onto the
---- float rows of `projection`. Returns one winning projected overlay per row
---- after filtering and collision resolution, sorted ascending by
---- `minimap_row`. Marks on rows outside the float are skipped. The renderer
---- separately filters each winner to occupied squash cells.
+--- float rows of `projection`. Returns one winning projected overlay for each
+--- row after the filter and the collision resolution, in ascending
+--- `minimap_row` order. The function skips marks on rows outside the float.
+--- The renderer separately filters each winner to occupied squash cells.
 ---
---- Mark type metadata and renderer-facing highlight groups come from the
---- selected minimap presentation. The store remains a shared read-only source.
+--- The mark type metadata and the highlight groups for the renderer come from
+--- the selected minimap variant. The store stays a shared read-only source.
 ---
 ---@param source_win integer
 ---@param projection ScrollbarMinimapProjection
@@ -53,7 +54,7 @@ end
 
 ---@param source_win integer
 ---@param projection ScrollbarMinimapProjection
----@param marks? table<string, ScrollbarMinimapMarkSpec> Shown mark types; defaults to the selected variant
+---@param marks? table<string, ScrollbarMinimapMarkSpec> Shown mark types. Default: the marks of the selected variant
 ---@return ScrollbarMinimapOverlay[]
 M.project_with = function(source_win, projection, marks)
     if not active or projection.rows <= 0 then

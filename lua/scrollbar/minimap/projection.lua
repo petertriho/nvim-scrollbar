@@ -116,7 +116,7 @@ M.float_row = function(projection, line)
     return row
 end
 
---- First source line (0-based) of a float row.
+--- First source line (zero-based) of a float row.
 ---@param projection ScrollbarMinimapProjection
 ---@param row integer Zero-based float row
 ---@return integer
@@ -177,7 +177,7 @@ M.covers = function(projection, first_row, row_count, margin)
     return first_row <= need_first and first_row + row_count >= need_last
 end
 
---- Source topline (0-based) after a drag of `delta` float rows that started
+--- Source topline (zero-based) after a drag of `delta` float rows that started
 --- at `topline`. The viewport band follows the pointer.
 ---@param projection ScrollbarMinimapProjection
 ---@param topline integer

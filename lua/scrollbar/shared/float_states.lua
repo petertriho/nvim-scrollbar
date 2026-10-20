@@ -1,10 +1,10 @@
 --- Float states of one renderer: the registries of its floats, the source
---- windows that autohide revealed, the visibility, and the lifecycle that
---- closes a float when its source window, buffer, or tab page goes away. The
---- scrollbar renderer and the minimap renderer each build one instance over
---- their own registries, and the instance builds the source policy of the
---- renderer. Hooks release the window resources and drop the caches that only
---- one renderer has.
+--- windows that autohide revealed, and the visibility. A lifecycle closes a
+--- float when its source window or tab page closes, or when its buffer is
+--- deleted. The scrollbar renderer and the minimap renderer each build one
+--- instance over their own registries, and the instance builds the source
+--- policy of the renderer. Hooks release the window resources and drop the
+--- caches that only one renderer has.
 ---
 --- `new` creates the functions of an instance once as closures, so the
 --- per-event paths read upvalues and allocate nothing.
@@ -65,8 +65,8 @@ M.new = function(options)
     ---@type fun(state: ScrollbarFloatState)?
     local state_callback
 
-    -- Defined with the lifecycle below. The source policy releases stale
-    -- source windows through it.
+    -- The lifecycle code below defines this function. The source policy
+    -- releases stale source windows through it.
     local close_source
 
     local policy = source_policy.new({
@@ -230,9 +230,9 @@ M.new = function(options)
         end
     end
 
-    ---Start the render of a source window. Close its float when the window
-    ---shows another buffer now, and conceal the window when autohide is on
-    ---and the window is not revealed.
+    ---Start the render of a source window. If the window shows a different
+    ---buffer than its float, close the float. If autohide is on and the window
+    ---is not revealed, conceal the window.
     ---@param source_win integer
     ---@param source_buf integer Buffer that the source window shows
     ---@param autohide false|ScrollbarAutohideConfig
@@ -252,8 +252,9 @@ M.new = function(options)
         return state, false
     end
 
-    ---Render a source window with its selected variant, or close the window
-    ---when no variant is selected. A failed render also closes the window.
+    ---Render a source window with its selected variant. If no variant is
+    ---selected, close the float of the window. A failed render also closes the
+    ---float of the window.
     ---The state callback gets each float that `render_source` returns.
     ---@generic State
     ---@param source_win integer

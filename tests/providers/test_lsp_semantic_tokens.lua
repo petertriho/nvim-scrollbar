@@ -199,7 +199,7 @@ T["requests full or whole-document range and decodes all offset encodings"] = fu
         ["end"] = { line = 2, character = 0 },
     })
 
-    -- All three tokens select the same emoji using their negotiated units.
+    -- All three tokens use their negotiated units and select the same emoji.
     respond(utf8, 1, bufnr, nil, { data = { 0, 1, 4, 0, 1 } })
     respond(utf16, 1, bufnr, nil, { data = { 0, 1, 2, 0, 1 } })
     respond(utf32, 1, bufnr, nil, { data = { 0, 1, 1, 0, 0 } })

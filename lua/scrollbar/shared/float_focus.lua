@@ -33,7 +33,8 @@ local function valid_window(winid)
     return type(winid) == "number" and vim.api.nvim_win_is_valid(winid)
 end
 
----Focus `source_win`, or the first non-floating window when it is closed.
+---Focus `source_win`. If `source_win` is closed, focus the first non-floating
+---window.
 ---@param source_win integer
 M.restore = function(source_win)
     if valid_window(source_win) then

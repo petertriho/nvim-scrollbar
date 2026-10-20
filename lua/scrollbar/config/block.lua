@@ -89,8 +89,8 @@ local function compile_profiles(block, value)
     return result
 end
 
---- Compile the options of one block. The root config is variant 0, and each
---- profile is a variant with its 1-based index.
+--- Compile the options of one block. The root configuration is variant 0, and
+--- each profile is a variant with its 1-based index.
 ---@param block ScrollbarBlock
 ---@param overrides any
 ---@param shared ScrollbarSharedConfig
@@ -131,8 +131,10 @@ M.autohide = function(value, path)
 end
 
 --- Validate the global options of a block in a fixed order. The caller
---- validates `autohide` with `M.autohide` and its own early tables first, then
---- calls this function, so the first reported error has a stable order.
+--- validates `autohide` with `M.autohide` and its own early tables first. Then
+--- it calls this function. Validation stops at the first invalid value. Thus a
+--- configuration with more than one invalid option always reports the same
+--- error.
 ---@param value table Layered options merged onto the defaults
 ---@param path string Prefix for error paths
 ---@param autohide false|ScrollbarAutohideConfig

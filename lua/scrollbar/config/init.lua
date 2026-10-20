@@ -50,8 +50,9 @@ local DEFAULTS = {
     marks = {},
 }
 
--- The scrollbar listens to every supported event by default. The list stays
--- out of DEFAULTS, where a keyed `events` override would merge into it.
+-- The scrollbar listens to every supported event by default. If the list is in
+-- DEFAULTS, a keyed `events` override merges into it. Thus the list is not in
+-- DEFAULTS.
 local DEFAULT_EVENTS = shared_config.EVENTS
 
 local APPEARANCE_KEYS = {

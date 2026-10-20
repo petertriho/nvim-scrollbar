@@ -146,9 +146,9 @@ require("scrollbar").setup({
 | Option | Default | Meaning |
 | --- | --- | --- |
 | `enabled` | `true` | When `false`, the scrollbar requests no providers, shows no floats, and creates no `:Scrollbar*` commands. Use this for a minimap-only setup. |
-| `show` | `true` | Initial master visibility. `false` starts hidden. `:ScrollbarShow` shows it. |
+| `show` | `true` | Initial master visibility. `false` starts hidden. `:ScrollbarShow` shows the scrollbar. |
 | `visibility` | `"all"` | `"all"` shows a scrollbar in every eligible window. `"active"` shows only the scrollbar of the active window. |
-| `autohide` | `false` | `true` hides each scrollbar after 1000 ms without activity in its window. `{ delay_ms = n }` sets the delay. |
+| `autohide` | `false` | `true` conceals each scrollbar after 1000 ms without activity in its window. `{ delay_ms = n }` sets the delay. |
 | `max_lines` | `false` | A buffer with more lines than this number gets no scrollbar. |
 | `throttle_ms` | `16` | Renders that are queued within this interval combine into one frame. `0` renders as fast as possible. |
 | `events` | see Defaults | Autocommand events that update the scrollbar. See [Events](#events). |
@@ -162,7 +162,7 @@ require("scrollbar").setup({
 | `preset` | `nil` | Name of a [built-in preset](presets.md#scrollbar-presets). |
 | `unit` | `"line"` | `"line"` counts buffer lines. `"screenline"` counts screen lines, so it accounts for wrapped lines and closed folds. See [Units](layout-and-geometry.md#units). |
 | `placement` | see Defaults | Position of the float. See [Layout and geometry](layout-and-geometry.md). |
-| `hide_on_cursor` | `true` | Hides the scrollbar of the active window while the cursor is inside it. |
+| `hide_on_cursor` | `true` | Hides the scrollbar of the active window while the cursor is inside the scrollbar. |
 | `hide_if_all_visible` | `false` | Hides the whole scrollbar when the buffer fits in the window. |
 | `mouse` | `true` | Makes the float take mouse input and adds the mouse mappings. See [Mouse](mouse.md). |
 | `layout` | see Defaults | Columns and layers. See [Layout](#layout). |
@@ -174,8 +174,9 @@ require("scrollbar").setup({
 | `marks` | `{}` | Overrides of the shared mark types for the scrollbar. See [Marks](#marks). |
 
 `placement.gutter` applies to window-relative floats with a west anchor (`NW`
-or `SW`). `"inner"` and `"outer"` reserve blank gutter cells for the
-scrollbar, after or before the existing gutter. `"overlap"` reserves no cells.
+or `SW`). `"inner"` reserves blank gutter cells for the scrollbar after the
+existing gutter. `"outer"` reserves them before the existing gutter.
+`"overlap"` reserves no cells.
 
 When the minimap is on the same side as the scrollbar, `minimap.placement.stack`
 arranges the two floats. See
@@ -300,7 +301,7 @@ scrollbar = {
   `false`. A `marks` table after `marks = false` shows all types again.
 
 Ordinary text is clipped to its lane, and multi-cell glyphs are not split. If a
-collision would show only part of a multi-cell glyph, the whole glyph is
+collision leaves room for only part of a multi-cell glyph, the whole glyph is
 omitted.
 
 ## Events
@@ -357,8 +358,8 @@ The events in this table have a specific update. Every other event, such as
 | `ColorScheme` | Sets the highlight groups again when `set_highlights` is `true`, and renders all windows. |
 | `WinClosed`, `BufDelete`, `BufWipeout`, `TabClosed` | Renders all windows. |
 
-With `autohide`, only `CursorMoved`, `CursorMovedI`, and `WinScrolled` show a
-hidden scrollbar again. See [Autohide](visibility.md#autohide).
+With `autohide`, only `CursorMoved`, `CursorMovedI`, and `WinScrolled` reveal a
+concealed scrollbar. See [Autohide](visibility.md#autohide).
 
 Providers update their marks on their own events. `events` does not change
 when a provider updates.

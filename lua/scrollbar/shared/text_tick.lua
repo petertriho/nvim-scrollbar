@@ -4,10 +4,11 @@
 --- increases that came only from writes, so it changes only with the text.
 ---
 --- A write that increases changedtick by exactly one and leaves the buffer
---- unmodified changed no text. A text change marks the buffer modified, so a
---- text change between `BufWritePre` and `BufWritePost` makes the write reset
---- 'modified' too, and the increase is at least two. This holds when a
---- `BufWritePre` autocmd formats the buffer before or after the one here.
+--- unmodified changed no text. A text change marks the buffer modified. As a
+--- result, a text change between `BufWritePre` and `BufWritePost` makes the
+--- write reset 'modified' too, and the increase is at least two. This rule
+--- also holds when a `BufWritePre` autocmd formats the buffer before or after
+--- the autocmd of this module.
 
 local M = {}
 

@@ -1,5 +1,5 @@
-# README hero: the default scrollbar and minimap while scrolling, searching,
-# and jumping through lua/scrollbar/mouse.lua.
+# README hero: the default scrollbar and minimap while the demo scrolls,
+# searches, and jumps through lua/scrollbar/mouse.lua.
 
 Source "scripts/demo/settings.tape"
 Output "scripts/demo/out/hero.gif"

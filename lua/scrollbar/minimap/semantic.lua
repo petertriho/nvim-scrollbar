@@ -1,4 +1,5 @@
---- Normalize provider-owned source byte spans for the minimap squash path.
+--- Normalizes the source byte spans of providers for the squash path of the
+--- minimap.
 
 local M = {}
 
@@ -77,7 +78,8 @@ M.compose = function(source_lines, spans_by_provider, first_line)
     return highlights
 end
 
----Return a deterministic identity for an already validated provider snapshot.
+---Return a deterministic identity for a provider snapshot that is already
+---checked.
 ---@param spans_by_provider ScrollbarMinimapSpanStoreSnapshot
 ---@return string
 M.signature = function(spans_by_provider)

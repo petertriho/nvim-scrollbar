@@ -409,7 +409,7 @@ T["repeated setup, disposal, and parent shutdown clean worker ownership"] = func
 end
 
 -- Count the scans that the worker dispatches. The search provider reads the
--- timing hook at setup, so the providers are set up again.
+-- timing hook at setup, so this function sets up the providers again.
 local function count_worker_scans(child)
     child.lua([[
         local counts = { scans = 0 }

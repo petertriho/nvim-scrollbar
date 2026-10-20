@@ -5,10 +5,10 @@ local UPPERCASE_END = string.byte("Z")
 local NUMBERED_START = string.byte("0")
 local NUMBERED_END = string.byte("9")
 
---- Line count each buffer was last reconciled at. Text edits can only move
---- mark lines when the number of lines changes (inserts/deletes above them);
---- ordinary keystrokes leave counts stable and skip the reconcile entirely.
---- MarkSet and SafeState still reconcile unconditionally.
+--- The line count of each buffer at its last reconciliation. Text edits can
+--- move mark lines only when the number of lines changes (inserts or deletes
+--- above the marks). Ordinary keystrokes keep the count, so they skip the
+--- reconciliation. MarkSet and SafeState reconcile without this check.
 local reconciled_line_counts = {}
 
 ---@param marks ScrollbarMark[]
@@ -69,9 +69,10 @@ local function collect(bufnr, context)
     if provider_config == false then
         return nil
     end
-    -- One getmarklist call per scope replaces one nvim_get_mark call per
-    -- letter (62 API round-trips and their per-call table allocations on
-    -- every reconcile).
+    -- The provider makes one getmarklist call for each scope, not one
+    -- nvim_get_mark call for each letter. The calls for each letter cost 62
+    -- API round-trips, each with its own table allocation, on every
+    -- reconciliation.
     local wants_letter = provider_config.letters == true
     local wants_number = provider_config.numbers == true
     if wants_letter then
@@ -124,10 +125,10 @@ local function update(bufnr, context)
     end
 end
 
----Text changes can only move mark lines when the buffer's line count
----changes; keystrokes that keep the count skip the reconcile. MarkSet and
----SafeState reconcile unconditionally, so mark creation and exotic edits
----stay covered.
+---Text changes can move mark lines only when the line count of the buffer
+---changes. Keystrokes that keep the count skip the reconciliation. MarkSet
+---and SafeState reconcile without this check, so they also cover mark
+---creation and exotic edits.
 ---@param bufnr integer
 ---@param context ScrollbarProviderContext
 local function update_after_text_change(bufnr, context)
@@ -187,9 +188,9 @@ return {
     refresh_owner = { buffer = "provider" },
     setup = function(context)
         local group = context.create_augroup("events")
-        -- Eligibility events re-establish publication state unconditionally;
-        -- text-change events only need reconciliation when the buffer's line
-        -- count changed (the only way typing can move mark lines).
+        -- Eligibility events always re-establish the publication state.
+        -- Text-change events need a reconciliation only when the line count of
+        -- the buffer changed, because typing can move mark lines only then.
         vim.api.nvim_create_autocmd({ "BufEnter", "BufWinEnter" }, {
             group = group,
             callback = function(args)
@@ -199,8 +200,9 @@ return {
         })
         local text_change_events = { "TextChanged", "TextChangedI", "TextChangedP", "TextChangedT" }
         if type(context.on_text_change) == "function" then
-            -- Ride the scheduler's TextChanged dispatch: one autocmd
-            -- invocation per keystroke covers scheduling and reconciliation.
+            -- The provider uses the TextChanged dispatch of the scheduler.
+            -- Then one autocmd invocation for each keystroke does the
+            -- scheduling and the reconciliation.
             context.on_text_change(function(args)
                 update_after_text_change(args.buf, context)
             end, text_change_events)

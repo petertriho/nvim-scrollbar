@@ -30,7 +30,7 @@ local buf = vim.api.nvim_create_buf(false, true)
 vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
 local winid = vim.api.nvim_open_win(buf, true, { relative = "editor", row = 0, col = 0, width = 80, height = 24 })
 
--- Register realistic provider entries so store notifications reach the
+-- Register realistic provider entries so that store notifications reach the
 -- scheduler path exactly as they do for the built-in providers.
 for _, name in ipairs({ "diagnostic", "gitsigns", "marks", "cursor", "treesitter" }) do
     providers.register({ name = name })
@@ -95,7 +95,9 @@ for _, payload in ipairs(payloads) do
     -- Warm the store with the baseline payload.
     publish(payload, payload.marks)
 
-    -- no-op publication: identical payload exercises the deep_equal early exit
+    -- No-op publication: validation of the same payload reuses every stored
+    -- element and reports the payload as unchanged. The store then returns
+    -- early, with no copy and no notification.
     local samples = {}
     for _ = 1, warmup_count do
         publish(payload, payload.marks)
@@ -108,7 +110,8 @@ for _, payload in ipairs(payloads) do
     end
     results[#results + 1] = { payload = payload, op = "noop", stats = statistics(samples) }
 
-    -- changed publication: one moved line forces validation + copy + notify
+    -- Changed publication: one moved line forces validation, a copy, and a
+    -- notification.
     local variant = vim.deepcopy(payload.marks)
     local samples_changed = {}
     for _ = 1, warmup_count do

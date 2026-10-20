@@ -14,7 +14,7 @@ local T = MiniTest.new_set({
 })
 
 -- Run the setup source of an entry with a stub `scrollbar` module, then
--- validate the captured options without starting the plugin.
+-- validate the captured configuration without starting the plugin.
 ---@param entry DemoEntry
 local function validate(entry)
     local options

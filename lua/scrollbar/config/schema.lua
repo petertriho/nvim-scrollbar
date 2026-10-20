@@ -264,8 +264,8 @@ M.string_list = function(value, path)
     return values, lookup
 end
 
---- `false` disables, `true` selects `defaults`, and a table overrides fields of
---- `defaults`.
+--- `false` disables the feature, `true` selects `defaults`, and a table
+--- overrides fields of `defaults`.
 ---@param value any
 ---@param path string
 ---@param defaults table

@@ -332,8 +332,9 @@ vim.cmd("normal! zt")
 measure_case("line", "3 windows", { first_win, second_win, third_win })
 measure_case("screenline", "3 windows", { first_win, second_win, third_win })
 
--- Wrapped fixture: every 40th line wraps at the benchmark width, exercising
--- the non-uniform screen-geometry pipeline (nvim's default has wrap enabled).
+-- Wrapped fixture: every 40th line wraps at the benchmark width. The fixture
+-- exercises the non-uniform screen-geometry pipeline (Neovim enables `wrap` by
+-- default).
 local wrapped_buf = vim.api.nvim_create_buf(false, true)
 local wrapped_lines = {}
 for index = 1, line_count do

@@ -2378,8 +2378,9 @@ T["scrolling inside the cached slice requests no new cells"] = function()
         return { offsets = offsets, requests = requests, grids = grids }
     end)
 
-    -- 2000 lines make 500 map rows. The first slice covers rows 0-19, and
-    -- moving 1-3 rows keeps half a float height of margin.
+    -- 2000 lines make 500 map rows. The first slice covers rows 0-19. A move
+    -- of 1-5 rows keeps half a float height (5 rows) of margin, so the cached
+    -- slice still serves the render.
     expect.equality(result.offsets[1], 0)
     expect.equality(result.offsets[2] > 0 and result.offsets[2] <= 5, true)
     expect.equality(result.requests[1], 1)

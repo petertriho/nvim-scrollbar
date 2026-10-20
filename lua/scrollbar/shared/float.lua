@@ -1,11 +1,13 @@
---- Float plumbing of the scrollbar and minimap renderers: the float
---- configuration of a placement, creating, moving, and closing a float, hiding
---- a float under the cursor, and a row writer that updates only changed rows.
+--- Shared float code of the scrollbar and minimap renderers. It builds the
+--- float configuration of a placement and creates, moves, and closes a float.
+--- It also hides a float under the cursor, and its row writer updates only
+--- changed rows.
 ---
 --- The row writer keeps an invariant: the extmarks of the namespace on a row
---- are exactly the spans that the last write gave that row. Extmarks of a row
---- are cleared before its text is replaced, because `nvim_buf_set_lines` moves
---- the extmarks of replaced rows to the next row instead of deleting them.
+--- are exactly the spans that the last write gave that row.
+--- `nvim_buf_set_lines` moves the extmarks of replaced rows to the next row and
+--- does not delete them. Thus the row writer clears the extmarks of a row
+--- before it replaces the text of that row.
 
 local M = {}
 
@@ -134,7 +136,7 @@ M.open = function(name_format, source_win, float_config, configure_buffer, confi
     configure_buffer(float_buf)
     pcall(vim.api.nvim_buf_set_name, float_buf, string.format(name_format, source_win, float_buf))
 
-    -- Reapplying minimal style mutates winhighlight on Neovim 0.11.4.
+    -- Applying the minimal style again changes winhighlight on Neovim 0.11.4.
     float_config.style = "minimal"
     local ok, float_win = pcall(vim.api.nvim_open_win, float_buf, false, float_config)
     float_config.style = nil
@@ -158,8 +160,8 @@ M.close = function(float_win, float_buf)
 end
 
 ---Whether the float still has every value of `expected`. A steady render
----checks the window too, so a float that something else reconfigured is
----corrected.
+---checks the window too, so the render corrects a float that something else
+---reconfigured.
 ---@param float_win integer
 ---@param expected table<string, any>
 ---@return boolean
@@ -243,7 +245,8 @@ M.update_cursor_visibility = function(state, cursor_row, cursor_col)
 end
 
 M.resolve_position = function()
-    -- Anchored positions settle during redraw; flush while hidden so the first visible frame is correct.
+    -- Anchored positions settle during redraw. A flush while the float is hidden makes the first visible
+    -- frame correct.
     vim.api.nvim__redraw({ flush = true })
 end
 
@@ -256,8 +259,8 @@ local function set_config(state, desired)
 end
 
 ---Apply the float configuration of a render. While the cursor can overlap the
----float, a float that moves stays hidden until its position settles; the
----caller then updates the cursor visibility.
+---float, a float that moves stays hidden until its position settles. Then the
+---caller updates the cursor visibility.
 ---@param state ScrollbarFloatState
 ---@param desired table<string, any>
 ---@param cursor_position_available boolean
@@ -391,8 +394,8 @@ local function write_spans(float_buf, namespace, row, spans)
 end
 
 ---Write rows of text and their byte-column highlight spans into a float
----buffer. Only rows whose text changed are replaced, and only rows whose text
----or spans changed get new extmarks.
+---buffer. The writer replaces only the rows whose text changed, and only the
+---rows whose text or spans changed get new extmarks.
 ---@param float_buf integer
 ---@param namespace integer
 ---@param previous_rows string[] Rows of the last write

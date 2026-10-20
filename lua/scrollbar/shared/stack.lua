@@ -7,14 +7,14 @@
 --- - `inner`: side by side. The scrollbar is the outer float at the window
 ---   edge, and the minimap starts at its inward edge.
 --- - `outer`: side by side. The minimap is the outer float.
---- - `above` and `below`: the floats overlap. When both configured z-indexes
----   are equal, the bottom float drops by one, or the top float rises by one
----   when the value is 1. Different explicit z-indexes always win.
+--- - `above` and `below`: the floats overlap. If both configured z-indexes are
+---   equal, the bottom float drops by one. If the value is 1, the top float
+---   rises by one instead. Different explicit z-indexes always win.
 ---
 --- A renderer keeps its footprint while its float is hidden for a short time
---- (cursor overlap, autohide), so the other float keeps its position. It
---- removes the footprint for a lasting hide, and the other float moves back to
---- its own origin.
+--- (cursor overlap, autohide), so the other float keeps its position. For a
+--- lasting hide, the renderer removes the footprint, and the other float moves
+--- back to its own origin.
 
 local M = {}
 
@@ -100,11 +100,11 @@ M.publish = function(renderer, source_win, footprint, options)
     end
 end
 
---- Resolve the origin and the effective z-index of one renderer's float.
+--- Resolve the origin and the effective z-index of the float of one renderer.
 ---@param renderer ScrollbarStackRenderer
 ---@param source_win integer
 ---@param own ScrollbarStackPlacement
----@return integer? origin Inward edge of the outer float, or nil to keep the own origin
+---@return integer? origin Inward edge of the outer float, or nil when the float keeps its own origin
 ---@return integer zindex
 M.resolve = function(renderer, source_win, own)
     local other = footprints[OTHER[renderer]][source_win]

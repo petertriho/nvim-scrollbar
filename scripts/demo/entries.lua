@@ -406,8 +406,8 @@ require("scrollbar").setup({
     })
 end
 
--- A minimap preset pairs with the scrollbar preset of the same name when one
--- exists. See docs/presets.md#pair-the-presets.
+-- When a scrollbar preset of the same name exists, a minimap preset pairs with
+-- it. See docs/presets.md#pair-the-presets.
 local MINIMAP_PRESETS = {
     { "vscode", "Braille, 4 columns per dot, 15 cells wide." },
     { "sublime", "Narrow dot columns for a wide, detailed map without mark overlays. 20 cells wide." },

@@ -8,11 +8,11 @@ local scheduler_core = require("scrollbar.shared.scheduler")
 
 local M = {}
 
--- Window/buffer options whose changes can affect rendered scrollbar layout.
--- `lua/scrollbar/layout.lua` keeps an extent-relevant subset
--- (EXTENT_OPTION_PATTERNS) for its screen-geometry cache digests; this list is
--- the superset used for OptionSet autocmd patterns. Keep it a superset of the
--- layout subset if either changes.
+-- Window and buffer options whose changes can affect the layout of a rendered
+-- scrollbar. `lua/scrollbar/layout.lua` keeps the subset that affects the
+-- extent (EXTENT_OPTION_PATTERNS) for the digests of its screen-geometry
+-- cache. This list is the superset for the OptionSet autocmd patterns. If
+-- either list changes, keep this list a superset of the layout subset.
 local OPTION_PATTERNS = {
     "ambiwidth",
     "breakindent",
@@ -54,8 +54,9 @@ local core = scheduler_core.new({
     augroup = "ScrollbarScheduler",
     label = "",
     consumer = "scrollbar",
-    -- Extent-affecting options gate the layout's digest cache; clear it so the
-    -- next render re-reads options immediately.
+    -- Options that affect the extent gate the digest cache of the layout. This
+    -- callback clears the cache, so that the next render reads the options
+    -- again immediately.
     on_option_set = function()
         layout.invalidate_screen_options()
     end,

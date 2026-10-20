@@ -63,6 +63,10 @@ its `setup()` call. `scripts/demo/init.lua` runs that source, and the showcase
 prints the same source. `tests/test_demo_entries.lua` checks that every source
 is a valid configuration.
 
+Do not run `make demo` between step 1 and step 3 of the procedure that
+follows. A new build changes the bytes of the GIFs, so the attachments no
+longer match the files.
+
 To replace the images:
 
 1. Run `make demo`. To build only some images, set `ONLY`, for example
@@ -77,9 +81,6 @@ To replace the images:
    `gh issue edit 120 --body-file scripts/demo/out/.work/showcase.md`.
 6. Replace the old URLs in the README and the docs with the new URLs from
    `scripts/demo/manifest.json`.
-
-Do not run `make demo` between step 1 and step 3. A new build changes the
-bytes of the GIFs, so the attachments no longer match the files.
 
 ## Continuous Integration
 
