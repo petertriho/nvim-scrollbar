@@ -6,8 +6,8 @@
 -- context skips the eligibility check and the publication to the store.
 -- The cost scales with the number of unique buffers that are visible in source
 -- windows. This benchmark measures the latency per call for a configurable set
--- of buffer counts. It also projects the total overhead at typical SafeState
--- fire rates.
+-- of buffer counts. It also projects the overhead of the SafeState fallback at
+-- typing rates.
 --
 -- Run with: make benchmark-marks
 -- Or:       nvim --headless --noplugin -u NONE -l benchmarks/marks_reconcile.lua [counts...]
@@ -172,7 +172,7 @@ for _, count in ipairs(buffer_counts) do
     table.insert(results, measure(count))
 end
 
-io.write("## Per-call cost of marks-provider reconcile (mirrors SafeState callback)\n\n")
+io.write("## Per-call cost of the marks reconcile (reconcile_source_buffers)\n\n")
 io.write("| Unique source buffers | Median (p50) | p95 | Maximum |\n")
 io.write("| ---: | ---: | ---: | ---: |\n")
 for _, result in ipairs(results) do
@@ -182,7 +182,13 @@ for _, result in ipairs(results) do
     )
 end
 
-io.write("\n## Projected overhead at typical SafeState fire rates\n\n")
+io.write("\n## Projected overhead of the SafeState fallback\n\n")
+io.write("The provider reconciles on SafeState only on Neovim older than 0.12.2\n")
+io.write("or with `numbers = true`. SafeState fires about once per keystroke, so\n")
+io.write("the rates below are typing rates. On Neovim 0.12.2 or later with the\n")
+io.write("default options, the reconcile runs only on MarkSet, at the rate of mark\n")
+io.write("commands. A text change that changes the line count updates only its\n")
+io.write("own buffer.\n\n")
 io.write("Projected overhead = fires/sec * median ms/call. At 60 Hz (16.67 ms\n")
 io.write("frame budget), 1 ms/sec of overhead is roughly 0.06 ms/frame.\n\n")
 io.write("| Unique source buffers | 5 fires/s | 15 fires/s | 30 fires/s |\n")
