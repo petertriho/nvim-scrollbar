@@ -61,6 +61,27 @@ local function open_window(buf)
     })
 end
 
+-- `setup` replaces the previous runtime, but no public function removes it,
+-- so the cleanup disposes the loaded modules in the order that setup uses.
+local function dispose_plugin()
+    local stack = package.loaded["scrollbar.stack"]
+    if stack ~= nil then
+        stack.reset()
+    end
+    for _, name in ipairs({
+        "scrollbar.minimap",
+        "scrollbar.mouse",
+        "scrollbar.scheduler",
+        "scrollbar.providers",
+        "scrollbar.renderer",
+    }) do
+        local module = package.loaded[name]
+        if module ~= nil and type(module.dispose) == "function" then
+            pcall(module.dispose)
+        end
+    end
+end
+
 local function measure_scenario(label, scenario, line_counts)
     local results = {}
     for _, count in ipairs(line_counts) do
@@ -113,7 +134,7 @@ local scrollbar_only = measure_scenario("scrollbar only", {
         })
     end,
     cleanup = function()
-        pcall(require("scrollbar").dispose_runtime)
+        dispose_plugin()
     end,
 }, line_counts)
 
@@ -143,9 +164,76 @@ local scrollbar_and_minimap = measure_scenario("scrollbar + minimap (enabled)", 
         end
     end,
     cleanup = function()
-        pcall(require("scrollbar").dispose_runtime)
+        dispose_plugin()
     end,
 }, line_counts)
+
+-- Key presses arrive farther apart than the eligibility memo lifetime, so
+-- each measured event starts with an empty memo. Calls inside one event can
+-- still reuse it.
+local function clear_eligibility_memos()
+    for _, name in ipairs({ "scrollbar.renderer", "scrollbar.minimap.renderer" }) do
+        local module = package.loaded[name]
+        if module ~= nil and type(module.invalidate_source_selection) == "function" then
+            module.invalidate_source_selection()
+        end
+    end
+end
+
+---@param setup fun()
+local function measure_cursor_moved(setup)
+    -- A floating window is never a source window, so this case uses the
+    -- normal window that the editor starts with.
+    local winid = vim.api.nvim_list_wins()[1]
+    vim.api.nvim_set_current_win(winid)
+    local buf = fresh_buffer(make_lines(10000))
+    vim.api.nvim_win_set_buf(winid, buf)
+    setup()
+    collectgarbage("collect")
+
+    local samples = {}
+    for index = 1, warmup_count + iteration_count do
+        vim.api.nvim_win_set_cursor(winid, { index % 20 + 1, 0 })
+        clear_eligibility_memos()
+        local started = vim.uv.hrtime()
+        vim.api.nvim_exec_autocmds("CursorMoved", { buffer = buf })
+        local elapsed = vim.uv.hrtime() - started
+        if index > warmup_count then
+            samples[#samples + 1] = elapsed
+        end
+    end
+    return statistics(samples)
+end
+
+local cursor_cases = {
+    {
+        label = "baseline (no plugins)",
+        setup = dispose_plugin,
+    },
+    {
+        label = "scrollbar only",
+        setup = function()
+            require("scrollbar").setup({
+                set_highlights = false,
+                exclude = { buftypes = {}, filetypes = {} },
+                minimap = { enabled = false },
+            })
+        end,
+    },
+    {
+        label = "scrollbar + minimap (enabled)",
+        setup = function()
+            require("scrollbar").setup({
+                set_highlights = false,
+                exclude = { buftypes = {}, filetypes = {} },
+                minimap = { enabled = true, backend = "sync" },
+            })
+        end,
+    },
+}
+for _, case in ipairs(cursor_cases) do
+    case.statistics = measure_cursor_moved(case.setup)
+end
 
 local function write_table(headers, rows)
     io.write("| " .. table.concat(headers, " | ") .. " |\n")
@@ -190,5 +278,21 @@ write_table({
     "+minimap p50",
     "+minimap p95",
 }, rows)
+
+io.write("\n## Per-keystroke CursorMoved dispatch (microseconds)\n\n")
+io.write("Fires the real `CursorMoved` autocmd in a normal window with 10000\n")
+io.write("lines after each cursor move. Captures the synchronous cost: the cursor\n")
+io.write("provider, the eligibility checks, and the scheduler activity. The\n")
+io.write("eligibility memos are cleared before each event.\n\n")
+
+local cursor_rows = {}
+for _, case in ipairs(cursor_cases) do
+    cursor_rows[#cursor_rows + 1] = {
+        case.label,
+        string.format("%.2f", case.statistics.median / 1000),
+        string.format("%.2f", case.statistics.p95 / 1000),
+    }
+end
+write_table({ "Case", "p50", "p95" }, cursor_rows)
 
 io.write("\nAll values in microseconds (lower is better).\n")
