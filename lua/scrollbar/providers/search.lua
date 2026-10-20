@@ -4,6 +4,7 @@ local M = {
     refresh_owner = { buffer = "provider" },
 }
 local compact_search = require("scrollbar.providers.search_compact")
+local text_tick = require("scrollbar.text_tick")
 local worker = require("scrollbar.providers.search_worker")
 
 local INCSEARCH_DEBOUNCE_MS = 30
@@ -48,7 +49,7 @@ local commandline
 ---@class ScrollbarSearchRequest
 ---@field bufnr integer
 ---@field generation integer
----@field changedtick integer
+---@field changedtick integer Text tick (`scrollbar.text_tick`) of the buffer when the request was made
 ---@field pattern string
 ---@field visible boolean
 ---@field signature string
@@ -63,8 +64,8 @@ local commandline
 ---@field generation integer
 ---@field pending? ScrollbarSearchRequest
 ---@field completed_signature? string
----@field completed_changedtick? integer
----@field worker_request? ScrollbarSearchRequest
+---@field completed_changedtick? integer Text tick of the published result
+---@field worker_request? ScrollbarSearchRequest Request that the worker scans or queues
 
 ---@type table<integer, ScrollbarSearchRequestState>
 local request_states = {}
@@ -242,6 +243,7 @@ local function cancel_request(bufnr)
     local state = request_state(bufnr)
     state.generation = state.generation + 1
     state.pending = nil
+    state.worker_request = nil
 end
 
 ---@param context ScrollbarProviderContext
@@ -260,6 +262,7 @@ local function clear_all(context)
     for _, state in pairs(request_states) do
         state.generation = state.generation + 1
         state.pending = nil
+        state.worker_request = nil
         state.completed_signature = nil
         state.completed_changedtick = nil
     end
@@ -281,7 +284,7 @@ local function request_is_current(request)
     if not vim.api.nvim_buf_is_valid(request.bufnr) or not vim.api.nvim_buf_is_loaded(request.bufnr) then
         return false
     end
-    if vim.api.nvim_buf_get_changedtick(request.bufnr) ~= request.changedtick then
+    if text_tick.get(request.bufnr) ~= request.changedtick then
         return false
     end
 
@@ -370,17 +373,16 @@ local function handle_worker_result(result)
     end
     local state = request_states[result.bufnr]
     local request = state and state.worker_request or nil
-    if
-        request == nil
-        or request.generation ~= result.generation
-        or request.signature ~= result.signature
-        or result.mirror == nil
-        or result.mirror.changedtick ~= request.changedtick
-    then
+    if request == nil or request.generation ~= result.generation then
         return
     end
     state.worker_request = nil
-    if not request_is_current(request) then
+    if
+        request.signature ~= result.signature
+        or result.mirror == nil
+        or result.mirror.changedtick ~= request.changedtick
+        or not request_is_current(request)
+    then
         return
     end
 
@@ -429,6 +431,19 @@ local function same_request(request, other)
         and request.ignore_visibility == other.ignore_visibility
 end
 
+---Whether the scan of `running` also answers `request`. An edit refresh and
+---an accepted refresh of the same text and pattern find the same matches.
+---@param running ScrollbarSearchRequest
+---@param request ScrollbarSearchRequest
+---@return boolean
+local function covers(running, request)
+    return running.changedtick == request.changedtick
+        and running.signature == request.signature
+        and running.visible == request.visible
+        and running.ignore_visibility == request.ignore_visibility
+        and (running.mode == request.mode or (running.mode ~= "incsearch" and request.mode ~= "incsearch"))
+end
+
 ---@param context ScrollbarProviderContext
 ---@param bufnr integer
 ---@param pattern string
@@ -456,7 +471,7 @@ local function request_refresh(context, bufnr, pattern, mode, ignore_visibility)
         return false
     end
 
-    local changedtick = vim.api.nvim_buf_get_changedtick(bufnr)
+    local changedtick = text_tick.get(bufnr)
     local signature = search_signature(bufnr, pattern)
     local state = request_state(bufnr)
     local pending = {
@@ -481,6 +496,12 @@ local function request_refresh(context, bufnr, pattern, mode, ignore_visibility)
         return false
     end
     if state.pending ~= nil and same_request(state.pending, pending) then
+        return false
+    end
+    -- `SafeState` fires after every event, also while the worker scans. A new
+    -- generation for the same request would discard the result of the scan,
+    -- and the next event would discard the following one again.
+    if state.pending == nil and state.worker_request ~= nil and covers(state.worker_request, pending) then
         return false
     end
 

@@ -7,6 +7,7 @@ local providers = require("scrollbar.providers")
 local renderer = require("scrollbar.renderer")
 local scheduler = require("scrollbar.scheduler")
 local stack = require("scrollbar.stack")
+local text_tick = require("scrollbar.text_tick")
 local utils = require("scrollbar.utils")
 
 local M = {}
@@ -50,6 +51,7 @@ local function dispose_runtime()
     scheduler.dispose()
     providers.dispose()
     renderer.dispose()
+    text_tick.dispose()
     remove_orphaned_renderer_resources()
 end
 
@@ -100,6 +102,7 @@ M.setup = function(overrides)
     local active_minimap_config = config.get_minimap()
     local provider_plan = config.get_provider_plan()
     dispose_runtime()
+    text_tick.setup()
     reconcile_builtins(provider_plan)
 
     if active_config.set_highlights then

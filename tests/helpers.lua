@@ -25,6 +25,7 @@ end
 local function setup_search_provider(child, search_config, worker_test)
     child.lua_func(function(value)
         package.loaded["scrollbar.test.search_worker"] = value.worker_test
+        require("scrollbar.text_tick").setup()
         vim.o.hlsearch = true
         vim.o.wrapscan = false
 

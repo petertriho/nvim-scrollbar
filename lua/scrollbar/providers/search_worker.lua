@@ -5,6 +5,7 @@
 --- search provider uses the synchronous scan for the rest of the session.
 
 local mirror_host = require("scrollbar.mirror")
+local text_tick = require("scrollbar.text_tick")
 
 local M = {}
 
@@ -104,13 +105,15 @@ local function dispatch_pending()
         return
     end
 
+    -- A complete mirror has the current text, so a request whose text tick
+    -- is the current one scans the text that it was made for.
     local selected
     local selected_mirror
     for bufnr, request in pairs(pending) do
         local mirror = host.ready_mirror(bufnr)
         if
             mirror ~= nil
-            and mirror.changedtick == request.changedtick
+            and text_tick.get(bufnr) == request.changedtick
             and (selected == nil or request.worker_sequence > selected.worker_sequence)
         then
             selected = request
@@ -126,7 +129,7 @@ local function dispatch_pending()
         session = host.session(),
         id = selected_mirror.id,
         version = selected_mirror.version,
-        changedtick = selected_mirror.changedtick,
+        changedtick = selected.changedtick,
     }
     in_flight = selected
     max_in_flight = math.max(max_in_flight, 1)

@@ -289,4 +289,48 @@ T["unchanged signatures do not enqueue scans"] = function()
     expect.equality(helpers.mark_lines(child), { 0 })
 end
 
+local function edit_written_file(child, lines)
+    child.lua_func(function(value)
+        vim.cmd("edit " .. vim.fn.fnameescape(vim.fn.tempname() .. ".txt"))
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, value)
+        vim.api.nvim_win_set_cursor(0, { 1, 0 })
+    end, lines)
+end
+
+T["a write does not scan an unchanged buffer again"] = function()
+    local child = new_child()
+    edit_written_file(child, { "foo", "bar", "foo" })
+    helpers.accept_search(child, "/", "foo")
+    expect.equality(helpers.wait_for_mark_lines(child, { 0, 2 }), true)
+    instrument_scans(child)
+
+    -- The buffer is modified, so the write increases b:changedtick.
+    child.lua([[
+        vim.cmd("silent write")
+        vim.api.nvim_exec_autocmds("SafeState", { buffer = 0 })
+        vim.wait(100)
+    ]])
+    expect.equality(scan_calls(child), {})
+    expect.equality(helpers.mark_lines(child), { 0, 2 })
+end
+
+T["a change from BufWritePre scans the buffer again"] = function()
+    local child = new_child()
+    edit_written_file(child, { "foo", "bar", "foo" })
+    helpers.accept_search(child, "/", "foo")
+    expect.equality(helpers.wait_for_mark_lines(child, { 0, 2 }), true)
+
+    child.lua([[
+        vim.api.nvim_create_autocmd("BufWritePre", {
+            buffer = 0,
+            callback = function()
+                vim.api.nvim_buf_set_lines(0, 1, 2, false, { "foo" })
+            end,
+        })
+        vim.cmd("silent write")
+        vim.api.nvim_exec_autocmds("SafeState", { buffer = 0 })
+    ]])
+    expect.equality(helpers.wait_for_mark_lines(child, { 0, 1, 2 }), true)
+end
+
 return T

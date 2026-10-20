@@ -408,4 +408,74 @@ T["repeated setup, disposal, and parent shutdown clean worker ownership"] = func
     expect.equality(child.fn.jobwait({ second.job_id }, 1000)[1] ~= -1, true)
 end
 
+-- Count the scans that the worker dispatches. The search provider reads the
+-- timing hook at setup, so the providers are set up again.
+local function count_worker_scans(child)
+    child.lua([[
+        local counts = { scans = 0 }
+        package.loaded["scrollbar.test.search_worker"].on_timing = function(event)
+            if event == "scan_dispatched" then
+                counts.scans = counts.scans + 1
+            end
+        end
+        package.loaded["scrollbar.test.search_counts"] = counts
+        require("scrollbar.providers").setup({ config = require("scrollbar.config").get() })
+    ]])
+end
+
+local function worker_scans(child)
+    return child.lua_get([[package.loaded["scrollbar.test.search_counts"].scans]])
+end
+
+T["refreshes while a scan runs keep the scan"] = function()
+    local child = new_worker_child(false, { scan_delay_ms = 150 })
+    count_worker_scans(child)
+    helpers.set_lines(child, { "start", "match", "other", "match" })
+    helpers.accept_search(child, "/", "match")
+    expect.equality(
+        child.lua_get([[vim.wait(3000, function()
+            return require("scrollbar.providers.search_worker").status().in_flight ~= nil
+        end)]]),
+        true
+    )
+
+    -- SafeState fires after every event, also while the worker scans.
+    child.lua([[
+        for _ = 1, 5 do
+            vim.api.nvim_exec_autocmds("SafeState", { buffer = 0 })
+        end
+    ]])
+    expect.equality(helpers.wait_for_mark_lines(child, { 1, 3 }), true)
+    expect.equality(worker_scans(child), 1)
+end
+
+T["a write while a scan runs publishes its result without another scan"] = function()
+    local child = new_worker_child(false, { scan_delay_ms = 150 })
+    count_worker_scans(child)
+    child.lua([[
+        vim.cmd("edit " .. vim.fn.fnameescape(vim.fn.tempname() .. ".txt"))
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, { "foo", "bar", "foo" })
+        vim.api.nvim_win_set_cursor(0, { 1, 0 })
+        vim.cmd("silent write")
+    ]])
+    helpers.accept_search(child, "/", "foo")
+    expect.equality(helpers.wait_for_mark_lines(child, { 0, 2 }), true)
+
+    local dispatched = child.lua_get([[(function()
+        package.loaded["scrollbar.test.search_counts"].scans = 0
+        vim.api.nvim_buf_set_lines(0, 1, 2, false, { "foo" })
+        vim.api.nvim_exec_autocmds("TextChanged", { buffer = 0 })
+        local dispatched = vim.wait(3000, function()
+            return require("scrollbar.providers.search_worker").status().in_flight ~= nil
+        end)
+        -- The write increases b:changedtick without a text change.
+        vim.cmd("silent write")
+        vim.api.nvim_exec_autocmds("SafeState", { buffer = 0 })
+        return dispatched
+    end)()]])
+    expect.equality(dispatched, true)
+    expect.equality(helpers.wait_for_mark_lines(child, { 0, 1, 2 }), true)
+    expect.equality(worker_scans(child), 1)
+end
+
 return T
