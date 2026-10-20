@@ -164,6 +164,34 @@ T["keeps source predicates in parity with full enumeration"] = function()
     })
 end
 
+T["keeps a source predicate until its selection is invalidated"] = function()
+    local child = new_child()
+    local result = child.lua_func(function(config)
+        require("scrollbar.test.set_config")(config, { exclude = { buftypes = {}, filetypes = { "renderer-test" } } })
+        local renderer = require("scrollbar.renderer")
+        renderer.setup()
+        local win = vim.api.nvim_get_current_win()
+
+        -- The loop time does not advance inside this call, so the memo cannot
+        -- expire between the checks.
+        local before = renderer.is_source_window(win)
+        vim.bo.filetype = "renderer-test"
+        local memoized = renderer.is_source_window(win)
+        renderer.invalidate_source_selection(win)
+        local excluded = renderer.is_source_window(win)
+        vim.bo.filetype = ""
+        renderer.invalidate_source_selection()
+        return {
+            before = before,
+            memoized = memoized,
+            excluded = excluded,
+            restored = renderer.is_source_window(win),
+        }
+    end, renderer_config())
+
+    expect.equality(result, { before = true, memoized = true, excluded = false, restored = true })
+end
+
 T["maps focused renderer floats to sources and reconciles no active source"] = function()
     local child = new_child()
     local result = child.lua_func(function(config)
@@ -1821,6 +1849,96 @@ T["updates only dirty rows and fully replaces rows when dimensions change"] = fu
     expect.equality(result.dimension_events[1].first, 0)
     expect.equality(result.dimension_events[1].last, result.old_height)
     expect.equality(result.dimension_events[1].new_last, result.new_height)
+end
+
+T["the row writer toggles modifiable once and keeps the extmarks of unchanged rows"] = function()
+    local child = new_child()
+    local result = child.lua_func(function()
+        local float = require("scrollbar.float")
+        local namespace = vim.api.nvim_create_namespace("ScrollbarTestRowWriter")
+        local bufnr = vim.api.nvim_create_buf(false, true)
+        vim.bo[bufnr].modifiable = false
+
+        local function span(start_col, end_col, highlight)
+            return { { start_col = start_col, end_col = end_col, highlight = highlight, priority = 1 } }
+        end
+        local function marks()
+            local by_row = {}
+            for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(bufnr, namespace, 0, -1, { details = true })) do
+                by_row[#by_row + 1] = {
+                    id = mark[1],
+                    row = mark[2],
+                    start_col = mark[3],
+                    end_col = mark[4].end_col,
+                    highlight = mark[4].hl_group,
+                }
+            end
+            table.sort(by_row, function(left, right)
+                return left.row < right.row
+            end)
+            return by_row
+        end
+
+        local rows = { "aaaa", "bbbb", "cccc", "dddd" }
+        local spans = { span(0, 2, "A"), span(0, 2, "B"), span(0, 2, "C"), span(0, 2, "D") }
+        float.write_rows(bufnr, namespace, {}, {}, rows, spans, true)
+        local initial = marks()
+
+        local toggles = 0
+        vim.api.nvim_create_autocmd("OptionSet", {
+            pattern = "modifiable",
+            callback = function()
+                toggles = toggles + 1
+            end,
+        })
+        local events = {}
+        vim.api.nvim_buf_attach(bufnr, false, {
+            on_lines = function(_, _, _, first, last, new_last)
+                table.insert(events, { first = first, last = last, new_last = new_last })
+            end,
+        })
+
+        -- Rows 2 and 3 get new text, row 4 gets a new span, row 1 stays.
+        local next_rows = { "aaaa", "BBBB", "CCCC", "dddd" }
+        local next_spans = { span(0, 2, "A"), span(1, 3, "B"), span(0, 2, "C"), span(2, 4, "D") }
+        float.write_rows(bufnr, namespace, rows, spans, next_rows, next_spans, false)
+        local changed = marks()
+        local changed_toggles = toggles
+        local changed_events = vim.deepcopy(events)
+
+        toggles = 0
+        events = {}
+        float.write_rows(bufnr, namespace, next_rows, next_spans, next_rows, next_spans, false)
+
+        return {
+            initial = initial,
+            changed = changed,
+            changed_toggles = changed_toggles,
+            changed_events = changed_events,
+            steady = marks(),
+            steady_toggles = toggles,
+            steady_events = events,
+            lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false),
+            modifiable = vim.bo[bufnr].modifiable,
+        }
+    end)
+
+    expect.equality(result.changed_events, { { first = 1, last = 3, new_last = 3 } })
+    expect.equality(result.changed_toggles, 2)
+    expect.equality(result.lines, { "aaaa", "BBBB", "CCCC", "dddd" })
+    expect.equality(result.modifiable, false)
+    -- Replaced rows leave no moved extmarks behind.
+    expect.equality(#result.changed, 4)
+    expect.equality(result.changed[1].id, result.initial[1].id)
+    expect.equality(result.changed[2].id ~= result.initial[2].id, true)
+    expect.equality(result.changed[3].id ~= result.initial[3].id, true)
+    expect.equality(result.changed[4].id ~= result.initial[4].id, true)
+    expect.equality({ result.changed[2].row, result.changed[2].start_col, result.changed[2].end_col }, { 1, 1, 3 })
+    expect.equality({ result.changed[3].row, result.changed[3].start_col, result.changed[3].end_col }, { 2, 0, 2 })
+    expect.equality({ result.changed[4].row, result.changed[4].start_col, result.changed[4].end_col }, { 3, 2, 4 })
+    expect.equality(result.steady, result.changed)
+    expect.equality(result.steady_toggles, 0)
+    expect.equality(result.steady_events, {})
 end
 
 T["grows and shrinks expanded floats in place while pinning base cells for every anchor"] = function()

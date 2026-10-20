@@ -258,6 +258,101 @@ T["highlight ranges align with multibyte and ASCII cells"] = function()
     expect.equality(ascii.ranges.Comment, { 2, 3 })
 end
 
+T["highlight ranges follow cells when ambiguous characters are double width"] = function()
+    local child = new_child()
+    reset_modules(child)
+    child.lua([[
+        vim.o.fillchars = "vert:|,fold:-,foldsep:|,eob:~"
+        vim.o.ambiwidth = "double"
+    ]])
+
+    local result = render_mark_ranges(child, "█")
+
+    expect.equality(result.row, "███")
+    expect.equality(result.ranges.ErrorMsg, { 0, 3 })
+    expect.equality(result.ranges.WarningMsg, { 3, 6 })
+    expect.equality(result.ranges.Comment, { 6, 9 })
+end
+
+T["a steady render replaces no rows and keeps every extmark"] = function()
+    local child = new_child()
+    reset_modules(child)
+    configure(child, { enabled = true, width = 4, height = 4 }, { set_highlights = false })
+
+    local result = child.lua_func(function()
+        local lines = {}
+        for index = 1, 40 do
+            lines[index] = string.rep("x", index % 8)
+        end
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        local renderer = require("scrollbar.minimap.renderer")
+        local state = assert(renderer.render(0))
+        local function mark_ids()
+            local ids = {}
+            for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(state.float_buf, renderer.namespace(), 0, -1, {})) do
+                ids[#ids + 1] = mark[1]
+            end
+            table.sort(ids)
+            return ids
+        end
+        local before = mark_ids()
+
+        local toggles = 0
+        vim.api.nvim_create_autocmd("OptionSet", {
+            pattern = "modifiable",
+            callback = function()
+                toggles = toggles + 1
+            end,
+        })
+        local events = 0
+        vim.api.nvim_buf_attach(state.float_buf, false, {
+            on_lines = function()
+                events = events + 1
+            end,
+        })
+        local again = assert(renderer.render(0))
+
+        return {
+            same_float = again.float_buf == state.float_buf,
+            has_marks = #before > 0,
+            kept_marks = vim.deep_equal(mark_ids(), before),
+            line_events = events,
+            toggles = toggles,
+        }
+    end)
+
+    expect.equality(result, { same_float = true, has_marks = true, kept_marks = true, line_events = 0, toggles = 0 })
+end
+
+T["is_source_window keeps its answer until the selection is invalidated"] = function()
+    local child = new_child()
+    reset_modules(child)
+    configure(child, { enabled = true, width = 4, height = 4 }, { exclude = { filetypes = { "minimap-test" } } })
+
+    local result = child.lua_func(function()
+        local renderer = require("scrollbar.minimap.renderer")
+        local win = vim.api.nvim_get_current_win()
+
+        -- The loop time does not advance inside this call, so the memo cannot
+        -- expire between the checks.
+        local before = renderer.is_source_window(win)
+        vim.bo.filetype = "minimap-test"
+        local memoized = renderer.is_source_window(win)
+        renderer.invalidate_source_selection(win)
+        local excluded = renderer.is_source_window(win)
+        vim.bo.filetype = ""
+        renderer.invalidate_source_selection()
+        return {
+            before = before,
+            memoized = memoized,
+            excluded = excluded,
+            restored = renderer.is_source_window(win),
+        }
+    end)
+
+    expect.equality(result, { before = true, memoized = true, excluded = false, restored = true })
+end
+
 T["setup registers ownership markers on minimap floats and excludes external windows"] = function()
     local child = new_child()
     reset_modules(child)

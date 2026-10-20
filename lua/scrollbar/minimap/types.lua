@@ -221,6 +221,7 @@
 ---@field projection ScrollbarMinimapProjection
 ---@field rows string[]
 ---@field highlights ScrollbarMinimapHighlightSpan[][]
+---@field rendered_highlights ScrollbarHighlightSpan[][] Byte-column spans in the float buffer, with resolved highlight groups
 ---@field rendered_signature string
 ---@field viewport_top integer
 ---@field viewport_bottom integer
