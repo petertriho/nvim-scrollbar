@@ -61,6 +61,8 @@ local function valid_window(winid)
     return type(winid) == "number" and vim.api.nvim_win_is_valid(winid)
 end
 
+M.valid_window = valid_window
+
 ---@param bufnr integer
 ---@return integer[]
 local function windows_showing_buffer(bufnr)

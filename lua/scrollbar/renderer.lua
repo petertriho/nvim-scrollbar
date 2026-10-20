@@ -1,5 +1,6 @@
 local config = require("scrollbar.config")
 local float = require("scrollbar.float")
+local float_states = require("scrollbar.float_states")
 local layout = require("scrollbar.layout")
 local providers = require("scrollbar.providers")
 local source_policy = require("scrollbar.source_policy")
@@ -33,6 +34,9 @@ local states = {}
 ---@type table<integer, ScrollbarWindowState>
 local states_by_float = {}
 
+---@type table<integer, boolean>
+local owned_float_buffers = {}
+
 ---@type table<integer, ScrollbarStatuscolumnReservation>
 local statuscolumn_reservations = {}
 
@@ -45,70 +49,13 @@ local line_layer_cache = {}
 ---@type table<integer, table>
 local screen_layer_cache = {}
 
----@type table<integer, integer>
-local revealed = {}
-
----@type integer?
-local lifecycle_group
-local visible = false
-
----@type fun(state: ScrollbarWindowState)?
-local state_callback
-
----@type table<integer, boolean>
-local owned_float_buffers = {}
-
--- Defined with the state lifecycle below; the source policy releases stale
--- source windows through it.
-local close_source
-
-local policy = source_policy.new({
-    config = config,
-    owned_var = OWNED_VAR,
-    states_by_float = states_by_float,
-    owned_float_buffers = owned_float_buffers,
-    tuning = M,
-    collect_stale = function(selected, stale)
-        for source_win in pairs(states) do
-            if not selected[source_win] then
-                stale[source_win] = true
-            end
-        end
-        for source_win in pairs(revealed) do
-            if not selected[source_win] then
-                stale[source_win] = true
-            end
-        end
-        for source_win in pairs(statuscolumn_reservations) do
-            if not selected[source_win] then
-                stale[source_win] = true
-            end
-        end
-        for _, source_win in ipairs(stack.windows("scrollbar")) do
-            if not selected[source_win] then
-                stale[source_win] = true
-            end
-        end
-    end,
-    close_source = function(source_win)
-        close_source(source_win)
-    end,
-})
-
-local valid_window = policy.valid_window
-local owned_window = policy.owned_window
-local owned_buffer = policy.owned_buffer
-local buffer_eligible = policy.buffer_eligible
-local active_source_window = policy.active_source_window
----@type fun(source_win: integer, root_config: ScrollbarConfig, active_source?: integer, basic_ok?: boolean): ScrollbarConfigSelection?
-local source_selection = policy.source_selection
+local valid_window = source_policy.valid_window
 
 ---@param source_win integer
-local function clear_source_cache(source_win)
+local function clear_render_caches(source_win)
     flattened_cache[source_win] = nil
     line_layer_cache[source_win] = nil
     screen_layer_cache[source_win] = nil
-    policy.invalidate(source_win)
     layout.clear_screen_cache(source_win)
 end
 
@@ -118,19 +65,6 @@ local function clear_all_caches()
     screen_layer_cache = {}
     layout.clear_cache()
     layout.clear_all_screen_caches()
-end
-
----@param source_buf integer
-local function clear_buffer_caches(source_buf)
-    local pending = {}
-    for source_win, cached in pairs(flattened_cache) do
-        if cached.source_buf == source_buf then
-            table.insert(pending, source_win)
-        end
-    end
-    for _, source_win in ipairs(pending) do
-        clear_source_cache(source_win)
-    end
 end
 
 ---@param winid integer
@@ -221,6 +155,26 @@ local function release_statuscolumn(source_win)
     end
 end
 
+---Apply the statuscolumn wrapper of a reservation and draw it once. The
+---reservation is released when the wrapper fails or another value replaces it.
+---@param source_win integer
+---@param reservation ScrollbarStatuscolumnReservation
+---@return boolean applied
+local function apply_statuscolumn(source_win, reservation)
+    set_local_option(source_win, "statuscolumn", reservation.applied_statuscolumn)
+    vim.api.nvim__redraw({ flush = true })
+    if reservation.failed then
+        set_local_option(source_win, "statuscolumn", "")
+        release_statuscolumn(source_win)
+        return false
+    end
+    if vim.api.nvim_get_option_value("statuscolumn", { win = source_win }) ~= reservation.applied_statuscolumn then
+        release_statuscolumn(source_win)
+        return false
+    end
+    return true
+end
+
 ---@param source_win integer
 ---@param span integer
 ---@param position ScrollbarGutterPosition
@@ -284,15 +238,7 @@ local function ensure_statuscolumn(source_win, span, position)
 
     reservation.applied_numberwidth = math.min(20, reservation.original_numberwidth + span)
     set_local_option(source_win, "numberwidth", reservation.applied_numberwidth)
-    set_local_option(source_win, "statuscolumn", reservation.applied_statuscolumn)
-    vim.api.nvim__redraw({ flush = true })
-    if reservation.failed then
-        set_local_option(source_win, "statuscolumn", "")
-        release_statuscolumn(source_win)
-        return nil
-    end
-    if vim.api.nvim_get_option_value("statuscolumn", { win = source_win }) ~= reservation.applied_statuscolumn then
-        release_statuscolumn(source_win)
+    if not apply_statuscolumn(source_win, reservation) then
         return nil
     end
     local textoff = vim.fn.getwininfo(source_win)[1].textoff
@@ -300,15 +246,7 @@ local function ensure_statuscolumn(source_win, span, position)
     if actual_span < span then
         reservation.span = actual_span
         reservation.limited = true
-        set_local_option(source_win, "statuscolumn", reservation.applied_statuscolumn)
-        vim.api.nvim__redraw({ flush = true })
-        if reservation.failed then
-            set_local_option(source_win, "statuscolumn", "")
-            release_statuscolumn(source_win)
-            return nil
-        end
-        if vim.api.nvim_get_option_value("statuscolumn", { win = source_win }) ~= reservation.applied_statuscolumn then
-            release_statuscolumn(source_win)
+        if not apply_statuscolumn(source_win, reservation) then
             return nil
         end
         textoff = vim.fn.getwininfo(source_win)[1].textoff
@@ -377,68 +315,50 @@ M._statuscolumn = function(owner_win)
     return value
 end
 
----@param state ScrollbarWindowState
----@param retain_cache? boolean
-local function forget_state(state, retain_cache)
-    states[state.source_win] = nil
-    states_by_float[state.float_win] = nil
-    owned_float_buffers[state.float_buf] = nil
-    if not retain_cache then
-        revealed[state.source_win] = nil
-        clear_source_cache(state.source_win)
-    end
-end
+-- Defined after the float states, because it clears the source selection
+-- memo. The float states drop the caches of a deleted buffer through it.
+local clear_buffer_caches
 
----@param state ScrollbarWindowState
----@param retain_cache? boolean
-local function close_state(state, retain_cache)
-    forget_state(state, retain_cache)
-    float.close(state.float_win, state.float_buf)
-    release_statuscolumn(state.source_win)
-end
+local floats = float_states.new({
+    renderer = "scrollbar",
+    config = config,
+    owned_var = OWNED_VAR,
+    augroup = AUGROUP_NAME,
+    tuning = M,
+    states = states,
+    states_by_float = states_by_float,
+    owned_float_buffers = owned_float_buffers,
+    retained = statuscolumn_reservations,
+    release = release_statuscolumn,
+    forget = clear_render_caches,
+    forget_buffer = function(bufnr)
+        clear_buffer_caches(bufnr)
+    end,
+})
 
----@param source_win integer
-close_source = function(source_win)
-    local state = states[source_win]
-    if state ~= nil then
-        close_state(state)
-    else
-        revealed[source_win] = nil
-        clear_source_cache(source_win)
-        release_statuscolumn(source_win)
-    end
-    stack.publish("scrollbar", source_win, nil)
-end
+local policy = floats.policy
+local active_source_window = policy.active_source_window
+---@type fun(source_win: integer, root_config: ScrollbarConfig, active_source?: integer, basic_ok?: boolean): ScrollbarConfigSelection?
+local source_selection = policy.source_selection
+local close_state = floats.close_state
+local close_source = floats.close_source
+local close_all_states = floats.close_all
+local prepare_source = floats.prepare_source
+local render_selection = floats.render_selection
+local is_visible = floats.is_visible
 
---- Autohide is a short hide: the footprint stays, so a minimap beside the
---- scrollbar keeps its position.
----@param source_win integer
-local function conceal_source(source_win)
-    revealed[source_win] = nil
-    local state = states[source_win]
-    if state ~= nil then
-        close_state(state, true)
-    else
-        release_statuscolumn(source_win)
-    end
-end
-
-local function close_all_states()
+---@param source_buf integer
+clear_buffer_caches = function(source_buf)
     local pending = {}
-    for _, state in pairs(states) do
-        table.insert(pending, state)
+    for source_win, cached in pairs(flattened_cache) do
+        if cached.source_buf == source_buf then
+            table.insert(pending, source_win)
+        end
     end
-    for _, state in ipairs(pending) do
-        close_state(state)
+    for _, source_win in ipairs(pending) do
+        policy.invalidate(source_win)
+        clear_render_caches(source_win)
     end
-    local reserved = {}
-    for source_win in pairs(statuscolumn_reservations) do
-        reserved[#reserved + 1] = source_win
-    end
-    for _, source_win in ipairs(reserved) do
-        release_statuscolumn(source_win)
-    end
-    stack.clear("scrollbar")
 end
 
 ---@param source_win integer
@@ -456,25 +376,6 @@ local function close_other_states(source_win)
         if winid ~= source_win then
             stack.publish("scrollbar", winid, nil)
         end
-    end
-end
-
-local function sweep_states()
-    local pending = {}
-    for _, state in pairs(states) do
-        if
-            not valid_window(state.source_win)
-            or not valid_window(state.float_win)
-            or not vim.api.nvim_buf_is_valid(state.source_buf)
-            or not vim.api.nvim_buf_is_valid(state.float_buf)
-            or vim.api.nvim_win_get_buf(state.source_win) ~= state.source_buf
-        then
-            table.insert(pending, state)
-        end
-    end
-    for _, state in ipairs(pending) do
-        close_state(state)
-        stack.publish("scrollbar", state.source_win, nil, { notify = valid_window(state.source_win) })
     end
 end
 
@@ -1007,14 +908,8 @@ end
 local function render_source(source_win, selection, root_config)
     local active_config = selection.config
     local source_buf = vim.api.nvim_win_get_buf(source_win)
-    ---@type ScrollbarWindowState?
-    local existing_state = states[source_win]
-    if existing_state ~= nil and existing_state.source_buf ~= source_buf then
-        close_state(existing_state)
-        existing_state = nil
-    end
-    if root_config.autohide and revealed[source_win] ~= source_buf then
-        conceal_source(source_win)
+    local existing_state, concealed = prepare_source(source_win, source_buf, root_config.autohide)
+    if concealed then
         local previous = stack.footprint("scrollbar", source_win)
         local origin = placement_origin(active_config, source_win, source_text_area(source_win))
         local width = previous and previous.width or active_config.layout.width
@@ -1223,9 +1118,6 @@ local function render_source(source_win, selection, root_config)
     }
     state.footprint = stack_footprint(active_config, own_origin, output.width, state.footprint)
     stack.publish("scrollbar", source_win, state.footprint)
-    if state_callback ~= nil then
-        pcall(state_callback, state)
-    end
     return state
 end
 
@@ -1233,7 +1125,7 @@ end
 ---@return ScrollbarWindowState?
 M.render = function(source_win)
     source_win = source_win or vim.api.nvim_get_current_win()
-    if not visible then
+    if not is_visible() then
         close_source(source_win)
         return nil
     end
@@ -1252,17 +1144,8 @@ M.render = function(source_win)
             return nil
         end
         close_other_states(assert(active_source, "active source unavailable"))
-    elseif selection == nil then
-        close_source(source_win)
-        return nil
     end
-
-    local ok, state = pcall(render_source, source_win, selection, root_config)
-    if not ok then
-        close_source(source_win)
-        return nil
-    end
-    return state
+    return render_selection(source_win, selection, root_config, render_source)
 end
 
 --- Resolve the stacked origin and z-index of one scrollbar float again, after
@@ -1281,17 +1164,11 @@ M.reposition = function(source_win)
     return float.reposition(state, footprint, origin, zindex)
 end
 
----@param source_win integer
----@return ScrollbarWindowState?
-M.get_state = function(source_win)
-    return states[source_win]
-end
+---@type fun(source_win: integer): ScrollbarWindowState?
+M.get_state = floats.get_state
 
----@param float_win integer
----@return ScrollbarWindowState?
-M.get_state_by_float = function(float_win)
-    return states_by_float[float_win]
-end
+---@type fun(float_win: integer): ScrollbarWindowState?
+M.get_state_by_float = floats.get_state_by_float
 
 ---@param source_win integer
 ---@return ScrollbarHitCell[][]?
@@ -1307,30 +1184,11 @@ M.get_handle = function(source_win)
     return state and state.handle or nil
 end
 
----@param source_win integer
----@return boolean
-M.reveal = function(source_win)
-    local root_config = config.get()
-    if not visible or source_selection(source_win, root_config, active_source_window()) == nil then
-        return false
-    end
+---@type fun(source_win: integer): boolean
+M.reveal = floats.reveal
 
-    if root_config.autohide then
-        revealed[source_win] = vim.api.nvim_win_get_buf(source_win)
-    end
-    return true
-end
-
----@param source_win integer
----@return boolean
-M.conceal = function(source_win)
-    if not config.get().autohide then
-        return false
-    end
-    local was_revealed = revealed[source_win] ~= nil or states[source_win] ~= nil
-    conceal_source(source_win)
-    return was_revealed
-end
+---@type fun(source_win: integer): boolean
+M.conceal = floats.conceal
 
 ---@param float_win integer
 ---@param pressed boolean
@@ -1364,46 +1222,25 @@ M.set_handle_pressed = function(float_win, pressed)
     return ok
 end
 
----@param callback? fun(state: ScrollbarWindowState)
-M.set_state_callback = function(callback)
-    state_callback = callback
-    if callback == nil then
-        return
-    end
-    for _, state in pairs(states) do
-        pcall(callback, state)
-    end
-end
+---@type fun(callback?: fun(state: ScrollbarWindowState))
+M.set_state_callback = floats.set_state_callback
 
 ---@type fun(winid: integer): boolean
-M.is_owned_window = owned_window
+M.is_owned_window = policy.owned_window
 
---- Registry-only ownership checks. They recognize exactly the resources the
---- current renderer generation created; the variable fallbacks in
---- `owned_window`/`owned_buffer` additionally cover orphans left by a prior
---- generation, which only the setup-time sweep needs. The scheduler treats a
---- missed orphan as an ordinary source resource and its flush re-checks
---- eligibility, so the cheap checks are safe on the per-keystroke path.
----@param winid integer
----@return boolean
-M.is_owned_float_window = function(winid)
-    return states_by_float[winid] ~= nil
-end
+--- Registry-only ownership check of the floats of the current setup.
+---@type fun(winid: integer): boolean
+M.is_owned_float_window = floats.is_owned_float_window
 
----@param bufnr integer
----@return boolean
-M.is_owned_float_buffer = function(bufnr)
-    return owned_float_buffers[bufnr] == true
-end
+--- Registry-only ownership check of the float buffers of the current setup.
+---@type fun(bufnr: integer): boolean
+M.is_owned_float_buffer = floats.is_owned_float_buffer
 
 ---@type fun(bufnr: integer): boolean
-M.is_owned_buffer = owned_buffer
+M.is_owned_buffer = policy.owned_buffer
 
----@param bufnr integer
----@return boolean
-M.is_buffer_eligible = function(bufnr)
-    return buffer_eligible(bufnr, config.get())
-end
+---@type fun(bufnr: integer): boolean
+M.is_buffer_eligible = floats.is_buffer_eligible
 
 --- The result is memoized for 50 ms, or for `M.source_selection_interval_ms`.
 ---@type fun(winid: integer): boolean
@@ -1418,28 +1255,24 @@ M.invalidate_source_selection = policy.invalidate
 M.source_windows = policy.source_windows
 
 M.hide = function()
-    visible = false
-    revealed = {}
-    close_all_states()
+    floats.hide()
     clear_all_caches()
 end
 
 M.show = function()
-    visible = config.get().enabled
+    floats.set_visible(config.get().enabled)
 end
 
 M.toggle = function()
-    if visible then
+    if is_visible() then
         M.hide()
     else
         M.show()
     end
 end
 
----@return boolean
-M.is_visible = function()
-    return visible
-end
+---@type fun(): boolean
+M.is_visible = is_visible
 
 ---@type fun(bufnr: integer): integer[]
 M.windows_showing_buffer = policy.windows_showing_buffer
@@ -1451,43 +1284,14 @@ M.dispose = function(source_win)
         return
     end
 
-    visible = false
-    revealed = {}
-    close_all_states()
+    floats.dispose()
     clear_all_caches()
-    if lifecycle_group ~= nil then
-        pcall(vim.api.nvim_del_augroup_by_id, lifecycle_group)
-        lifecycle_group = nil
-    end
 end
 
 M.setup = function()
     M.dispose()
     local root_config = config.get()
-    visible = root_config.enabled and root_config.show
-    lifecycle_group = vim.api.nvim_create_augroup(AUGROUP_NAME, { clear = true })
-
-    vim.api.nvim_create_autocmd("WinClosed", {
-        group = lifecycle_group,
-        callback = function(args)
-            local closed_win = tonumber(args.match)
-            if closed_win == nil then
-                return
-            end
-            local state = states[closed_win] or states_by_float[closed_win]
-            if state ~= nil then
-                close_state(state)
-            else
-                revealed[closed_win] = nil
-                clear_source_cache(closed_win)
-                release_statuscolumn(closed_win)
-            end
-            -- A closing source window takes the minimap float with it, so
-            -- only a closed scrollbar float repositions the minimap.
-            local source_win = state and state.source_win or closed_win
-            stack.publish("scrollbar", source_win, nil, { notify = source_win ~= closed_win })
-        end,
-    })
+    local lifecycle_group = floats.setup(root_config.enabled and root_config.show)
     vim.api.nvim_create_autocmd("WinNew", {
         group = lifecycle_group,
         callback = function()
@@ -1495,26 +1299,6 @@ M.setup = function()
             local parent_win = vim.fn.win_getid(vim.fn.winnr("#"))
             restore_inherited_statuscolumn(current_win, parent_win)
         end,
-    })
-    vim.api.nvim_create_autocmd({ "BufDelete", "BufWipeout" }, {
-        group = lifecycle_group,
-        callback = function(args)
-            clear_buffer_caches(args.buf)
-            local pending = {}
-            for _, state in pairs(states) do
-                if state.source_buf == args.buf or state.float_buf == args.buf then
-                    table.insert(pending, state)
-                end
-            end
-            for _, state in ipairs(pending) do
-                close_state(state)
-                stack.publish("scrollbar", state.source_win, nil)
-            end
-        end,
-    })
-    vim.api.nvim_create_autocmd("TabClosed", {
-        group = lifecycle_group,
-        callback = sweep_states,
     })
 end
 

@@ -1,8 +1,8 @@
 --- Minimap renderer: per-source-window float lifecycle, composes squashed
 --- cells plus semantic, viewport, and cursor highlight layers into a visible
---- scratch buffer. It shares the source-window policy (`scrollbar.source_policy`)
---- and the float placement and row writer (`scrollbar.float`) with the
---- scrollbar renderer.
+--- scratch buffer. It shares the float lifecycle (`scrollbar.float_states`), the
+--- source-window policy (`scrollbar.source_policy`), and the float placement and
+--- row writer (`scrollbar.float`) with the scrollbar renderer.
 ---
 --- `scrollbar.stack` resolves the origin and z-index against a scrollbar on the
 --- same side of the source window. Squash output is the only source of row
@@ -20,6 +20,7 @@
 
 local config_module = require("scrollbar.minimap.config")
 local float = require("scrollbar.float")
+local float_states = require("scrollbar.float_states")
 local highlight_module = require("scrollbar.minimap.highlights")
 local projection_module = require("scrollbar.minimap.projection")
 local providers = require("scrollbar.providers")
@@ -73,58 +74,10 @@ local semantic_inputs = {}
 
 local request_generation = 0
 
----@type table<integer, integer>
-local revealed = {}
-
----@type integer?
-local lifecycle_group
-local visible = false
-
----@type fun(state: ScrollbarMinimapRendererState)?
-local state_callback
-
 ---@type ScrollbarMinimapRendererOptions?
 local options_ref
 
--- Defined with the state lifecycle below; the source policy releases stale
--- source windows through it.
-local close_source
-
-local policy = source_policy.new({
-    config = config_module,
-    owned_var = OWNED_VAR,
-    states_by_float = states_by_float,
-    owned_float_buffers = owned_float_buffers,
-    tuning = M,
-    collect_stale = function(selected, stale)
-        for source_win in pairs(states) do
-            if not selected[source_win] then
-                stale[source_win] = true
-            end
-        end
-        for source_win in pairs(revealed) do
-            if not selected[source_win] then
-                stale[source_win] = true
-            end
-        end
-        for _, source_win in ipairs(stack.windows("minimap")) do
-            if not selected[source_win] then
-                stale[source_win] = true
-            end
-        end
-    end,
-    close_source = function(source_win)
-        close_source(source_win)
-    end,
-})
-
-local valid_window = policy.valid_window
-local owned_window = policy.owned_window
-local owned_buffer = policy.owned_buffer
-local buffer_eligible = policy.buffer_eligible
-local active_source_window = policy.active_source_window
----@type fun(source_win: integer, root_config: ScrollbarMinimapConfig, active_source?: integer, basic_ok?: boolean): ScrollbarMinimapConfigSelection?
-local source_selection = policy.source_selection
+local valid_window = source_policy.valid_window
 
 ---@param bufnr integer
 local function prune_cell_cache(bufnr)
@@ -147,6 +100,37 @@ local function prune_cell_cache(bufnr)
         cell_cache[bufnr] = nil
     end
 end
+
+local floats = float_states.new({
+    renderer = "minimap",
+    config = config_module,
+    owned_var = OWNED_VAR,
+    augroup = AUGROUP_NAME,
+    tuning = M,
+    states = states,
+    states_by_float = states_by_float,
+    owned_float_buffers = owned_float_buffers,
+    forget = function(_, state)
+        if state ~= nil then
+            prune_cell_cache(state.source_buf)
+        end
+    end,
+    forget_buffer = function(bufnr)
+        cell_cache[bufnr] = nil
+        pending_cells[bufnr] = nil
+        semantic_inputs[bufnr] = nil
+    end,
+})
+
+local policy = floats.policy
+local active_source_window = policy.active_source_window
+---@type fun(source_win: integer, root_config: ScrollbarMinimapConfig, active_source?: integer, basic_ok?: boolean): ScrollbarMinimapConfigSelection?
+local source_selection = policy.source_selection
+local close_state = floats.close_state
+local close_source = floats.close_source
+local prepare_source = floats.prepare_source
+local render_selection = floats.render_selection
+local is_visible = floats.is_visible
 
 ---@param float_buf integer
 local function configure_buffer(float_buf)
@@ -222,79 +206,6 @@ local function stack_footprint(active_config, source_win)
         zindex = placement.zindex,
         stack = placement.stack,
     }
-end
-
----@param state ScrollbarMinimapRendererState
----@param retain_cache? boolean
-local function forget_state(state, retain_cache)
-    states[state.source_win] = nil
-    states_by_float[state.float_win] = nil
-    owned_float_buffers[state.float_buf] = nil
-    revealed[state.source_win] = nil
-    if not retain_cache then
-        prune_cell_cache(state.source_buf)
-        policy.invalidate(state.source_win)
-    end
-end
-
----@param state ScrollbarMinimapRendererState
----@param retain_cache? boolean
-local function close_state(state, retain_cache)
-    forget_state(state, retain_cache)
-    float.close(state.float_win, state.float_buf)
-end
-
----@param source_win integer
-close_source = function(source_win)
-    local state = states[source_win]
-    if state ~= nil then
-        close_state(state)
-    else
-        revealed[source_win] = nil
-        policy.invalidate(source_win)
-    end
-    stack.publish("minimap", source_win, nil)
-end
-
---- Autohide is a short hide: the footprint stays, so a scrollbar beside the
---- minimap keeps its position.
----@param source_win integer
-local function conceal_source(source_win)
-    revealed[source_win] = nil
-    local state = states[source_win]
-    if state ~= nil then
-        close_state(state, true)
-    end
-end
-
-local function close_all_states()
-    local pending = {}
-    for _, state in pairs(states) do
-        table.insert(pending, state)
-    end
-    for _, state in ipairs(pending) do
-        close_state(state)
-    end
-    stack.clear("minimap")
-end
-
-local function sweep_states()
-    local pending = {}
-    for _, state in pairs(states) do
-        if
-            not valid_window(state.source_win)
-            or not valid_window(state.float_win)
-            or not vim.api.nvim_buf_is_valid(state.source_buf)
-            or not vim.api.nvim_buf_is_valid(state.float_buf)
-            or vim.api.nvim_win_get_buf(state.source_win) ~= state.source_buf
-        then
-            table.insert(pending, state)
-        end
-    end
-    for _, state in ipairs(pending) do
-        close_state(state)
-        stack.publish("minimap", state.source_win, nil, { notify = valid_window(state.source_win) })
-    end
 end
 
 ---Translate a canonical cell grid into buffer text rows + per-row highlight
@@ -601,14 +512,8 @@ end
 local function render_source(source_win, selection, root_config)
     local active_config = selection.config
     local source_buf = vim.api.nvim_win_get_buf(source_win)
-    ---@type ScrollbarMinimapRendererState?
-    local existing_state = states[source_win]
-    if existing_state ~= nil and existing_state.source_buf ~= source_buf then
-        close_state(existing_state)
-        existing_state = nil
-    end
-    if root_config.autohide and revealed[source_win] ~= source_buf then
-        conceal_source(source_win)
+    local _, concealed = prepare_source(source_win, source_buf, root_config.autohide)
+    if concealed then
         stack.publish("minimap", source_win, stack_footprint(active_config, source_win))
         return nil
     end
@@ -893,10 +798,6 @@ local function render_source(source_win, selection, root_config)
     state.footprint = footprint
     prune_cell_cache(source_buf)
     stack.publish("minimap", source_win, footprint)
-
-    if state_callback ~= nil then
-        pcall(state_callback, state)
-    end
     return state
 end
 
@@ -906,30 +807,14 @@ M.render = function(source_win)
     if source_win == nil or source_win == 0 then
         source_win = vim.api.nvim_get_current_win()
     end
-    if not visible then
+    if not is_visible() then
         close_source(source_win)
         return nil
     end
 
     local root_config = config_module.get()
-    local active_source = active_source_window()
-    local selection = source_selection(source_win, root_config, active_source)
-    if root_config.visibility == "active" then
-        if selection == nil then
-            close_source(source_win)
-            return nil
-        end
-    elseif selection == nil then
-        close_source(source_win)
-        return nil
-    end
-
-    local ok, state = pcall(render_source, source_win, selection, root_config)
-    if not ok then
-        close_source(source_win)
-        return nil
-    end
-    return state
+    local selection = source_selection(source_win, root_config, active_source_window())
+    return render_selection(source_win, selection, root_config, render_source)
 end
 
 --- Resolve the stacked origin and z-index of one minimap float again, after
@@ -947,41 +832,17 @@ M.reposition = function(source_win)
     return float.reposition(state, footprint, origin, zindex)
 end
 
----@param source_win integer
----@return ScrollbarMinimapRendererState?
-M.get_state = function(source_win)
-    return states[source_win]
-end
+---@type fun(source_win: integer): ScrollbarMinimapRendererState?
+M.get_state = floats.get_state
 
----@param float_win integer
----@return ScrollbarMinimapRendererState?
-M.get_state_by_float = function(float_win)
-    return states_by_float[float_win]
-end
+---@type fun(float_win: integer): ScrollbarMinimapRendererState?
+M.get_state_by_float = floats.get_state_by_float
 
----@param source_win integer
----@return boolean
-M.reveal = function(source_win)
-    local root_config = config_module.get()
-    if not visible or source_selection(source_win, root_config, active_source_window()) == nil then
-        return false
-    end
-    if root_config.autohide then
-        revealed[source_win] = vim.api.nvim_win_get_buf(source_win)
-    end
-    return true
-end
+---@type fun(source_win: integer): boolean
+M.reveal = floats.reveal
 
----@param source_win integer
----@return boolean
-M.conceal = function(source_win)
-    if not config_module.get().autohide then
-        return false
-    end
-    local was_revealed = revealed[source_win] ~= nil or states[source_win] ~= nil
-    conceal_source(source_win)
-    return was_revealed
-end
+---@type fun(source_win: integer): boolean
+M.conceal = floats.conceal
 
 ---Worker result callback. Updates the dimension-specific cell cache and bumps
 ---the revision so the next render picks up fresh content. `scrollbar.minimap`
@@ -1096,46 +957,28 @@ M.handle_worker_failure = function()
     end
 end
 
----@param callback? fun(state: ScrollbarMinimapRendererState)
-M.set_state_callback = function(callback)
-    state_callback = callback
-    if callback == nil then
-        return
-    end
-    for _, state in pairs(states) do
-        pcall(callback, state)
-    end
-end
+---@type fun(callback?: fun(state: ScrollbarMinimapRendererState))
+M.set_state_callback = floats.set_state_callback
 
 ---@type fun(winid: integer): boolean
-M.is_owned_window = owned_window
+M.is_owned_window = policy.owned_window
 
---- Registry-only ownership checks, as in the scrollbar renderer: the variable
---- fallbacks only matter for orphans of an earlier setup, which the setup
---- sweep detects through `is_owned_*`.
----@param winid integer
----@return boolean
-M.is_owned_float_window = function(winid)
-    return states_by_float[winid] ~= nil
-end
+--- Registry-only ownership check of the floats of the current setup.
+---@type fun(winid: integer): boolean
+M.is_owned_float_window = floats.is_owned_float_window
 
 ---@type fun(bufnr: integer): integer[]
 M.windows_showing_buffer = policy.windows_showing_buffer
 
 ---@type fun(bufnr: integer): boolean
-M.is_owned_buffer = owned_buffer
+M.is_owned_buffer = policy.owned_buffer
 
----@param bufnr integer
----@return boolean
-M.is_owned_float_buffer = function(bufnr)
-    return owned_float_buffers[bufnr] == true
-end
+--- Registry-only ownership check of the float buffers of the current setup.
+---@type fun(bufnr: integer): boolean
+M.is_owned_float_buffer = floats.is_owned_float_buffer
 
----@param bufnr integer
----@return boolean
-M.is_buffer_eligible = function(bufnr)
-    return buffer_eligible(bufnr, config_module.get())
-end
+---@type fun(bufnr: integer): boolean
+M.is_buffer_eligible = floats.is_buffer_eligible
 
 --- The result is memoized for 50 ms.
 ---@type fun(winid: integer): boolean
@@ -1150,29 +993,25 @@ M.invalidate_source_selection = policy.invalidate
 M.source_windows = policy.source_windows
 
 M.hide = function()
-    visible = false
-    revealed = {}
-    close_all_states()
+    floats.hide()
     cell_cache = {}
     pending_cells = {}
 end
 
 M.show = function()
-    visible = true
+    floats.set_visible(true)
 end
 
 M.toggle = function()
-    if visible then
+    if is_visible() then
         M.hide()
     else
         M.show()
     end
 end
 
----@return boolean
-M.is_visible = function()
-    return visible
-end
+---@type fun(): boolean
+M.is_visible = is_visible
 
 ---@return integer namespace Nvim namespace id used for the minimap extmarks
 M.namespace = function()
@@ -1186,17 +1025,11 @@ M.dispose = function(source_win)
         return
     end
 
-    visible = false
-    revealed = {}
-    close_all_states()
+    floats.dispose()
     cell_cache = {}
     pending_cells = {}
     semantic_inputs = {}
     request_generation = 0
-    if lifecycle_group ~= nil then
-        pcall(vim.api.nvim_del_augroup_by_id, lifecycle_group)
-        lifecycle_group = nil
-    end
     options_ref = nil
 end
 
@@ -1205,51 +1038,7 @@ M.setup = function(options)
     M.dispose()
     options = options or {}
     options_ref = options
-    visible = options.visible ~= false
-    lifecycle_group = vim.api.nvim_create_augroup(AUGROUP_NAME, { clear = true })
-
-    vim.api.nvim_create_autocmd("WinClosed", {
-        group = lifecycle_group,
-        callback = function(args)
-            local closed_win = tonumber(args.match)
-            if closed_win == nil then
-                return
-            end
-            local state = states[closed_win] or states_by_float[closed_win]
-            if state ~= nil then
-                close_state(state)
-            else
-                revealed[closed_win] = nil
-                policy.invalidate(closed_win)
-            end
-            -- A closing source window takes the scrollbar float with it, so
-            -- only a closed minimap float repositions the scrollbar.
-            local source_win = state and state.source_win or closed_win
-            stack.publish("minimap", source_win, nil, { notify = source_win ~= closed_win })
-        end,
-    })
-    vim.api.nvim_create_autocmd({ "BufDelete", "BufWipeout" }, {
-        group = lifecycle_group,
-        callback = function(args)
-            local pending = {}
-            for _, state in pairs(states) do
-                if state.source_buf == args.buf or state.float_buf == args.buf then
-                    table.insert(pending, state)
-                end
-            end
-            for _, state in ipairs(pending) do
-                close_state(state)
-                stack.publish("minimap", state.source_win, nil)
-            end
-            cell_cache[args.buf] = nil
-            pending_cells[args.buf] = nil
-            semantic_inputs[args.buf] = nil
-        end,
-    })
-    vim.api.nvim_create_autocmd("TabClosed", {
-        group = lifecycle_group,
-        callback = sweep_states,
-    })
+    floats.setup(options.visible ~= false)
 end
 
 return M
