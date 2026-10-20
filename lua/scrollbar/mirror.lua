@@ -75,7 +75,6 @@ child.send("ready", {})
 ---@field notify fun(kind: string, payload: table): boolean
 ---@field sync fun(bufnr: integer, lang?: string): boolean
 ---@field detach fun(bufnr: integer, notify: boolean)
----@field mirror fun(bufnr: integer): ScrollbarMirror?
 ---@field ready_mirror fun(bufnr: integer): ScrollbarMirror?
 ---@field emit fun(event: string, payload?: table)
 ---@field state fun(): "disposed"|"starting"|"ready"|"failed"
@@ -602,9 +601,6 @@ end
         notify = notify,
         sync = sync,
         detach = detach,
-        mirror = function(bufnr)
-            return mirrors[bufnr]
-        end,
         ready_mirror = ready_mirror,
         emit = emit,
         state = function()

@@ -955,7 +955,7 @@ T["on_lines deltas update child mirror after snapshot completes"] = function()
     expect.equality(grid_chars(captured.payload.cells)[1], "████")
 end
 
-T["a result after a write carries the current changedtick"] = function()
+T["a result after a write carries the current text tick"] = function()
     local child = new_child()
     setup_worker(child, { backend = "worker" })
     expect.equality(wait_for_worker_ready(child), true)
@@ -970,6 +970,8 @@ T["a result after a write carries the current changedtick"] = function()
         encoding = "block",
     }
     local result = child.lua_func(function(request_grid)
+        local text_tick = require("scrollbar.text_tick")
+        text_tick.setup()
         local worker = require("scrollbar.minimap.worker")
         local state = package.loaded["scrollbar.test.minimap_worker"]
         vim.cmd("edit " .. vim.fn.fnameescape(vim.fn.tempname() .. ".txt"))
@@ -996,6 +998,7 @@ T["a result after a write carries the current changedtick"] = function()
             synchronized = synchronized,
             second = second,
             result_changedtick = second and state.results[2].changedtick or nil,
+            buffer_text_tick = text_tick.get(0),
             buffer_changedtick = vim.api.nvim_buf_get_changedtick(0),
             first_row = second and table.concat(vim.tbl_map(function(cell)
                 return cell.char
@@ -1006,7 +1009,8 @@ T["a result after a write carries the current changedtick"] = function()
     expect.equality(result.first, true)
     expect.equality(result.synchronized, true)
     expect.equality(result.second, true)
-    expect.equality(result.result_changedtick, result.buffer_changedtick)
+    expect.equality(result.result_changedtick, result.buffer_text_tick)
+    expect.equality(result.buffer_text_tick, result.buffer_changedtick - 2)
     expect.equality(result.first_row, "████")
 end
 
@@ -1080,6 +1084,83 @@ T["the minimap fills rows outside the cached slice after a write"] = function()
     expect.equality(result.synchronized, true)
     expect.equality(result.jumped, true)
     expect.equality(result.filled > 0, true)
+end
+
+---Edit a 20,000-line buffer, then write it, and count the squash requests of
+---the minimap after the write.
+---@param backend "sync"|"worker"
+local function squashes_after_write(backend)
+    local child = new_child()
+    return child.lua_func(function(minimap_backend)
+        vim.cmd("edit " .. vim.fn.fnameescape(vim.fn.tempname() .. ".lua"))
+        local lines = {}
+        for index = 1, 20000 do
+            lines[index] = string.format("local value_%d = %d", index, index)
+        end
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        require("scrollbar").setup({
+            set_highlights = false,
+            scrollbar = { enabled = false },
+            minimap = { enabled = true, backend = minimap_backend },
+        })
+        local renderer = require("scrollbar.minimap.renderer")
+        local scheduler = require("scrollbar.minimap.scheduler")
+        local worker = require("scrollbar.minimap.worker")
+        local win = vim.api.nvim_get_current_win()
+        local function settle()
+            return vim.wait(5000, function()
+                scheduler.invalidate_all()
+                scheduler.flush()
+                local status = worker.status()
+                local state = renderer.get_state(win)
+                return status.in_flight == nil
+                    and status.pending_count == 0
+                    and state ~= nil
+                    and state.rows[1]:match("%S")
+            end, 20) and true
+        end
+
+        local ready = minimap_backend == "sync"
+            or vim.wait(5000, function()
+                return worker.status().state == "ready"
+            end)
+        settle()
+        vim.api.nvim_buf_set_lines(0, 0, 1, false, { "-- edited" })
+        local edited = settle()
+        local rows = vim.deepcopy(renderer.get_state(win).rows)
+
+        local squashes = 0
+        local request = worker.request
+        ---@diagnostic disable-next-line: duplicate-set-field
+        worker.request = function(...)
+            squashes = squashes + 1
+            return request(...)
+        end
+        vim.cmd("silent write")
+        local written = settle()
+        worker.request = request
+        return {
+            ready = ready,
+            edited = edited,
+            written = written,
+            squashes = squashes,
+            same_rows = vim.deep_equal(renderer.get_state(win).rows, rows),
+        }
+    end, backend)
+end
+
+T["a write does not squash an unchanged buffer again with the worker"] = function()
+    expect.equality(
+        squashes_after_write("worker"),
+        { ready = true, edited = true, written = true, squashes = 0, same_rows = true }
+    )
+end
+
+T["a write does not squash an unchanged buffer again with the sync backend"] = function()
+    expect.equality(
+        squashes_after_write("sync"),
+        { ready = true, edited = true, written = true, squashes = 0, same_rows = true }
+    )
 end
 
 T["dispose cleans up child mirror buffers and tears down the worker"] = function()

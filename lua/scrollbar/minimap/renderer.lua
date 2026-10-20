@@ -28,6 +28,7 @@ local semantic = require("scrollbar.minimap.semantic")
 local source_policy = require("scrollbar.source_policy")
 local stack = require("scrollbar.stack")
 local store = require("scrollbar.store")
+local text_tick = require("scrollbar.text_tick")
 
 local M = {}
 
@@ -550,7 +551,7 @@ local function render_source(source_win, selection, root_config)
     local overlay_sig = overlay_signature(overlays)
 
     local desired_cells_signature = cell_signature(source_buf, active_config, target_width, target_height)
-    local changedtick = vim.api.nvim_buf_get_changedtick(source_buf)
+    local changedtick = text_tick.get(source_buf)
     local filetype = vim.bo[source_buf].filetype
     local semantic_state = semantic_input(source_buf)
     local buffer_cache = cell_cache[source_buf]
@@ -879,11 +880,11 @@ M.handle_worker_result = function(payload)
 
     local changedtick = payload.changedtick
     if type(changedtick) ~= "number" then
-        changedtick = vim.api.nvim_buf_is_valid(bufnr) and vim.api.nvim_buf_get_changedtick(bufnr) or 0
+        changedtick = vim.api.nvim_buf_is_valid(bufnr) and text_tick.get(bufnr) or 0
     end
     if
         not vim.api.nvim_buf_is_valid(bufnr)
-        or vim.api.nvim_buf_get_changedtick(bufnr) ~= changedtick
+        or text_tick.get(bufnr) ~= changedtick
         or vim.bo[bufnr].filetype ~= filetype
         or semantic_input(bufnr).revision ~= semantic_revision
     then

@@ -11,6 +11,7 @@
 local mirror_host = require("scrollbar.mirror")
 local squash_module = require("scrollbar.minimap.squash")
 local semantic_module = require("scrollbar.minimap.semantic")
+local text_tick = require("scrollbar.text_tick")
 local treesitter_provider = require("scrollbar.providers.treesitter")
 
 local M = {}
@@ -167,7 +168,7 @@ local function sync_execute(request)
             bufnr = bufnr,
             generation = request.generation,
             signature = request.signature,
-            changedtick = vim.api.nvim_buf_get_changedtick(bufnr),
+            changedtick = text_tick.get(bufnr),
             semantic_revision = request.semantic_revision or 0,
             filetype = request.filetype or "",
             grid = grid,
@@ -216,11 +217,13 @@ local function dispatch_pending()
         host.emit("semantic_snapshot_sent", { bufnr = selected.bufnr, revision = semantic_revision })
     end
     selected.semantic_spans = nil
+    -- A complete mirror has the current text, so the result is for the
+    -- current text tick.
     selected.mirror = {
         session = host.session(),
         id = selected_mirror.id,
         version = selected_mirror.version,
-        changedtick = selected_mirror.changedtick,
+        changedtick = text_tick.get(selected.bufnr),
     }
     in_flight = selected
     in_flight_spans = semantic_spans
@@ -349,12 +352,6 @@ local function request_worker(request)
     end
     queued.worker_sequence = request_sequence
     queued.pending_key = pending_key(queued)
-    local mirror = host.mirror(request.bufnr)
-    if mirror ~= nil and mirror.complete then
-        queued.changedtick = mirror.changedtick
-    elseif mirror ~= nil and mirror.snapshot_tick ~= nil then
-        queued.changedtick = mirror.snapshot_tick
-    end
     pending[queued.pending_key] = queued
     dispatch_pending()
     return true
