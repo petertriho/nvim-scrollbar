@@ -21,6 +21,14 @@ require("scrollbar").setup({
         autohide = false, -- true, or { delay_ms = 1000 }
         max_lines = false,
         throttle_ms = 50,
+        events = { -- see Events
+            "BufEnter", "BufWinEnter", "WinEnter",
+            "CursorMoved", "CursorMovedI",
+            "TextChanged", "TextChangedI", "TextChangedP", "TextChangedT",
+            "WinScrolled", "WinResized", "VimResized",
+            "ColorScheme",
+            "WinClosed", "BufDelete", "BufWipeout",
+        },
         backend = "worker", -- "worker" or "sync"
         background_blend = false,
 
@@ -62,6 +70,7 @@ You set global options only at the root of the `minimap` block.
 | `autohide` | `false` | `true` hides each minimap after 1000 ms without cursor or scroll activity in its window. `{ delay_ms = n }` sets the delay. |
 | `max_lines` | `false` | A buffer with more lines than this number gets no minimap. |
 | `throttle_ms` | `50` | Renders that are queued within this interval combine into one frame. `0` renders as fast as possible. |
+| `events` | see Defaults | Autocommand events that update the minimap. See [Events](#events). |
 | `backend` | `"worker"` | Where Treesitter collection and the squash of the source lines run. See [Backends](#backends). |
 | `background_blend` | `false` | Blend of the base surface. See [Blend](#blend). |
 
@@ -89,6 +98,25 @@ You set appearance options at the root of the `minimap` block or in a
 | `mouse` | `true` | Adds the `<LeftMouse>`, `<LeftDrag>`, and `<LeftRelease>` mappings. |
 | `viewport` | `true` | Tints the background of the rows that show the visible lines of the source window. |
 | `marks` | `{}` | Overrides of the shared mark types for the minimap. See [Marks](#marks). |
+
+## Events
+
+`minimap.events` uses the same format and the same rules as
+[`scrollbar.events`](../configuration.md#events). The minimap defaults do not
+contain `TabEnter`, `TermEnter`, `CmdwinLeave`, `OptionSet`, and `TabClosed`.
+To add an event, set it to `true`:
+
+```lua
+minimap = {
+    events = { TabEnter = true },
+}
+```
+
+In the minimap, `OptionSet` without a `pattern` renders all windows when any
+option changes.
+
+With `autohide`, only `CursorMoved`, `CursorMovedI`, and `WinScrolled` show a
+hidden minimap again.
 
 ## Placement Beside the Scrollbar
 
@@ -355,6 +383,8 @@ starts with `[nvim-scrollbar]` and gives the full option path.
   numeric `max_lines`: positive integers.
 - `blend` and a numeric `background_blend`: integers from `0` to `100`.
 - `throttle_ms`: a non-negative integer.
+- `events`: a list or a table keyed by autocommand event name. See
+  [Events](../configuration.md#events).
 - `placement.row` and `placement.col`: signed integers.
 - `columns_per_dot`: a positive integer.
 - `scale`: `"fixed"`, `"fit"`, or a positive integer. `encoding`: `"braille"`

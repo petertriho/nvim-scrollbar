@@ -55,6 +55,7 @@
 ---@field autohide? boolean|ScrollbarUserAutohideConfig
 ---@field max_lines? false|integer
 ---@field throttle_ms? integer
+---@field events? ScrollbarUserEventList Autocmd events that update the minimap. A list replaces the defaults; a table keyed by event name merges with them
 ---@field backend? ScrollbarMinimapBackend
 ---@field background_blend? false|integer Root-only blend of the base surface
 ---@field profiles? ScrollbarMinimapUserProfile[]
@@ -79,6 +80,7 @@
 ---@field autohide false|ScrollbarAutohideConfig
 ---@field max_lines false|integer
 ---@field throttle_ms integer
+---@field events ScrollbarEventConfig[] Autocmd events that update the minimap: the handled events first, then the others sorted
 ---@field backend ScrollbarMinimapBackend
 ---@field background_blend false|integer
 ---@field set_highlights boolean Copied from the top-level option

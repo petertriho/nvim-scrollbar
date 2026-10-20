@@ -44,6 +44,39 @@ local DEFAULT_EXCLUDE = {
     },
 }
 
+-- Autocmd events with a dedicated handler in both schedulers. Any other event
+-- in a renderer's `events` option renders every window. Provider updates
+-- arrive through the store instead.
+local EVENTS = {
+    "BufEnter",
+    "BufWinEnter",
+    "WinEnter",
+    "TabEnter",
+    "TermEnter",
+    "CmdwinLeave",
+    "CursorMoved",
+    "CursorMovedI",
+    "TextChanged",
+    "TextChangedI",
+    "TextChangedP",
+    "TextChangedT",
+    "WinScrolled",
+    "WinResized",
+    "VimResized",
+    "OptionSet",
+    "ColorScheme",
+    "WinClosed",
+    "BufDelete",
+    "BufWipeout",
+    "TabClosed",
+}
+local HANDLED_EVENTS = {}
+for _, event in ipairs(EVENTS) do
+    HANDLED_EVENTS[event] = true
+end
+M.EVENTS = EVENTS
+M.HANDLED_EVENTS = HANDLED_EVENTS
+
 local MARK_KEYS = { text = true, priority = true, highlight = true }
 local V1_MARK_COLOR = "v1 option: put an nvim_set_hl() table in 'highlight'. " .. const.V1_MIGRATION
 local describe_mark_key = schema.hinter({
@@ -199,6 +232,160 @@ M.normalize = function(overrides)
         marks = normalize_marks(overrides.marks),
         exclude = normalize_exclude(overrides.exclude),
     }
+end
+
+-- Lowercase autocmd event names mapped to their canonical spelling. nvim
+-- matches event names case-insensitively, but the schedulers dispatch on the
+-- canonical name.
+---@type table<string, string>?
+local canonical_events
+
+---@param event string
+---@param path string
+---@return string
+local function canonical_event(event, path)
+    if canonical_events == nil then
+        canonical_events = {}
+        for _, name in ipairs(vim.fn.getcompletion("", "event")) do
+            canonical_events[name:lower()] = name
+        end
+    end
+    local name = canonical_events[event:lower()]
+    if name ~= nil then
+        return name
+    end
+    schema.invalid(string.format("%s: unknown autocmd event '%s'", path, event))
+    return event
+end
+
+local EVENT_ENTRY_KEYS = { pattern = true }
+local EVENT_LIST_ENTRY_KEYS = { event = true, pattern = true }
+
+---@param value any
+---@param path string
+---@return false|string[]
+local function event_pattern(value, path)
+    if value == nil then
+        return false
+    end
+    if type(value) == "string" then
+        if value == "" then
+            schema.invalid(path .. " must not be empty")
+        end
+        return { value }
+    end
+    if type(value) ~= "table" then
+        schema.invalid(path .. " must be a string or a dense list of strings")
+    end
+    if schema.dense_count(value, path) == 0 then
+        schema.invalid(path .. " must contain at least one pattern")
+    end
+    local patterns = schema.string_list(value, path)
+    for index, pattern in ipairs(patterns) do
+        if pattern == "" then
+            schema.invalid(string.format("%s[%d] must not be empty", path, index))
+        end
+    end
+    return patterns
+end
+
+---@param item any
+---@param path string
+---@return string event
+---@return false|string[] pattern
+local function event_list_entry(item, path)
+    if type(item) == "string" then
+        return canonical_event(item, path), false
+    end
+    if type(item) ~= "table" then
+        schema.invalid(path .. " must be an event name or a table with 'event' and 'pattern'")
+    end
+    schema.check_keys(item, EVENT_LIST_ENTRY_KEYS, path)
+    if type(item.event) ~= "string" then
+        schema.invalid(path .. ".event must be a string")
+    end
+    return canonical_event(item.event, path .. ".event"), event_pattern(item.pattern, path .. ".pattern")
+end
+
+--- Resolve one renderer's `events` option. A list replaces `defaults`. A table
+--- keyed by event name merges with `defaults`: `true` adds the event, `false`
+--- removes it, and a table sets its pattern. A list entry is an event name or
+--- `{ event, pattern }`. Any autocmd event is valid, once. The result lists the
+--- handled events in the order of `EVENTS`, then the other events sorted.
+---@param value any
+---@param defaults string[]
+---@param path string
+---@return ScrollbarEventConfig[]
+M.resolve_events = function(value, defaults, path)
+    -- `false` selects the scheduler's default pattern for the event.
+    ---@type table<string, false|string[]>
+    local enabled = {}
+    if value == nil then
+        for _, event in ipairs(defaults) do
+            enabled[event] = false
+        end
+    elseif type(value) ~= "table" then
+        schema.invalid(path .. " must be a dense list or a table keyed by event name")
+    elseif next(value) == nil or schema.is_dense_list(value) then
+        for index = 1, #value do
+            local item_path = schema.join(path, index)
+            local name, pattern = event_list_entry(value[index], item_path)
+            if enabled[name] ~= nil then
+                schema.invalid(string.format("%s duplicates event '%s'", item_path, name))
+            end
+            enabled[name] = pattern
+        end
+    else
+        for _, event in ipairs(defaults) do
+            enabled[event] = false
+        end
+        local seen = {}
+        for event, entry in pairs(value) do
+            if type(event) ~= "string" then
+                schema.invalid(path .. " must be a dense list or a table keyed by event name, not both")
+            end
+            local entry_path = path .. "." .. event
+            local name = canonical_event(event, entry_path)
+            if seen[name] then
+                schema.invalid(string.format("%s duplicates event '%s'", entry_path, name))
+            end
+            seen[name] = true
+            if entry == true then
+                enabled[name] = false
+            elseif entry == false then
+                enabled[name] = nil
+            elseif type(entry) == "table" then
+                schema.check_keys(entry, EVENT_ENTRY_KEYS, entry_path)
+                enabled[name] = event_pattern(entry.pattern, entry_path .. ".pattern")
+            else
+                schema.invalid(entry_path .. " must be a boolean or table")
+            end
+        end
+    end
+
+    local names = {}
+    for _, event in ipairs(EVENTS) do
+        if enabled[event] ~= nil then
+            names[#names + 1] = event
+        end
+    end
+    local others = {}
+    for event in pairs(enabled) do
+        if not HANDLED_EVENTS[event] then
+            others[#others + 1] = event
+        end
+    end
+    table.sort(others)
+    vim.list_extend(names, others)
+    if #names == 0 then
+        schema.invalid(path .. " must contain at least one event")
+    end
+
+    local result = {}
+    for index, event in ipairs(names) do
+        result[index] = { event = event, pattern = enabled[event] }
+    end
+    return result
 end
 
 ---@class ScrollbarResolveMarksOptions

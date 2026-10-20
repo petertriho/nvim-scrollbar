@@ -52,6 +52,10 @@ local DEFAULTS = {
 
 local AUTOHIDE_DEFAULTS = { delay_ms = 1000 }
 
+-- The scrollbar listens to every supported event by default. The list stays
+-- out of DEFAULTS, where a keyed `events` override would merge into it.
+local DEFAULT_EVENTS = shared_config.EVENTS
+
 local GLOBAL_KEYS = {
     enabled = true,
     show = true,
@@ -59,6 +63,7 @@ local GLOBAL_KEYS = {
     autohide = { delay_ms = true },
     max_lines = true,
     throttle_ms = true,
+    events = true,
 }
 
 local APPEARANCE_KEYS = {
@@ -87,7 +92,7 @@ local LAYER_KEYS = { types = true, max_width = true }
 
 -- Replacements for the v1 options, shown in the unknown-option error.
 local REMOVED_KEYS = {
-    update = "use 'throttle_ms'. The update events are fixed",
+    update = "use 'throttle_ms' and 'events'",
     render = "use 'unit'",
     float = "use 'placement', 'placement.zindex', and 'hide_on_cursor'",
     presets = "custom presets are removed. Set the options in the block or in a profile",
@@ -112,7 +117,7 @@ local V1_TOP_LEVEL_KEYS = {
     handle = "use 'scrollbar.thumb'",
     excluded_buftypes = "use 'exclude.buftypes'",
     excluded_filetypes = "use 'exclude.filetypes'",
-    autocmd = "removed. The plugin listens to a fixed set of events",
+    autocmd = "use 'scrollbar.events' and 'minimap.events'",
     handlers = "use 'providers'",
 }
 
@@ -432,6 +437,7 @@ local function normalize(value, shared, path, variant_id)
         autohide = autohide,
         max_lines = schema.positive_or_false(value.max_lines, at("max_lines")),
         throttle_ms = schema.integer(value.throttle_ms, at("throttle_ms"), 0),
+        events = shared_config.resolve_events(value.events, DEFAULT_EVENTS, at("events")),
         set_highlights = shared.set_highlights,
         exclude = shared.exclude.scrollbar,
         unit = schema.enum(value.unit, at("unit"), { "line", "screenline" }),

@@ -95,7 +95,7 @@ These options keep their names and meaning: `show`, `set_highlights`,
 | `handle.highlight` | `scrollbar.thumb.highlight` |
 | `handle.color`, `handle.color_nr` | A `scrollbar.thumb.highlight` table, for example `{ bg = "#3b4261", ctermbg = 238 }` |
 | `marks.<Type>.color`, `gui`, `cterm`, `color_nr` | A `marks.<Type>.highlight` table. See [Colors](#colors). |
-| `autocmd.render` | Removed. The plugin listens to a fixed set of events. |
+| `autocmd.render` | `scrollbar.events` and `minimap.events`. See [Events](configuration.md#events). |
 | `autocmd.clear` | Removed. To show only the active window, use `scrollbar.visibility = "active"`. |
 | `handlers` | `providers`. See [Handlers](#handlers). |
 | `handlers.handle = false` | Remove `"thumb"` from `scrollbar.layout.columns`, for example `layout = { columns = { { "track", "marks" } } }` |

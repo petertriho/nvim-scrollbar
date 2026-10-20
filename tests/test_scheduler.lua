@@ -1429,7 +1429,7 @@ T["OPTION_PATTERNS list matches the mirrored copy in layout.lua"] = function()
     expect.equality(result.layout_covered, true)
 end
 
-T["registers the complete fixed autocmd set"] = function()
+T["registers the complete default autocmd set"] = function()
     local child = new_child()
     local result = child.lua_func(function()
         local config = require("scrollbar.config").set({ scrollbar = {} })
@@ -1508,6 +1508,283 @@ T["registers the complete fixed autocmd set"] = function()
 
     expect.equality(result.missing, {})
     expect.equality(result.event_count, result.expected_count)
+end
+
+T["registers only the configured events and the subscriber rows"] = function()
+    local child = new_child()
+    local result = child.lua_func(function()
+        local scheduler = require("scrollbar.scheduler")
+        scheduler.setup({
+            config = require("scrollbar.config").set({
+                set_highlights = false,
+                scrollbar = { events = { "WinScrolled", "TextChanged" } },
+            }),
+            renderer = {
+                source_windows = function()
+                    return {}
+                end,
+                is_source_window = function()
+                    return false
+                end,
+                is_buffer_eligible = function()
+                    return true
+                end,
+                is_owned_buffer = function()
+                    return false
+                end,
+                is_owned_window = function()
+                    return false
+                end,
+                render = function() end,
+            },
+        })
+        local function registered()
+            local event_set = {}
+            for _, autocmd in ipairs(vim.api.nvim_get_autocmds({ group = scheduler.status().augroup_id })) do
+                event_set[autocmd.event] = true
+            end
+            local events = vim.tbl_keys(event_set)
+            table.sort(events)
+            return events
+        end
+
+        local configured = registered()
+        scheduler.subscribe_text_change(function() end, { "TextChanged", "TextChangedI" })
+        local subscribed = registered()
+        scheduler.dispose()
+        return { configured = configured, subscribed = subscribed }
+    end)
+
+    -- WinClosed cleanup and VimLeavePre teardown are always registered.
+    expect.equality(result.configured, { "TextChanged", "VimLeavePre", "WinClosed", "WinScrolled" })
+    expect.equality(result.subscribed, { "TextChanged", "TextChangedI", "VimLeavePre", "WinClosed", "WinScrolled" })
+end
+
+T["queues renders only for the configured events"] = function()
+    local child = new_child()
+    local result = child.lua_func(function()
+        local winid = vim.api.nvim_get_current_win()
+        local scheduler = require("scrollbar.scheduler")
+        scheduler.setup({
+            config = require("scrollbar.config").set({
+                set_highlights = false,
+                scrollbar = {
+                    throttle_ms = 1000,
+                    events = { CursorMoved = false, CursorMovedI = false, FocusGained = true },
+                },
+            }),
+            renderer = {
+                source_windows = function()
+                    return { winid }
+                end,
+                is_source_window = function(source_win)
+                    return source_win == winid
+                end,
+                is_buffer_eligible = function()
+                    return true
+                end,
+                is_owned_buffer = function()
+                    return false
+                end,
+                is_owned_window = function()
+                    return false
+                end,
+                render = function() end,
+            },
+        })
+
+        vim.api.nvim_exec_autocmds("CursorMoved", {})
+        vim.api.nvim_exec_autocmds("CursorMovedI", {})
+        local after_cursor = scheduler.status().dirty_windows
+        vim.api.nvim_exec_autocmds("WinScrolled", {})
+        local after_scroll = scheduler.status().dirty_windows
+        scheduler.flush()
+        vim.api.nvim_exec_autocmds("FocusLost", {})
+        local after_unconfigured = scheduler.status().dirty_windows
+        vim.api.nvim_exec_autocmds("FocusGained", {})
+        local after_other = scheduler.status().dirty_windows
+        scheduler.dispose()
+        return {
+            winid = winid,
+            after_cursor = after_cursor,
+            after_scroll = after_scroll,
+            after_unconfigured = after_unconfigured,
+            after_other = after_other,
+        }
+    end)
+
+    expect.equality(result.after_cursor, {})
+    expect.equality(result.after_scroll, { result.winid })
+    expect.equality(result.after_unconfigured, {})
+    -- An event without a dedicated handler renders every window.
+    expect.equality(result.after_other, { result.winid })
+end
+
+T["a configured pattern filters the row and replaces the default pattern"] = function()
+    local child = new_child()
+    local result = child.lua_func(function()
+        local winid = vim.api.nvim_get_current_win()
+        local scheduler = require("scrollbar.scheduler")
+        scheduler.setup({
+            config = require("scrollbar.config").set({
+                set_highlights = false,
+                scrollbar = {
+                    throttle_ms = 1000,
+                    events = { User = { pattern = "Foo" }, OptionSet = { pattern = { "spell" } } },
+                },
+            }),
+            renderer = {
+                source_windows = function()
+                    return { winid }
+                end,
+                is_source_window = function(source_win)
+                    return source_win == winid
+                end,
+                is_buffer_eligible = function()
+                    return true
+                end,
+                is_owned_buffer = function()
+                    return false
+                end,
+                is_owned_window = function()
+                    return false
+                end,
+                render = function() end,
+            },
+        })
+
+        local option_patterns = {}
+        for _, autocmd in
+            ipairs(vim.api.nvim_get_autocmds({ group = scheduler.status().augroup_id, event = "OptionSet" }))
+        do
+            option_patterns[#option_patterns + 1] = autocmd.pattern
+        end
+        vim.api.nvim_exec_autocmds("User", { pattern = "Bar" })
+        local after_other_pattern = scheduler.status().dirty_windows
+        vim.api.nvim_exec_autocmds("User", { pattern = "Foo" })
+        local after_pattern = scheduler.status().dirty_windows
+        scheduler.dispose()
+        return {
+            winid = winid,
+            option_patterns = option_patterns,
+            after_other_pattern = after_other_pattern,
+            after_pattern = after_pattern,
+        }
+    end)
+
+    expect.equality(result.option_patterns, { "spell" })
+    expect.equality(result.after_other_pattern, {})
+    expect.equality(result.after_pattern, { result.winid })
+end
+
+T["a text event pattern does not filter or repeat the subscriber dispatch"] = function()
+    local child = new_child()
+    local result = child.lua_func(function()
+        local lua_win = vim.api.nvim_get_current_win()
+        local lua_buf = vim.api.nvim_get_current_buf()
+        vim.api.nvim_buf_set_name(lua_buf, vim.fn.tempname() .. ".lua")
+        vim.cmd("vsplit")
+        vim.cmd("enew")
+        local txt_win = vim.api.nvim_get_current_win()
+        local txt_buf = vim.api.nvim_get_current_buf()
+        vim.api.nvim_buf_set_name(txt_buf, vim.fn.tempname() .. ".txt")
+        local scheduler = require("scrollbar.scheduler")
+        scheduler.setup({
+            config = require("scrollbar.config").set({
+                set_highlights = false,
+                scrollbar = { throttle_ms = 1000, events = { TextChanged = { pattern = "*.lua" } } },
+            }),
+            renderer = {
+                source_windows = function(bufnr)
+                    if bufnr ~= nil then
+                        return vim.fn.win_findbuf(bufnr)
+                    end
+                    return { lua_win, txt_win }
+                end,
+                is_source_window = function(source_win)
+                    return source_win == lua_win or source_win == txt_win
+                end,
+                is_buffer_eligible = function()
+                    return true
+                end,
+                is_owned_buffer = function()
+                    return false
+                end,
+                is_owned_window = function()
+                    return false
+                end,
+                render = function() end,
+            },
+        })
+        local notified = {}
+        scheduler.subscribe_text_change(function(args)
+            notified[#notified + 1] = args.buf
+        end, { "TextChanged" })
+
+        vim.api.nvim_exec_autocmds("TextChanged", { buffer = lua_buf })
+        local after_lua = scheduler.status().dirty_windows
+        scheduler.flush()
+        vim.api.nvim_exec_autocmds("TextChanged", { buffer = txt_buf })
+        local after_txt = scheduler.status().dirty_windows
+        scheduler.dispose()
+        return {
+            lua_win = lua_win,
+            lua_buf = lua_buf,
+            txt_buf = txt_buf,
+            after_lua = after_lua,
+            after_txt = after_txt,
+            notified = notified,
+        }
+    end)
+
+    expect.equality(result.after_lua, { result.lua_win })
+    expect.equality(result.after_txt, {})
+    expect.equality(result.notified, { result.lua_buf, result.txt_buf })
+end
+
+T["a closed window leaves the queue when WinClosed is not a configured event"] = function()
+    local child = new_child()
+    local result = child.lua_func(function()
+        local first = vim.api.nvim_get_current_win()
+        vim.cmd("split")
+        local second = vim.api.nvim_get_current_win()
+        local scheduler = require("scrollbar.scheduler")
+        scheduler.setup({
+            config = require("scrollbar.config").set({
+                set_highlights = false,
+                scrollbar = { throttle_ms = 1000, events = { "WinScrolled" } },
+            }),
+            renderer = {
+                source_windows = function()
+                    return { first, second }
+                end,
+                is_source_window = function(source_win)
+                    return source_win == first or source_win == second
+                end,
+                is_buffer_eligible = function()
+                    return true
+                end,
+                is_owned_buffer = function()
+                    return false
+                end,
+                is_owned_window = function()
+                    return false
+                end,
+                render = function() end,
+            },
+        })
+
+        scheduler.invalidate_window(first)
+        scheduler.invalidate_window(second)
+        local queued = scheduler.status().dirty_windows
+        vim.api.nvim_win_close(second, true)
+        local after_close = scheduler.status().dirty_windows
+        scheduler.dispose()
+        return { first = first, second = second, queued = queued, after_close = after_close }
+    end)
+
+    expect.equality(result.queued, { result.first, result.second })
+    expect.equality(result.after_close, { result.first })
 end
 
 T["VimLeavePre disposes the scheduler before teardown"] = function()

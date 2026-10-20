@@ -314,7 +314,10 @@ end
 
 T["names the replacement of a removed option"] = function()
     local lua = { match = { filetypes = { "lua" } } }
-    expect_invalid({ update = { interval_ms = 1 } }, "unknown option 'scrollbar%.update' %(use 'throttle_ms'%. ")
+    expect_invalid(
+        { update = { interval_ms = 1 } },
+        "unknown option 'scrollbar%.update' %(use 'throttle_ms' and 'events'%)$"
+    )
     expect_invalid({ autohide = { enabled = true } }, "%(use 'autohide = true' or 'autohide = { delay_ms = n }'%)$")
     expect_invalid(
         { profiles = { vim.tbl_extend("force", lua, { config = {} }) } },
@@ -639,6 +642,168 @@ T["exclude"]["rejects malformed entries"] = function()
         "exclude.filetypes must be a dense list or a table keyed by name"
     )
     expect_invalid_top({ exclude = { windows = {} } }, "unknown option 'exclude.windows'")
+end
+
+local ALL_EVENTS = {
+    "BufEnter",
+    "BufWinEnter",
+    "WinEnter",
+    "TabEnter",
+    "TermEnter",
+    "CmdwinLeave",
+    "CursorMoved",
+    "CursorMovedI",
+    "TextChanged",
+    "TextChangedI",
+    "TextChangedP",
+    "TextChangedT",
+    "WinScrolled",
+    "WinResized",
+    "VimResized",
+    "OptionSet",
+    "ColorScheme",
+    "WinClosed",
+    "BufDelete",
+    "BufWipeout",
+    "TabClosed",
+}
+
+local function event_names(events)
+    return vim.tbl_map(function(spec)
+        return spec.event
+    end, events)
+end
+
+T["events"] = MiniTest.new_set()
+
+T["events"]["defaults to every supported event"] = function()
+    expect.equality(event_names(set({}).events), ALL_EVENTS)
+end
+
+T["events"]["a keyed table merges with the defaults"] = function()
+    local result = set({ events = { CursorMovedI = false, OptionSet = false, WinClosed = true } })
+    local expected = vim.tbl_filter(function(event)
+        return event ~= "CursorMovedI" and event ~= "OptionSet"
+    end, ALL_EVENTS)
+    expect.equality(event_names(result.events), expected)
+end
+
+T["events"]["a dense list replaces the defaults in the supported order"] = function()
+    local result = set({ events = { "WinScrolled", "TextChanged", "BufEnter" } })
+    expect.equality(event_names(result.events), { "BufEnter", "TextChanged", "WinScrolled" })
+end
+
+T["events"]["accepts any autocmd event and canonicalizes its name"] = function()
+    local result = set({ events = { "FocusGained", "winscrolled", "BufLeave" } })
+    expect.equality(event_names(result.events), { "WinScrolled", "BufLeave", "FocusGained" })
+
+    result = set({ events = { focusgained = true, OptionSet = false } })
+    local expected = vim.tbl_filter(function(event)
+        return event ~= "OptionSet"
+    end, ALL_EVENTS)
+    table.insert(expected, "FocusGained")
+    expect.equality(event_names(result.events), expected)
+end
+
+T["events"]["sets patterns in list entries and keyed entries"] = function()
+    local result = set({
+        events = {
+            "WinScrolled",
+            { event = "user", pattern = "GitSignsUpdate" },
+            { event = "OptionSet", pattern = { "spell", "wrap" } },
+            { event = "BufLeave" },
+        },
+    })
+    expect.equality(result.events, {
+        { event = "WinScrolled", pattern = false },
+        { event = "OptionSet", pattern = { "spell", "wrap" } },
+        { event = "BufLeave", pattern = false },
+        { event = "User", pattern = { "GitSignsUpdate" } },
+    })
+
+    result = set({ events = { User = { pattern = { "A", "B" } }, TextChanged = { pattern = "*.lua" }, BufEnter = {} } })
+    local by_event = {}
+    for _, spec in ipairs(result.events) do
+        by_event[spec.event] = spec.pattern
+    end
+    expect.equality(by_event.User, { "A", "B" })
+    expect.equality(by_event.TextChanged, { "*.lua" })
+    expect.equality(by_event.BufEnter, false)
+    expect.equality(by_event.WinScrolled, false)
+end
+
+T["events"]["rejects malformed patterns"] = function()
+    expect_invalid({ events = { { pattern = "GitSignsUpdate" } } }, "scrollbar%.events%[1%]%.event must be a string$")
+    expect_invalid(
+        { events = { { event = "User", patterns = "A" } } },
+        "unknown option 'scrollbar%.events%[1%]%.patterns'$"
+    )
+    expect_invalid({ events = { User = { event = "User" } } }, "unknown option 'scrollbar%.events%.User%.event'$")
+    expect_invalid(
+        { events = { User = { pattern = 1 } } },
+        "scrollbar%.events%.User%.pattern must be a string or a dense list of strings$"
+    )
+    expect_invalid(
+        { events = { User = { pattern = {} } } },
+        "scrollbar%.events%.User%.pattern must contain at least one pattern$"
+    )
+    expect_invalid({ events = { User = { pattern = "" } } }, "scrollbar%.events%.User%.pattern must not be empty$")
+    expect_invalid(
+        { events = { { event = "User", pattern = { "A", "" } } } },
+        "scrollbar%.events%[1%]%.pattern%[2%] must not be empty$"
+    )
+    expect_invalid(
+        { events = { "User", { event = "User", pattern = "A" } } },
+        "scrollbar%.events%[2%] duplicates event 'User'$"
+    )
+end
+
+T["events"]["profiles inherit the root events"] = function()
+    set({ events = { "WinScrolled" }, profiles = { { match = { filetypes = { "lua" } }, mouse = false } } })
+    expect.equality(
+        require("scrollbar.config").get_variants()[2].config.events,
+        { { event = "WinScrolled", pattern = false } }
+    )
+end
+
+T["events"]["rejects malformed values"] = function()
+    expect_invalid({ events = "WinScrolled" }, "scrollbar%.events must be a dense list or a table keyed by event name$")
+    expect_invalid(
+        { events = { "WinScrolled", 1 } },
+        "scrollbar%.events%[2%] must be an event name or a table with 'event' and 'pattern'$"
+    )
+    expect_invalid(
+        { events = { "WinScrolled", "NotAnEvent" } },
+        "scrollbar%.events%[2%]: unknown autocmd event 'NotAnEvent'$"
+    )
+    expect_invalid(
+        { events = { NotAnEvent = true } },
+        "scrollbar%.events%.NotAnEvent: unknown autocmd event 'NotAnEvent'$"
+    )
+    expect_invalid(
+        { events = { "WinScrolled", "winscrolled" } },
+        "scrollbar%.events%[2%] duplicates event 'WinScrolled'$"
+    )
+    expect_invalid(
+        { events = { FocusGained = true, focusgained = false } },
+        "scrollbar%.events%.[Ff]ocus[Gg]ained duplicates event 'FocusGained'$"
+    )
+    expect_invalid({ events = { WinScrolled = "yes" } }, "scrollbar%.events%.WinScrolled must be a boolean or table$")
+    -- selene: allow(mixed_table)
+    expect_invalid(
+        { events = { "WinScrolled", OptionSet = false } },
+        "scrollbar%.events must be a dense list or a table keyed by event name, not both$"
+    )
+    expect_invalid({ events = {} }, "scrollbar%.events must contain at least one event$")
+    local all_off = {}
+    for _, event in ipairs(ALL_EVENTS) do
+        all_off[event] = false
+    end
+    expect_invalid({ events = all_off }, "scrollbar%.events must contain at least one event$")
+    expect_invalid(
+        { profiles = { { match = { filetypes = { "lua" } }, events = { "WinScrolled" } } } },
+        "scrollbar%.profiles%[1%]%.events is a global option and cannot be set in a profile"
+    )
 end
 
 T["mark registry"] = MiniTest.new_set()

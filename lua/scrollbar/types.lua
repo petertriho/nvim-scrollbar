@@ -86,6 +86,17 @@
 
 ---@alias ScrollbarUserExcludeEntry boolean|ScrollbarUserProviderTargets
 ---@alias ScrollbarUserExcludeList string[]|table<string, ScrollbarUserExcludeEntry>
+---@class ScrollbarUserEventEntry
+---@field pattern? string|string[] Autocmd patterns that replace the default pattern of the event
+
+---@class ScrollbarUserEventListEntry: ScrollbarUserEventEntry
+---@field event string
+
+---@alias ScrollbarUserEventList (string|ScrollbarUserEventListEntry)[]|table<string, boolean|ScrollbarUserEventEntry>
+
+---@class ScrollbarEventConfig
+---@field event string Canonical autocmd event name
+---@field pattern false|string[] Autocmd patterns; false uses the default pattern of the event
 
 ---@class ScrollbarUserExcludeConfig
 ---@field buftypes? ScrollbarUserExcludeList A list replaces the defaults; a table keyed by name merges with them
@@ -118,6 +129,7 @@
 ---@field autohide? boolean|ScrollbarUserAutohideConfig
 ---@field max_lines? false|integer
 ---@field throttle_ms? integer
+---@field events? ScrollbarUserEventList Autocmd events that update the scrollbar. A list replaces the defaults; a table keyed by event name merges with them
 ---@field profiles? ScrollbarUserProfile[] Ordered contextual variants; first match wins
 
 ---@class ScrollbarUserConfig
@@ -258,6 +270,7 @@
 ---@field autohide false|ScrollbarAutohideConfig
 ---@field max_lines false|integer
 ---@field throttle_ms integer
+---@field events ScrollbarEventConfig[] Autocmd events that update the scrollbar: the handled events first, then the others sorted
 ---@field set_highlights boolean Copied from the top-level option
 ---@field exclude ScrollbarExcludeConfig
 ---@field unit ScrollbarUnit

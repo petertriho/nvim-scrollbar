@@ -13,31 +13,13 @@
 
 local config = require("scrollbar.minimap.config")
 local providers = require("scrollbar.providers")
+local shared_config = require("scrollbar.shared_config")
 local store = require("scrollbar.store")
 
 local M = {}
 
 local AUGROUP_NAME = "ScrollbarMinimapScheduler"
--- Autocmd events that can change minimap content, the viewport, or the window
--- and buffer lifecycle. Provider updates arrive through the store.
-local EVENTS = {
-    "BufEnter",
-    "BufWinEnter",
-    "WinEnter",
-    "WinScrolled",
-    "WinResized",
-    "VimResized",
-    "CursorMoved",
-    "CursorMovedI",
-    "TextChanged",
-    "TextChangedI",
-    "TextChangedP",
-    "TextChangedT",
-    "WinClosed",
-    "BufDelete",
-    "BufWipeout",
-    "ColorScheme",
-}
+local TEXT_EVENTS = { "TextChanged", "TextChangedI", "TextChangedP", "TextChangedT" }
 
 ---@return boolean
 local function any_variant_shows_marks()
@@ -331,41 +313,30 @@ local function invalidate_resized_windows()
     end
 end
 
----Filter an event list down to the events enabled in the configured update set.
----@param events string[]
----@param enabled table<string, boolean>
----@return string[]
-local function filter_events(events, enabled)
-    local filtered = {}
-    for _, event in ipairs(events) do
-        if enabled[event] then
-            filtered[#filtered + 1] = event
-        end
-    end
-    return filtered
-end
-
+---Register `callback` for the enabled events among `events` (see
+---scrollbar/scheduler.lua): the events with the default pattern share one
+---autocmd, and an event with a configured pattern gets its own.
 ---@param group integer
 ---@param events string[]
----@param enabled table<string, boolean>
+---@param enabled table<string, true|string[]>
 ---@param callback fun(args: table)
----@param opts? table
-local function register_group(group, events, enabled, callback, opts)
-    local filtered = filter_events(events, enabled)
-    if #filtered == 0 then
-        return
-    end
-    local autocmd_opts = { group = group, callback = callback }
-    if opts then
-        for key, value in pairs(opts) do
-            autocmd_opts[key] = value
+local function register_group(group, events, enabled, callback)
+    local shared = {}
+    for _, event in ipairs(events) do
+        local pattern = enabled[event]
+        if pattern == true then
+            shared[#shared + 1] = event
+        elseif pattern ~= nil then
+            vim.api.nvim_create_autocmd(event, { group = group, pattern = pattern, callback = callback })
         end
     end
-    vim.api.nvim_create_autocmd(filtered, autocmd_opts)
+    if #shared > 0 then
+        vim.api.nvim_create_autocmd(shared, { group = group, callback = callback })
+    end
 end
 
 ---@param group integer
----@param enabled table<string, boolean>
+---@param enabled table<string, true|string[]>
 local function create_autocmds(group, enabled)
     register_group(group, { "BufEnter", "BufWinEnter" }, enabled, function(args)
         if not event_is_owned(args) then
@@ -382,7 +353,7 @@ local function create_autocmds(group, enabled)
             activity_event_window(vim.api.nvim_get_current_win())
         end
     end)
-    register_group(group, { "TextChanged", "TextChangedI", "TextChangedP", "TextChangedT" }, enabled, function(args)
+    register_group(group, TEXT_EVENTS, enabled, function(args)
         if not event_is_owned(args) then
             M.invalidate_buffer(args.buf)
         end
@@ -416,21 +387,33 @@ local function create_autocmds(group, enabled)
         end
         M.invalidate_all()
     end)
-    register_group(group, { "WinClosed" }, enabled, function(args)
-        local current = runtime
-        if current == nil then
-            return
-        end
-        local closed_win = tonumber(args.match)
-        if closed_win ~= nil then
-            current.dirty[closed_win] = nil
-            close_hide_timer(current, closed_win)
-        end
+    register_group(group, { "WinClosed", "BufDelete", "BufWipeout", "TabClosed" }, enabled, function(args)
         if not event_is_owned(args) then
             M.invalidate_all()
         end
     end)
-    register_group(group, { "BufDelete", "BufWipeout", "TabClosed" }, enabled, function(args)
+    -- A closed window releases its queue entry and hide timer even when
+    -- `WinClosed` is not a configured event or its pattern does not match.
+    vim.api.nvim_create_autocmd("WinClosed", {
+        group = group,
+        callback = function(args)
+            local current = runtime
+            local closed_win = tonumber(args.match)
+            if current ~= nil and closed_win ~= nil then
+                current.dirty[closed_win] = nil
+                close_hide_timer(current, closed_win)
+            end
+        end,
+    })
+    -- A configured event without a dedicated handler renders every window.
+    local other_events = {}
+    for event in pairs(enabled) do
+        if not shared_config.HANDLED_EVENTS[event] then
+            other_events[#other_events + 1] = event
+        end
+    end
+    table.sort(other_events)
+    register_group(group, other_events, enabled, function(args)
         if not event_is_owned(args) then
             M.invalidate_all()
         end
@@ -480,18 +463,30 @@ M.setup = function(options)
     end)
     timer_closed = false
     local events_enabled = {}
-    for _, event in ipairs(EVENTS) do
-        events_enabled[event] = true
+    for _, spec in ipairs(active_config.events) do
+        events_enabled[spec.event] = spec.pattern or true
     end
     -- Ride the scrollbar scheduler's shared TextChanged dispatch when wired:
     -- one autocmd invocation per keystroke covers both schedulers. Falls back
-    -- to own registration when the hub is unavailable (standalone setups).
-    if type(options.on_text_change) == "function" then
-        local text_events =
-            filter_events({ "TextChanged", "TextChangedI", "TextChangedP", "TextChangedT" }, events_enabled)
+    -- to own registration when the hub is unavailable (standalone setups). The
+    -- hub rows have no pattern, so a text event with a configured pattern
+    -- keeps its own row.
+    local text_events = {}
+    for _, event in ipairs(TEXT_EVENTS) do
+        if events_enabled[event] == true then
+            text_events[#text_events + 1] = event
+        end
+    end
+    if type(options.on_text_change) == "function" and #text_events > 0 then
+        local text_enabled = {}
+        for _, event in ipairs(text_events) do
+            text_enabled[event] = true
+        end
         if
             options.on_text_change(function(args)
-                if not event_is_owned(args) then
+                -- The hub dispatches every text event of its subscribers, so
+                -- skip the ones that this subscription does not cover.
+                if text_enabled[args.event] and not event_is_owned(args) then
                     M.invalidate_buffer(args.buf)
                 end
             end, text_events)

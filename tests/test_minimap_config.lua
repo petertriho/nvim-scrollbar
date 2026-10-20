@@ -647,6 +647,7 @@ T["profiles reject global options with a dedicated error"] = function()
         { autohide = true },
         { max_lines = 100 },
         { throttle_ms = 50 },
+        { events = { "WinScrolled" } },
         { backend = "sync" },
         { background_blend = 40 },
         { profiles = {} },
@@ -678,6 +679,51 @@ T["profiles reject removed and shared options"] = function()
             "unknown option 'minimap%.profiles%[1%]%." .. key .. "'"
         )
     end
+end
+
+local function event_names(events)
+    return vim.tbl_map(function(spec)
+        return spec.event
+    end, events)
+end
+
+T["events default to the minimap set and accept any autocmd event"] = function()
+    local defaults = {
+        "BufEnter",
+        "BufWinEnter",
+        "WinEnter",
+        "CursorMoved",
+        "CursorMovedI",
+        "TextChanged",
+        "TextChangedI",
+        "TextChangedP",
+        "TextChangedT",
+        "WinScrolled",
+        "WinResized",
+        "VimResized",
+        "ColorScheme",
+        "WinClosed",
+        "BufDelete",
+        "BufWipeout",
+    }
+    expect.equality(event_names(set({}).events), defaults)
+
+    local with_tabs = vim.deepcopy(defaults)
+    table.insert(with_tabs, 4, "TabEnter")
+    table.insert(with_tabs, #with_tabs + 1, "TabClosed")
+    local result = set({ events = { TabEnter = true, TabClosed = true } })
+    expect.equality(event_names(result.events), with_tabs)
+
+    expect.equality(
+        event_names(set({ events = { "TextChanged", "OptionSet" } }).events),
+        { "TextChanged", "OptionSet" }
+    )
+    expect.equality(
+        set({ events = { User = { pattern = "Foo" } } }).events[#defaults + 1],
+        { event = "User", pattern = { "Foo" } }
+    )
+    expect_invalid({ events = { "NotAnEvent" } }, "minimap%.events%[1%]: unknown autocmd event 'NotAnEvent'$")
+    expect_invalid({ events = {} }, "minimap%.events must contain at least one event$")
 end
 
 T["accepts every placement.stack value"] = function()

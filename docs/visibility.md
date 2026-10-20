@@ -39,8 +39,9 @@ windows.
 
 With `autohide = true`, each eligible window starts concealed. The
 `CursorMoved`, `CursorMovedI`, or `WinScrolled` activity of that window reveals
-it. After 1000 ms of inactivity, autohide conceals that window independently.
-To change the delay, use `autohide = { delay_ms = 500 }`.
+it, if the event is in [`events`](configuration.md#events). After 1000 ms of
+inactivity, autohide conceals that window independently. To change the delay,
+use `autohide = { delay_ms = 500 }`.
 
 ![The scrollbar shows while the window scrolls and hides after one second without activity](https://github.com/user-attachments/assets/1efa7a90-fcc2-4950-b527-0853efb23760)
 

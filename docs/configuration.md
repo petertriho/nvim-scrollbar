@@ -95,6 +95,15 @@ require("scrollbar").setup({
         autohide = false, -- true, or { delay_ms = 1000 }
         max_lines = false,
         throttle_ms = 16,
+        events = { -- see Events
+            "BufEnter", "BufWinEnter",
+            "WinEnter", "TabEnter", "TermEnter", "CmdwinLeave",
+            "CursorMoved", "CursorMovedI",
+            "TextChanged", "TextChangedI", "TextChangedP", "TextChangedT",
+            "WinScrolled", "WinResized", "VimResized",
+            "OptionSet", "ColorScheme",
+            "WinClosed", "BufDelete", "BufWipeout", "TabClosed",
+        },
 
         -- Appearance options
         preset = nil,
@@ -142,6 +151,7 @@ require("scrollbar").setup({
 | `autohide` | `false` | `true` hides each scrollbar after 1000 ms without activity in its window. `{ delay_ms = n }` sets the delay. |
 | `max_lines` | `false` | A buffer with more lines than this number gets no scrollbar. |
 | `throttle_ms` | `16` | Renders that are queued within this interval combine into one frame. `0` renders as fast as possible. |
+| `events` | see Defaults | Autocommand events that update the scrollbar. See [Events](#events). |
 
 [Visibility](visibility.md) documents `show`, `visibility`, and `autohide`.
 
@@ -292,6 +302,66 @@ scrollbar = {
 Ordinary text is clipped to its lane, and multi-cell glyphs are not split. If a
 collision would show only part of a multi-cell glyph, the whole glyph is
 omitted.
+
+## Events
+
+`scrollbar.events` lists the autocommand events that update the scrollbar.
+The value is a table keyed by event name, or a list:
+
+```lua
+scrollbar = {
+    events = {
+        CursorMovedI = false,                  -- removes a default event
+        FocusGained = true,                    -- adds an event
+        User = { pattern = "GitSignsUpdate" }, -- adds an event with a pattern
+    },
+}
+```
+
+- `true` adds the event. `false` removes it. A table adds the event with the
+  `pattern` in the table.
+- A table keyed by event name merges with the defaults.
+- A list replaces the defaults. Each list entry is an event name, or a table
+  with `event` and `pattern`:
+
+  ```lua
+  events = { "WinScrolled", "TextChanged", { event = "User", pattern = "GitSignsUpdate" } }
+  ```
+
+- Any autocommand event is valid. Event names are not case-sensitive.
+- The result must contain at least one event.
+- An unknown event name, a duplicate event, and a table that mixes list
+  entries and keyed entries are setup errors. To match more than one
+  pattern, give `pattern` a list instead of repeating the event.
+
+`pattern` is a string or a list of strings. It is the autocommand pattern, so
+it has the same meaning as in `:autocmd`. For example, it matches the file name
+for buffer events, the option name for `OptionSet`, and the name for `User`.
+Without `pattern`, an event matches everything, except `OptionSet`, which
+matches only the options that change the scrollbar layout. A `pattern`
+replaces that list of options.
+
+The events in this table have a specific update. Every other event, such as
+`FocusGained` or `BufLeave`, renders all windows.
+
+| Event | Update |
+| --- | --- |
+| `BufEnter`, `BufWinEnter` | Renders the windows that show the buffer. Checks again which windows get a scrollbar. |
+| `WinEnter`, `TabEnter`, `TermEnter`, `CmdwinLeave` | Renders all windows. Checks again which windows get a scrollbar. |
+| `CursorMoved`, `CursorMovedI` | Renders the current window. |
+| `TextChanged`, `TextChangedI`, `TextChangedP`, `TextChangedT` | Renders the windows that show the changed buffer. |
+| `WinScrolled` | Renders the scrolled windows. |
+| `WinResized` | Renders the resized windows. |
+| `VimResized` | Renders all windows. |
+| `OptionSet` | Renders all windows when an option that changes the layout changes, such as `number`, `wrap`, or `foldmethod`. |
+| `ColorScheme` | Sets the highlight groups again when `set_highlights` is `true`, and renders all windows. |
+| `WinClosed`, `BufDelete`, `BufWipeout`, `TabClosed` | Renders all windows. |
+
+With `autohide`, only `CursorMoved`, `CursorMovedI`, and `WinScrolled` show a
+hidden scrollbar again. See [Autohide](visibility.md#autohide).
+
+Providers update their marks on their own events. `events` does not change
+when a provider updates.
 
 ## Layout
 
@@ -446,6 +516,8 @@ overrides apply on top of the shared `marks` definitions.
 - `placement.zindex`, `autohide.delay_ms`, descriptor `max_width`, and a
   numeric `max_lines`: positive integers.
 - `throttle_ms` and mark priorities: non-negative integers.
+- `events`: a list or a table keyed by autocommand event name. See
+  [Events](#events).
 - `thumb.blend`: an integer from `0` to `100`.
 - `thumb.text`: one string with a positive display width and no control
   characters.
@@ -454,7 +526,7 @@ overrides apply on top of the shared `marks` definitions.
 Error messages give the full path of the option, for example
 `scrollbar.profiles[2].thumb.blend must be an integer between 0 and 100`. A
 removed v1 option also names its replacement, for example
-`unknown option 'scrollbar.update' (use 'throttle_ms'. The update events are fixed)`.
+`unknown option 'scrollbar.update' (use 'throttle_ms' and 'events')`.
 
 ## Related
 

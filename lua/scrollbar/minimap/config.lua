@@ -39,6 +39,28 @@ local DEFAULTS = {
 
 local AUTOHIDE_DEFAULTS = { delay_ms = 1000 }
 
+-- Autocmd events that can change minimap content, the viewport, or the window
+-- and buffer lifecycle. The list stays out of DEFAULTS, where a keyed `events`
+-- override would merge into it.
+local DEFAULT_EVENTS = {
+    "BufEnter",
+    "BufWinEnter",
+    "WinEnter",
+    "CursorMoved",
+    "CursorMovedI",
+    "TextChanged",
+    "TextChangedI",
+    "TextChangedP",
+    "TextChangedT",
+    "WinScrolled",
+    "WinResized",
+    "VimResized",
+    "ColorScheme",
+    "WinClosed",
+    "BufDelete",
+    "BufWipeout",
+}
+
 local GLOBAL_KEYS = {
     enabled = true,
     show = true,
@@ -46,6 +68,7 @@ local GLOBAL_KEYS = {
     autohide = { delay_ms = true },
     max_lines = true,
     throttle_ms = true,
+    events = true,
     backend = true,
     background_blend = true,
 }
@@ -106,7 +129,7 @@ end
 local REMOVED_KEYS = {
     presets = "custom presets are removed. Set the options in the block or in a profile",
     glyph = "use 'encoding'. The block encoding always draws █",
-    update = "use 'throttle_ms'. The update events are fixed",
+    update = "use 'throttle_ms' and 'events'",
     float = "use 'placement', 'placement.zindex', 'blend', and 'hide_on_cursor'",
     background = "use 'background_blend'",
     overlays = "use 'marks = false' to hide the overlays",
@@ -203,6 +226,7 @@ local function normalize(value, shared, path)
         autohide = autohide,
         max_lines = schema.positive_or_false(value.max_lines, at("max_lines")),
         throttle_ms = schema.integer(value.throttle_ms, at("throttle_ms"), 0),
+        events = shared_config.resolve_events(value.events, DEFAULT_EVENTS, at("events")),
         backend = schema.enum(value.backend, at("backend"), { "worker", "sync" }),
         background_blend = blend_or_false(value.background_blend, at("background_blend")),
         set_highlights = shared.set_highlights,

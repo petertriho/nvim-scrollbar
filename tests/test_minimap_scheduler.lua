@@ -451,7 +451,7 @@ T["flush enumerates source windows once and renders all eligible dirty windows"]
     expect.equality(result.rendered, result.sources)
 end
 
-T["setup registers the fixed minimap autocmd set"] = function()
+T["setup registers the default minimap autocmd set"] = function()
     local child = new_child()
     reset_config(child)
     local result = child.lua_func(function()
@@ -538,6 +538,71 @@ T["setup registers the fixed minimap autocmd set"] = function()
 
     expect.equality(result.missing, {})
     expect.equality(result.present_unexpected, {})
+end
+
+T["rides the scrollbar text-change hub only for the configured text events without a pattern"] = function()
+    local child = new_child()
+    reset_config(child)
+    local result = child.lua_func(function()
+        local winid = vim.api.nvim_get_current_win()
+        local bufnr = vim.api.nvim_get_current_buf()
+        vim.api.nvim_buf_set_name(bufnr, vim.fn.tempname() .. ".lua")
+        local scrollbar_scheduler = require("scrollbar.scheduler")
+        local minimap_scheduler = require("scrollbar.minimap.scheduler")
+        local function renderer(windows)
+            return {
+                source_windows = function()
+                    return windows
+                end,
+                is_source_window = function(source_win)
+                    return vim.tbl_contains(windows, source_win)
+                end,
+                is_buffer_eligible = function()
+                    return true
+                end,
+                is_owned_buffer = function()
+                    return false
+                end,
+                is_owned_window = function()
+                    return false
+                end,
+                render = function() end,
+            }
+        end
+
+        local function dirty_after(minimap_events, event)
+            scrollbar_scheduler.setup({
+                config = require("scrollbar.config").set({ set_highlights = false }),
+                renderer = renderer({}),
+            })
+            minimap_scheduler.setup({
+                config = require("scrollbar.minimap.config").set({ throttle_ms = 1000, events = minimap_events }),
+                renderer = renderer({ winid }),
+                on_text_change = scrollbar_scheduler.subscribe_text_change,
+            })
+            vim.api.nvim_exec_autocmds(event, { buffer = bufnr })
+            local dirty = minimap_scheduler.status().dirty_windows
+            minimap_scheduler.dispose()
+            scrollbar_scheduler.dispose()
+            return dirty
+        end
+
+        return {
+            winid = winid,
+            insert_removed = dirty_after({ TextChangedI = false }, "TextChangedI"),
+            normal_kept = dirty_after({ TextChangedI = false }, "TextChanged"),
+            no_text_events = dirty_after({ "WinScrolled" }, "TextChanged"),
+            pattern_matches = dirty_after({ TextChanged = { pattern = "*.lua" } }, "TextChanged"),
+            pattern_misses = dirty_after({ TextChanged = { pattern = "*.txt" } }, "TextChanged"),
+        }
+    end)
+
+    expect.equality(result.insert_removed, {})
+    expect.equality(result.normal_kept, { result.winid })
+    expect.equality(result.no_text_events, {})
+    -- A text event with a pattern keeps its own row instead of the hub row.
+    expect.equality(result.pattern_matches, { result.winid })
+    expect.equality(result.pattern_misses, {})
 end
 
 T["throttle_ms coalesces repeated invalidations into one flush"] = function()
