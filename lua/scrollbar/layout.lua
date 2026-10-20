@@ -737,6 +737,21 @@ local function build_chunks(source_win, layer)
     end
 end
 
+-- Rebuild the chunks of a layer that had chunks, after they went stale. The
+-- chunk measurement gives the total extent, so the full measurement of
+-- verify_extent is not necessary. The prefixes can change also when the total
+-- stays the same, so the generation always increments.
+local function rebuild_extent(source_win, layer)
+    build_chunks(source_win, layer)
+    layer.uniform = layer.total_extent == layer.line_count
+    if layer.uniform then
+        layer.chunks = nil
+        layer.chunk_cursor = 1
+    end
+    layer.generation = layer.generation + 1
+    reset_prefixes(layer)
+end
+
 local function verify_extent(source_win, layer)
     local extent = full_extent(source_win)
     layer.verified_at = uv.now()
@@ -1043,12 +1058,14 @@ local function extent_layer_for(source_win)
         -- gone, an edit can be too large, or a batch can stop after some of
         -- its edits. Then the heights and the memo of the chunks can be from
         -- the old text, and verify_extent compares only the total extent. Thus
-        -- drop the chunks, so that verify_extent rebuilds them and bumps the
-        -- generation. With 'wrap', a new width can also move rows between
+        -- drop the chunks. rebuild_extent then measures them again and bumps
+        -- the generation. With 'wrap', a new width can also move rows between
         -- lines and keep the total. Without 'wrap', no height depends on the
         -- width.
         local text_changed = changedtick ~= layer.changedtick or line_count ~= layer.line_count
+        local rebuild = false
         if text_changed or (layer.wrap and win_width ~= layer.win_width) then
+            rebuild = layer.chunks ~= nil
             layer.chunks = nil
         end
         layer.changedtick = changedtick
@@ -1056,7 +1073,11 @@ local function extent_layer_for(source_win)
         layer.win_width = win_width
         layer.wrap = vim.api.nvim_get_option_value("wrap", { win = source_win }) == true
         layer.foldmethod = vim.api.nvim_get_option_value("foldmethod", { win = source_win })
-        verify_extent(source_win, layer)
+        if rebuild then
+            rebuild_extent(source_win, layer)
+        else
+            verify_extent(source_win, layer)
+        end
         return layer
     end
 
