@@ -1335,4 +1335,129 @@ edit_cases["that joins lines"] = function(foldmethod)
     expect.equality(result.wrong, 0)
 end
 
+T["screen geometry measures a lookup from its chunk start, not from a far anchor"] = function()
+    local child = new_child()
+    local longest = child.lua_func(function()
+        local layout_module = require("scrollbar.layout")
+        local source_win = vim.api.nvim_get_current_win()
+        local buf = vim.api.nvim_get_current_buf()
+        local height = vim.api.nvim_win_get_height(source_win)
+        local line_count = 6000
+        local lines = {}
+        for index = 1, line_count do
+            lines[index] = "line " .. index
+        end
+        vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+        vim.wo.foldmethod = "manual"
+        for start = 101, line_count - 30, 200 do
+            vim.cmd(string.format("%d,%dfold", start, start + 19))
+        end
+        -- Marks on every line arrive in ascending order. The anchor list is
+        -- halved many times, so few anchors stay near the start of the buffer.
+        local marks = {}
+        for line = 0, line_count - 1 do
+            marks[#marks + 1] = { line = line, type = "Search" }
+        end
+        local function call_screen()
+            return layout_module.screen({
+                source_win = source_win,
+                height = height,
+                marks = marks,
+                marks_sorted = true,
+            })
+        end
+        call_screen()
+        vim.fn.winrestview({ topline = 4001, lnum = 4005 })
+        call_screen()
+        -- An edit that keeps the line count rebuilds the chunk of the edit,
+        -- so the viewport line loses its memo entry and its anchor.
+        vim.api.nvim_buf_set_text(buf, 4004, 0, 4004, 0, { "x" })
+
+        local result = 0
+        local original = vim.api.nvim_win_text_height
+        vim.api.nvim_win_text_height = function(winid, opts)
+            if opts ~= nil and opts.start_row ~= nil and opts.end_row ~= nil then
+                result = math.max(result, opts.end_row - opts.start_row)
+            end
+            return original(winid, opts)
+        end
+        local ok, err = pcall(call_screen)
+        vim.api.nvim_win_text_height = original
+        assert(ok, err)
+        return result
+    end)
+
+    -- A lookup measures at most one chunk (CHUNK_LINES = 512).
+    expect.equality(longest <= 512, true)
+end
+
+T["screen geometry keeps the chunk memo valid after a fold in an earlier chunk"] = function()
+    local child = new_child()
+    local wrong = child.lua_func(function()
+        local layout_module = require("scrollbar.layout")
+        local source_win = vim.api.nvim_get_current_win()
+        local buf = vim.api.nvim_get_current_buf()
+        local line_count = 3000
+        -- A track as high as the buffer maps each prefix row to its own row.
+        local height = line_count + 1
+        local lines = {}
+        for index = 1, line_count do
+            lines[index] = "line " .. index
+        end
+        vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
+        vim.wo.foldmethod = "manual"
+        for start = 101, line_count - 30, 200 do
+            vim.cmd(string.format("%d,%dfold", start, start + 19))
+        end
+        local marks = {}
+        for line = 0, line_count - 1, 5 do
+            marks[#marks + 1] = { line = line, type = "Search" }
+        end
+        local function call_screen()
+            return layout_module.screen({
+                source_win = source_win,
+                height = height,
+                marks = marks,
+                marks_sorted = true,
+            })
+        end
+
+        layout_module.screen_extent_sweep_interval_ms = 1e9
+        call_screen()
+        -- A silent fold in the third chunk, before the sweep measures it.
+        vim.cmd("1201,1261fold")
+        -- An edit in the fifth chunk drops the memo of that chunk. The next
+        -- render looks up the viewport line there again.
+        vim.fn.winrestview({ topline = 2501, lnum = 2505 })
+        vim.api.nvim_buf_set_text(buf, 2504, 0, 2504, 0, { "x" })
+        call_screen()
+
+        -- Let the sweep find the fold and rebase the later chunks.
+        layout_module.screen_extent_sweep_interval_ms = 0
+        local geometry
+        for _ = 1, math.ceil(line_count / 512) + 2 do
+            geometry = call_screen()
+        end
+        layout_module.screen_extent_sweep_interval_ms = nil
+
+        local total = vim.api.nvim_win_text_height(source_win, {}).all
+        local count = 0
+        for index, entry in ipairs(marks) do
+            local prefix = entry.line == 0 and 0
+                or vim.api.nvim_win_text_height(source_win, {
+                    start_row = 0,
+                    start_vcol = 0,
+                    end_row = entry.line,
+                    end_vcol = 0,
+                }).all
+            if geometry.mark_rows[index] ~= layout_module.map_position(prefix, total, height) then
+                count = count + 1
+            end
+        end
+        return count
+    end)
+
+    expect.equality(wrong, 0)
+end
+
 return T

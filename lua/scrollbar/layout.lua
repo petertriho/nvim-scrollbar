@@ -257,8 +257,10 @@ local EXTENT_VERIFY_INTERVAL_MS = 250
 
 -- Sorted anchor lines with known display prefixes. Prefix values are absolute
 -- (the rows before the line). At the limit, the array drops every second
--- anchor, which keeps the spread. Thus after a drop, every remaining value is
--- still correct, and anchors stay near every region of the buffer.
+-- anchor, and every remaining value is still correct. Lookups usually insert
+-- anchors in ascending order, so each drop thins the lower anchors again, and
+-- few anchors stay near the start of the buffer. Thus a lookup uses only an
+-- anchor in its own chunk, and otherwise starts at the start of the chunk.
 local ANCHOR_LIMIT = 512
 
 -- Extent layer for each source window: everything that depends only on the
@@ -372,9 +374,10 @@ local function rows_between(source_win, start_line, end_line, line_count)
 end
 
 -- Display rows before `line` (0-based). A uniform layer returns the identity
--- mapping. Otherwise, one bounded range measurement extends the nearest
--- cached anchor at or before the line. The new line then becomes an anchor,
--- so that consecutive queries walk forward incrementally.
+-- mapping. Otherwise, one range measurement extends the nearest cached anchor
+-- at or before the line in the same chunk, or the start of the chunk. The new
+-- line then becomes an anchor, so that consecutive queries walk forward
+-- incrementally.
 -- Memo entries are stored per chunk and keyed relative to the chunk start.
 -- A chunk shift (or a re-base of everything after an edit) never rewrites
 -- entries, so maintenance stays O(#chunks + #anchors) instead of O(#memo).
@@ -480,10 +483,18 @@ local function prefix_for(source_win, line, layer)
         end
     end
 
-    local prefix = anchor_prefix(layer, anchor)
+    -- The start of the chunk is an implicit anchor: its prefix is the chunk
+    -- base. An anchor in an earlier chunk is not used, so a lookup measures
+    -- at most CHUNK_LINES lines and never across a chunk boundary. Thus each
+    -- memo entry holds rows of its own chunk only, and a later rebase of the
+    -- chunk bases keeps it valid.
+    local prefix = nil
+    if anchor >= chunk.start then
+        prefix = anchor_prefix(layer, anchor)
+    end
     if prefix == nil then
-        prefix = 0
-        anchor = 0
+        anchor = chunk.start
+        prefix = chunk.base
     end
     if anchor < line then
         prefix = prefix + screen_range(source_win, anchor, line)
@@ -492,8 +503,9 @@ local function prefix_for(source_win, line, layer)
     layer.prefix_count = layer.prefix_count + 1
     table.insert(anchors, position, line)
     if #anchors > ANCHOR_LIMIT then
-        -- Drop every second anchor instead of the oldest ones. This keeps the
-        -- spread, so every region of the buffer keeps nearby anchors.
+        -- Drop every second anchor instead of the oldest ones. A lookup uses
+        -- only the anchors of its own chunk, so a region that loses its
+        -- anchors still measures at most CHUNK_LINES lines.
         halve_anchors(layer)
     end
     if layer.prefix_count > PREFIX_MAP_LIMIT then
