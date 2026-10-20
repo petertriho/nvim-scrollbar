@@ -570,28 +570,13 @@
 ---@field is_owned_float_buffer? fun(bufnr: integer): boolean
 ---@field is_owned_float_window? fun(winid: integer): boolean
 ---@field windows_showing_buffer? fun(bufnr: integer): integer[]
+---@field invalidate_source_selection? fun(source_win?: integer)
 
 ---@class ScrollbarSchedulerOptions
 ---@field config? ScrollbarConfig
 ---@field renderer? ScrollbarSchedulerRenderer
 ---@field on_colorscheme? fun()
-
----@class ScrollbarSchedulerRuntime
----@field config ScrollbarConfig
----@field renderer ScrollbarSchedulerRenderer
----@field on_colorscheme fun()
----@field timer any
----@field timer_armed boolean
----@field dirty table<integer, true>
----@field flushing boolean
----@field augroup integer
----@field uv any
----@field text_events table<string, boolean> Text-change autocmd events registered for subscriber dispatch
----@field cursor_events table<string, boolean> Cursor-activity autocmd events registered for subscriber dispatch
----@field hide_timers table<integer, any>
----@field hide_generations table<integer, integer>
----@field held table<integer, true>
----@field unsubscribe_store fun()
+---@field peers? ScrollbarSchedulerPeer[] Renderers whose floats the scheduler ignores
 
 ---@class ScrollbarSchedulerStatus
 ---@field setup boolean

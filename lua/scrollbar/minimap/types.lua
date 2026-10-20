@@ -166,28 +166,14 @@
 ---@field reveal? fun(source_win: integer): boolean
 ---@field conceal? fun(source_win: integer): boolean
 ---@field is_visible? fun(): boolean
+---@field invalidate_source_selection? fun(source_win?: integer)
 
 ---@class ScrollbarMinimapSchedulerOptions
 ---@field config? ScrollbarMinimapConfig
 ---@field renderer? ScrollbarMinimapSchedulerRenderer
 ---@field on_colorscheme? fun()
 ---@field on_text_change? fun(fn: fun(args: table), events?: string[]): boolean Shared TextChanged dispatch hosted by the scrollbar scheduler; returns false when the hub is inactive so the caller keeps its own registration
-
----@class ScrollbarMinimapSchedulerRuntime
----@field config ScrollbarMinimapConfig
----@field renderer ScrollbarMinimapSchedulerRenderer
----@field on_colorscheme fun()
----@field timer any
----@field timer_armed boolean
----@field dirty table<integer, true>
----@field flushing boolean
----@field augroup integer
----@field uv any
----@field hide_timers table<integer, any>
----@field hide_generations table<integer, integer>
----@field held table<integer, true>
----@field shows_marks boolean Whether any compiled variant shows mark types
----@field unsubscribe_store fun()
+---@field peers? ScrollbarSchedulerPeer[] Renderers whose floats the scheduler ignores
 
 ---@class ScrollbarMinimapHighlightSpan
 ---@field start_col integer One-based minimap cell boundary, inclusive

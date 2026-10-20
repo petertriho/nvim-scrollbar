@@ -1,7 +1,7 @@
 --- Minimap lifecycle: wires config + worker + renderer + scheduler +
 --- overlays + mouse into a single setup/dispose lifecycle, and registers
 --- the user commands `MinimapShow`, `MinimapHide`, `MinimapToggle`,
---- `MinimapRefresh`. Mirrors `lua/scrollbar/init.lua` at a smaller scale.
+--- `MinimapRefresh`.
 ---
 --- The top-level dispatcher (`lua/scrollbar/init.lua`) commits the minimap
 --- configuration, calls `require("scrollbar.minimap").setup()`, and disposes
@@ -11,6 +11,7 @@
 --- without spawning the worker or creating floats when disabled.
 
 local config = require("scrollbar.minimap.config")
+local controls_module = require("scrollbar.controls")
 local highlights = require("scrollbar.minimap.highlights")
 local mouse = require("scrollbar.minimap.mouse")
 local overlays = require("scrollbar.minimap.overlays")
@@ -44,7 +45,12 @@ local function create_commands()
     vim.api.nvim_create_user_command("MinimapRefresh", M.refresh, { force = true })
 end
 
+---@class ScrollbarMinimapWiring
+---@field on_text_change? fun(fn: fun(args: table), events?: string[]): boolean Text dispatch of the scrollbar scheduler
+---@field peers? ScrollbarSchedulerPeer[] Renderers whose floats the minimap scheduler ignores
+
 ---@param overrides? ScrollbarMinimapUserConfig
+---@param wiring? ScrollbarMinimapWiring
 M.setup = function(overrides, wiring)
     local root_config
     if overrides == nil then
@@ -57,9 +63,8 @@ M.setup = function(overrides, wiring)
     active_config = nil
 
     if not root_config.enabled then
-        -- Disabled by default: do not spawn worker, scheduler, or floats.
-        -- Commands still register so the user can toggle at runtime via
-        -- a reconfigured setup; here we no-op.
+        -- Disabled by default: no worker, scheduler, floats, or commands. A
+        -- later setup with `enabled = true` creates them.
         return root_config
     end
 
@@ -96,6 +101,7 @@ M.setup = function(overrides, wiring)
             highlights.set()
         end,
         on_text_change = wiring ~= nil and wiring.on_text_change or nil,
+        peers = wiring ~= nil and wiring.peers or nil,
     })
     stack.register("minimap", renderer.reposition)
     mouse.setup({
@@ -106,44 +112,19 @@ M.setup = function(overrides, wiring)
     return root_config
 end
 
-M.show = function()
-    renderer.show()
-    if active_config and active_config.autohide then
-        scheduler.reveal_all()
-    else
-        scheduler.invalidate_all()
-    end
-end
+local controls = controls_module.new({
+    renderer = renderer,
+    scheduler = scheduler,
+    consumer = "minimap",
+    autohide = function()
+        return active_config ~= nil and active_config.autohide ~= false
+    end,
+})
 
-M.hide = function()
-    renderer.hide()
-    scheduler.clear_deadlines()
-end
-
-M.toggle = function()
-    if renderer.is_visible() then
-        M.hide()
-    else
-        M.show()
-    end
-end
-
-M.refresh = function()
-    local buffers = {}
-    local windows = renderer.source_windows()
-    for _, winid in ipairs(windows) do
-        if vim.api.nvim_win_is_valid(winid) then
-            buffers[vim.api.nvim_win_get_buf(winid)] = true
-        end
-    end
-    for bufnr in pairs(buffers) do
-        providers.refresh(bufnr, { consumer = "minimap" })
-    end
-    for _, winid in ipairs(windows) do
-        providers.refresh_window(winid, { consumer = "minimap" })
-    end
-    scheduler.invalidate_all()
-end
+M.show = controls.show
+M.hide = controls.hide
+M.toggle = controls.toggle
+M.refresh = controls.refresh
 
 M.dispose = function()
     dispose_runtime()

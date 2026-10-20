@@ -1038,6 +1038,41 @@ T["does not requeue from renderer-owned float autocmds"] = function()
     })
 end
 
+T["an instance without the dispatch rejects subscribers"] = function()
+    local child = new_child()
+    local result = child.lua_func(function()
+        local core = require("scrollbar.scheduler_core").new({
+            augroup = "ScrollbarSchedulerCoreTest",
+            label = "test ",
+            consumer = "scrollbar",
+        })
+        local before_setup = core.subscribe_text_change(function() end, { "TextChanged" })
+        core.setup({
+            config = require("scrollbar.config").set({ set_highlights = false }),
+            renderer = {
+                source_windows = function()
+                    return {}
+                end,
+                is_source_window = function()
+                    return false
+                end,
+                is_buffer_eligible = function()
+                    return false
+                end,
+                render = function() end,
+            },
+            on_colorscheme = function() end,
+            channels = {},
+        })
+        local text = core.subscribe_text_change(function() end, { "TextChanged" })
+        local cursor = core.subscribe_cursor_activity(function() end, { "CursorMoved" })
+        core.dispose()
+        return { before_setup = before_setup, text = text, cursor = cursor }
+    end)
+
+    expect.equality(result, { before_setup = false, text = false, cursor = false })
+end
+
 T["reconciles dynamic source-policy transitions through scheduler enumeration"] = function()
     local child = new_child()
     local result = child.lua_func(function()

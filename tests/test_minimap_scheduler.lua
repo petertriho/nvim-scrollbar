@@ -910,6 +910,115 @@ T["invalidate_buffer walks source windows for the buffer"] = function()
     expect.equality(result.second_dirty, { result.second })
 end
 
+T["clears the renderer source selection on topology and option events only"] = function()
+    local child = new_child()
+    reset_config(child)
+    local result = child.lua_func(function()
+        local winid = vim.api.nvim_get_current_win()
+        local bufnr = vim.api.nvim_get_current_buf()
+        local cleared = 0
+        local scheduler = require("scrollbar.minimap.scheduler")
+        scheduler.setup({
+            config = require("scrollbar.minimap.config").set({
+                events = { "BufEnter", "WinEnter", "OptionSet", "CursorMoved", "TextChanged" },
+            }),
+            renderer = {
+                source_windows = function()
+                    return { winid }
+                end,
+                is_source_window = function(source_win)
+                    return source_win == winid
+                end,
+                is_buffer_eligible = function()
+                    return true
+                end,
+                is_owned_buffer = function()
+                    return false
+                end,
+                is_owned_window = function()
+                    return false
+                end,
+                render = function() end,
+                invalidate_source_selection = function()
+                    cleared = cleared + 1
+                end,
+            },
+        })
+
+        local counts = {}
+        for _, event in ipairs({ "CursorMoved", "TextChanged", "BufEnter", "WinEnter" }) do
+            vim.api.nvim_exec_autocmds(event, { buffer = bufnr })
+            counts[event] = cleared
+        end
+        vim.api.nvim_set_option_value("tabstop", 4, { buf = bufnr })
+        counts.OptionSet = cleared
+        scheduler.dispose()
+        return counts
+    end)
+
+    expect.equality(result, { CursorMoved = 0, TextChanged = 0, BufEnter = 1, WinEnter = 2, OptionSet = 3 })
+end
+
+T["ignores option changes on the floats of a peer renderer"] = function()
+    local child = new_child()
+    reset_config(child)
+    local result = child.lua_func(function()
+        local winid = vim.api.nvim_get_current_win()
+        local peer_buf = vim.api.nvim_create_buf(false, true)
+        local peer_win = vim.api.nvim_open_win(peer_buf, false, {
+            relative = "editor",
+            row = 0,
+            col = 0,
+            width = 1,
+            height = 1,
+            focusable = false,
+        })
+        local scheduler = require("scrollbar.minimap.scheduler")
+        scheduler.setup({
+            config = require("scrollbar.minimap.config").set({ events = { "OptionSet" } }),
+            renderer = {
+                source_windows = function()
+                    return { winid }
+                end,
+                is_source_window = function(source_win)
+                    return source_win == winid
+                end,
+                is_buffer_eligible = function()
+                    return true
+                end,
+                is_owned_float_buffer = function()
+                    return false
+                end,
+                is_owned_float_window = function()
+                    return false
+                end,
+                render = function() end,
+            },
+            peers = {
+                {
+                    is_owned_float_buffer = function(candidate)
+                        return candidate == peer_buf
+                    end,
+                    is_owned_float_window = function(candidate)
+                        return candidate == peer_win
+                    end,
+                },
+            },
+        })
+
+        vim.api.nvim_set_option_value("modifiable", false, { buf = peer_buf })
+        vim.api.nvim_set_option_value("wrap", false, { win = peer_win })
+        local peer_dirty = scheduler.status().dirty_windows
+        vim.api.nvim_set_option_value("tabstop", 4, { buf = vim.api.nvim_win_get_buf(winid) })
+        local source_dirty = scheduler.status().dirty_windows
+        scheduler.dispose()
+        return { peer_dirty = peer_dirty, source_dirty = source_dirty, winid = winid }
+    end)
+
+    expect.equality(result.peer_dirty, {})
+    expect.equality(result.source_dirty, { result.winid })
+end
+
 T["scheduler augroup is independent of the scrollbar scheduler augroup"] = function()
     local child = new_child()
     reset_config(child)

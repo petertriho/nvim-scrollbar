@@ -349,6 +349,73 @@ T["toggling scrollbar.show = false does not affect the minimap"] = function()
     expect.equality(result.minimap_still_visible, true)
 end
 
+T["options set on the floats of one renderer do not queue windows of the other"] = function()
+    local child = new_child()
+    reset_modules(child)
+    local result = child.lua_func(function()
+        local lines = {}
+        for index = 1, 200 do
+            lines[index] = "local x = " .. index
+        end
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        require("scrollbar").setup({
+            set_highlights = false,
+            minimap = {
+                enabled = true,
+                backend = "sync",
+                events = { "OptionSet" },
+            },
+        })
+        local winid = vim.api.nvim_get_current_win()
+        local scrollbar_scheduler = require("scrollbar.scheduler")
+        local minimap_scheduler = require("scrollbar.minimap.scheduler")
+        scrollbar_scheduler.invalidate_all()
+        scrollbar_scheduler.flush()
+        minimap_scheduler.invalidate_all()
+        -- A sync render can queue the window once more for its own cells.
+        for _ = 1, 5 do
+            if not minimap_scheduler.flush() then
+                break
+            end
+        end
+        scrollbar_scheduler.flush()
+        local scrollbar_state = assert(require("scrollbar.renderer").get_state(winid))
+        local minimap_state = assert(require("scrollbar.minimap.renderer").get_state(winid))
+
+        local option_sets = 0
+        vim.api.nvim_create_autocmd("OptionSet", {
+            callback = function()
+                option_sets = option_sets + 1
+            end,
+        })
+        local function dirty_counts()
+            return {
+                #scrollbar_scheduler.status().dirty_windows,
+                #minimap_scheduler.status().dirty_windows,
+            }
+        end
+        -- Each renderer writes these options when it rewrites rows and
+        -- configures its float.
+        local function set_float_options(state)
+            vim.api.nvim_set_option_value("modifiable", true, { buf = state.float_buf })
+            vim.api.nvim_set_option_value("modifiable", false, { buf = state.float_buf })
+            vim.api.nvim_set_option_value("wrap", false, { win = state.float_win })
+        end
+        local dirty = {}
+        set_float_options(scrollbar_state)
+        dirty[#dirty + 1] = dirty_counts()
+        set_float_options(minimap_state)
+        dirty[#dirty + 1] = dirty_counts()
+        -- A source option still queues both renderers.
+        vim.api.nvim_set_option_value("tabstop", 4, { buf = vim.api.nvim_win_get_buf(winid) })
+        dirty[#dirty + 1] = dirty_counts()
+        return { option_sets = option_sets, dirty = dirty }
+    end)
+
+    expect.equality(result.option_sets, 7)
+    expect.equality(result.dirty, { { 0, 0 }, { 0, 0 }, { 1, 1 } })
+end
+
 T["reconfigure via a second setup call disposes the previous worker and floats"] = function()
     local child = new_child()
     reset_modules(child)

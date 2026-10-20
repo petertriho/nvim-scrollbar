@@ -108,7 +108,10 @@ M.setup = function(overrides)
     update_commands(active_config.enabled)
 
     renderer.setup()
-    scheduler.setup({ config = active_config, renderer = renderer })
+    -- Each scheduler ignores the floats of the other renderer: their own
+    -- updates, such as the option toggles of a buffer rewrite, are not source
+    -- activity.
+    scheduler.setup({ config = active_config, renderer = renderer, peers = { minimap_renderer } })
     stack.register("scrollbar", function(source_win)
         if renderer.reposition(source_win) then
             scheduler.invalidate_window(source_win)
@@ -117,7 +120,7 @@ M.setup = function(overrides)
     mouse.setup({ config = active_config, renderer = renderer, scheduler = scheduler })
 
     -- Both store consumers must be subscribed before provider setup publishes.
-    minimap.setup(nil, { on_text_change = scheduler.subscribe_text_change })
+    minimap.setup(nil, { on_text_change = scheduler.subscribe_text_change, peers = { renderer } })
     providers.setup({
         config = active_config,
         provider_plan = provider_plan,
@@ -142,43 +145,18 @@ M.setup = function(overrides)
     end
 end
 
-M.show = function()
-    renderer.show()
-    if config.get().autohide then
-        scheduler.reveal_all()
-    else
-        scheduler.invalidate_all()
-    end
-end
+local controls = require("scrollbar.controls").new({
+    renderer = renderer,
+    scheduler = scheduler,
+    consumer = "scrollbar",
+    autohide = function()
+        return config.get().autohide ~= false
+    end,
+})
 
-M.hide = function()
-    renderer.hide()
-    scheduler.clear_deadlines()
-end
-
-M.toggle = function()
-    if renderer.is_visible() then
-        M.hide()
-    else
-        M.show()
-    end
-end
-
-M.refresh = function()
-    local buffers = {}
-    local windows = renderer.source_windows()
-    for _, winid in ipairs(windows) do
-        if vim.api.nvim_win_is_valid(winid) then
-            buffers[vim.api.nvim_win_get_buf(winid)] = true
-        end
-    end
-    for bufnr in pairs(buffers) do
-        providers.refresh(bufnr, { consumer = "scrollbar" })
-    end
-    for _, winid in ipairs(windows) do
-        providers.refresh_window(winid, { consumer = "scrollbar" })
-    end
-    scheduler.invalidate_all()
-end
+M.show = controls.show
+M.hide = controls.hide
+M.toggle = controls.toggle
+M.refresh = controls.refresh
 
 return M
