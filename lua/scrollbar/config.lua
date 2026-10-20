@@ -3,9 +3,9 @@
 --- `scrollbar.minimap.config`, and builds the provider plan. Setup either
 --- commits every part or fails without changing the active configuration.
 
+local block_config = require("scrollbar.block_config")
 local const = require("scrollbar.const")
 local minimap_config = require("scrollbar.minimap.config")
-local presets = require("scrollbar.presets")
 local provider_config = require("scrollbar.provider_config")
 local schema = require("scrollbar.schema")
 local shared_config = require("scrollbar.shared_config")
@@ -50,21 +50,9 @@ local DEFAULTS = {
     marks = {},
 }
 
-local AUTOHIDE_DEFAULTS = { delay_ms = 1000 }
-
 -- The scrollbar listens to every supported event by default. The list stays
 -- out of DEFAULTS, where a keyed `events` override would merge into it.
 local DEFAULT_EVENTS = shared_config.EVENTS
-
-local GLOBAL_KEYS = {
-    enabled = true,
-    show = true,
-    visibility = true,
-    autohide = { delay_ms = true },
-    max_lines = true,
-    throttle_ms = true,
-    events = true,
-}
 
 local APPEARANCE_KEYS = {
     preset = true,
@@ -86,8 +74,6 @@ local APPEARANCE_KEYS = {
     marks = { ["*"] = { text = true, priority = true, highlight = true } },
 }
 
-local ROOT_KEYS = vim.tbl_extend("error", GLOBAL_KEYS, APPEARANCE_KEYS, { profiles = true })
-local PROFILE_KEYS = vim.tbl_extend("error", APPEARANCE_KEYS, { match = true })
 local LAYER_KEYS = { types = true, max_width = true }
 
 -- Replacements for the v1 options, shown in the unknown-option error.
@@ -365,43 +351,6 @@ local function layout_config(value)
     return { unit = value.unit, layout = value.layout.cache, marks = marks }
 end
 
-local describe_root_key = schema.hinter(REMOVED_KEYS)
-
-local describe_profile_key = schema.hinter(
-    vim.tbl_extend("force", REMOVED_KEYS, { config = "set the options directly in the profile" }),
-    function(relative, path)
-        if GLOBAL_KEYS[relative] ~= nil or relative == "profiles" then
-            return path .. " is a global option and cannot be set in a profile"
-        end
-    end
-)
-
----@param value any
----@return { matcher: ScrollbarCompiledMatcher, input: table, path: string }[]
-local function compile_profiles(value)
-    if value == nil then
-        return {}
-    end
-
-    local count = schema.dense_count(value, "scrollbar.profiles")
-    local result = {}
-    for index = 1, count do
-        local path = string.format("scrollbar.profiles[%d]", index)
-        local profile = value[index]
-        schema.table(profile, path)
-        schema.check_keys(profile, PROFILE_KEYS, path, describe_profile_key)
-        if profile.match == nil then
-            invalid(path .. ".match is required")
-        end
-        result[index] = {
-            matcher = schema.matcher(profile.match, path .. ".match"),
-            input = profile,
-            path = path,
-        }
-    end
-    return result
-end
-
 ---@param value table Layered options merged onto the defaults
 ---@param shared ScrollbarSharedConfig
 ---@param path string Prefix for error paths
@@ -412,10 +361,7 @@ local function normalize(value, shared, path, variant_id)
         return path .. "." .. name
     end
 
-    local autohide = schema.feature(value.autohide, at("autohide"), AUTOHIDE_DEFAULTS)
-    if autohide then
-        schema.integer(autohide.delay_ms, at("autohide.delay_ms"), 1)
-    end
+    local autohide = block_config.autohide(value.autohide, at("autohide"))
 
     local placement = schema.table(value.placement, at("placement"))
     local normalized_placement = {
@@ -430,14 +376,8 @@ local function normalize(value, shared, path, variant_id)
     local track = schema.table(value.track, at("track"))
     local thumb = schema.table(value.thumb, at("thumb"))
 
-    local result = {
-        enabled = schema.boolean(value.enabled, at("enabled")),
-        show = schema.boolean(value.show, at("show")),
-        visibility = schema.enum(value.visibility, at("visibility"), { "all", "active" }),
-        autohide = autohide,
-        max_lines = schema.positive_or_false(value.max_lines, at("max_lines")),
-        throttle_ms = schema.integer(value.throttle_ms, at("throttle_ms"), 0),
-        events = shared_config.resolve_events(value.events, DEFAULT_EVENTS, at("events")),
+    local globals = block_config.globals(value, path, autohide, DEFAULT_EVENTS)
+    local result = vim.tbl_extend("error", globals, {
         set_highlights = shared.set_highlights,
         exclude = shared.exclude.scrollbar,
         unit = schema.enum(value.unit, at("unit"), { "line", "screenline" }),
@@ -456,35 +396,30 @@ local function normalize(value, shared, path, variant_id)
         marks = shared_config.resolve_marks(shared.marks, value.marks, at("marks"), {
             fields = { "text", "priority", "highlight" },
         }),
-    }
+    })
     result.highlights = utils.get_highlight_groups(result, variant_id, shared.set_highlights)
     result.layout_cache = layout_config(result)
     ---@cast result ScrollbarConfig
     return result
 end
 
+local BLOCK = block_config.block({
+    name = "scrollbar",
+    defaults = DEFAULTS,
+    global_keys = block_config.GLOBAL_KEYS,
+    appearance_keys = APPEARANCE_KEYS,
+    removed_keys = REMOVED_KEYS,
+    profile_hints = { config = "set the options directly in the profile" },
+    normalize = normalize,
+})
+
 ---@param overrides any
 ---@param shared ScrollbarSharedConfig
 ---@return ScrollbarConfig, ScrollbarCompiledVariant[]
 local function compile(overrides, shared)
-    if overrides == nil then
-        overrides = {}
-    end
-    schema.table(overrides, "scrollbar")
-    schema.check_keys(overrides, ROOT_KEYS, "scrollbar", describe_root_key)
-
-    local profiles = compile_profiles(overrides.profiles)
-    local root = normalize(presets.layered("scrollbar", DEFAULTS, overrides), shared, "scrollbar", 0)
-    local compiled = {
-        { id = 0, matcher = false, config = root },
-    }
-    for index, profile in ipairs(profiles) do
-        compiled[#compiled + 1] = {
-            id = index,
-            matcher = profile.matcher,
-            config = normalize(presets.layered("scrollbar", DEFAULTS, overrides, profile), shared, profile.path, index),
-        }
-    end
+    local root, compiled = block_config.compile(BLOCK, overrides, shared)
+    ---@cast root ScrollbarConfig
+    ---@cast compiled ScrollbarCompiledVariant[]
     return root, compiled
 end
 
@@ -544,7 +479,7 @@ M.set = function(overrides)
             local hint = ""
             if V1_TOP_LEVEL_KEYS[key] ~= nil then
                 hint = string.format(" (v1 option: %s. %s)", V1_TOP_LEVEL_KEYS[key], const.V1_MIGRATION)
-            elseif ROOT_KEYS[key] ~= nil then
+            elseif BLOCK.root_keys[key] ~= nil then
                 hint = " (scrollbar options go in the 'scrollbar' block)"
             end
             invalid(string.format("unknown option '%s'%s", tostring(key), hint))

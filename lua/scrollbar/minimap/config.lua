@@ -2,7 +2,7 @@
 --- (`lua/scrollbar/config.lua`) compiles it with the shared sections and
 --- commits it together with the scrollbar block.
 
-local presets = require("scrollbar.presets")
+local block_config = require("scrollbar.block_config")
 local schema = require("scrollbar.schema")
 local shared_config = require("scrollbar.shared_config")
 
@@ -37,8 +37,6 @@ local DEFAULTS = {
     marks = {},
 }
 
-local AUTOHIDE_DEFAULTS = { delay_ms = 1000 }
-
 -- Autocmd events that can change minimap content, the viewport, or the window
 -- and buffer lifecycle. The list stays out of DEFAULTS, where a keyed `events`
 -- override would merge into it.
@@ -61,17 +59,10 @@ local DEFAULT_EVENTS = {
     "BufWipeout",
 }
 
-local GLOBAL_KEYS = {
-    enabled = true,
-    show = true,
-    visibility = true,
-    autohide = { delay_ms = true },
-    max_lines = true,
-    throttle_ms = true,
-    events = true,
+local GLOBAL_KEYS = vim.tbl_extend("error", block_config.GLOBAL_KEYS, {
     backend = true,
     background_blend = true,
-}
+})
 
 local APPEARANCE_KEYS = {
     preset = true,
@@ -94,9 +85,6 @@ local APPEARANCE_KEYS = {
     viewport = true,
     marks = { ["*"] = { priority = true, highlight = true } },
 }
-
-local ROOT_KEYS = vim.tbl_extend("error", GLOBAL_KEYS, APPEARANCE_KEYS, { profiles = true })
-local PROFILE_KEYS = vim.tbl_extend("error", APPEARANCE_KEYS, { match = true })
 
 -- These names belong to the static ScrollbarMinimap<Name> groups.
 local REJECTED_MARK_TYPES = {
@@ -144,40 +132,6 @@ local REMOVED_KEYS = {
     ["placement.gutter_position"] = "the minimap always overlaps the gutter",
 }
 
-local describe_root_key = schema.hinter(REMOVED_KEYS)
-
-local describe_profile_key = schema.hinter(REMOVED_KEYS, function(relative, path)
-    if GLOBAL_KEYS[relative] ~= nil or relative == "profiles" then
-        return path .. " is a global option and cannot be set in a profile"
-    end
-end)
-
----@param value any
----@return { matcher: ScrollbarCompiledMatcher, input: table, path: string }[]
-local function compile_profiles(value)
-    if value == nil then
-        return {}
-    end
-
-    local count = schema.dense_count(value, "minimap.profiles")
-    local result = {}
-    for index = 1, count do
-        local path = string.format("minimap.profiles[%d]", index)
-        local profile = value[index]
-        schema.table(profile, path)
-        schema.check_keys(profile, PROFILE_KEYS, path, describe_profile_key)
-        if profile.match == nil then
-            invalid(path .. ".match is required")
-        end
-        result[index] = {
-            matcher = schema.matcher(profile.match, path .. ".match"),
-            input = profile,
-            path = path,
-        }
-    end
-    return result
-end
-
 ---@param value any
 ---@param path string
 ---@return false|integer
@@ -205,28 +159,18 @@ end
 ---@param value table Layered options merged onto the defaults
 ---@param shared ScrollbarSharedConfig
 ---@param path string Prefix for error paths
+---@param variant_id integer 0 for the root, or the profile index
 ---@return ScrollbarMinimapConfig
-local function normalize(value, shared, path)
+local function normalize(value, shared, path, variant_id)
     local function at(name)
         return path .. "." .. name
     end
 
-    local autohide = schema.feature(value.autohide, at("autohide"), AUTOHIDE_DEFAULTS)
-    if autohide then
-        schema.integer(autohide.delay_ms, at("autohide.delay_ms"), 1)
-    end
-
+    local autohide = block_config.autohide(value.autohide, at("autohide"))
     local placement = schema.table(value.placement, at("placement"))
 
-    ---@type ScrollbarMinimapConfig
-    local result = {
-        enabled = schema.boolean(value.enabled, at("enabled")),
-        show = schema.boolean(value.show, at("show")),
-        visibility = schema.enum(value.visibility, at("visibility"), { "all", "active" }),
-        autohide = autohide,
-        max_lines = schema.positive_or_false(value.max_lines, at("max_lines")),
-        throttle_ms = schema.integer(value.throttle_ms, at("throttle_ms"), 0),
-        events = shared_config.resolve_events(value.events, DEFAULT_EVENTS, at("events")),
+    local globals = block_config.globals(value, path, autohide, DEFAULT_EVENTS)
+    local result = vim.tbl_extend("error", globals, {
         backend = schema.enum(value.backend, at("backend"), { "worker", "sync" }),
         background_blend = blend_or_false(value.background_blend, at("background_blend")),
         set_highlights = shared.set_highlights,
@@ -252,37 +196,30 @@ local function normalize(value, shared, path)
             fields = { "priority", "highlight" },
             reject = REJECTED_MARK_TYPES,
         }),
-    }
+    })
+    for mark_type, spec in pairs(result.marks) do
+        spec.group = mark_group_name(mark_type, variant_id, shared.set_highlights)
+    end
+    ---@cast result ScrollbarMinimapConfig
     return result
 end
+
+local BLOCK = block_config.block({
+    name = "minimap",
+    defaults = DEFAULTS,
+    global_keys = GLOBAL_KEYS,
+    appearance_keys = APPEARANCE_KEYS,
+    removed_keys = REMOVED_KEYS,
+    normalize = normalize,
+})
 
 ---@param overrides any
 ---@param shared ScrollbarSharedConfig
 ---@return ScrollbarMinimapConfig, ScrollbarMinimapCompiledVariant[]
 local function compile(overrides, shared)
-    if overrides == nil then
-        overrides = {}
-    end
-    schema.table(overrides, "minimap")
-    schema.check_keys(overrides, ROOT_KEYS, "minimap", describe_root_key)
-
-    local profiles = compile_profiles(overrides.profiles)
-    local root = normalize(presets.layered("minimap", DEFAULTS, overrides), shared, "minimap")
-    local compiled = {
-        { id = 0, matcher = false, config = root },
-    }
-    for index, profile in ipairs(profiles) do
-        compiled[#compiled + 1] = {
-            id = index,
-            matcher = profile.matcher,
-            config = normalize(presets.layered("minimap", DEFAULTS, overrides, profile), shared, profile.path),
-        }
-    end
-    for _, variant in ipairs(compiled) do
-        for mark_type, spec in pairs(variant.config.marks) do
-            spec.group = mark_group_name(mark_type, variant.id, shared.set_highlights)
-        end
-    end
+    local root, compiled = block_config.compile(BLOCK, overrides, shared)
+    ---@cast root ScrollbarMinimapConfig
+    ---@cast compiled ScrollbarMinimapCompiledVariant[]
     return root, compiled
 end
 
