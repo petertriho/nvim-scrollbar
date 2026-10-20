@@ -7,6 +7,10 @@ local compact_search = require("scrollbar.providers.search_compact")
 local text_tick = require("scrollbar.text_tick")
 local worker = require("scrollbar.providers.search_worker")
 
+-- Command-line types of a search. In an autocmd pattern, `?` matches any one
+-- character, so the backward search type is escaped.
+local SEARCH_CMDLINE_PATTERN = { "/", [[\?]] }
+
 local INCSEARCH_DEBOUNCE_MS = 30
 local EDIT_DEBOUNCE_MS = 50
 
@@ -604,7 +608,7 @@ function M.setup(context)
     text_change_attached = false
     vim.api.nvim_create_autocmd("CmdlineEnter", {
         group = group,
-        pattern = { "/", "?" },
+        pattern = SEARCH_CMDLINE_PATTERN,
         callback = function()
             commandline = {
                 bufnr = vim.api.nvim_get_current_buf(),
@@ -616,7 +620,7 @@ function M.setup(context)
     })
     vim.api.nvim_create_autocmd("CmdlineChanged", {
         group = group,
-        pattern = { "/", "?" },
+        pattern = SEARCH_CMDLINE_PATTERN,
         callback = function()
             local pattern = vim.fn.getcmdline()
             if commandline ~= nil then

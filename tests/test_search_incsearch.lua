@@ -134,4 +134,13 @@ T["disabling native incsearch rejects a queued incremental request"] = function(
     expect.equality(result.lines, { 1 })
 end
 
+T["an Ex command line does not preview a search"] = function()
+    local child = incsearch_child(true, true)
+    accepted_baseline(child)
+
+    -- In an autocmd pattern, a bare `?` also matches the `:` command line.
+    expect.equality(helpers.inspect_during_cmdline(child, ":", "preview").lines, { 1 })
+    expect.equality(helpers.wait_for_mark_lines(child, { 1 }), true)
+end
+
 return T
