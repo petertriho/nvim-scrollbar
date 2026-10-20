@@ -154,7 +154,7 @@ require("scrollbar").setup({
 | `placement` | see Defaults | Position of the float. See [Layout and geometry](layout-and-geometry.md). |
 | `hide_on_cursor` | `true` | Hides the scrollbar of the active window while the cursor is inside it. |
 | `hide_if_all_visible` | `false` | Hides the whole scrollbar when the buffer fits in the window. |
-| `mouse` | `true` | Makes the float focusable and adds the mouse mappings. See [Mouse](mouse.md). |
+| `mouse` | `true` | Makes the float take mouse input and adds the mouse mappings. See [Mouse](mouse.md). |
 | `layout` | see Defaults | Columns and layers. See [Layout](#layout). |
 | `track.highlight` | `"PmenuSbar"` | Track highlight: a group name or an `nvim_set_hl()` table. |
 | `thumb.text` | `" "` | One string with a positive display width and no control characters. |

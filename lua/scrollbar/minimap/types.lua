@@ -260,7 +260,6 @@
 
 ---@class ScrollbarMinimapMouseRenderer
 ---@field get_state_by_float fun(float_win: integer): ScrollbarMinimapRendererState?
----@field is_owned_window fun(winid: integer): boolean
 ---@field set_state_callback fun(callback: fun(state: ScrollbarMinimapRendererState)?)
 
 ---@class ScrollbarMinimapMouseScheduler

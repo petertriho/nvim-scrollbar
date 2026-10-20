@@ -351,7 +351,7 @@ local function float_config(
         col = origin + placement.col,
         width = target_width,
         height = target_height,
-        focusable = active_config.mouse,
+        focusable = false,
         mouse = active_config.mouse,
         zindex = zindex,
         hide = hidden,

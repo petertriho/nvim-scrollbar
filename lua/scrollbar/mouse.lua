@@ -1,4 +1,5 @@
 local config = require("scrollbar.config")
+local float_focus = require("scrollbar.float_focus")
 local layout = require("scrollbar.layout")
 
 local M = {}
@@ -12,6 +13,7 @@ local MAPPINGS = { "<LeftMouse>", "<LeftDrag>", "<LeftRelease>" }
 ---@field scheduler ScrollbarMouseScheduler
 ---@field augroup integer
 ---@field attached table<integer, true>
+---@field unwatch fun()
 
 ---@type ScrollbarMouseRuntime?
 local runtime
@@ -56,30 +58,9 @@ local function valid_state(state)
         and vim.api.nvim_win_get_buf(state.float_win) == state.float_buf
 end
 
----@param source_win integer
-local function restore_source(source_win)
-    if valid_window(source_win) then
-        pcall(vim.api.nvim_set_current_win, source_win)
-        return
-    end
-
-    local active = runtime
-    for _, winid in ipairs(vim.api.nvim_list_wins()) do
-        local owned = false
-        if active ~= nil then
-            local ok, result = pcall(active.renderer.is_owned_window, winid)
-            owned = ok and result == true
-        end
-        if not owned and vim.api.nvim_win_get_config(winid).relative == "" then
-            pcall(vim.api.nvim_set_current_win, winid)
-            return
-        end
-    end
-end
-
 ---@param current ScrollbarInteractionState
 local function restore_focus(current)
-    restore_source(current.source_win)
+    float_focus.restore(current.source_win)
 end
 
 ---@param current ScrollbarInteractionState
@@ -182,7 +163,7 @@ local function guarded(callback, fallback_source)
             if interaction ~= nil then
                 M.cancel()
             elseif fallback_source ~= nil then
-                restore_source(fallback_source)
+                float_focus.restore(fallback_source)
             end
         end
     end
@@ -368,6 +349,19 @@ M.setup = function(options)
         scheduler = active_scheduler,
         augroup = augroup,
         attached = {},
+        unwatch = float_focus.watch({
+            name = AUGROUP_NAME,
+            group = augroup,
+            get_state = active_renderer.get_state_by_float,
+            interacting = function()
+                return interaction ~= nil
+            end,
+            press = function(float_win, source_win)
+                guarded(function()
+                    M.press(float_win)
+                end, source_win)()
+            end,
+        }),
     }
 
     vim.api.nvim_create_autocmd("WinClosed", {
@@ -377,21 +371,6 @@ M.setup = function(options)
             local closed = tonumber(args.match)
             if current ~= nil and (closed == current.float_win or closed == current.source_win) then
                 M.cancel()
-            end
-        end,
-    })
-    vim.api.nvim_create_autocmd("WinEnter", {
-        group = augroup,
-        callback = function()
-            if interaction ~= nil then
-                return
-            end
-            local float_win = vim.api.nvim_get_current_win()
-            local state = active_renderer.get_state_by_float(float_win)
-            if state ~= nil and vim.fn.getmousepos().winid == float_win then
-                guarded(function()
-                    M.press(float_win)
-                end, state.source_win)()
             end
         end,
     })
@@ -421,6 +400,7 @@ M.dispose = function()
         finish_interaction(interaction, false)
     end
     runtime = nil
+    active.unwatch()
     active.renderer.set_state_callback(nil)
     for float_buf in pairs(active.attached) do
         detach(active, float_buf)

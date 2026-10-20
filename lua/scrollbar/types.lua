@@ -611,7 +611,6 @@
 
 ---@class ScrollbarMouseRenderer
 ---@field get_state_by_float fun(float_win: integer): ScrollbarWindowState?
----@field is_owned_window fun(winid: integer): boolean
 ---@field set_handle_pressed fun(float_win: integer, pressed: boolean): boolean
 ---@field set_state_callback fun(callback: fun(state: ScrollbarWindowState)?)
 

@@ -859,6 +859,56 @@ T["uses screen geometry when reverse-mapping an empty track click"] = function()
     expect.equality(child.api.nvim_win_get_cursor(setup.source_win)[1] > 80, true)
 end
 
+T["takes a double click as single clicks without Visual mode"] = function()
+    local child = new_child()
+    local setup = setup_single(child)
+
+    click(child, setup, setup.height - 1, 1)
+    click(child, setup, setup.height - 1, 1)
+
+    expect.equality(child.api.nvim_get_mode().mode, "n")
+    expect.equality(child.api.nvim_get_current_win(), setup.source_win)
+    expect.equality(child.api.nvim_win_get_cursor(setup.source_win)[1], 200)
+    expect.equality(child.lua_get([[require("scrollbar.mouse").get_interaction()]]), vim.NIL)
+end
+
+T["keeps window commands and programmatic entry out of the float"] = function()
+    local child = new_child()
+    local setup = setup_single(child)
+    local visited = child.lua_func(function(float_win)
+        local windows = {}
+        for _ = 1, #vim.api.nvim_list_wins() do
+            vim.cmd("wincmd w")
+            windows[vim.api.nvim_get_current_win()] = true
+        end
+        return windows[float_win] == true
+    end, setup.float_win)
+    expect.equality(visited, false)
+
+    -- After a click, the pointer stays over the float.
+    click(child, setup, setup.height - 1, 1)
+    child.api.nvim_win_set_cursor(setup.source_win, { 1, 0 })
+    child.api.nvim_set_current_win(setup.float_win)
+    vim.uv.sleep(30)
+
+    expect.equality(child.api.nvim_get_current_win(), setup.source_win)
+    expect.equality(child.api.nvim_win_get_cursor(setup.source_win)[1], 1)
+    expect.equality(child.lua_get([[require("scrollbar.mouse").get_interaction()]]), vim.NIL)
+end
+
+T["ignores an Insert mode click without focusing the float"] = function()
+    local child = new_child()
+    local setup = setup_single(child)
+    child.type_keys("i")
+
+    click(child, setup, setup.height - 1, 1)
+
+    expect.equality(child.api.nvim_get_mode().mode, "i")
+    expect.equality(child.api.nvim_get_current_win(), setup.source_win)
+    expect.equality(child.api.nvim_win_get_cursor(setup.source_win)[1], 1)
+    expect.equality(child.lua_get([[require("scrollbar.mouse").get_interaction()]]), vim.NIL)
+end
+
 T["keeps independent ownership for multiple source windows"] = function()
     local child = new_child()
     local setup = child.lua_func(function(config)
@@ -1174,7 +1224,7 @@ T["uses each rendered profile's mouse policy and updates switched floats"] = fun
     expect.equality(result.before.second_mouse, true)
     expect.equality(result.before.second_mappings > 0, true)
     expect.equality(result.after.mouse, true)
-    expect.equality(result.after.focusable, true)
+    expect.equality(result.after.focusable, false)
     expect.equality(result.after.mappings > 0, true)
 end
 

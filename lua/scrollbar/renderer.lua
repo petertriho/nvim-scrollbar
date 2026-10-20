@@ -710,7 +710,7 @@ local function float_config(active_config, source_win, area, origin, zindex, wid
         col = origin + placement.col,
         width = width,
         height = area.height,
-        focusable = active_config.mouse,
+        focusable = false,
         mouse = active_config.mouse,
         zindex = zindex,
         hide = hidden,

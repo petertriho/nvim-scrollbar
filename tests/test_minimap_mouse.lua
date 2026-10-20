@@ -112,6 +112,121 @@ local function press_and_drag(child, rows)
     end, rows)
 end
 
+local function setup_screen(child)
+    local setup = child.lua_func(function()
+        vim.o.mouse = "a"
+        local lines = {}
+        for index = 1, 400 do
+            lines[index] = string.rep("a", index % 30)
+        end
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        local state = assert(require("scrollbar.minimap.renderer").render(0))
+        vim.cmd("redraw")
+        local position = vim.fn.win_screenpos(state.float_win)
+        return {
+            source_win = state.source_win,
+            float_win = state.float_win,
+            projection = state.projection,
+            position = { position[1] - 1, position[2] - 1 },
+        }
+    end)
+    vim.uv.sleep(30)
+    return setup
+end
+
+local function input_mouse(child, setup, action, row)
+    child.api.nvim_input_mouse("left", action, "", 0, setup.position[1] + row, setup.position[2])
+    vim.uv.sleep(30)
+end
+
+T["first click from the source window navigates without focusing the float"] = function()
+    local child = new_child()
+    reset_modules(child)
+    configure(child, { enabled = true, width = 4, height = 16 })
+    local setup = setup_screen(child)
+    local expected = child.lua_func(function(projection)
+        return require("scrollbar.minimap.projection").row_line(projection, 10) + 1
+    end, setup.projection)
+
+    input_mouse(child, setup, "press", 10)
+    expect.equality(child.api.nvim_win_get_cursor(setup.source_win)[1], expected)
+    input_mouse(child, setup, "release", 10)
+
+    expect.equality(child.api.nvim_win_get_cursor(setup.source_win)[1], expected)
+    expect.equality(child.api.nvim_get_current_win(), setup.source_win)
+end
+
+T["first press from the source window starts a drag"] = function()
+    local child = new_child()
+    reset_modules(child)
+    configure(child, { enabled = true, width = 4, height = 16 })
+    local setup = setup_screen(child)
+
+    input_mouse(child, setup, "press", 6)
+    local pressed_top = child.fn.line("w0", setup.source_win)
+    input_mouse(child, setup, "drag", 9)
+    input_mouse(child, setup, "release", 9)
+
+    expect.equality(child.fn.line("w0", setup.source_win) > pressed_top, true)
+    expect.equality(child.api.nvim_get_current_win(), setup.source_win)
+end
+
+T["double click moves like a single click without Visual mode"] = function()
+    local child = new_child()
+    reset_modules(child)
+    configure(child, { enabled = true, width = 4, height = 16 })
+    local setup = setup_screen(child)
+    local expected = child.lua_func(function(projection)
+        return require("scrollbar.minimap.projection").row_line(projection, 10) + 1
+    end, setup.projection)
+
+    for _ = 1, 2 do
+        input_mouse(child, setup, "press", 10)
+        input_mouse(child, setup, "release", 10)
+    end
+
+    expect.equality(child.api.nvim_get_mode().mode, "n")
+    expect.equality(child.api.nvim_get_current_win(), setup.source_win)
+    expect.equality(child.api.nvim_win_get_cursor(setup.source_win)[1], expected)
+    expect.equality(child.lua_get([[require("scrollbar.minimap.mouse").get_interaction()]]), vim.NIL)
+end
+
+T["window commands and programmatic entry do not focus the float"] = function()
+    local child = new_child()
+    reset_modules(child)
+    configure(child, { enabled = true, width = 4, height = 16 })
+    local setup = setup_screen(child)
+    child.cmd("wincmd w")
+    expect.equality(child.api.nvim_get_current_win(), setup.source_win)
+
+    -- After a click, the pointer stays over the float.
+    input_mouse(child, setup, "press", 10)
+    input_mouse(child, setup, "release", 10)
+    child.api.nvim_win_set_cursor(setup.source_win, { 1, 0 })
+    child.api.nvim_set_current_win(setup.float_win)
+    vim.uv.sleep(30)
+
+    expect.equality(child.api.nvim_get_current_win(), setup.source_win)
+    expect.equality(child.api.nvim_win_get_cursor(setup.source_win)[1], 1)
+    expect.equality(child.lua_get([[require("scrollbar.minimap.mouse").get_interaction()]]), vim.NIL)
+end
+
+T["Insert mode click does not focus the float"] = function()
+    local child = new_child()
+    reset_modules(child)
+    configure(child, { enabled = true, width = 4, height = 16 })
+    local setup = setup_screen(child)
+    child.type_keys("i")
+
+    input_mouse(child, setup, "press", 10)
+    input_mouse(child, setup, "release", 10)
+
+    expect.equality(child.api.nvim_get_mode().mode, "i")
+    expect.equality(child.api.nvim_get_current_win(), setup.source_win)
+    expect.equality(child.api.nvim_win_get_cursor(setup.source_win)[1], 1)
+    expect.equality(child.lua_get([[require("scrollbar.minimap.mouse").get_interaction()]]), vim.NIL)
+end
+
 T["click at a minimap row moves the source cursor to the first line of the row"] = function()
     local child = new_child()
     reset_modules(child)
