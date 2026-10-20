@@ -986,4 +986,68 @@ T["compose cache drops the entries of unreachable mark layers"] = function()
     expect.equality(result.cache_hit, true)
 end
 
+T["screen geometry follows a fold that moves to another chunk"] = function()
+    local child = new_child()
+    local result = child.lua_func(function()
+        -- 1100 lines make three chunks of 512 lines. The two folds are in the
+        -- first two chunks, so that one sweep usually measures both changes.
+        local lines = {}
+        for index = 1, 1100 do
+            lines[index] = "line " .. index
+        end
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        vim.wo.foldmethod = "manual"
+        vim.cmd("101,150fold")
+        vim.cmd("601,650fold")
+        vim.cmd("601foldopen")
+
+        local layout_module = require("scrollbar.layout")
+        layout_module.screen_extent_sweep_interval_ms = 0
+        local source_win = vim.api.nvim_get_current_win()
+        local height = vim.api.nvim_win_get_height(source_win)
+        local marks = {}
+        for line = 0, 1099, 7 do
+            marks[#marks + 1] = { line = line, type = "Search" }
+        end
+        local function call_screen()
+            return layout_module.screen({ source_win = source_win, height = height, marks = marks })
+        end
+
+        call_screen()
+        -- The total extent does not change: one fold opens, and a fold of
+        -- the same size in another chunk closes.
+        vim.cmd("101foldopen")
+        vim.cmd("601foldclose")
+        local total = vim.api.nvim_win_text_height(source_win, {}).all
+        -- The sweep has a time budget, so it can need more than one pass to
+        -- measure every chunk.
+        local geometry = call_screen()
+        for _ = 1, 3 do
+            if geometry.total_extent == total then
+                break
+            end
+            geometry = call_screen()
+        end
+        layout_module.screen_extent_sweep_interval_ms = nil
+
+        local wrong = 0
+        for index, entry in ipairs(marks) do
+            local prefix = entry.line == 0 and 0
+                or vim.api.nvim_win_text_height(source_win, {
+                    start_row = 0,
+                    start_vcol = 0,
+                    end_row = entry.line,
+                    end_vcol = 0,
+                }).all
+            if geometry.mark_rows[index] ~= layout_module.map_position(prefix, total, height) then
+                wrong = wrong + 1
+            end
+        end
+        return { wrong = wrong, extent = geometry.total_extent, total = total }
+    end)
+
+    expect.equality(result.extent, result.total)
+    expect.equality(result.wrong, 0)
+end
+
 return T

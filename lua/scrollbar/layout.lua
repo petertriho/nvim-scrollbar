@@ -737,8 +737,7 @@ local function sweep_chunks(source_win, layer)
         return
     end
     local count = math.min(CHUNK_SWEEP_PER_RENDER, #chunks)
-    local total_delta = 0
-    local lowest_changed_index = nil
+    local changed = nil
     local started = uv.hrtime()
     for _ = 1, count do
         if uv.hrtime() - started > CHUNK_SWEEP_BUDGET_NS then
@@ -754,40 +753,33 @@ local function sweep_chunks(source_win, layer)
         if stop > chunk.start then
             local height = rows_between(source_win, chunk.start, stop, layer.line_count)
             if height ~= chunk.height then
-                total_delta = total_delta + (height - chunk.height)
                 chunk.height = height
                 chunk.subs = nil
-                if lowest_changed_index == nil or index < lowest_changed_index then
-                    lowest_changed_index = index
-                end
+                chunk.memo = {}
+                changed = changed or {}
+                changed[index] = true
             end
         end
     end
-    if lowest_changed_index ~= nil then
-        layer.total_extent = layer.total_extent + total_delta
-        local changed = chunks[lowest_changed_index]
-        -- The internal layout of the changed chunk moved. Everything after
-        -- it shifts wholesale through the chunk bases.
-        changed.memo = {}
-        for index = lowest_changed_index + 1, #chunks do
-            chunks[index].base = chunks[index].base + total_delta
+    if changed ~= nil then
+        -- A changed chunk moves the base of every later chunk by its own
+        -- delta, so rebuild the bases from the chunk heights. Memo entries are
+        -- relative to their chunk, so only the changed chunks lose them.
+        local base = 0
+        for index = 1, #chunks do
+            chunks[index].base = base
+            base = base + chunks[index].height
         end
-        -- Drop the anchors inside the changed chunk. Later anchors resolve
-        -- through their (shifted) chunk bases automatically.
-        local anchors = layer.anchors
+        layer.total_extent = base
         local kept = {}
-        for _, anchor in ipairs(anchors) do
-            if anchor < changed.start then
+        for _, anchor in ipairs(layer.anchors) do
+            if anchor == 0 or not changed[chunk_index_for(layer, anchor)] then
                 kept[#kept + 1] = anchor
-            else
-                local index = chunk_index_for(layer, anchor)
-                if index ~= lowest_changed_index then
-                    kept[#kept + 1] = anchor
-                end
             end
         end
         layer.anchors = kept
-        layer.prefix_count = math.max(0, layer.prefix_count - 0)
+        -- The prefixes changed, also when the total extent did not.
+        layer.generation = layer.generation + 1
     end
     layer.verified_at = uv.now()
 end
