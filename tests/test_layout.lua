@@ -1375,6 +1375,7 @@ T["screen geometry measures a lookup from its chunk start, not from a far anchor
 
         local result = 0
         local original = vim.api.nvim_win_text_height
+        ---@diagnostic disable-next-line: duplicate-set-field
         vim.api.nvim_win_text_height = function(winid, opts)
             if opts ~= nil and opts.start_row ~= nil and opts.end_row ~= nil then
                 result = math.max(result, opts.end_row - opts.start_row)
