@@ -9,6 +9,13 @@
         "vim",
         "MiniTest"
     ],
+    "workspace.library": [
+        "$VIMRUNTIME/lua"
+    ],
     "workspace.checkThirdParty": false,
+    "workspace.ignoreDir": [
+        "deps",
+        ".direnv"
+    ],
     "telemetry.enable": false
 }

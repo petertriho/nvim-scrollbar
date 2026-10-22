@@ -57,7 +57,9 @@ local marks_provider = require("scrollbar.providers.marks")
 local context = {
     config = {
         providers = {
-            marks = vim.deepcopy(require("scrollbar.config").get_provider_plan().marks.options),
+            marks = vim.deepcopy(
+                require("scrollbar.config").get_provider_plan().marks.options --[[@as ScrollbarMarksProviderConfig]]
+            ),
         },
     },
     is_buffer_eligible = function()

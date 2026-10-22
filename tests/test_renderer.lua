@@ -507,7 +507,7 @@ T["switches canonical Thumb spans to pressed groups without losing priorities"] 
                 for _, extmark in
                     ipairs(vim.api.nvim_buf_get_extmarks(state.float_buf, namespace, 0, -1, { details = true }))
                 do
-                    local details = extmark[4]
+                    local details = assert(extmark[4], "the extmark has no details")
                     found[details.hl_group] = details.priority
                 end
                 return found
@@ -1477,6 +1477,7 @@ T["keeps window-relative tracks inside source text rows"] = function()
         require("scrollbar.test.set_config")(base_config)
         renderer.setup()
         local get_height = vim.api.nvim_win_get_height
+        ---@diagnostic disable-next-line: duplicate-set-field
         vim.api.nvim_win_get_height = function(winid)
             if winid == source_win then
                 return 1
@@ -2314,7 +2315,7 @@ T["caches line mark work while keeping handle geometry current and invalidating 
         local renderer = require("scrollbar.renderer")
         renderer.setup()
         local initial = assert(renderer.render(source_win))
-        local initial_handle = vim.deepcopy(initial.handle)
+        local initial_handle = vim.deepcopy(initial.handle --[[@as ScrollbarHandleGeometry]])
         local after_initial = builds
 
         vim.api.nvim_win_call(source_win, function()

@@ -155,6 +155,8 @@ M.compile_plan = function(requests, scrollbar_enabled, minimap_enabled)
         }
         plan[name] = {
             consumers = consumers,
+            -- vim.deepcopy gives the `true` option of a provider without options back unchanged
+            ---@diagnostic disable-next-line: param-type-mismatch
             options = (consumers.scrollbar or consumers.minimap) and vim.deepcopy(request.options) or false,
             targets = vim.deepcopy(spec.targets),
             execution = spec.execution,

@@ -179,7 +179,7 @@ local function render_overlay_marks(child, options)
                 details = true,
             }))
         do
-            local details = mark[4]
+            local details = assert(mark[4], "the extmark has no details")
             marks[#marks + 1] = {
                 row = mark[2] + 1,
                 start_col = mark[3],

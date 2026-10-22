@@ -83,7 +83,9 @@ format-check:
 lint:
 	$(SELENE) $(LUA_PATHS)
 
-typecheck:
-	$(LUA_LANGUAGE_SERVER) --check=.
+# LuaLS reads the Neovim API types from $VIMRUNTIME/lua, see .luarc.json
+typecheck: test-deps
+	VIMRUNTIME="$$($(NVIM) --clean --headless -c 'lua io.write(vim.env.VIMRUNTIME)' -c q 2>&1)" \
+		$(LUA_LANGUAGE_SERVER) --check=. --checklevel=Warning --check_format=pretty
 
 ci: format-check lint typecheck test

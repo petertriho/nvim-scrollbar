@@ -105,6 +105,7 @@ local function setup_provider(bufnr, winid, clients)
     local original_get_clients = vim.lsp.get_clients
     local original_get_client_by_id = vim.lsp.get_client_by_id
     local refresh_handler = vim.lsp.handlers["workspace/semanticTokens/refresh"]
+    ---@diagnostic disable-next-line: duplicate-set-field
     vim.lsp.get_clients = function(filter)
         if filter and filter.bufnr and filter.bufnr ~= bufnr then
             return {}
@@ -115,6 +116,7 @@ local function setup_provider(bufnr, winid, clients)
         end)
         return result
     end
+    ---@diagnostic disable-next-line: duplicate-set-field
     vim.lsp.get_client_by_id = function(client_id)
         return attached[client_id]
     end

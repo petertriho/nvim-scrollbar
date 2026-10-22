@@ -99,7 +99,7 @@ end)
 
 local tick_count = 0
 local last_tick = vim.uv.hrtime()
-local timer = vim.uv.new_timer()
+local timer = assert(vim.uv.new_timer())
 timer:start(timer_period_ms, timer_period_ms, function()
     local now = vim.uv.hrtime()
     tick_count = tick_count + 1

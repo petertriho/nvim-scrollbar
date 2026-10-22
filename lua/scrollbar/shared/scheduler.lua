@@ -421,7 +421,8 @@ M.new = function(spec)
         if current == nil then
             return
         end
-        local event = vim.v.event or {}
+        -- The vim.v.event type does not list the `all` key of WinScrolled and WinResized
+        local event = vim.v.event or {} ---@type table<string, any>
         if event.all == true or event.all == 1 then
             for _, winid in ipairs(source_windows(current)) do
                 activity_window(current, winid)

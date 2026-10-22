@@ -322,10 +322,13 @@ local function make_context(entry)
     assert(manager ~= nil, "provider manager is not set up")
     local provider_name = entry.provider.name
     local provider_config = vim.deepcopy(manager.config)
-    provider_config.providers = {}
+    local providers = {} ---@type table<string, ScrollbarProviderOption>
     for name, planned in pairs(manager.provider_plan) do
-        provider_config.providers[name] = vim.deepcopy(planned.options)
+        -- vim.deepcopy gives the `true` option of a provider without options back unchanged
+        ---@diagnostic disable-next-line: param-type-mismatch
+        providers[name] = vim.deepcopy(planned.options)
     end
+    provider_config.providers = providers --[[@as ScrollbarProvidersConfig]]
 
     return {
         config = provider_config,

@@ -534,6 +534,7 @@ T["setup defines the minimap highlight groups with the retuned defaults"] = func
             return vim.api.nvim_get_hl(0, { name = name, link = true }).link
         end
         local highlights = vim.api.nvim_get_hl(0, {})
+        ---@cast highlights table<string, vim.api.keyset.get_hl_info>
         return {
             base_link = link_of("ScrollbarMinimapBase"),
             content_link = link_of("ScrollbarMinimapContent"),

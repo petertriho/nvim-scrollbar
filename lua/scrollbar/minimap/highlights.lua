@@ -30,12 +30,14 @@ local function reset_resolved()
     resolved_count = 0
 end
 
+---@return vim.api.keyset.highlight
 local function resolved_definition(source)
     local ok, resolved = pcall(vim.api.nvim_get_hl, 0, { name = source, link = false })
     if not ok or type(resolved) ~= "table" then
         return {}
     end
-    return vim.deepcopy(resolved)
+    -- With link = false, the keys of nvim_get_hl are valid keys of nvim_set_hl
+    return vim.deepcopy(resolved) --[[@as vim.api.keyset.highlight]]
 end
 
 local function resolved_name(mode)

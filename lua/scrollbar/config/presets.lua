@@ -208,6 +208,7 @@ M.get = function(renderer, name, path)
         local listed = #names > 0 and table.concat(names, ", ") or "none"
         schema.invalid(string.format("%s: unknown preset '%s' (built-in presets: %s)", path, name, listed))
     end
+    ---@cast preset -nil
     return vim.deepcopy(preset)
 end
 

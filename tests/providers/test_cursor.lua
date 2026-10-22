@@ -138,6 +138,7 @@ T["one cursor read publishes matching marks and minimap points"] = function()
 
     local original_get_cursor = vim.api.nvim_win_get_cursor
     local reads = 0
+    ---@diagnostic disable-next-line: duplicate-set-field
     vim.api.nvim_win_get_cursor = function(winid)
         reads = reads + 1
         return original_get_cursor(winid)

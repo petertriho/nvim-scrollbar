@@ -197,6 +197,7 @@ local function instrument_renderer()
     end)
 
     local original_win_set_config = vim.api.nvim_win_set_config
+    ---@diagnostic disable-next-line: duplicate-set-field
     vim.api.nvim_win_set_config = function(...)
         return timed("float configuration", original_win_set_config, ...)
     end

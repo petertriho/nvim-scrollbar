@@ -261,6 +261,7 @@ end
             end
 
             local first = mirror.snapshot_next
+            ---@cast first -nil
             local last = math.min(first + chunk_size, mirror.snapshot_line_count)
             local chunk_started = vim.uv.hrtime()
             local lines = vim.api.nvim_buf_get_lines(mirror.bufnr, first, last, true)

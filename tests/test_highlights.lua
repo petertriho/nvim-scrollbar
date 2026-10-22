@@ -399,6 +399,7 @@ T["generates and renders isolated automatic groups for every profile"] = functio
         vim.api.nvim_set_hl(0, "ScrollbarProfile1.Track", { bg = "#000000" })
         vim.cmd("doautocmd ColorScheme")
         local names = vim.api.nvim_get_hl(0, {})
+        ---@cast names table<string, vim.api.keyset.get_hl_info>
         return {
             first_groups = rendered_groups(first_state),
             second_groups = rendered_groups(second_state),
