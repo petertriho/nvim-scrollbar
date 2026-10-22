@@ -218,6 +218,13 @@ its `setup()` call. `scripts/demo/init.lua` runs that source, and the showcase
 prints the same source. `tests/test_demo_entries.lua` checks that every source
 is a valid configuration.
 
+The demo buffer is `lua/scrollbar/mouse.lua`, so its length changes with the
+code. `scripts/demo/entries.lua` gives the place of each diagnostic, hunk,
+mark, and cursor as a fraction of the line count, not as a line number. Each
+`Ctrl+D` in a tape scrolls 4% of the buffer. `tests/test_demo_entries.lua`
+fails when two marks resolve to the same line, when two hunks touch, or when the
+search pattern matches fewer than 5 lines.
+
 Do not run `make demo` between step 1 and step 3 of the procedure that
 follows. A new build changes the bytes of the GIFs, so the attachments no
 longer match the files.

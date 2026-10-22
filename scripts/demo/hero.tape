@@ -19,7 +19,7 @@ Ctrl+D
 Sleep 300ms
 Ctrl+D
 Sleep 800ms
-Type "/pcall"
+Type "/return"
 Sleep 400ms
 Enter
 Sleep 1s

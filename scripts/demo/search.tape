@@ -13,7 +13,7 @@ Show
 Sleep 1s
 Type "/"
 Sleep 300ms
-Type@250ms "pcall"
+Type@250ms "return"
 Sleep 1s
 Enter
 Sleep 1s

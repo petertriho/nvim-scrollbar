@@ -14,7 +14,7 @@
 ---@field label string Statusline text. The tapes wait for it, so it must not contain `/`.
 ---@field description string Markdown
 ---@field setup string Lua source that configures the plugin
----@field line? integer Cursor line. The default is `M.line`.
+---@field position? number Cursor position. The default is `M.position`.
 ---@field search? boolean When `false`, the demo sets no search pattern
 ---@field settle_ms? integer Time before the statusline shows `label`
 ---@field prepare? fun(demo: DemoContext)
@@ -26,8 +26,51 @@ local M = {}
 
 -- The buffer of every image. It is short enough for a thumb of a few rows.
 M.file = "lua/scrollbar/mouse.lua"
-M.line = 226
-M.search_pattern = "pcall"
+-- A Lua keyword, so the matches stay spread over the buffer when it changes.
+-- The tapes type the same pattern.
+M.search_pattern = "return"
+
+-- The demo data gives a place in a buffer as a position, not as a line number,
+-- so that it fits the buffer when `M.file` gets longer or shorter. A position is
+-- a fraction of the line count: 0 is the first line, and 1 is the last line.
+
+M.position = 0.52
+
+-- Each diagnostic lands on the first non-blank line at or after its position.
+M.diagnostics = {
+    { 0.10, "ERROR", "Undefined field `relative`." },
+    { 0.51, "ERROR", "Cannot compare `integer?` with `integer`." },
+    { 0.89, "ERROR", "Missing argument `source_win`." },
+    { 0.27, "WARN", "Unused local `view`." },
+    { 0.50, "WARN", "Need check nil." },
+    { 0.76, "WARN", "Redundant return value." },
+    { 0.93, "WARN", "Unused local `active`." },
+    { 0.52, "INFO", "Line is longer than 100 columns." },
+    { 0.69, "INFO", "Function has 9 upvalues." },
+    { 0.16, "HINT", "Unnecessary `do` block." },
+    { 0.37, "HINT", "Consider `math.min`." },
+    { 0.94, "HINT", "Unused function `restore_source`." },
+}
+
+-- The parts of the buffer that differ from the mini.diff reference text. An add
+-- or change hunk covers `count` lines from its position. A delete hunk removes
+-- `count` lines after its position.
+M.hunks = {
+    { kind = "add", position = 0.22, count = 4 },
+    { kind = "change", position = 0.32, count = 3 },
+    { kind = "delete", position = 0.42, count = 2 },
+    { kind = "change", position = 0.62, count = 3 },
+    { kind = "add", position = 0.80, count = 4 },
+}
+
+M.marks = { a = 0.07, b = 0.25, c = 0.46, d = 0.66, e = 0.87 }
+
+---@param position number
+---@param line_count integer
+---@return integer line
+function M.line_at(position, line_count)
+    return math.floor(position * (line_count - 1) + 0.5) + 1
+end
 
 M.sections = {
     { id = "defaults", title = "Defaults" },
@@ -45,8 +88,9 @@ local function set_window_variable(winid, name, value)
 end
 
 ---@param winid integer
----@param line integer
-local function center(winid, line)
+---@param position number
+local function center(winid, position)
+    local line = M.line_at(position, vim.api.nvim_buf_line_count(vim.api.nvim_win_get_buf(winid)))
     vim.api.nvim_win_call(winid, function()
         vim.api.nvim_win_set_cursor(winid, { line, 0 })
         vim.cmd("normal! zz")
@@ -62,7 +106,7 @@ local entries = {
         title = "nvim-scrollbar",
         label = "nvim-scrollbar",
         description = "The default scrollbar and minimap while scrolling past diagnostics, Git hunks, and search matches.",
-        line = 1,
+        position = 0,
         search = false,
         docs = "README.md",
         setup = [[
@@ -78,7 +122,7 @@ require("scrollbar").setup({
         title = "Incremental search",
         label = "search = { incsearch = true }",
         description = "Search marks follow the pattern while you type it.",
-        line = 1,
+        position = 0,
         search = false,
         docs = "docs/providers/search.md",
         setup = [[
@@ -95,7 +139,7 @@ require("scrollbar").setup({
         title = "Minimap",
         label = "minimap = { enabled = true }",
         description = "The minimap scrolls with the source window and tints the viewport.",
-        line = 1,
+        position = 0,
         docs = "docs/minimap/README.md",
         setup = [[
 require("scrollbar").setup({
@@ -110,7 +154,7 @@ require("scrollbar").setup({
         title = "Autohide",
         label = "autohide = true",
         description = "The scrollbar shows while you scroll and hides after one second without activity.",
-        line = 1,
+        position = 0,
         search = false,
         docs = "docs/visibility.md",
         setup = [[
@@ -233,7 +277,8 @@ require("scrollbar").setup({
             demo.label(lua_win, "lua: review")
             demo.label(markdown_win, "markdown: minimal")
             demo.label(make_win, "make: zed (root)")
-            vim.api.nvim_win_set_cursor(markdown_win, { 60, 0 })
+            local markdown_lines = vim.api.nvim_buf_line_count(vim.api.nvim_win_get_buf(markdown_win))
+            vim.api.nvim_win_set_cursor(markdown_win, { M.line_at(0.23, markdown_lines), 0 })
             vim.api.nvim_set_current_win(lua_win)
         end,
     },
@@ -273,7 +318,7 @@ require("scrollbar").setup({
                 set_window_variable(winid, "gutter", mode)
                 demo.label(winid, 'gutter = "' .. mode .. '"')
                 vim.wo[winid].wrap = false
-                center(winid, M.line)
+                center(winid, M.position)
             end
             vim.api.nvim_set_current_win(inner)
         end,
@@ -286,7 +331,7 @@ require("scrollbar").setup({
         description = "Wrapped lines and a closed fold. The left split counts buffer lines. The right split sets `vim.w.screenline` and counts screen lines.",
         docs = "docs/layout-and-geometry.md",
         section = "recipes",
-        line = 255,
+        position = 0.58,
         setup = [[
 require("scrollbar").setup({
     providers = { mini_diff = true },
@@ -315,9 +360,10 @@ require("scrollbar").setup({
                 vim.wo[winid].wrap = true
                 vim.wo[winid].foldmethod = "manual"
                 vim.api.nvim_win_call(winid, function()
-                    vim.cmd("268,330fold")
+                    local line_count = vim.api.nvim_buf_line_count(0)
+                    vim.cmd(string.format("%d,%dfold", M.line_at(0.61, line_count), M.line_at(0.76, line_count)))
                 end)
-                center(winid, 255)
+                center(winid, 0.58)
             end
             vim.api.nvim_set_current_win(line_win)
         end,

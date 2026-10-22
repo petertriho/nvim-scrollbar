@@ -23,7 +23,7 @@ Ctrl+D
 Sleep 250ms
 Ctrl+D
 Sleep 800ms
-Type "300G"
+Type "69%"
 Sleep 1.2s
 Type "G"
 Sleep 1.2s
