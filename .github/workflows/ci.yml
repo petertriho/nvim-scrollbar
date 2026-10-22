@@ -2,8 +2,13 @@ name: CI
 
 on:
   push:
+    branches:
+      - main
   pull_request:
   workflow_dispatch:
+  schedule:
+    # Only the nightly job runs on the schedule
+    - cron: "0 6 * * 1"
 
 permissions:
   contents: read
@@ -15,62 +20,127 @@ concurrency:
 jobs:
   quality:
     name: Quality
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-      - name: Install StyLua and Selene
-        uses: taiki-e/install-action@2ca9b94c269419b7b0c711c09d0b21c4e1d51145 # v2.83.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install Nix
+        uses: cachix/install-nix-action@448cde739abec1eaf0646249e3d25bb8d9bc7702 # v31.11.2
         with:
-          tool: stylua@2.5.2,selene@0.31.0
-      - name: Install Lua language server
-        env:
-          LUALS_VERSION: 3.15.0
-        run: |
-          curl --fail --location --silent --show-error \
-            "https://github.com/LuaLS/lua-language-server/releases/download/${LUALS_VERSION}/lua-language-server-${LUALS_VERSION}-linux-x64.tar.gz" \
-            --output /tmp/lua-language-server.tar.gz
-          mkdir /tmp/lua-language-server
-          tar -xzf /tmp/lua-language-server.tar.gz -C /tmp/lua-language-server
-          echo "/tmp/lua-language-server/bin" >> "$GITHUB_PATH"
+          extra_nix_config: |
+            extra-substituters = https://nix-community.cachix.org
+            extra-trusted-public-keys = nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs=
       - name: Check formatting
-        run: make format-check
+        run: nix develop -c make format-check
       - name: Lint
-        run: make lint
+        run: nix develop -c make lint
       - name: Typecheck
-        run: make typecheck
+        run: nix develop -c make typecheck
 
   test:
     name: Neovim ${{ matrix.neovim }}
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        neovim:
-          - v0.11.4
-          - stable
+        include:
+          - neovim: stable
+            shell: default
+          - neovim: 0.11.0
+            shell: nvim-0_11_0
     steps:
       - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-      - name: Install Neovim
-        uses: rhysd/action-setup-vim@febef33995d6649302e9d88dda81e071b68f16a7 # v1.6.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install Nix
+        uses: cachix/install-nix-action@448cde739abec1eaf0646249e3d25bb8d9bc7702 # v31.11.2
         with:
-          neovim: true
-          version: ${{ matrix.neovim }}
+          extra_nix_config: |
+            extra-substituters = https://nix-community.cachix.org
+            extra-trusted-public-keys = nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs=
+      - name: Show Neovim version
+        run: nix develop ".#${{ matrix.shell }}" -c nvim --version
       - name: Test
-        run: make test
+        run: nix develop ".#${{ matrix.shell }}" -c make test
+
+  # Shared runners are noisy, so a failed comparison is a warning to read in the job summary, not a failed check
+  bench:
+    name: Benchmarks
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    continue-on-error: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The pull request merge commit and its parents. The first parent is the base branch.
+          fetch-depth: 2
+      - name: Install Nix
+        uses: cachix/install-nix-action@448cde739abec1eaf0646249e3d25bb8d9bc7702 # v31.11.2
+        with:
+          extra_nix_config: |
+            extra-substituters = https://nix-community.cachix.org
+            extra-trusted-public-keys = nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs=
+      - name: Compare with the base branch
+        env:
+          BENCH_RUNS: 3
+        run: nix develop -c scripts/bench-compare.sh HEAD^1
+
+  # Dependabot and `nix flake update` can lock an overlay commit that is not in the cache yet. Then
+  # `nix develop .#nightly` builds Neovim from source.
+  nightly-cache:
+    name: Nightly cache
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install Nix
+        uses: cachix/install-nix-action@448cde739abec1eaf0646249e3d25bb8d9bc7702 # v31.11.2
+      - name: Check that the locked nightly is in the cache
+        run: scripts/nightly-cache.sh check
 
   nightly:
     name: Neovim nightly
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     continue-on-error: true
     steps:
       - name: Checkout
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-      - name: Install Neovim nightly
-        uses: rhysd/action-setup-vim@febef33995d6649302e9d88dda81e071b68f16a7 # v1.6.1
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install Nix
+        uses: cachix/install-nix-action@448cde739abec1eaf0646249e3d25bb8d9bc7702 # v31.11.2
         with:
-          neovim: true
-          version: nightly
+          extra_nix_config: |
+            extra-substituters = https://nix-community.cachix.org
+            extra-trusted-public-keys = nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs=
+      # The overlay updates each day at 00:00 UTC, and its CI then pushes the build to the cache. The job uses the newest
+      # overlay commit that is in the cache, not the locked one, so it tests a recent nightly without a source build.
+      - name: Find the newest cached nightly
+        id: overlay
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          rev=$(scripts/nightly-cache.sh latest)
+          echo "rev=$rev" >> "$GITHUB_OUTPUT"
+      - name: Show Neovim version
+        env:
+          OVERLAY: github:nix-community/neovim-nightly-overlay/${{ steps.overlay.outputs.rev }}
+        run: >-
+          nix develop .#nightly
+          --override-input neovim-nightly-overlay "$OVERLAY"
+          --no-write-lock-file
+          -c nvim --version
       - name: Test
-        run: make test
+        env:
+          OVERLAY: github:nix-community/neovim-nightly-overlay/${{ steps.overlay.outputs.rev }}
+        run: >-
+          nix develop .#nightly
+          --override-input neovim-nightly-overlay "$OVERLAY"
+          --no-write-lock-file
+          -c make test
