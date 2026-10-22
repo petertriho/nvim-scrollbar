@@ -25,6 +25,12 @@ end
 
 local CASE_MODULES = {
     "benchmarks.cases.render",
+    "benchmarks.cases.typing",
+    "benchmarks.cases.providers",
+    "benchmarks.cases.marks",
+    "benchmarks.cases.search",
+    "benchmarks.cases.minimap",
+    "benchmarks.cases.worker",
 }
 
 ---@param argv string[]
