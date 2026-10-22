@@ -33,25 +33,25 @@ test-file: test-deps
 benchmark: benchmark-render
 
 benchmark-render:
-	$(NVIM) --headless --noplugin -u NONE -l benchmarks/render.lua
+	$(NVIM) --headless --noplugin -u NONE -l benchmarks/reports/render.lua
 
 benchmark-search:
-	$(NVIM) --headless --noplugin -u NONE -l benchmarks/search.lua
+	$(NVIM) --headless --noplugin -u NONE -l benchmarks/reports/search.lua
 
 benchmark-marks:
-	$(NVIM) --headless --noplugin -u NONE -l benchmarks/marks_reconcile.lua
+	$(NVIM) --headless --noplugin -u NONE -l benchmarks/reports/marks_reconcile.lua
 
 benchmark-minimap:
-	$(NVIM) --headless --noplugin -u NONE -l benchmarks/minimap.lua
+	$(NVIM) --headless --noplugin -u NONE -l benchmarks/reports/minimap.lua
 
 benchmark-typing:
-	$(NVIM) --headless --noplugin -u NONE -l benchmarks/typing.lua
+	$(NVIM) --headless --noplugin -u NONE -l benchmarks/reports/typing.lua
 
 benchmark-worker:
-	$(NVIM) --headless --noplugin -u NONE -l benchmarks/worker.lua
+	$(NVIM) --headless --noplugin -u NONE -l benchmarks/reports/worker.lua
 
 benchmark-providers:
-	$(NVIM) --headless --noplugin -u NONE -l benchmarks/providers.lua
+	$(NVIM) --headless --noplugin -u NONE -l benchmarks/reports/providers.lua
 
 demo-deps: test-deps
 	@if [ ! -d "$(TOKYONIGHT_DIR)/.git" ]; then \

@@ -1,5 +1,5 @@
 local script_path = debug.getinfo(1, "S").source:sub(2)
-local root = vim.fn.fnamemodify(script_path, ":p:h:h")
+local root = vim.fn.fnamemodify(script_path, ":p:h:h:h")
 vim.opt.runtimepath:prepend(root)
 
 vim.o.lines = 48
@@ -21,8 +21,9 @@ vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
 local source_buf = vim.api.nvim_get_current_buf()
 
 -- Dense matches: 2 per line on even-indexed lines, 1 per line on odd-indexed
--- lines. This fixture mirrors the "dense" fixture in benchmarks/search.lua. The
--- two forms publish the matches as a compact blob or as ordinary search marks.
+-- lines. This fixture mirrors the "dense" fixture in
+-- benchmarks/reports/search.lua. The two forms publish the matches as a compact
+-- blob or as ordinary search marks.
 -- Two match sets alternate, because the store ignores an identical publish.
 -- Each timed pass is a cold render:
 -- - publish: a new match set, as on an incsearch keystroke or a refresh after
