@@ -8,8 +8,9 @@ TOKYONIGHT_COMMIT := cdc07ac78467a233fd62c493de29a17e0cf2b2b6
 TOKYONIGHT_DIR := deps/tokyonight.nvim
 VHS ?= vhs
 LUA_PATHS := lua tests scripts benchmarks
+REF ?= main
 
-.PHONY: test-deps test test-file benchmark benchmark-render benchmark-search benchmark-marks benchmark-minimap benchmark-typing benchmark-worker benchmark-providers demo-deps demo demo-manifest demo-issues format format-check lint typecheck ci
+.PHONY: test-deps test test-file bench bench-compare benchmark benchmark-render benchmark-search benchmark-marks benchmark-minimap benchmark-typing benchmark-worker benchmark-providers demo-deps demo demo-manifest demo-issues format format-check lint typecheck ci
 
 test-deps:
 	@if [ ! -d "$(MINI_DIR)/.git" ]; then \
@@ -29,6 +30,14 @@ test-file: test-deps
 	@test -n "$(FILE)" || (printf '%s\n' 'Usage: make test-file FILE=tests/**/test_*.lua' >&2; exit 2)
 	TEST_FILE="$(FILE)" $(NVIM) --headless --noplugin -u scripts/minimal_init.lua \
 		-c "lua MiniTest.run_file(vim.env.TEST_FILE)"
+
+# Prints one line for each case. Options go in BENCH_ARGS, for example BENCH_ARGS="--filter render".
+bench:
+	$(NVIM) --headless --clean -l benchmarks/run.lua $(BENCH_ARGS)
+
+# Compares the benchmarks of REF with the working tree
+bench-compare:
+	NVIM="$(NVIM)" scripts/bench-compare.sh "$(REF)"
 
 benchmark: benchmark-render
 
