@@ -126,6 +126,55 @@ T["applies full highlight tables and projects string sources by channel"] = func
     })
 end
 
+T["resolves string sources through links and falls back for missing groups"] = function()
+    local child = new_child()
+    local result = child.lua_func(
+        function(config)
+            vim.api.nvim_set_hl(0, "Normal", { fg = "#0a0b0c" })
+            vim.api.nvim_set_hl(0, "PmenuThumb", { bg = "#445566" })
+            vim.api.nvim_set_hl(0, "TrackTarget", { fg = "#010101", bg = "#234567" })
+            vim.api.nvim_set_hl(0, "LinkedTrackSource", { link = "TrackTarget" })
+            vim.api.nvim_set_hl(0, "EmptyMarkSource", {})
+            local get = function(name)
+                return vim.api.nvim_get_hl(0, { name = name, link = false })
+            end
+            local function snapshot()
+                return {
+                    track = get("ScrollbarTrack"),
+                    thumb = get("ScrollbarThumb"),
+                    empty_mark = get("ScrollbarSearch"),
+                    missing_mark = get("ScrollbarError"),
+                }
+            end
+            require("scrollbar").setup(config)
+            local first = snapshot()
+            require("scrollbar").setup(config)
+            return {
+                first = first,
+                second = snapshot(),
+                missing_thumb_exists = vim.fn.hlexists("MissingThumbSource"),
+                missing_mark_exists = vim.fn.hlexists("MissingMarkSource"),
+            }
+        end,
+        base_config({
+            track = { highlight = "LinkedTrackSource" },
+            thumb = { highlight = "MissingThumbSource" },
+            marks = {
+                Search = { highlight = "EmptyMarkSource" },
+                Error = { highlight = "MissingMarkSource" },
+            },
+        })
+    )
+
+    expect.equality(result.first.track, { bg = 0x234567 })
+    expect.equality(result.first.thumb, { bg = 0x445566, blend = 30 })
+    expect.equality(result.first.empty_mark, { fg = 0x000000 })
+    expect.equality(result.first.missing_mark, { fg = 0x0A0B0C })
+    expect.equality(result.second, result.first)
+    expect.equality(result.missing_thumb_exists, 0)
+    expect.equality(result.missing_mark_exists, 0)
+end
+
 T["preserves public canonical and legacy groups defined before setup"] = function()
     local child = new_child()
     local result = child.lua_func(function(config)

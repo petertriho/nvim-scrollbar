@@ -13,7 +13,7 @@ local function definition(source)
         return vim.deepcopy(source)
     end
     return {
-        fg = highlights.highlight_to_hex_color(source, "foreground", "Normal", "#000000"),
+        fg = highlights.highlight_to_hex_color(source, "fg", "Normal", "#000000"),
     }
 end
 

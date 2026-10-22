@@ -51,15 +51,25 @@ M.to_hex_color = function(rgb_color)
     return string.format("#%06x", rgb_color)
 end
 
-M.highlight_to_hex_color = function(hl, property, fallback_hl, fallback_hex)
-    local highlight_ok, highlight = pcall(vim.api.nvim_get_hl_by_name, hl, true)
-
-    if not highlight_ok then
-        highlight_ok, highlight = pcall(vim.api.nvim_get_hl_by_name, fallback_hl, true)
+---@param name string
+---@return vim.api.keyset.get_hl_info?
+local function get_highlight(name)
+    -- nvim_get_hl gives an empty table for a group that does not exist, and creates the group. Check first, so that a
+    -- missing group selects the fallback group.
+    local exists_ok, exists = pcall(vim.fn.hlexists, name)
+    if not exists_ok or exists == 0 then
+        return nil
     end
+    local ok, highlight = pcall(vim.api.nvim_get_hl, 0, { name = name, link = false })
+    return ok and highlight or nil
+end
+
+---@param property "fg" | "bg"
+M.highlight_to_hex_color = function(hl, property, fallback_hl, fallback_hex)
+    local highlight = get_highlight(hl) or get_highlight(fallback_hl)
 
     local hex_color = fallback_hex
-    if highlight_ok then
+    if highlight ~= nil then
         local color = highlight[property]
         if color then
             local hex_ok
@@ -82,7 +92,7 @@ local function background_highlight(source, blend, fallback_hl, fallback_hex)
     end
 
     local highlight = {
-        bg = M.highlight_to_hex_color(source, "background", fallback_hl, fallback_hex),
+        bg = M.highlight_to_hex_color(source, "bg", fallback_hl, fallback_hex),
     }
     if blend ~= nil then
         highlight.blend = blend
@@ -100,7 +110,7 @@ local function mark_highlight(properties)
     end
 
     return {
-        fg = M.highlight_to_hex_color(properties.highlight, "foreground", "Normal", "#000000"),
+        fg = M.highlight_to_hex_color(properties.highlight, "fg", "Normal", "#000000"),
     }
 end
 
