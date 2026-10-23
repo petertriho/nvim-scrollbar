@@ -36,10 +36,13 @@ local M = {}
 
 local NAMESPACE = vim.api.nvim_create_namespace("ScrollbarMinimapRenderer")
 local AUGROUP_NAME = "ScrollbarMinimapRendererLifecycle"
-local FRAME_WINHIGHLIGHT = "FloatBorder:ScrollbarMinimapFloatBorder,FloatTitle:ScrollbarMinimapFloatTitle,"
-    .. "FloatFooter:ScrollbarMinimapFloatFooter"
+-- The entries that `background_blend` does not change: the frame groups and
+-- the search groups.
+local FIXED_WINHIGHLIGHT = "FloatBorder:ScrollbarMinimapFloatBorder,FloatTitle:ScrollbarMinimapFloatTitle,"
+    .. "FloatFooter:ScrollbarMinimapFloatFooter,"
+    .. float.SEARCH_WINHIGHLIGHT
 local FLOAT_WINHIGHLIGHT = "Normal:ScrollbarMinimapBase,NormalNC:ScrollbarMinimapBase,EndOfBuffer:ScrollbarMinimapBase,"
-    .. FRAME_WINHIGHLIGHT
+    .. FIXED_WINHIGHLIGHT
 -- Window and buffer variable that marks a minimap float, also from an earlier
 -- setup.
 local OWNED_VAR = "scrollbar_minimap_owned"
@@ -56,7 +59,7 @@ local function window_presentation(active_config)
     end
 
     local base = highlight_module.resolve("ScrollbarMinimapBase", background_blend, "base")
-    local winhighlight = string.format("Normal:%s,NormalNC:%s,EndOfBuffer:%s,%s", base, base, base, FRAME_WINHIGHLIGHT)
+    local winhighlight = string.format("Normal:%s,NormalNC:%s,EndOfBuffer:%s,%s", base, base, base, FIXED_WINHIGHLIGHT)
     return math.max(active_config.blend, background_blend),
         window_config.winhighlight(winhighlight, active_config.window)
 end

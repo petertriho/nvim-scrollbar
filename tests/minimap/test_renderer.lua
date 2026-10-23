@@ -1730,7 +1730,8 @@ T["background inheritance keeps direct groups and uses full-float winblend"] = f
         result.winhighlight,
         "Normal:ScrollbarMinimapBase,NormalNC:ScrollbarMinimapBase,EndOfBuffer:ScrollbarMinimapBase,"
             .. "FloatBorder:ScrollbarMinimapFloatBorder,FloatTitle:ScrollbarMinimapFloatTitle,"
-            .. "FloatFooter:ScrollbarMinimapFloatFooter"
+            .. "FloatFooter:ScrollbarMinimapFloatFooter,Search:Scrollbar.NoSearch,CurSearch:Scrollbar.NoSearch,"
+            .. "IncSearch:Scrollbar.NoSearch"
     )
     expect.equality(result.highlight, "ScrollbarMinimapContent")
 end
@@ -2651,7 +2652,7 @@ T["window"]["merges the user winhighlight over the resolved base"] = function()
         width = 4,
         hide_on_cursor = false,
         background_blend = 20,
-        window = { border = "rounded", wo = { cursorline = true, winhighlight = "FloatBorder:Error" } },
+        window = { border = "rounded", wo = { cursorline = true, winhighlight = "FloatBorder:Error,Search:Visual" } },
     }
     configure(child, options, { set_highlights = false })
     local first = window_render(child)
@@ -2667,7 +2668,8 @@ T["window"]["merges the user winhighlight over the resolved base"] = function()
             case.winhighlight,
             string.format(
                 "Normal:%s,NormalNC:%s,EndOfBuffer:%s,FloatTitle:ScrollbarMinimapFloatTitle,"
-                    .. "FloatFooter:ScrollbarMinimapFloatFooter,FloatBorder:Error",
+                    .. "FloatFooter:ScrollbarMinimapFloatFooter,CurSearch:Scrollbar.NoSearch,"
+                    .. "IncSearch:Scrollbar.NoSearch,FloatBorder:Error,Search:Visual",
                 base,
                 base,
                 base

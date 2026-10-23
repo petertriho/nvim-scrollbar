@@ -5,7 +5,8 @@ local expect = MiniTest.expect
 local T = MiniTest.new_set()
 
 local FLOAT_WINHIGHLIGHT = "Normal:ScrollbarBase,NormalNC:ScrollbarBase,EndOfBuffer:ScrollbarBase,"
-    .. "FloatBorder:ScrollbarFloatBorder,FloatTitle:ScrollbarFloatTitle,FloatFooter:ScrollbarFloatFooter"
+    .. "FloatBorder:ScrollbarFloatBorder,FloatTitle:ScrollbarFloatTitle,FloatFooter:ScrollbarFloatFooter,"
+    .. "Search:Scrollbar.NoSearch,CurSearch:Scrollbar.NoSearch,IncSearch:Scrollbar.NoSearch"
 
 local function new_child()
     local child = helpers.new_child()
@@ -3868,7 +3869,7 @@ T["window"]["applies the keys, the options, and the merged winhighlight"] = func
         base_config.window = {
             border = "single",
             title = "T",
-            wo = { cursorline = true, winhighlight = "FloatBorder:Error" },
+            wo = { cursorline = true, winhighlight = "FloatBorder:Error,Search:Visual" },
         }
         require("scrollbar.test.set_config")(base_config)
         local renderer = require("scrollbar.renderer")
@@ -3889,7 +3890,8 @@ T["window"]["applies the keys, the options, and the merged winhighlight"] = func
     expect.equality(
         result.winhighlight,
         "Normal:ScrollbarBase,NormalNC:ScrollbarBase,EndOfBuffer:ScrollbarBase,"
-            .. "FloatTitle:ScrollbarFloatTitle,FloatFooter:ScrollbarFloatFooter,FloatBorder:Error"
+            .. "FloatTitle:ScrollbarFloatTitle,FloatFooter:ScrollbarFloatFooter,CurSearch:Scrollbar.NoSearch,"
+            .. "IncSearch:Scrollbar.NoSearch,FloatBorder:Error,Search:Visual"
     )
 end
 

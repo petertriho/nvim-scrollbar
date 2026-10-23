@@ -19,6 +19,26 @@
 
 local M = {}
 
+-- The target of the search groups in a float. The plugin does not define this
+-- group, so it is empty. A mark type cannot contain a dot, so no generated
+-- group has this name. `None` is a global group that a user can define. An
+-- empty target gives a cell another attribute id when a search matches, also
+-- when the colors do not change.
+local NO_SEARCH_GROUP = "Scrollbar.NoSearch"
+
+-- `winhighlight` entries that map the search groups of a float to an empty
+-- group. The overlay rows hide the search matches, so the mapping is a
+-- backstop for any cell that an overlay does not cover. `CurSearch` applies
+-- at the cursor of the float also when the float is not the current window.
+-- `IncSearch` applies when a search starts while the float is the current
+-- window.
+M.SEARCH_WINHIGHLIGHT = "Search:"
+    .. NO_SEARCH_GROUP
+    .. ",CurSearch:"
+    .. NO_SEARCH_GROUP
+    .. ",IncSearch:"
+    .. NO_SEARCH_GROUP
+
 ---@alias ScrollbarFloatState ScrollbarWindowState|ScrollbarMinimapRendererState
 
 ---@param winid integer

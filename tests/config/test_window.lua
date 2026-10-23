@@ -109,6 +109,14 @@ T["merges the user winhighlight entries over the renderer entries"] = function()
         "Normal:Base,FloatTitle:Title,FloatBorder:Error,Search:Normal"
     )
     expect.equality(window_config.winhighlight(base, scrollbar_window({ wo = { winhighlight = "" } })), base)
+
+    -- A user entry for a search group replaces the search entry of the base.
+    local searched = "Normal:Base," .. require("scrollbar.shared.float").SEARCH_WINHIGHLIGHT
+    expect.equality(
+        window_config.winhighlight(searched, scrollbar_window({ wo = { winhighlight = "Search:Foo" } })),
+        "Normal:Base,CurSearch:Scrollbar.NoSearch,IncSearch:Scrollbar.NoSearch,Search:Foo"
+    )
+    expect.equality(window_config.winhighlight(searched, scrollbar_window(nil)), searched)
 end
 
 T["rejects the keys that the renderer sets with a hint"] = function()
