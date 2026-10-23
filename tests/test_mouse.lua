@@ -50,7 +50,7 @@ local function highlight_groups(child, float_buf)
     return child.lua_func(function(bufnr)
         local namespace = vim.api.nvim_get_namespaces().ScrollbarRenderer
         local groups = {}
-        for _, extmark in ipairs(vim.api.nvim_buf_get_extmarks(bufnr, namespace, 0, -1, { details = true })) do
+        for _, extmark in ipairs(require("scrollbar.test.float").extmarks(bufnr, namespace, 0, -1, { details = true })) do
             groups[extmark[4].hl_group] = true
         end
         return groups

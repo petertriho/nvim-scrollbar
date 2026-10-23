@@ -7,17 +7,17 @@
 ---
 --- `scrollbar.shared.stack` resolves the origin and z-index against a scrollbar
 --- on the same side of the source window. Squash output is the only source of
---- row text. The viewport, cursor, and semantic overlays are non-destructive
---- extmark highlights. `lua/scrollbar/minimap/projection.lua` maps source lines
---- to float rows for every layer, so all layers agree on the row of a line.
+--- row text. The viewport, cursor, and semantic overlays are highlight spans
+--- that do not change the row text. `lua/scrollbar/minimap/projection.lua` maps
+--- source lines to float rows for every layer, so all layers agree on the row
+--- of a line.
 ---
 --- The worker squashes a slice of map rows around the visible rows. Scrolling
 --- inside the slice redraws from the cache. When the visible rows get near the
 --- edge of the cached slice, the renderer requests a new slice.
 ---
 --- Every render composes all rows and their highlights. The row writer then
---- replaces only the rows whose text changed and sets extmarks only on the rows
---- whose text or highlights changed.
+--- sets a new extmark only on the rows whose text or highlights changed.
 
 local config_module = require("scrollbar.minimap.config")
 local float = require("scrollbar.shared.float")
@@ -216,9 +216,8 @@ local function stack_footprint(active_config, source_win)
     }
 end
 
----Translate a canonical cell grid into buffer text rows and the highlight
----spans of each row. Each cell is one character, so the span columns count
----cells.
+---Translate a canonical cell grid into text rows and the highlight spans of
+---each row. Each cell is one character, so the span columns count cells.
 ---@param cells ScrollbarMinimapCell[][]
 ---@return string[] rows
 ---@return ScrollbarMinimapHighlightSpan[][] highlights

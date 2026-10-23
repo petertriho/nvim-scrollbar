@@ -95,7 +95,7 @@ local function render_mark_ranges(child, char)
         local state = assert(renderer.render(0))
         local ranges = {}
         for _, mark in
-            ipairs(vim.api.nvim_buf_get_extmarks(state.float_buf, renderer.namespace(), 0, -1, {
+            ipairs(require("scrollbar.test.float").extmarks(state.float_buf, renderer.namespace(), 0, -1, {
                 details = true,
             }))
         do
@@ -175,7 +175,7 @@ local function render_overlay_marks(child, options)
         local state = assert(renderer.render(0))
         local marks = {}
         for _, mark in
-            ipairs(vim.api.nvim_buf_get_extmarks(state.float_buf, renderer.namespace(), 0, -1, {
+            ipairs(require("scrollbar.test.float").extmarks(state.float_buf, renderer.namespace(), 0, -1, {
                 details = true,
             }))
         do
@@ -515,7 +515,7 @@ T["viewport tint highlights the projected source viewport rows without changing 
         local namespace = renderer.namespace()
         local viewport_spans = {}
         for row = 0, state.height - 1 do
-            local marks = vim.api.nvim_buf_get_extmarks(
+            local marks = require("scrollbar.test.float").extmarks(
                 state.float_buf,
                 namespace,
                 { row, 0 },
@@ -588,7 +588,15 @@ T["content viewport marks and points share one terminal-row projection"] = funct
         local state = assert(renderer.render(source_win))
         local rows_by_highlight = {}
         for _, mark in
-            ipairs(vim.api.nvim_buf_get_extmarks(state.float_buf, renderer.namespace(), 0, -1, { details = true }))
+            ipairs(
+                require("scrollbar.test.float").extmarks(
+                    state.float_buf,
+                    renderer.namespace(),
+                    0,
+                    -1,
+                    { details = true }
+                )
+            )
         do
             local highlight = mark[4] and mark[4].hl_group
             if highlight ~= nil and rows_by_highlight[highlight] == nil then
@@ -646,7 +654,7 @@ T["cursor points project exact text whitespace and end-of-line columns"] = funct
         local state = assert(renderer.render(source_win))
         local positions = {}
         for _, mark in
-            ipairs(vim.api.nvim_buf_get_extmarks(state.float_buf, renderer.namespace(), 0, -1, {
+            ipairs(require("scrollbar.test.float").extmarks(state.float_buf, renderer.namespace(), 0, -1, {
                 details = true,
             }))
         do
@@ -699,7 +707,7 @@ T["disabled cursor provider suppresses stored cursor points"] = function()
         local renderer = require("scrollbar.minimap.renderer")
         local state = assert(renderer.render(source_win))
         for _, mark in
-            ipairs(vim.api.nvim_buf_get_extmarks(state.float_buf, renderer.namespace(), 0, -1, {
+            ipairs(require("scrollbar.test.float").extmarks(state.float_buf, renderer.namespace(), 0, -1, {
                 details = true,
             }))
         do
@@ -790,7 +798,7 @@ T["overlay cells highlight projected rows when overlays are enabled"] = function
         local namespace = renderer.namespace()
         local rows_with_overlay = {}
         for row = 0, state.height - 1 do
-            local marks = vim.api.nvim_buf_get_extmarks(
+            local marks = require("scrollbar.test.float").extmarks(
                 state.float_buf,
                 namespace,
                 { row, 0 },
@@ -1621,7 +1629,7 @@ T["viewport false suppresses the viewport tint"] = function()
         local renderer = require("scrollbar.minimap.renderer")
         local state = assert(renderer.render(0))
         local namespace = renderer.namespace()
-        local marks = vim.api.nvim_buf_get_extmarks(state.float_buf, namespace, 0, -1, { details = true })
+        local marks = require("scrollbar.test.float").extmarks(state.float_buf, namespace, 0, -1, { details = true })
         local has_viewport = false
         for _, mark in ipairs(marks) do
             local hl = mark[4] and mark[4].hl_group
@@ -1657,7 +1665,7 @@ T["occupied cells use the monochrome content highlight by default"] = function()
         local state = assert(renderer.render(0))
         local ranges = {}
         for _, mark in
-            ipairs(vim.api.nvim_buf_get_extmarks(state.float_buf, renderer.namespace(), 0, -1, {
+            ipairs(require("scrollbar.test.float").extmarks(state.float_buf, renderer.namespace(), 0, -1, {
                 details = true,
             }))
         do
@@ -1707,7 +1715,7 @@ T["background inheritance keeps direct groups and uses full-float winblend"] = f
         vim.api.nvim_buf_set_lines(0, 0, -1, false, { "a" })
         local renderer = require("scrollbar.minimap.renderer")
         local state = assert(renderer.render(0))
-        local mark = vim.api.nvim_buf_get_extmarks(state.float_buf, renderer.namespace(), 0, -1, {
+        local mark = require("scrollbar.test.float").extmarks(state.float_buf, renderer.namespace(), 0, -1, {
             details = true,
         })[1]
         return {
@@ -1801,7 +1809,15 @@ T["numeric background blend isolates base and background-bearing layers"] = func
         local definitions = {}
         local foreground_seen = false
         for _, mark in
-            ipairs(vim.api.nvim_buf_get_extmarks(state.float_buf, renderer.namespace(), 0, -1, { details = true }))
+            ipairs(
+                require("scrollbar.test.float").extmarks(
+                    state.float_buf,
+                    renderer.namespace(),
+                    0,
+                    -1,
+                    { details = true }
+                )
+            )
         do
             local name = mark[4].hl_group
             if name == "ForegroundOnly" then
@@ -1882,7 +1898,7 @@ T["profile full-float blend transitions reuse resources and refresh wrappers"] =
 
         vim.bo.filetype = "text"
         local first = assert(renderer.render(0))
-        local first_mark = vim.api.nvim_buf_get_extmarks(first.float_buf, renderer.namespace(), 0, -1, {
+        local first_mark = require("scrollbar.test.float").extmarks(first.float_buf, renderer.namespace(), 0, -1, {
             details = true,
         })[1]
         local first_group = first_mark[4].hl_group
@@ -1895,7 +1911,7 @@ T["profile full-float blend transitions reuse resources and refresh wrappers"] =
 
         vim.bo.filetype = "lua"
         local second = assert(renderer.render(0))
-        local second_mark = vim.api.nvim_buf_get_extmarks(second.float_buf, renderer.namespace(), 0, -1, {
+        local second_mark = require("scrollbar.test.float").extmarks(second.float_buf, renderer.namespace(), 0, -1, {
             details = true,
         })[1]
         local second_group = second_mark[4].hl_group

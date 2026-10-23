@@ -407,11 +407,11 @@ T["keeps same-buffer source windows independent and writes only float buffers"] 
         rawset(vim.api, "nvim_buf_set_extmark", function(...)
             local arguments = { ... }
             local options = arguments[5]
-            if options.hl_group ~= nil then
+            if options.virt_text ~= nil or options.hl_group ~= nil then
                 extmark_options[#extmark_options + 1] = {
                     hl_group = options.hl_group,
                     hl_mode = options.hl_mode,
-                    priority = options.priority,
+                    virt_text_pos = options.virt_text_pos,
                 }
             end
             return set_extmark(...)
@@ -426,15 +426,33 @@ T["keeps same-buffer source windows independent and writes only float buffers"] 
         local first_again = assert(renderer.render(first))
         local namespace = vim.api.nvim_get_namespaces().ScrollbarRenderer
         local float_extmarks =
-            vim.api.nvim_buf_get_extmarks(first_state.float_buf, namespace, 0, -1, { details = true })
+            require("scrollbar.test.float").extmarks(first_state.float_buf, namespace, 0, -1, { details = true })
         local source_extmarks =
             vim.api.nvim_buf_get_extmarks(first_state.source_buf, namespace, 0, -1, { details = true })
         rawset(vim.api, "nvim_buf_set_extmark", set_extmark)
+        -- The chunks do not keep the priorities, so they come from the spans
+        -- that the renderer gave the row writer.
+        local span_priorities = {}
+        for _, spans in ipairs(first_state.rendered_highlights) do
+            for _, span in ipairs(spans) do
+                span_priorities[span.highlight] = span.priority
+            end
+        end
+        local overlay_positions = {}
+        for _, mark in
+            ipairs(vim.api.nvim_buf_get_extmarks(first_state.float_buf, namespace, 0, -1, { details = true }))
+        do
+            overlay_positions[mark[4].virt_text_pos or "none"] = true
+        end
         return {
             first = first_state,
             second = second_state,
-            first_lines = vim.api.nvim_buf_get_lines(first_state.float_buf, 0, -1, false),
-            second_lines = vim.api.nvim_buf_get_lines(second_state.float_buf, 0, -1, false),
+            first_lines = require("scrollbar.test.float").lines(first_state.float_buf, 0, -1, false),
+            second_lines = require("scrollbar.test.float").lines(second_state.float_buf, 0, -1, false),
+            buffer_text = table.concat(vim.api.nvim_buf_get_lines(first_state.float_buf, 0, -1, false)),
+            buffer_line_count = vim.api.nvim_buf_line_count(first_state.float_buf),
+            overlay_positions = overlay_positions,
+            span_priorities = span_priorities,
             float_extmarks = float_extmarks,
             source_extmarks = source_extmarks,
             extmark_options = extmark_options,
@@ -459,18 +477,24 @@ T["keeps same-buffer source windows independent and writes only float buffers"] 
     expect.no_equality(result.second_lines[1]:sub(1, 1), "M")
     expect.equality(result.second_lines[#result.second_lines]:sub(1, 1), "M")
     expect.equality(#result.float_extmarks > 0, true)
-    expect.equality(result.float_extmarks[1][4].virt_text, nil)
+    -- The rows are overlay virtual text over empty lines, so 'hlsearch' does
+    -- not reach them.
+    expect.equality(result.buffer_text, "")
+    expect.equality(result.buffer_line_count, #result.first_lines)
+    expect.equality(result.overlay_positions, { overlay = true })
     local extmark_groups = {}
     for _, extmark in ipairs(result.float_extmarks) do
-        extmark_groups[extmark[4].hl_group] = {
-            priority = extmark[4].priority,
-        }
+        extmark_groups[extmark[4].hl_group] = true
     end
-    expect.equality(extmark_groups.ScrollbarTrack, { priority = 1 })
-    expect.equality(extmark_groups.ScrollbarMisc, { priority = 2 })
+    expect.equality(extmark_groups.ScrollbarTrack, true)
+    expect.equality(extmark_groups.ScrollbarMisc, true)
+    expect.equality(result.span_priorities.ScrollbarTrack, 1)
+    expect.equality(result.span_priorities.ScrollbarMisc, 2)
+    expect.equality(#result.extmark_options > 0, true)
     for _, options in ipairs(result.extmark_options) do
-        expect.equality(options.hl_mode, "combine")
-        expect.equality(type(options.priority), "number")
+        expect.equality(options.hl_group, nil)
+        expect.equality(options.virt_text_pos, "overlay")
+        expect.equality(options.hl_mode, "replace")
     end
     expect.equality(result.source_extmarks, {})
     expect.equality(result.float_filetype, "scrollbar")
@@ -505,10 +529,20 @@ T["switches canonical Thumb spans to pressed groups without losing priorities"] 
             local function groups()
                 local found = {}
                 for _, extmark in
-                    ipairs(vim.api.nvim_buf_get_extmarks(state.float_buf, namespace, 0, -1, { details = true }))
+                    ipairs(
+                        require("scrollbar.test.float").extmarks(state.float_buf, namespace, 0, -1, { details = true })
+                    )
                 do
                     local details = assert(extmark[4], "the extmark has no details")
-                    found[details.hl_group] = details.priority
+                    found[details.hl_group] = true
+                end
+                -- The chunks do not keep the priorities, so they come from
+                -- the spans of the last write.
+                for _, spans in ipairs(state.rendered_highlights) do
+                    for _, span in ipairs(spans) do
+                        assert(found[span.highlight], "a written span is not on the float")
+                        found[span.highlight] = span.priority
+                    end
                 end
                 return found
             end
@@ -553,19 +587,23 @@ T["renders track only in declared columns over a transparent float base"] = func
             local namespace = vim.api.nvim_get_namespaces().ScrollbarRenderer
             local groups = {}
             for _, extmark in
-                ipairs(vim.api.nvim_buf_get_extmarks(state.float_buf, namespace, 0, { 0, -1 }, {
+                ipairs(require("scrollbar.test.float").extmarks(state.float_buf, namespace, 0, { 0, -1 }, {
                     details = true,
                 }))
             do
                 groups[extmark[4].hl_group] = {
                     start_col = extmark[3],
                     end_col = extmark[4].end_col,
-                    priority = extmark[4].priority,
                 }
+            end
+            -- The chunks do not keep the priorities, so they come from the
+            -- spans of the last write.
+            for _, span in ipairs(state.rendered_highlights[1]) do
+                groups[span.highlight].priority = span.priority
             end
             return {
                 groups = groups,
-                row = vim.api.nvim_buf_get_lines(state.float_buf, 0, 1, false)[1],
+                row = require("scrollbar.test.float").lines(state.float_buf, 0, 1, false)[1],
                 winhighlight = vim.api.nvim_get_option_value("winhighlight", { win = state.float_win }),
             }
         end,
@@ -1552,7 +1590,7 @@ T["applies exclusions, limits, all-visible rules, and owned-window filtering"] =
         renderer.setup()
         local state = assert(renderer.render(source_win))
         local namespace = vim.api.nvim_get_namespaces().ScrollbarRenderer
-        local extmarks = vim.api.nvim_buf_get_extmarks(state.float_buf, namespace, 0, -1, { details = true })
+        local extmarks = require("scrollbar.test.float").extmarks(state.float_buf, namespace, 0, -1, { details = true })
         local has_handle_highlight = false
         for _, extmark in ipairs(extmarks) do
             if extmark[4].hl_group == "ScrollbarThumb" then
@@ -1830,36 +1868,56 @@ T["updates only dirty rows and fully replaces rows when dimensions change"] = fu
                 table.insert(events, { first = first, last = last, new_last = new_last })
             end,
         })
+        -- The rows are overlay extmarks, so the rows that a render writes
+        -- are the lines of its extmark calls.
+        local written = {}
+        local set_extmark = vim.api.nvim_buf_set_extmark
+        rawset(vim.api, "nvim_buf_set_extmark", function(bufnr, ...)
+            if bufnr == state.float_buf then
+                written[#written + 1] = select(2, ...)
+            end
+            return set_extmark(bufnr, ...)
+        end)
 
         assert(store.set("test", source_buf, { { line = 60, type = "Misc", text = "B" } }))
         renderer.render(source_win)
         local dirty_events = vim.deepcopy(events)
+        local dirty_rows = written
 
         events = {}
+        written = {}
         local old_height = state.height
         vim.api.nvim_win_set_height(source_win, old_height - 2)
         renderer.render(source_win)
         local dimension_events = vim.deepcopy(events)
+        local dimension_rows = written
+        rawset(vim.api, "nvim_buf_set_extmark", set_extmark)
 
         return {
             mark_row = mark_row,
             dirty_events = dirty_events,
+            dirty_rows = dirty_rows,
             dimension_events = dimension_events,
+            dimension_rows = dimension_rows,
             old_height = old_height,
             new_height = assert(renderer.get_state(source_win)).height,
         }
     end, renderer_config())
 
-    expect.equality(result.dirty_events, {
-        { first = result.mark_row, last = result.mark_row + 1, new_last = result.mark_row + 1 },
-    })
+    expect.equality(result.dirty_events, {})
+    expect.equality(result.dirty_rows, { result.mark_row })
     expect.equality(#result.dimension_events, 1)
     expect.equality(result.dimension_events[1].first, 0)
     expect.equality(result.dimension_events[1].last, result.old_height)
     expect.equality(result.dimension_events[1].new_last, result.new_height)
+    local all_rows = {}
+    for row = 0, result.new_height - 1 do
+        all_rows[#all_rows + 1] = row
+    end
+    expect.equality(result.dimension_rows, all_rows)
 end
 
-T["the row writer toggles modifiable once and keeps the extmarks of unchanged rows"] = function()
+T["the row writer keeps empty lines and rewrites only the overlays of changed rows"] = function()
     local child = new_child()
     local result = child.lua_func(function()
         local float = require("scrollbar.shared.float")
@@ -1876,9 +1934,10 @@ T["the row writer toggles modifiable once and keeps the extmarks of unchanged ro
                 by_row[#by_row + 1] = {
                     id = mark[1],
                     row = mark[2],
-                    start_col = mark[3],
-                    end_col = mark[4].end_col,
-                    highlight = mark[4].hl_group,
+                    col = mark[3],
+                    virt_text = mark[4].virt_text,
+                    virt_text_pos = mark[4].virt_text_pos,
+                    hl_mode = mark[4].hl_mode,
                 }
             end
             table.sort(by_row, function(left, right)
@@ -1887,11 +1946,6 @@ T["the row writer toggles modifiable once and keeps the extmarks of unchanged ro
             return by_row
         end
 
-        local rows = { "aaaa", "bbbb", "cccc", "dddd" }
-        local spans = { span(0, 2, "A"), span(0, 2, "B"), span(0, 2, "C"), span(0, 2, "D") }
-        float.write_rows(bufnr, namespace, {}, {}, rows, spans, true)
-        local initial = marks()
-
         local toggles = 0
         vim.api.nvim_create_autocmd("OptionSet", {
             pattern = "modifiable",
@@ -1899,6 +1953,22 @@ T["the row writer toggles modifiable once and keeps the extmarks of unchanged ro
                 toggles = toggles + 1
             end,
         })
+        local written = {}
+        local set_extmark = vim.api.nvim_buf_set_extmark
+        rawset(vim.api, "nvim_buf_set_extmark", function(buffer, ...)
+            if buffer == bufnr then
+                written[#written + 1] = select(2, ...)
+            end
+            return set_extmark(buffer, ...)
+        end)
+
+        local rows = { "aaaa", "bbbb", "cccc", "" }
+        local spans = { span(0, 2, "A"), span(0, 2, "B"), span(0, 2, "C"), {} }
+        float.write_rows(bufnr, namespace, {}, {}, rows, spans, true)
+        local initial = marks()
+        local initial_toggles = toggles
+        local initial_written = written
+
         local events = {}
         vim.api.nvim_buf_attach(bufnr, false, {
             on_lines = function(_, _, _, first, last, new_last)
@@ -1906,47 +1976,114 @@ T["the row writer toggles modifiable once and keeps the extmarks of unchanged ro
             end,
         })
 
-        -- Rows 2 and 3 get new text, row 4 gets a new span, row 1 stays.
+        -- Rows 2 and 3 get new text, row 4 gets text and a span, row 1 stays.
+        toggles = 0
+        written = {}
         local next_rows = { "aaaa", "BBBB", "CCCC", "dddd" }
         local next_spans = { span(0, 2, "A"), span(1, 3, "B"), span(0, 2, "C"), span(2, 4, "D") }
         float.write_rows(bufnr, namespace, rows, spans, next_rows, next_spans, false)
         local changed = marks()
         local changed_toggles = toggles
         local changed_events = vim.deepcopy(events)
+        local changed_written = written
 
         toggles = 0
         events = {}
+        written = {}
         float.write_rows(bufnr, namespace, next_rows, next_spans, next_rows, next_spans, false)
+        rawset(vim.api, "nvim_buf_set_extmark", set_extmark)
 
         return {
             initial = initial,
+            initial_toggles = initial_toggles,
+            initial_written = initial_written,
             changed = changed,
             changed_toggles = changed_toggles,
             changed_events = changed_events,
+            changed_written = changed_written,
             steady = marks(),
             steady_toggles = toggles,
             steady_events = events,
+            steady_written = written,
             lines = vim.api.nvim_buf_get_lines(bufnr, 0, -1, false),
             modifiable = vim.bo[bufnr].modifiable,
         }
     end)
 
-    expect.equality(result.changed_events, { { first = 1, last = 3, new_last = 3 } })
-    expect.equality(result.changed_toggles, 2)
-    expect.equality(result.lines, { "aaaa", "BBBB", "CCCC", "dddd" })
-    expect.equality(result.modifiable, false)
-    -- Replaced rows leave no moved extmarks behind.
-    expect.equality(#result.changed, 4)
-    expect.equality(result.changed[1].id, result.initial[1].id)
-    expect.equality(result.changed[2].id ~= result.initial[2].id, true)
-    expect.equality(result.changed[3].id ~= result.initial[3].id, true)
-    expect.equality(result.changed[4].id ~= result.initial[4].id, true)
-    expect.equality({ result.changed[2].row, result.changed[2].start_col, result.changed[2].end_col }, { 1, 1, 3 })
-    expect.equality({ result.changed[3].row, result.changed[3].start_col, result.changed[3].end_col }, { 2, 0, 2 })
-    expect.equality({ result.changed[4].row, result.changed[4].start_col, result.changed[4].end_col }, { 3, 2, 4 })
+    local function mark(row, virt_text)
+        return {
+            id = row + 1,
+            row = row,
+            col = 0,
+            virt_text = virt_text,
+            virt_text_pos = "overlay",
+            hl_mode = "replace",
+        }
+    end
+    -- The full write sets the lines once and an overlay on every row. An
+    -- empty row is one space, so a zero-width search match has no cell.
+    expect.equality(result.initial_toggles, 2)
+    expect.equality(result.initial_written, { 0, 1, 2, 3 })
+    expect.equality(result.initial, {
+        mark(0, { { "aa", "A" }, { "aa" } }),
+        mark(1, { { "bb", "B" }, { "bb" } }),
+        mark(2, { { "cc", "C" }, { "cc" } }),
+        mark(3, { { " " } }),
+    })
+    -- Other writes change no lines and no options, and replace the overlay
+    -- of the changed rows in place.
+    expect.equality(result.changed_events, {})
+    expect.equality(result.changed_toggles, 0)
+    expect.equality(result.changed_written, { 1, 2, 3 })
+    expect.equality(result.changed, {
+        mark(0, { { "aa", "A" }, { "aa" } }),
+        mark(1, { { "B" }, { "BB", "B" }, { "B" } }),
+        mark(2, { { "CC", "C" }, { "CC" } }),
+        mark(3, { { "dd" }, { "dd", "D" } }),
+    })
     expect.equality(result.steady, result.changed)
     expect.equality(result.steady_toggles, 0)
     expect.equality(result.steady_events, {})
+    expect.equality(result.steady_written, {})
+    expect.equality(result.lines, { "", "", "", "" })
+    expect.equality(result.modifiable, false)
+end
+
+T["the row writer combines overlapping spans in the extmark order of Neovim"] = function()
+    local child = new_child()
+    local result = child.lua_func(function()
+        local chunks = require("scrollbar.shared.float")._row_chunks
+        local function span(start_col, end_col, highlight, priority)
+            return { start_col = start_col, end_col = end_col, highlight = highlight, priority = priority }
+        end
+        return {
+            priorities = chunks("abcdef", { span(2, 5, "C", 3), span(0, 4, "A", 1), span(1, 3, "B", 2) }),
+            -- Equal priorities: the later start wins, then the later span.
+            later_start = chunks("abcd", { span(1, 4, "B", 1), span(0, 2, "A", 1) }),
+            later_span = chunks("abcd", { span(0, 4, "B", 1), span(0, 4, "A", 1) }),
+            -- Byte spans over one-cell multibyte glyphs; a boundary inside a
+            -- glyph moves to the next glyph.
+            multibyte = chunks("•⠿x", { span(0, 3, "A", 1), span(3, 7, "B", 2), span(1, 7, "C", 1) }),
+            past_end = chunks("ab", { span(1, 9, "A", 1) }),
+            plain = chunks("ab"),
+            empty = chunks("", { span(0, 1, "A", 1) }),
+        }
+    end)
+
+    expect.equality(result.priorities, {
+        { "a", "A" },
+        { "b", { "A", "B" } },
+        { "c", { "A", "B", "C" } },
+        { "d", { "A", "C" } },
+        { "e", "C" },
+        { "f" },
+    })
+    expect.equality(result.later_start, { { "a", "A" }, { "b", { "A", "B" } }, { "cd", "B" } })
+    expect.equality(result.later_span, { { "abcd", { "B", "A" } } })
+    expect.equality(result.multibyte, { { "•", "A" }, { "⠿x", { "C", "B" } } })
+    expect.equality(result.past_end, { { "a" }, { "b", "A" } })
+    expect.equality(result.plain, { { "ab" } })
+    expect.equality(result.empty, { { " " } })
 end
 
 T["grows and shrinks expanded floats in place while pinning base cells for every anchor"] = function()
@@ -1970,7 +2107,10 @@ T["grows and shrinks expanded floats in place while pinning base cells for every
         local function cell_screen_column(state, row, column)
             vim.api.nvim__redraw({ flush = true })
             vim.api.nvim__redraw({ flush = true })
-            return vim.fn.screenpos(state.float_win, row + 1, column).col
+            -- The float lines are empty, so `screenpos()` of a buffer column
+            -- does not find the cell. The window position and the cell do.
+            assert(row >= 0 and row < state.height, "the cell is outside the float")
+            return vim.fn.win_screenpos(state.float_win)[2] + state.sides.left + column - 1
         end
 
         local function screen_column(state, predicate)
@@ -1984,7 +2124,7 @@ T["grows and shrinks expanded floats in place while pinning base cells for every
         end
 
         local function rows_are_padded(state)
-            for _, row in ipairs(vim.api.nvim_buf_get_lines(state.float_buf, 0, -1, false)) do
+            for _, row in ipairs(require("scrollbar.test.float").lines(state.float_buf, 0, -1, false)) do
                 if vim.fn.strdisplaywidth(row) ~= state.width then
                     return false
                 end
@@ -2019,6 +2159,23 @@ T["grows and shrinks expanded floats in place while pinning base cells for every
                     table.insert(events, { first = first, last = last, new_last = new_last })
                 end,
             })
+            -- The rows are overlay extmarks over empty lines. A new width
+            -- keeps the lines and writes the overlay of every row.
+            local written = {}
+            local set_extmark = vim.api.nvim_buf_set_extmark
+            rawset(vim.api, "nvim_buf_set_extmark", function(bufnr, ...)
+                if bufnr == float_buf then
+                    written[#written + 1] = select(2, ...)
+                end
+                return set_extmark(bufnr, ...)
+            end)
+            local function all_rows(height)
+                local rows = {}
+                for row = 0, height - 1 do
+                    rows[#rows + 1] = row
+                end
+                return rows
+            end
 
             assert(store.set("marks", source_buf, {
                 { line = 0, type = "Mark", text = "a" },
@@ -2035,10 +2192,13 @@ T["grows and shrinks expanded floats in place while pinning base cells for every
             end)
             local grown_rows_padded = rows_are_padded(grown)
             local grow_events = events
+            local grow_written = written
 
             events = {}
+            written = {}
             assert(store.set("marks", source_buf, { { line = 0, type = "Mark", text = "a" } }))
             local shrunk = assert(renderer.render(source_win))
+            rawset(vim.api, "nvim_buf_set_extmark", set_extmark)
             local shrunk_width = shrunk.width
             local shrunk_float = vim.api.nvim_win_get_config(shrunk.float_win)
             local shrunk_handle_column = cell_screen_column(shrunk, shrunk.handle.first_row, shrunk.handle.column)
@@ -2057,11 +2217,10 @@ T["grows and shrinks expanded floats in place while pinning base cells for every
                 handle_columns = { initial_handle_column, grown_handle_column, shrunk_handle_column },
                 mark_columns = { initial_mark_column, grown_mark_column, shrunk_mark_column },
                 rows_padded = grown_rows_padded and rows_are_padded(shrunk),
-                dimensions_replaced = vim.deep_equal(grow_events, {
-                    { first = 0, last = grown.height, new_last = grown.height },
-                }) and vim.deep_equal(events, {
-                    { first = 0, last = shrunk.height, new_last = shrunk.height },
-                }),
+                dimensions_replaced = vim.deep_equal(grow_events, {})
+                    and vim.deep_equal(events, {})
+                    and vim.deep_equal(grow_written, all_rows(grown.height))
+                    and vim.deep_equal(written, all_rows(shrunk.height)),
             }
         end
         return cases
@@ -3627,7 +3786,7 @@ T["accepts marks of a hidden type from a custom provider without drawing them"] 
                     end
                 end
             end
-            local rows = vim.api.nvim_buf_get_lines(state.float_buf, 0, -1, false)
+            local rows = require("scrollbar.test.float").lines(state.float_buf, 0, -1, false)
             return {
                 accepted = accepted,
                 types = types,

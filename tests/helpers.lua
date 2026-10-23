@@ -2,12 +2,131 @@ local MiniTest = MiniTest
 
 local M = {}
 
+-- Installs `require("scrollbar.test.float")` in the child. The float buffers
+-- hold empty lines, and each row is an overlay virtual text extmark. The
+-- reader gives back the rows and the highlight spans of those extmarks in the
+-- shapes of `nvim_buf_get_lines` and `nvim_buf_get_extmarks`, so the tests
+-- can check the rendered rows as buffer text. The chunks do not keep the
+-- priorities of the spans, so a span has no `priority`. Adjacent pieces of
+-- one group join into one span.
+local function install_float_reader()
+    local reader = {}
+
+    ---@param bufnr integer
+    ---@param namespace integer
+    ---@param start any
+    ---@param finish any
+    ---@return table[] overlays Overlay extmarks with details
+    local function overlays(bufnr, namespace, start, finish)
+        local result = {}
+        local marks = vim.api.nvim_buf_get_extmarks(bufnr, namespace, start, finish, { details = true })
+        for _, mark in ipairs(marks) do
+            if mark[4].virt_text_pos == "overlay" then
+                result[#result + 1] = mark
+            end
+        end
+        return result
+    end
+
+    ---@param bufnr integer
+    ---@param start? integer
+    ---@param finish? integer
+    ---@return string[]
+    reader.lines = function(bufnr, start, finish)
+        local count = vim.api.nvim_buf_line_count(bufnr)
+        start = start or 0
+        finish = finish or -1
+        if finish < 0 then
+            finish = count + finish + 1
+        end
+        local rows = {}
+        for line = start, finish - 1 do
+            rows[line - start + 1] = ""
+        end
+        for _, mark in ipairs(overlays(bufnr, -1, 0, -1)) do
+            local line = mark[2]
+            if line >= start and line < finish then
+                local parts = {}
+                for _, chunk in ipairs(mark[4].virt_text) do
+                    parts[#parts + 1] = chunk[1]
+                end
+                rows[line - start + 1] = table.concat(parts)
+            end
+        end
+        return rows
+    end
+
+    ---@param bufnr integer
+    ---@param namespace integer
+    ---@param start any
+    ---@param finish any
+    ---@param opts? { details?: boolean }
+    ---@return table[]
+    reader.extmarks = function(bufnr, namespace, start, finish, opts)
+        local details = opts and opts.details
+        local spans = {}
+        for _, mark in ipairs(overlays(bufnr, namespace, start, finish)) do
+            local row = mark[2]
+            local open = {}
+            local col = 0
+            for _, chunk in ipairs(mark[4].virt_text) do
+                local last = col + #chunk[1]
+                local groups = chunk[2]
+                if type(groups) ~= "table" then
+                    groups = { groups }
+                end
+                local seen = {}
+                for _, group in ipairs(groups) do
+                    if not seen[group] then
+                        seen[group] = true
+                        local span = open[group]
+                        if span ~= nil and span.end_col == col then
+                            span.end_col = last
+                        else
+                            span = { row = row, start_col = col, end_col = last, group = group }
+                            open[group] = span
+                            spans[#spans + 1] = span
+                        end
+                    end
+                end
+                col = last
+            end
+        end
+        table.sort(spans, function(left, right)
+            if left.row ~= right.row then
+                return left.row < right.row
+            end
+            if left.start_col ~= right.start_col then
+                return left.start_col < right.start_col
+            end
+            return left.end_col < right.end_col
+        end)
+        local result = {}
+        for index, span in ipairs(spans) do
+            local mark = { index, span.row, span.start_col }
+            if details then
+                mark[4] = {
+                    ns_id = namespace,
+                    end_row = span.row,
+                    end_col = span.end_col,
+                    hl_group = span.group,
+                }
+            end
+            result[index] = mark
+        end
+        return result
+    end
+
+    package.loaded["scrollbar.test.float"] = reader
+end
+
 M.new_child = function()
     local child = MiniTest.new_child_neovim()
     child.start({ "--noplugin", "-u", "scripts/minimal_init.lua" })
     child.o.swapfile = false
     child.o.lines = 24
     child.o.columns = 80
+    child.lua_func(install_float_reader)
     return child
 end
 

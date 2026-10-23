@@ -3,11 +3,19 @@
 --- It also hides a float under the cursor, and its row writer updates only
 --- changed rows.
 ---
---- The row writer keeps an invariant: the extmarks of the namespace on a row
---- are exactly the spans that the last write gave that row.
---- `nvim_buf_set_lines` moves the extmarks of replaced rows to the next row and
---- does not delete them. Thus the row writer clears the extmarks of a row
---- before it replaces the text of that row.
+--- The row writer does not put the rows into the buffer text. 'hlsearch' is
+--- global, and Neovim applies the search highlight to the buffer text of every
+--- window, floats included (issue #122). Thus the float buffer holds only
+--- empty lines, one for each row, and each row is an overlay virtual text
+--- extmark on its line. Overlay virtual text with `hl_mode = "replace"` never
+--- gets the search highlight. A zero-width match, such as `/^`, colors the
+--- first cell of an empty line, so the virtual text of an empty row is one
+--- space. `hl_mode = "combine"` would let that cell through.
+---
+--- The row writer keeps an invariant: the extmark with id `row` of the
+--- namespace is on line `row - 1`, and its chunks are the text and the spans
+--- that the last write gave that row. The lines change only on a full write,
+--- which clears the namespace first, so the extmarks never move.
 
 local M = {}
 
@@ -339,28 +347,6 @@ local function with_modifiable(float_buf, callback, ...)
     end
 end
 
----@param float_buf integer
----@param rows string[]
----@param changed integer[] Ascending one-based rows whose text changed
-local function set_changed_lines(float_buf, rows, changed)
-    local index = 1
-    local count = #changed
-    while index <= count do
-        local first = changed[index]
-        local last = first
-        while index < count and changed[index + 1] == last + 1 do
-            index = index + 1
-            last = changed[index]
-        end
-        local replacement = {}
-        for row = first, last do
-            replacement[#replacement + 1] = rows[row]
-        end
-        vim.api.nvim_buf_set_lines(float_buf, first - 1, last, false, replacement)
-        index = index + 1
-    end
-end
-
 ---@param left? ScrollbarHighlightSpan[]
 ---@param right? ScrollbarHighlightSpan[]
 ---@return boolean
@@ -389,30 +375,191 @@ local function same_spans(left, right)
     return true
 end
 
+---@param text string
+---@param col integer Byte column
+---@return integer col The column clamped to the row, moved forward to the start of a character
+local function char_start(text, col)
+    if col <= 0 then
+        return 0
+    end
+    local length = #text
+    if col >= length then
+        return length
+    end
+    local byte = string.byte(text, col + 1)
+    while byte ~= nil and byte >= 0x80 and byte < 0xC0 do
+        col = col + 1
+        byte = string.byte(text, col + 1)
+    end
+    return col
+end
+
+---@param left? string|string[]
+---@param right? string|string[]
+---@return boolean
+local function same_groups(left, right)
+    if left == right then
+        return true
+    end
+    if type(left) ~= "table" or type(right) ~= "table" or #left ~= #right then
+        return false
+    end
+    for index = 1, #left do
+        if left[index] ~= right[index] then
+            return false
+        end
+    end
+    return true
+end
+
+---@alias ScrollbarOverlayChunk { [1]: string, [2]: string|string[]|nil } Text and the groups that combine in order
+
+-- Scratch tables of `row_chunks`. Entries past the current row are stale.
+---@type integer[]
+local span_starts = {}
+---@type integer[]
+local span_ends = {}
+---@type integer[]
+local cuts = {}
+---@type integer[]
+local covering = {}
+
+---Convert a row and its byte-column spans into overlay virtual text chunks.
+---The row is cut at every span boundary. The chunk of each piece combines
+---the groups of the spans that cover it, in the order in which Neovim
+---combines overlapping extmark highlights: ascending priority, then the later
+---start, then the later span. Adjacent pieces with the same groups merge. An
+---empty row is one space without a group.
+---@param text string
+---@param spans? ScrollbarHighlightSpan[]
+---@return ScrollbarOverlayChunk[] chunks
+local function row_chunks(text, spans)
+    local length = #text
+    if length == 0 then
+        return { { " " } }
+    end
+    local span_count = spans and #spans or 0
+    if span_count == 0 then
+        return { { text } }
+    end
+    ---@cast spans -nil
+
+    cuts[1] = 0
+    cuts[2] = length
+    local cut_count = 2
+    for index = 1, span_count do
+        local span = spans[index]
+        local first = char_start(text, span.start_col)
+        local last = char_start(text, span.end_col)
+        span_starts[index] = first
+        span_ends[index] = last
+        if first < last then
+            cuts[cut_count + 1] = first
+            cuts[cut_count + 2] = last
+            cut_count = cut_count + 2
+        end
+    end
+    -- Insertion sort without duplicates; a row has few cuts.
+    local unique = 0
+    for index = 1, cut_count do
+        local cut = cuts[index]
+        local position = unique
+        while position > 0 and cuts[position] > cut do
+            position = position - 1
+        end
+        if position == 0 or cuts[position] ~= cut then
+            for move = unique, position + 1, -1 do
+                cuts[move + 1] = cuts[move]
+            end
+            cuts[position + 1] = cut
+            unique = unique + 1
+        end
+    end
+
+    local chunks = {}
+    local chunk_first = 0
+    local chunk_groups
+    for index = 1, unique - 1 do
+        local first = cuts[index]
+        local count = 0
+        for span_index = 1, span_count do
+            if span_starts[span_index] <= first and span_ends[span_index] > first then
+                local span = spans[span_index]
+                local position = count + 1
+                while position > 1 do
+                    local other_index = covering[position - 1]
+                    local other = spans[other_index]
+                    if
+                        other.priority < span.priority
+                        or (other.priority == span.priority and span_starts[other_index] <= span_starts[span_index])
+                    then
+                        break
+                    end
+                    covering[position] = other_index
+                    position = position - 1
+                end
+                covering[position] = span_index
+                count = count + 1
+            end
+        end
+
+        local groups
+        if count == 1 then
+            groups = spans[covering[1]].highlight
+        elseif count > 1 then
+            groups = {}
+            for position = 1, count do
+                groups[position] = spans[covering[position]].highlight
+            end
+        end
+        if index == 1 then
+            chunk_groups = groups
+        elseif not same_groups(chunk_groups, groups) then
+            chunks[#chunks + 1] = { text:sub(chunk_first + 1, first), chunk_groups }
+            chunk_first = first
+            chunk_groups = groups
+        end
+    end
+    chunks[#chunks + 1] = { text:sub(chunk_first + 1, length), chunk_groups }
+    return chunks
+end
+
+M._row_chunks = row_chunks
+
 ---@param float_buf integer
 ---@param namespace integer
----@param row integer Zero-based row
+---@param row integer One-based row, which is also the extmark id
+---@param text string
 ---@param spans? ScrollbarHighlightSpan[]
-local function write_spans(float_buf, namespace, row, spans)
-    if spans == nil then
-        return
+local function write_row(float_buf, namespace, row, text, spans)
+    vim.api.nvim_buf_set_extmark(float_buf, namespace, row - 1, 0, {
+        id = row,
+        virt_text = row_chunks(text, spans),
+        virt_text_pos = "overlay",
+        hl_mode = "replace",
+    })
+end
+
+---@type table<integer, string[]>
+local empty_lines = {}
+
+---@param count integer
+---@return string[]
+local function empty_lines_of(count)
+    local lines = empty_lines[count]
+    if lines == nil then
+        lines = {}
+        for row = 1, count do
+            lines[row] = ""
+        end
+        empty_lines[count] = lines
     end
-    for index = 1, #spans do
-        local span = spans[index]
-        vim.api.nvim_buf_set_extmark(float_buf, namespace, row, span.start_col, {
-            end_row = row,
-            end_col = span.end_col,
-            hl_group = span.highlight,
-            hl_mode = "combine",
-            priority = span.priority,
-            strict = false,
-        })
-    end
+    return lines
 end
 
 ---Write rows of text and their byte-column highlight spans into a float
----buffer. The writer replaces only the rows whose text changed, and only the
----rows whose text or spans changed get new extmarks.
+---buffer as overlay virtual text. Only the rows whose text or spans changed
+---get a new extmark. Only a full write changes the buffer lines.
 ---@param float_buf integer
 ---@param namespace integer
 ---@param previous_rows string[] Rows of the last write
@@ -424,41 +571,21 @@ M.write_rows = function(float_buf, namespace, previous_rows, previous_spans, row
     local count = #rows
     if full then
         vim.api.nvim_buf_clear_namespace(float_buf, namespace, 0, -1)
-        with_modifiable(float_buf, vim.api.nvim_buf_set_lines, float_buf, 0, -1, false, rows)
+        -- Only this writer changes the lines, and they are always empty, so
+        -- the line count tells whether the lines need a change.
+        if vim.api.nvim_buf_line_count(float_buf) ~= math.max(count, 1) then
+            with_modifiable(float_buf, vim.api.nvim_buf_set_lines, float_buf, 0, -1, false, empty_lines_of(count))
+        end
         for row = 1, count do
-            write_spans(float_buf, namespace, row - 1, spans[row])
+            write_row(float_buf, namespace, row, rows[row], spans[row])
         end
         return
     end
 
-    local changed_text
-    local rewritten
-    local clear_first
     for row = 1, count do
-        local text_changed = previous_rows[row] ~= rows[row]
-        if text_changed then
-            changed_text = changed_text or {}
-            changed_text[#changed_text + 1] = row
-        end
-        if text_changed or not same_spans(previous_spans[row], spans[row]) then
-            rewritten = rewritten or {}
-            rewritten[#rewritten + 1] = row
-            clear_first = clear_first or row
-        elseif clear_first ~= nil then
-            vim.api.nvim_buf_clear_namespace(float_buf, namespace, clear_first - 1, row - 1)
-            clear_first = nil
-        end
-    end
-    if clear_first ~= nil then
-        vim.api.nvim_buf_clear_namespace(float_buf, namespace, clear_first - 1, count)
-    end
-    if changed_text ~= nil then
-        with_modifiable(float_buf, set_changed_lines, float_buf, rows, changed_text)
-    end
-    if rewritten ~= nil then
-        for index = 1, #rewritten do
-            local row = rewritten[index]
-            write_spans(float_buf, namespace, row - 1, spans[row])
+        local text = rows[row]
+        if previous_rows[row] ~= text or not same_spans(previous_spans[row], spans[row]) then
+            write_row(float_buf, namespace, row, text, spans[row])
         end
     end
 end

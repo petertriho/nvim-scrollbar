@@ -386,7 +386,7 @@ T["generates and renders isolated automatic groups for every profile"] = functio
         local function rendered_groups(state)
             local groups = {}
             for _, extmark in
-                ipairs(vim.api.nvim_buf_get_extmarks(state.float_buf, namespace, 0, -1, { details = true }))
+                ipairs(require("scrollbar.test.float").extmarks(state.float_buf, namespace, 0, -1, { details = true }))
             do
                 groups[extmark[4].hl_group] = true
             end
