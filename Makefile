@@ -7,9 +7,29 @@ MINI_VERSION := v0.18.0
 MINI_DIR := deps/mini.nvim
 TOKYONIGHT_COMMIT := cdc07ac78467a233fd62c493de29a17e0cf2b2b6
 TOKYONIGHT_DIR := deps/tokyonight.nvim
+# The picker plugins of tests/integration/test_pickers.lua
+SNACKS_COMMIT := 882c996cf28183f4d63640de0b4c02ec886d01f2
+SNACKS_DIR := deps/snacks.nvim
+TELESCOPE_COMMIT := 40aedd8a68c78a656a10a8d62d80c54af59420fb
+TELESCOPE_DIR := deps/telescope.nvim
+PLENARY_COMMIT := 74b06c6c75e4eeb3108ec01852001636d85a932b
+PLENARY_DIR := deps/plenary.nvim
 VHS ?= vhs
 LUA_PATHS := lua tests scripts benchmarks
 REF ?= main
+
+# Check out one commit of a repository: $(call pin,<dir>,<url>,<commit>)
+define pin
+	@if [ ! -d "$(1)/.git" ]; then \
+		mkdir -p deps; \
+		git init --quiet "$(1)"; \
+		git -C "$(1)" remote add origin "$(2)"; \
+	fi
+	@if [ "$$(git -C "$(1)" rev-parse HEAD 2>/dev/null)" != "$(3)" ]; then \
+		git -C "$(1)" fetch --quiet --depth 1 origin "$(3)"; \
+		git -C "$(1)" checkout --quiet --detach FETCH_HEAD; \
+	fi
+endef
 
 .PHONY: test-deps test test-file bench bench-compare benchmark benchmark-render benchmark-search benchmark-marks benchmark-minimap benchmark-typing benchmark-worker benchmark-providers demo-deps demo demo-manifest demo-issues format format-check lint typecheck ci
 
@@ -23,6 +43,9 @@ test-deps:
 		git -C "$(MINI_DIR)" fetch --depth 1 origin tag "$(MINI_VERSION)"; \
 		git -C "$(MINI_DIR)" checkout --detach "$(MINI_VERSION)"; \
 	fi
+	$(call pin,$(SNACKS_DIR),https://github.com/folke/snacks.nvim.git,$(SNACKS_COMMIT))
+	$(call pin,$(TELESCOPE_DIR),https://github.com/nvim-telescope/telescope.nvim.git,$(TELESCOPE_COMMIT))
+	$(call pin,$(PLENARY_DIR),https://github.com/nvim-lua/plenary.nvim.git,$(PLENARY_COMMIT))
 
 test: test-deps
 	$(NVIM) --headless --noplugin -u scripts/minimal_init.lua -c "lua MiniTest.run()"
@@ -64,15 +87,7 @@ benchmark-providers:
 	$(NVIM) --headless --noplugin -u NONE -l benchmarks/reports/providers.lua
 
 demo-deps: test-deps
-	@if [ ! -d "$(TOKYONIGHT_DIR)/.git" ]; then \
-		mkdir -p deps; \
-		git init --quiet "$(TOKYONIGHT_DIR)"; \
-		git -C "$(TOKYONIGHT_DIR)" remote add origin https://github.com/folke/tokyonight.nvim.git; \
-	fi
-	@if [ "$$(git -C "$(TOKYONIGHT_DIR)" rev-parse HEAD 2>/dev/null)" != "$(TOKYONIGHT_COMMIT)" ]; then \
-		git -C "$(TOKYONIGHT_DIR)" fetch --quiet --depth 1 origin "$(TOKYONIGHT_COMMIT)"; \
-		git -C "$(TOKYONIGHT_DIR)" checkout --quiet --detach FETCH_HEAD; \
-	fi
+	$(call pin,$(TOKYONIGHT_DIR),https://github.com/folke/tokyonight.nvim.git,$(TOKYONIGHT_COMMIT))
 
 demo: demo-deps
 	VHS="$(VHS)" $(NVIM) --headless --noplugin -u NONE -l scripts/demo/cli.lua build $(ONLY)

@@ -40,6 +40,7 @@ local DEFAULT_EXCLUDE = {
         "cmp_menu",
         "noice",
         "prompt",
+        "snacks_picker_input",
         "TelescopePrompt",
     },
 }

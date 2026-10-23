@@ -3,6 +3,7 @@ local float = require("scrollbar.shared.float")
 local float_states = require("scrollbar.shared.float_states")
 local layout = require("scrollbar.layout")
 local providers = require("scrollbar.providers")
+local snacks_list = require("scrollbar.floats.snacks")
 local source_policy = require("scrollbar.shared.source_policy")
 local stack = require("scrollbar.shared.stack")
 local store = require("scrollbar.shared.store")
@@ -51,6 +52,11 @@ local line_layer_cache = {}
 
 ---@type table<integer, table>
 local screen_layer_cache = {}
+
+-- The marks of a snacks list. The list has no marks, and the shared table keeps
+-- the identity checks of the line-layer cache stable.
+---@type ScrollbarLayoutMark[]
+local NO_MARKS = {}
 
 local valid_window = source_policy.valid_window
 
@@ -326,6 +332,7 @@ local clear_buffer_caches
 
 local floats = float_states.new({
     renderer = "scrollbar",
+    scheduler = "scrollbar.scheduler",
     config = config,
     owned_var = OWNED_VAR,
     augroup = AUGROUP_NAME,
@@ -366,11 +373,11 @@ clear_buffer_caches = function(source_buf)
     end
 end
 
----@param source_win integer
-local function close_other_states(source_win)
+---@param keep table<integer, true> Source windows whose floats stay
+local function close_other_states(keep)
     local pending = {}
     for winid, state in pairs(states) do
-        if winid ~= source_win then
+        if not keep[winid] then
             table.insert(pending, state)
         end
     end
@@ -378,7 +385,7 @@ local function close_other_states(source_win)
         close_state(state)
     end
     for _, winid in ipairs(stack.windows("scrollbar")) do
-        if winid ~= source_win then
+        if not keep[winid] then
             stack.publish("scrollbar", winid, nil)
         end
     end
@@ -428,8 +435,19 @@ end
 local stack_placements = setmetatable({}, { __mode = "k" })
 
 ---@param active_config ScrollbarConfig
+---@param float_zindex? integer Base z-index above a floating source window
 ---@return ScrollbarStackPlacement
-local function stack_placement(active_config)
+local function stack_placement(active_config, float_zindex)
+    if float_zindex ~= nil then
+        -- The base comes from the source window, so the cache of the
+        -- configuration cannot keep it.
+        return {
+            relative = active_config.placement.relative,
+            side = west_anchor(active_config) and "W" or "E",
+            zindex = float_zindex,
+            float = true,
+        }
+    end
     local cached = stack_placements[active_config]
     if cached == nil then
         local placement = active_config.placement
@@ -444,12 +462,13 @@ local function stack_placement(active_config)
 end
 
 ---@param active_config ScrollbarConfig
+---@param float_zindex? integer Base z-index above a floating source window
 ---@param origin integer
 ---@param width integer
 ---@param previous? ScrollbarStackFootprint Returned again when nothing changed
 ---@return ScrollbarStackFootprint
-local function stack_footprint(active_config, origin, width, previous)
-    local placement = stack_placement(active_config)
+local function stack_footprint(active_config, float_zindex, origin, width, previous)
+    local placement = stack_placement(active_config, float_zindex)
     local col = active_config.placement.col
     if
         previous ~= nil
@@ -459,6 +478,7 @@ local function stack_footprint(active_config, origin, width, previous)
         and previous.relative == placement.relative
         and previous.side == placement.side
         and previous.zindex == placement.zindex
+        and previous.float == placement.float
     then
         return previous
     end
@@ -466,6 +486,7 @@ local function stack_footprint(active_config, origin, width, previous)
         relative = placement.relative,
         side = placement.side,
         zindex = placement.zindex,
+        float = placement.float,
         origin = origin,
         col = col,
         width = width,
@@ -655,6 +676,7 @@ end
 ---@param line_count? integer
 ---@param mark_rows? integer[]
 ---@param compact_search? ScrollbarCompactSearch
+---@param view? ScrollbarSnacksListView The items of a snacks list. A list uses line math, also with `unit = "screenline"`
 ---@return ScrollbarGeometry
 local function geometry_for(
     active_config,
@@ -665,8 +687,19 @@ local function geometry_for(
     marks,
     line_count,
     mark_rows,
-    compact_search
+    compact_search,
+    view
 )
+    if view ~= nil then
+        return layout.normalized({
+            height = height,
+            line_count = view.count,
+            top_line = view.top,
+            bottom_line = view.bottom,
+            marks = marks,
+            mark_rows = mark_rows,
+        })
+    end
     if active_config.unit == "screenline" then
         return layout.screen({
             source_win = source_win,
@@ -938,20 +971,46 @@ local function update_buffer(state, output, width, height)
     return highlights
 end
 
+-- Each render of a snacks list queues a render of its bar.
+---@param winid integer
+local function invalidate_list(winid)
+    local scheduler = package.loaded["scrollbar.scheduler"]
+    if scheduler ~= nil then
+        scheduler.invalidate_window(winid)
+    end
+end
+
 ---@param source_win integer
 ---@param selection ScrollbarConfigSelection
 ---@param root_config ScrollbarConfig
 ---@return ScrollbarWindowState?
 local function render_source(source_win, selection, root_config)
     local active_config = selection.config
+    local kind = selection.kind or "normal"
+    local floating = kind ~= "normal"
+    local float_zindex = floating and stack.float_zindex(source_win) or nil
     local source_buf = vim.api.nvim_win_get_buf(source_win)
+    -- The list hook below renders the snacks list on each change.
+    if floating and kind ~= "snacks_list" then
+        floats.watch_buffer(source_buf)
+    end
     local existing_state, concealed = prepare_source(source_win, source_buf, root_config.autohide)
     if concealed then
         local previous = stack.footprint("scrollbar", source_win)
         local origin = placement_origin(active_config, source_win, source_text_area(source_win))
         local width = previous and previous.width or frame_width(active_config, active_config.layout.width)
-        stack.publish("scrollbar", source_win, stack_footprint(active_config, origin, width, previous))
+        stack.publish("scrollbar", source_win, stack_footprint(active_config, float_zindex, origin, width, previous))
         return nil
+    end
+    ---@type ScrollbarSnacksListView?
+    local view = nil
+    if kind == "snacks_list" then
+        snacks_list.install(invalidate_list)
+        view = snacks_list.view(source_win)
+        if view == nil then
+            close_source(source_win)
+            return nil
+        end
     end
     local reserved = reserves_statuscolumn(active_config)
     if reserved then
@@ -968,10 +1027,20 @@ local function render_source(source_win, selection, root_config)
         release_statuscolumn(source_win)
     end
 
-    local marks, buffer_revision, window_revision, compact_search = flattened_marks(source_win, source_buf)
-    local line_count = active_config.unit == "line" and vim.api.nvim_buf_line_count(source_buf) or nil
+    local marks, buffer_revision, window_revision, compact_search
+    if view ~= nil then
+        marks, buffer_revision, window_revision = NO_MARKS, 0, 0
+    else
+        marks, buffer_revision, window_revision, compact_search = flattened_marks(source_win, source_buf)
+    end
+    local unit = view ~= nil and "line" or active_config.unit
+    local line_count = nil
+    if unit == "line" then
+        line_count = view ~= nil and view.count or vim.api.nvim_buf_line_count(source_buf)
+    end
     local west = west_anchor(active_config)
-    local stack_origin, stack_zindex = stack.resolve("scrollbar", source_win, stack_placement(active_config))
+    local stack_origin, stack_zindex =
+        stack.resolve("scrollbar", source_win, stack_placement(active_config, float_zindex))
     local sides = active_config.window.sides
     local area
     local content_height
@@ -1030,7 +1099,8 @@ local function render_source(source_win, selection, root_config)
                 marks,
                 line_count,
                 cached.mark_rows,
-                compact_search
+                compact_search,
+                view
             )
             mark_layer = cached.layer
         else
@@ -1141,6 +1211,7 @@ local function render_source(source_win, selection, root_config)
             configure_buffer,
             configure_window
         )
+        float.track_source(state, source_win, floating)
         if cursor_position_available then
             float.resolve_position()
         end
@@ -1156,13 +1227,15 @@ local function render_source(source_win, selection, root_config)
             content_height,
             cursor_position_available and state.hidden_by_cursor or false
         )
-        float.apply_config(state, active_float_config, cursor_position_available)
+        local moved = float.track_source(state, source_win, floating)
+        float.apply_config(state, active_float_config, cursor_position_available, moved)
     end
 
     float.update_cursor_visibility(state, cursor_row, cursor_col)
 
     state.config = active_config
     state.variant_id = selection.variant_id
+    state.source_kind = kind
     local active_highlights = update_buffer(state, output, output.width, content_height)
     state.width = output.width
     state.height = content_height
@@ -1172,13 +1245,18 @@ local function render_source(source_win, selection, root_config)
     state.hitmap = output.hitmap
     state.handle = output.handle
     state.geometry = {
-        unit = active_config.unit,
+        unit = unit,
         total_extent = geometry.total_extent,
         viewport_start = geometry.viewport_start,
         viewport_end = geometry.viewport_end,
     }
-    state.footprint =
-        stack_footprint(active_config, own_origin, frame_width(active_config, output.width), state.footprint)
+    state.footprint = stack_footprint(
+        active_config,
+        float_zindex,
+        own_origin,
+        frame_width(active_config, output.width),
+        state.footprint
+    )
     stack.publish("scrollbar", source_win, state.footprint)
     return state
 end
@@ -1198,14 +1276,16 @@ M.render = function(source_win)
     if root_config.visibility == "active" then
         if selection == nil then
             close_source(source_win)
-            if active_source ~= nil then
-                close_other_states(active_source)
-            else
-                close_all_states()
-            end
+        end
+        local keep = policy.active_windows(active_source)
+        if next(keep) == nil then
+            close_all_states()
+        else
+            close_other_states(keep)
+        end
+        if selection == nil then
             return nil
         end
-        close_other_states(assert(active_source, "active source unavailable"))
     end
     return render_selection(source_win, selection, root_config, render_source)
 end
@@ -1316,6 +1396,10 @@ M.invalidate_source_selection = policy.invalidate
 
 ---@type fun(bufnr?: integer): integer[]
 M.source_windows = policy.source_windows
+
+--- The kind of an eligible source window, memoized like `is_source_window`.
+---@type fun(winid: integer): ScrollbarSourceKind?
+M.source_kind = policy.source_kind
 
 M.hide = function()
     floats.hide()

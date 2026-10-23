@@ -113,6 +113,7 @@ end
 
 local floats = float_states.new({
     renderer = "minimap",
+    scheduler = "scrollbar.minimap.scheduler",
     config = config_module,
     owned_var = OWNED_VAR,
     augroup = AUGROUP_NAME,
@@ -193,11 +194,13 @@ local function source_viewport(source_win)
     end)
 end
 
---- The footprint uses the width of the float with its border.
+--- The footprint uses the width of the float with its border. Above a
+--- floating source window, the base z-index comes from the source.
 ---@param active_config ScrollbarMinimapConfig
 ---@param source_win integer
+---@param float_zindex? integer Base z-index above a floating source window
 ---@return ScrollbarStackFootprint
-local function stack_footprint(active_config, source_win)
+local function stack_footprint(active_config, source_win, float_zindex)
     local placement = active_config.placement
     local west = placement.anchor == "NW" or placement.anchor == "SW"
     local origin
@@ -214,7 +217,8 @@ local function stack_footprint(active_config, source_win)
         origin = origin,
         col = placement.col,
         width = active_config.width + active_config.window.sides.left + active_config.window.sides.right,
-        zindex = placement.zindex,
+        zindex = float_zindex or placement.zindex,
+        float = float_zindex ~= nil or nil,
         stack = placement.stack,
     }
 end
@@ -524,10 +528,15 @@ end
 ---@return ScrollbarMinimapRendererState?
 local function render_source(source_win, selection, root_config)
     local active_config = selection.config
+    local floating = selection.kind ~= nil and selection.kind ~= "normal"
+    local float_zindex = floating and stack.float_zindex(source_win) or nil
     local source_buf = vim.api.nvim_win_get_buf(source_win)
+    if floating then
+        floats.watch_buffer(source_buf)
+    end
     local _, concealed = prepare_source(source_win, source_buf, root_config.autohide)
     if concealed then
-        stack.publish("minimap", source_win, stack_footprint(active_config, source_win))
+        stack.publish("minimap", source_win, stack_footprint(active_config, source_win, float_zindex))
         return nil
     end
 
@@ -711,7 +720,7 @@ local function render_source(source_win, selection, root_config)
     local rendered = rendered_highlights(cells, highlights, active_config)
     local cursor_screen_row, cursor_screen_col = float.cursor_screen_position(source_win, active_config)
     local cursor_position_available = cursor_screen_row ~= nil and cursor_screen_col ~= nil
-    local footprint = stack_footprint(active_config, source_win)
+    local footprint = stack_footprint(active_config, source_win, float_zindex)
     local stack_origin, stack_zindex = stack.resolve("minimap", source_win, footprint)
     local origin = stack_origin or footprint.origin
     ---@type ScrollbarMinimapRendererState?
@@ -778,6 +787,7 @@ local function render_source(source_win, selection, root_config)
         }
         states[source_win] = state
         states_by_float[float_win] = state
+        float.track_source(state, source_win, floating)
         if cursor_position_available then
             float.resolve_position()
         end
@@ -793,7 +803,8 @@ local function render_source(source_win, selection, root_config)
             target_height,
             cursor_position_available and state.hidden_by_cursor or false
         )
-        float.apply_config(state, desired, cursor_position_available)
+        local moved = float.track_source(state, source_win, floating)
+        float.apply_config(state, desired, cursor_position_available, moved)
         state.source_buf = source_buf
         state.config = active_config
         state.variant_id = selection.variant_id
@@ -1022,6 +1033,10 @@ M.invalidate_source_selection = policy.invalidate
 
 ---@type fun(bufnr?: integer): integer[]
 M.source_windows = policy.source_windows
+
+--- The kind of an eligible source window, memoized like `is_source_window`.
+---@type fun(winid: integer): ScrollbarSourceKind?
+M.source_kind = policy.source_kind
 
 M.hide = function()
     floats.hide()

@@ -11,6 +11,11 @@
 ---   equal, the bottom float drops by one. If the value is 1, the top float
 ---   rises by one instead. Different explicit z-indexes always win.
 ---
+--- On a floating source window, the base z-index of both floats is the
+--- z-index of the source + 1, and `placement.zindex` does not apply. An
+--- overlap resolves upward: the bottom float keeps the base, and the top float
+--- gets the base + 1. Thus neither float drops under its source.
+---
 --- A renderer keeps its footprint while its float is hidden for a short time
 --- (cursor overlap, autohide), so the other float keeps its position. For a
 --- lasting hide, the renderer removes the footprint, and the other float moves
@@ -23,7 +28,8 @@ local M = {}
 ---@class ScrollbarStackPlacement
 ---@field relative ScrollbarPlacementRelative
 ---@field side "E"|"W"
----@field zindex integer Configured `placement.zindex`
+---@field zindex integer Configured `placement.zindex`, or the base z-index above a floating source window
+---@field float? boolean Whether the source window is a float
 ---@field stack? ScrollbarMinimapStack Minimap only
 
 ---@class ScrollbarStackFootprint: ScrollbarStackPlacement
@@ -40,7 +46,10 @@ local repositioners = {}
 local notifying = false
 
 local OTHER = { scrollbar = "minimap", minimap = "scrollbar" }
-local FIELDS = { "relative", "side", "origin", "col", "width", "zindex", "stack" }
+local FIELDS = { "relative", "side", "origin", "col", "width", "zindex", "float", "stack" }
+
+-- The z-index of a float when `nvim_win_get_config` gives none.
+local DEFAULT_ZINDEX = 50
 
 ---@param left? ScrollbarStackFootprint
 ---@param right? ScrollbarStackFootprint
@@ -125,10 +134,23 @@ M.resolve = function(renderer, source_win, own)
         return nil, own.zindex
     end
     local top = stack == "above" and "minimap" or "scrollbar"
+    if own.float then
+        return nil, renderer == top and own.zindex + 1 or own.zindex
+    end
     if renderer == top then
         return nil, own.zindex == 1 and 2 or own.zindex
     end
     return nil, own.zindex == 1 and 1 or own.zindex - 1
+end
+
+--- The base z-index of a float above a floating source window: the z-index of
+--- the source + 1.
+---@param source_win integer
+---@return integer
+M.float_zindex = function(source_win)
+    local ok, window_config = pcall(vim.api.nvim_win_get_config, source_win)
+    local zindex = ok and window_config.zindex or nil
+    return (type(zindex) == "number" and zindex or DEFAULT_ZINDEX) + 1
 end
 
 ---@param renderer ScrollbarStackRenderer

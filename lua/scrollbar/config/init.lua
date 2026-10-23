@@ -20,6 +20,7 @@ local DEFAULTS = {
     visibility = "all",
     autohide = false,
     max_lines = false,
+    floats = false,
     throttle_ms = 16,
     unit = "line",
     placement = {
@@ -391,7 +392,7 @@ local function normalize(value, shared, path, variant_id)
     local track = schema.table(value.track, at("track"))
     local thumb = schema.table(value.thumb, at("thumb"))
 
-    local globals = block_config.globals(value, path, autohide, DEFAULT_EVENTS)
+    local globals = block_config.globals(value, path, autohide, DEFAULT_EVENTS, "scrollbar")
     local result = vim.tbl_extend("error", globals, {
         set_highlights = shared.set_highlights,
         exclude = shared.exclude.scrollbar,
@@ -565,10 +566,11 @@ M.get_mark_types = function()
 end
 
 ---@param source_win integer
+---@param kind? ScrollbarSourceKind Kind of the source window. Nil is a normal window
 ---@return ScrollbarConfigSelection
-M.select = function(source_win)
+M.select = function(source_win, kind)
     M.get()
-    return schema.select(selector, assert(variants, "compiled scrollbar variants unavailable"), source_win)
+    return schema.select(selector, assert(variants, "compiled scrollbar variants unavailable"), source_win, kind)
 end
 
 return M

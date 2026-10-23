@@ -15,6 +15,7 @@ local DEFAULTS = {
     visibility = "all",
     autohide = false,
     max_lines = false,
+    floats = false,
     throttle_ms = 50,
     backend = "worker",
     background_blend = false,
@@ -188,7 +189,7 @@ local function normalize(value, shared, path, variant_id)
     local autohide = block_config.autohide(value.autohide, at("autohide"))
     local placement = schema.table(value.placement, at("placement"))
 
-    local globals = block_config.globals(value, path, autohide, DEFAULT_EVENTS)
+    local globals = block_config.globals(value, path, autohide, DEFAULT_EVENTS, "minimap")
     local result = vim.tbl_extend("error", globals, {
         backend = schema.enum(value.backend, at("backend"), { "worker", "sync" }),
         background_blend = blend_or_false(value.background_blend, at("background_blend")),
@@ -285,10 +286,11 @@ M.get_variants = function()
 end
 
 ---@param source_win integer
+---@param kind? ScrollbarSourceKind Kind of the source window. Nil is a normal window
 ---@return ScrollbarMinimapConfigSelection
-M.select = function(source_win)
+M.select = function(source_win, kind)
     M.get()
-    return schema.select(selector, assert(variants, "compiled minimap variants unavailable"), source_win)
+    return schema.select(selector, assert(variants, "compiled minimap variants unavailable"), source_win, kind)
 end
 
 return M

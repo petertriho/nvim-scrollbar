@@ -48,6 +48,7 @@ require("scrollbar").setup({
             "cmp_menu",
             "noice",
             "prompt",
+            "snacks_picker_input",
             "TelescopePrompt",
         },
     },
@@ -94,6 +95,7 @@ require("scrollbar").setup({
         visibility = "all", -- "all" or "active"
         autohide = false, -- true, or { delay_ms = 1000 }
         max_lines = false,
+        floats = false, -- true, or a table, see Floats
         throttle_ms = 16,
         events = { -- see Events
             "BufEnter", "BufWinEnter",
@@ -154,6 +156,7 @@ require("scrollbar").setup({
 | `visibility` | `"all"` | `"all"` shows a scrollbar in every eligible window. `"active"` shows only the scrollbar of the active window. |
 | `autohide` | `false` | `true` conceals each scrollbar after 1000 ms without activity in its window. `{ delay_ms = n }` sets the delay. |
 | `max_lines` | `false` | A buffer with more lines than this number gets no scrollbar. |
+| `floats` | `false` | Floats that get a scrollbar. The built-in kinds are the list and the preview of the snacks.nvim picker, and the results and the preview of the Telescope picker. A `when` function selects other floats. See [Floats](floats.md). |
 | `throttle_ms` | `16` | Renders that are queued within this interval combine into one frame. `0` renders as fast as possible. |
 | `events` | see Defaults | Autocommand events that update the scrollbar. See [Events](#events). |
 
@@ -492,6 +495,11 @@ uses `zed`:
 - `filetypes`: non-empty dense string list.
 - `buftypes`: non-empty dense string list.
 - `when`: predicate function.
+- `floats`: `true`, or a non-empty dense list of float kinds. See
+  [Floats](floats.md#profiles).
+
+A profile with `floats` matches only float sources. A profile without `floats`
+matches only normal windows.
 
 A profile matches only when all of its matchers match. The `filetypes` and
 `buftypes` matchers run before `when`. If one of them fails, the `when`
@@ -558,6 +566,12 @@ overrides apply on top of the shared `marks` definitions.
 ## Validation
 
 - `visibility`: `"all"` or `"active"`.
+- `floats`: `false`, `true`, or a table with the keys `snacks`, `telescope`,
+  and `when`. `snacks` and `telescope` are booleans or tables of booleans.
+  `when` is a function. See [Floats](floats.md).
+- `match.floats`: `true`, or a dense list of `"snacks_list"`,
+  `"snacks_preview"`, `"telescope_results"`, `"telescope_preview"`, and
+  `"custom"`.
 - `unit`: `"line"` or `"screenline"`.
 - `placement.relative`: `"window"` or `"editor"`.
 - `placement.anchor`: `"NW"`, `"NE"`, `"SW"`, or `"SE"`.
@@ -587,6 +601,7 @@ removed v1 option also names its replacement, for example
 - [Minimap configuration](minimap/configuration.md)
 - [Layout and geometry](layout-and-geometry.md)
 - [Visibility](visibility.md)
+- [Floats](floats.md)
 - [Providers](providers/README.md)
 - [Highlights](highlights.md)
 - [Migration](migration.md)

@@ -331,17 +331,53 @@ M.without = function(value, keys)
     return result
 end
 
-local MATCH_KEYS = { filetypes = true, buftypes = true, when = true }
+local MATCH_KEYS = { filetypes = true, buftypes = true, when = true, floats = true }
 
 ---@param value any
 ---@param path string
+---@param kinds table<string, true|string> Kinds that `floats` can name. A string is the reason why the block rejects the kind
+---@return true|table<string, true>
+local function float_matcher(value, path, kinds)
+    if value == true then
+        return true
+    end
+    if type(value) ~= "table" then
+        invalid(path .. " must be true or a dense list of float kinds")
+    end
+    local count = dense_count(value, path)
+    if count == 0 then
+        invalid(path .. " must contain at least one kind")
+    end
+    local lookup = {}
+    for index = 1, count do
+        local item_path = join(path, index)
+        local name = value[index]
+        if type(name) ~= "string" then
+            invalid(item_path .. " must be a string")
+        end
+        local allowed = kinds[name]
+        if allowed == nil then
+            local names = vim.tbl_keys(kinds)
+            table.sort(names)
+            invalid(string.format("%s must be one of: %s", item_path, table.concat(names, ", ")))
+        elseif allowed ~= true then
+            invalid(string.format("%s '%s' %s", item_path, name, allowed))
+        end
+        lookup[name] = true
+    end
+    return lookup
+end
+
+---@param value any
+---@param path string
+---@param float_kinds? table<string, true|string> Kinds that `floats` can name. A string is the reason why the block rejects the kind
 ---@return ScrollbarCompiledMatcher
-M.matcher = function(value, path)
+M.matcher = function(value, path, float_kinds)
     if type(value) ~= "table" then
         invalid(path .. " must be a table")
     end
     M.check_keys(value, MATCH_KEYS, path)
-    if value.filetypes == nil and value.buftypes == nil and value.when == nil then
+    if value.filetypes == nil and value.buftypes == nil and value.when == nil and value.floats == nil then
         invalid(path .. " must contain at least one matcher")
     end
 
@@ -352,6 +388,7 @@ M.matcher = function(value, path)
         buftypes = false,
         buftype_lookup = false,
         when = false,
+        floats = false,
     }
     local function names(field)
         local field_path = path .. "." .. field
@@ -372,7 +409,22 @@ M.matcher = function(value, path)
         end
         matcher.when = value.when
     end
+    if value.floats ~= nil then
+        matcher.floats = float_matcher(value.floats, path .. ".floats", float_kinds or {})
+    end
     return matcher
+end
+
+--- Whether the `match.floats` value of a profile admits a source window of
+--- `kind`.
+---@param floats false|true|table<string, true>
+---@param kind? ScrollbarSourceKind Nil is a normal window
+---@return boolean
+local function kind_matches(floats, kind)
+    if kind == nil or kind == "normal" then
+        return floats == false
+    end
+    return floats == true or (floats ~= false and floats[kind] == true)
 end
 
 ---@class ScrollbarProfileSelector
@@ -388,12 +440,16 @@ end
 --- Return the first compiled variant whose matcher accepts `source_win`, or
 --- the root variant. A matcher error selects the root for this call and
 --- notifies once per variant and message.
+---
+--- A floating source window matches only the profiles with `match.floats`,
+--- and a normal window matches only the profiles without it.
 ---@generic T
 ---@param selector ScrollbarProfileSelector
 ---@param compiled { id: integer, matcher: false|ScrollbarCompiledMatcher, config: T }[]
 ---@param source_win integer
+---@param kind? ScrollbarSourceKind Kind of the source window. Nil is a normal window
 ---@return { config: T, variant_id: integer }
-M.select = function(selector, compiled, source_win)
+M.select = function(selector, compiled, source_win, kind)
     local root = compiled[1].config
     if #compiled == 1 then
         return { config = root, variant_id = 0 }
@@ -412,7 +468,8 @@ M.select = function(selector, compiled, source_win)
         local filetype_lookup = matcher.filetype_lookup
         local buftype_lookup = matcher.buftype_lookup
         if
-            (filetype_lookup == false or filetype_lookup[filetype])
+            kind_matches(matcher.floats, kind)
+            and (filetype_lookup == false or filetype_lookup[filetype])
             and (buftype_lookup == false or buftype_lookup[buftype])
         then
             local when = matcher.when

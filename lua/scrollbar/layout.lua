@@ -1331,6 +1331,22 @@ M.screen = function(input)
     }
 end
 
+--- The zero-based line of a track row in line math.
+---@param row integer Zero-based track row
+---@param height integer Track rows
+---@param line_count integer Lines of the source, or items of a snacks list
+---@return integer
+M.row_to_line = function(row, height, line_count)
+    if line_count <= 1 or height <= 1 then
+        return 0
+    end
+    local clamped_row = clamp(row, 0, height - 1)
+    if line_count <= height then
+        return math.min(clamped_row, line_count - 1)
+    end
+    return math.floor(clamped_row * (line_count - 1) / (height - 1) + 0.5)
+end
+
 ---@param source_win integer
 ---@param row integer
 ---@param height integer
@@ -1340,17 +1356,14 @@ end
 M.track_row_to_line = function(source_win, row, height, unit, total_extent)
     local source_buf = vim.api.nvim_win_get_buf(source_win)
     local line_count = vim.api.nvim_buf_line_count(source_buf)
+    if unit == "line" then
+        return M.row_to_line(row, height, line_count)
+    end
     if line_count <= 1 or height <= 1 then
         return 0
     end
 
     local clamped_row = clamp(row, 0, height - 1)
-    if unit == "line" then
-        if line_count <= height then
-            return math.min(clamped_row, line_count - 1)
-        end
-        return math.floor(clamped_row * (line_count - 1) / (height - 1) + 0.5)
-    end
 
     local layer = extent_layer_for(source_win)
     -- The caller passes the extent that the scrollbar was rendered with. A

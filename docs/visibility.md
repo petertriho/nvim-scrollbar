@@ -11,6 +11,16 @@ Visibility is controlled globally, per source window, and by buffer eligibility.
   source window, for every `visibility` value. As a result, editor-relative
   floats cannot overlap.
 
+With [`floats`](floats.md), floating windows can also be source windows. Under
+`visibility = "active"`, the windows of a picker follow a group rule. While a
+window of a snacks.nvim or Telescope picker has focus, the scrollbars of all
+the source windows of that picker show. For example, while the picker input
+has focus, the list and the preview keep their scrollbars. When focus leaves
+the picker, these scrollbars hide.
+
+The group rule does not apply to editor-relative placement. See
+[Floats](floats.md#visibility).
+
 `visibility` is a global option, so a profile cannot set it. With contextual
 profiles and `visibility = "all"`, each source window gets the placement of its
 own profile. Window-relative profiles can stay visible together. A scrollbar
@@ -91,5 +101,6 @@ it renders, which includes each cursor movement. To turn off the check, set
 
 - [README](../README.md)
 - [Configuration](configuration.md)
+- [Floats](floats.md)
 - [Layout and geometry](layout-and-geometry.md)
 - [Mouse](mouse.md)

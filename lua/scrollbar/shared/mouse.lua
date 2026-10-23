@@ -17,6 +17,7 @@
 --- and a release do.
 
 local float_focus = require("scrollbar.shared.float_focus")
+local snacks_list = require("scrollbar.floats.snacks")
 
 local M = {}
 
@@ -217,13 +218,21 @@ M.new = function(spec)
     end
 
     --- Move the source cursor to the 0-based `line`, open folds at it, and
-    --- center it.
+    --- center it. On a snacks list, select the item at the visual position
+    --- `line`, so that the selection and the preview follow.
     ---@param current ScrollbarMouseCoreInteraction
     ---@param line integer
     ---@return boolean
     core.navigate = function(current, line)
         if not valid_source(current) then
             return false
+        end
+        if current.source_kind == "snacks_list" then
+            local moved = snacks_list.navigate(current.source_win, line)
+            if moved then
+                core.invalidate(current)
+            end
+            return moved
         end
         local line_count = vim.api.nvim_buf_line_count(current.source_buf)
         line = M.clamp(line, 0, math.max(0, line_count - 1))

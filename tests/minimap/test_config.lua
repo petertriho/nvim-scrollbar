@@ -74,6 +74,7 @@ local DEFAULT_EXCLUDED_FILETYPES = {
     cmp_menu = true,
     noice = true,
     prompt = true,
+    snacks_picker_input = true,
     TelescopePrompt = true,
 }
 

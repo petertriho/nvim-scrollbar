@@ -239,7 +239,15 @@ M.cursor_screen_position = function(source_win, active_config)
         return nil, nil
     end
 
-    return cursor_row - 1, cursor_col - 1
+    cursor_row, cursor_col = cursor_row - 1, cursor_col - 1
+    -- In a floating window, `screenrow()` and `screencol()` count from the
+    -- corner of the grid of the float, and the grid includes the border.
+    if vim.fn.win_gettype(source_win) == "popup" then
+        local position = vim.api.nvim_win_get_position(source_win)
+        cursor_row = cursor_row + position[1]
+        cursor_col = cursor_col + position[2]
+    end
+    return cursor_row, cursor_col
 end
 
 ---@param state ScrollbarFloatState
@@ -314,8 +322,9 @@ end
 ---@param state ScrollbarFloatState
 ---@param desired table<string, any>
 ---@param cursor_position_available boolean
-M.apply_config = function(state, desired, cursor_position_available)
-    if not same_config(state.float_config, desired) then
+---@param force? boolean Apply `desired` also when it equals the last configuration
+M.apply_config = function(state, desired, cursor_position_available, force)
+    if force or not same_config(state.float_config, desired) then
         if cursor_position_available then
             desired.hide = true
         end
@@ -326,6 +335,26 @@ M.apply_config = function(state, desired, cursor_position_available)
     elseif not M.has_config(state.float_win, desired) then
         set_config(state, desired)
     end
+end
+
+---Keep the screen position of a floating source window in `state`, and tell
+---whether the window moved since the last call. A float that is relative to a
+---floating window does not follow that window when it moves. It moves only on
+---its next `nvim_win_set_config`, and its relative configuration stays the
+---same. So a render applies the configuration again after a move.
+---@param state ScrollbarFloatState
+---@param source_win integer
+---@param floating boolean Whether the source window is a float
+---@return boolean moved
+M.track_source = function(state, source_win, floating)
+    if not floating then
+        state.source_position = nil
+        return false
+    end
+    local position = vim.api.nvim_win_get_position(source_win)
+    local previous = state.source_position
+    state.source_position = position
+    return previous ~= nil and (previous[1] ~= position[1] or previous[2] ~= position[2])
 end
 
 ---Move a float to a new stacked origin and z-index without rendering its

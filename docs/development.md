@@ -8,13 +8,17 @@ Use one of these setups:
   uses.
 - These tools on your `PATH`: Neovim 0.11 or newer, Git, Make,
   [StyLua](https://github.com/JohnnyMorganz/StyLua),
-  [Selene](https://github.com/Kampfkarren/selene), and the
-  [Lua language server](https://github.com/LuaLS/lua-language-server).
+  [Selene](https://github.com/Kampfkarren/selene), the
+  [Lua language server](https://github.com/LuaLS/lua-language-server),
+  [fd](https://github.com/sharkdp/fd), and
+  [ripgrep](https://github.com/BurntSushi/ripgrep). The file pickers in the
+  integration test use fd and ripgrep. If these tools are missing, the pickers
+  use `find`.
 
 Other versions of these tools can give results that are different from CI.
 
-The first `make test` or `make typecheck` clones mini.nvim, so this first run
-needs network access.
+The first `make test` or `make typecheck` clones mini.nvim, snacks.nvim,
+telescope.nvim, and plenary.nvim, so this first run needs network access.
 
 ## Development Shells
 
@@ -63,7 +67,7 @@ extra-trusted-public-keys = nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq
 | `make lint`                     | Lints `lua/`, `tests/`, `scripts/`, and `benchmarks/` with Selene. Warnings fail the target.        |
 | `make typecheck`                | Checks the types with lua-language-server. Warnings fail the target.                                |
 | `make ci`                       | Runs `format-check`, `lint`, `typecheck`, and `test`.                                               |
-| `make test-deps`                | Clones mini.nvim at `MINI_VERSION` into `deps/`. `test`, `test-file`, and `typecheck` run it first. |
+| `make test-deps`                | Clones these plugins into `deps/`: mini.nvim at `MINI_VERSION`, and snacks.nvim, telescope.nvim, and plenary.nvim at their pinned commits. `test`, `test-file`, and `typecheck` run it first. |
 | `make bench`                    | Runs the benchmark cases. Options go in `BENCH_ARGS`.                                               |
 | `make bench-compare REF=<rev>`  | Compares the benchmark cases of `<rev>` (default `main`) with the working tree.                     |
 | `make benchmark-<area>`         | Runs one benchmark report. `make benchmark` runs `benchmark-render`.                                |
@@ -321,6 +325,22 @@ Dependabot does not update mini.nvim. To update it:
 
 Dependabot also does not update tokyonight.nvim. `TOKYONIGHT_COMMIT` in the
 `Makefile` pins it for the demo images.
+
+### Update the Picker Plugins
+
+`tests/integration/test_pickers.lua` runs the snacks.nvim and Telescope
+pickers. `SNACKS_COMMIT`, `TELESCOPE_COMMIT`, and `PLENARY_COMMIT` in the
+`Makefile` pin the commits of snacks.nvim, telescope.nvim, and plenary.nvim.
+The test adds these plugins only to the runtimepath of its child Neovim. If
+these plugins are not in `deps/`, the test is skipped. Dependabot does not
+update these pins. To update them:
+
+1. Set the commits in the `Makefile`.
+2. Run `make test`. It runs `make test-deps` first, which checks out the new
+   commits.
+3. If the integration test fails, a private field of a picker changed. Update
+   `lua/scrollbar/shared/float_kinds.lua` or `lua/scrollbar/floats/snacks.lua`.
+4. Commit the `Makefile`.
 
 ## Related
 

@@ -17,6 +17,7 @@ local M = {}
 
 ---@class ScrollbarFloatStatesOptions
 ---@field renderer ScrollbarStackRenderer Name of the renderer in `scrollbar.shared.stack`
+---@field scheduler string Module name of the scheduler of the renderer, read from `package.loaded`
 ---@field config ScrollbarSourcePolicyConfigModule Read at call time, so a replaced function applies at once
 ---@field owned_var string Window and buffer variable that marks a float of this renderer, also from an earlier setup
 ---@field augroup string Name of the lifecycle augroup
@@ -44,6 +45,7 @@ end
 ---@return ScrollbarFloatStates
 M.new = function(options)
     local renderer = options.renderer
+    local scheduler = options.scheduler
     local config = options.config
     local augroup = options.augroup
     local states = options.states
@@ -70,6 +72,7 @@ M.new = function(options)
     local close_source
 
     local policy = source_policy.new({
+        label = renderer,
         config = config,
         owned_var = options.owned_var,
         states_by_float = states_by_float,
@@ -93,6 +96,7 @@ M.new = function(options)
     })
 
     local valid_window = policy.valid_window
+    local source_kind = policy.source_kind
     local invalidate = policy.invalidate
     local active_source_window = policy.active_source_window
     local source_selection = policy.source_selection
@@ -346,7 +350,77 @@ M.new = function(options)
     ---@param bufnr integer
     ---@return boolean
     local function is_buffer_eligible(bufnr)
-        return buffer_eligible(bufnr, config.get())
+        -- `config.get` returns more than one value, and `buffer_eligible` has
+        -- an optional third parameter.
+        local root_config = config.get()
+        return buffer_eligible(bufnr, root_config)
+    end
+
+    -- Buffers of float sources, each with its attachment token. Another plugin
+    -- writes such a buffer while a different window has focus, so no
+    -- `TextChanged` event fires for it.
+    ---@type table<integer, table>
+    local watched = {}
+    ---@type table<integer, true>
+    local changed = {}
+    local changes_scheduled = false
+
+    ---@param bufnr integer
+    ---@return boolean
+    local function shown_in_float_source(bufnr)
+        for _, winid in ipairs(vim.fn.win_findbuf(bufnr)) do
+            local kind = source_kind(winid)
+            if kind ~= nil and kind ~= "normal" then
+                return true
+            end
+        end
+        return false
+    end
+
+    local function flush_changes()
+        changes_scheduled = false
+        local buffers = changed
+        changed = {}
+        local active = package.loaded[scheduler]
+        for bufnr in pairs(buffers) do
+            if not vim.api.nvim_buf_is_valid(bufnr) or not shown_in_float_source(bufnr) then
+                -- The next change detaches the buffer.
+                watched[bufnr] = nil
+            elseif active ~= nil then
+                active.invalidate_buffer(bufnr)
+            end
+        end
+    end
+
+    ---Queue a render of the windows that show `bufnr` on each text change, until
+    ---no float source shows the buffer.
+    ---@param bufnr integer Buffer of a float source
+    local function watch_buffer(bufnr)
+        if watched[bufnr] ~= nil then
+            return
+        end
+        local token = {}
+        -- `on_lines` runs under textlock, so the render queues on the main loop.
+        local ok, attached = pcall(vim.api.nvim_buf_attach, bufnr, false, {
+            on_lines = function(_, buffer)
+                if watched[buffer] ~= token then
+                    return true
+                end
+                changed[buffer] = true
+                if not changes_scheduled then
+                    changes_scheduled = true
+                    vim.schedule(flush_changes)
+                end
+            end,
+            on_detach = function(_, buffer)
+                if watched[buffer] == token then
+                    watched[buffer] = nil
+                end
+            end,
+        })
+        if ok and attached then
+            watched[bufnr] = token
+        end
     end
 
     ---@return boolean
@@ -391,6 +465,9 @@ M.new = function(options)
     ---Close every float and delete the lifecycle autocmds.
     local function dispose()
         hide()
+        -- The next change of each buffer detaches it.
+        watched = {}
+        changed = {}
         if lifecycle_group ~= nil then
             pcall(vim.api.nvim_del_augroup_by_id, lifecycle_group)
             lifecycle_group = nil
@@ -405,6 +482,7 @@ M.new = function(options)
         close_all = close_all,
         prepare_source = prepare_source,
         render_selection = render_selection,
+        watch_buffer = watch_buffer,
         set_state_callback = set_state_callback,
         get_state = get_state,
         get_state_by_float = get_state_by_float,

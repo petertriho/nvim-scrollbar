@@ -186,6 +186,34 @@ public scrollbar and minimap groups.
 See the [minimap documentation](docs/minimap/README.md) for the map, placement,
 marks, and mouse behavior.
 
+## Pickers and Floats
+
+By default, the scrollbar and the minimap show only on normal windows. With
+`floats = true` in its block, the scrollbar or the minimap also shows on these
+floats:
+
+- The list and the preview of the snacks.nvim picker
+- The results and the preview of the Telescope picker
+
+A `when` function selects other floats:
+
+```lua
+require("scrollbar").setup({
+    scrollbar = {
+        floats = {
+            snacks = true,
+            telescope = true,
+            when = function(context)
+                return context.filetype == "lazy"
+            end,
+        },
+    },
+})
+```
+
+A bar on a float uses the z-index of that float + 1. A click or a drag on the
+bar of the snacks list selects an item. See [Floats](docs/floats.md).
+
 ## Providers
 
 | Provider | Scrollbar | Minimap | Source | Dependency |
@@ -222,6 +250,8 @@ source, use the [custom provider API](docs/providers/custom.md).
   presets, and their precedence
 - [Visibility](docs/visibility.md): source-window visibility, autohide,
   hide-on-cursor behavior, commands, and Lua APIs
+- [Floats](docs/floats.md): scrollbars and minimaps on the windows of the
+  snacks.nvim and Telescope pickers and on other floats
 - [Layout and geometry](docs/layout-and-geometry.md): layout lanes, placement,
   line and screen-line units, and wide scrollbars
 - [Mouse](docs/mouse.md): clicks, mark navigation, thumb dragging, and focus

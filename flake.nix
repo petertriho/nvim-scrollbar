@@ -43,6 +43,9 @@
                 pkgs.lua-language-server
                 pkgs.gnumake
                 pkgs.git
+                # The file finders of the pickers in tests/integration/test_pickers.lua
+                pkgs.fd
+                pkgs.ripgrep
               ]
               ++ extraPackages;
               # make runs this Neovim, and .envrc removes it from PATH. Each shell sets it, because `nix develop` keeps

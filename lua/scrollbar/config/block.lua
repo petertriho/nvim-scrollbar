@@ -2,6 +2,7 @@
 --- checks and their hints, the profile list, the global options, and the loop
 --- that compiles the root and each profile into variants.
 
+local floats_config = require("scrollbar.config.floats")
 local presets = require("scrollbar.config.presets")
 local schema = require("scrollbar.config.schema")
 local shared_config = require("scrollbar.config.shared")
@@ -19,6 +20,8 @@ M.GLOBAL_KEYS = {
     max_lines = true,
     throttle_ms = true,
     events = true,
+    -- `scrollbar.config.floats` validates the keys of `floats`.
+    floats = true,
 }
 
 ---@class ScrollbarBlockSpec
@@ -71,6 +74,7 @@ local function compile_profiles(block, value)
 
     local list_path = block.name .. ".profiles"
     local count = schema.dense_count(value, list_path)
+    local float_kinds = floats_config.match_kinds(block.name)
     local result = {}
     for index = 1, count do
         local path = string.format("%s[%d]", list_path, index)
@@ -81,7 +85,7 @@ local function compile_profiles(block, value)
             schema.invalid(path .. ".match is required")
         end
         result[index] = {
-            matcher = schema.matcher(profile.match, path .. ".match"),
+            matcher = schema.matcher(profile.match, path .. ".match", float_kinds),
             input = profile,
             path = path,
         }
@@ -139,8 +143,9 @@ end
 ---@param path string Prefix for error paths
 ---@param autohide false|ScrollbarAutohideConfig
 ---@param default_events string[]
+---@param block "scrollbar"|"minimap"
 ---@return table
-M.globals = function(value, path, autohide, default_events)
+M.globals = function(value, path, autohide, default_events, block)
     return {
         enabled = schema.boolean(value.enabled, path .. ".enabled"),
         show = schema.boolean(value.show, path .. ".show"),
@@ -149,6 +154,7 @@ M.globals = function(value, path, autohide, default_events)
         max_lines = schema.positive_or_false(value.max_lines, path .. ".max_lines"),
         throttle_ms = schema.integer(value.throttle_ms, path .. ".throttle_ms", 0),
         events = shared_config.resolve_events(value.events, default_events, path .. ".events"),
+        floats = floats_config.normalize(value.floats, path .. ".floats", block),
     }
 end
 

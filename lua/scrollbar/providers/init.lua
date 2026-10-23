@@ -28,6 +28,7 @@ local M = {}
 ---@field source_windows fun(bufnr?: integer): integer[]
 ---@field is_buffer_eligible fun(bufnr: integer): boolean
 ---@field is_source_window fun(winid: integer): boolean
+---@field source_kind? fun(winid: integer): ScrollbarSourceKind? Kind of a source window. A snacks list collects no marks
 
 ---@class ScrollbarProviderManagerState
 ---@field config ScrollbarConfig
@@ -165,6 +166,21 @@ local function is_buffer_eligible(entry, bufnr, consumer)
     return false
 end
 
+--- Whether the renderer of `policy` draws the marks of a source window. The
+--- bar of a snacks list shows no marks, so the providers skip the list.
+---@param entry ScrollbarManagedProvider
+---@param name "scrollbar"|"minimap"
+---@param policy ScrollbarProviderConsumerPolicy
+---@param winid integer
+---@return boolean
+local function collects_marks(entry, name, policy, winid)
+    if policy.source_kind == nil then
+        return true
+    end
+    local ok, kind = query_policy(entry, name, "source kind", policy.source_kind, winid)
+    return not ok or kind ~= "snacks_list"
+end
+
 ---@param entry ScrollbarManagedProvider
 ---@param winid integer
 ---@param consumer? "scrollbar"|"minimap"
@@ -176,7 +192,7 @@ local function is_source_window(entry, winid, consumer)
         if (consumer == nil or consumer == name) and consumers[name] then
             local policy = manager.consumer_policies[name]
             local ok, selected = query_policy(entry, name, "source window", policy.is_source_window, winid)
-            if ok and selected == true then
+            if ok and selected == true and collects_marks(entry, name, policy, winid) then
                 return true
             end
         end
@@ -1061,11 +1077,13 @@ M.setup = function(options)
                 is_source_window = scrollbar_policy.is_source_window
                     or options.is_source_window
                     or renderer.is_source_window,
+                source_kind = scrollbar_policy.source_kind or renderer.source_kind,
             },
             minimap = {
                 source_windows = minimap_policy.source_windows or minimap_renderer.source_windows,
                 is_buffer_eligible = minimap_policy.is_buffer_eligible or minimap_renderer.is_buffer_eligible,
                 is_source_window = minimap_policy.is_source_window or minimap_renderer.is_source_window,
+                source_kind = minimap_policy.source_kind or minimap_renderer.source_kind,
             },
         },
         invalidate_buffer = options.invalidate_buffer or noop,

@@ -6,7 +6,8 @@
 --- track holds the autohide deadline. A press on the thumb also drags it: the
 --- source cursor follows the thumb row, and the thumb shows the pressed
 --- highlight until the release. A click on a mark jumps to its line, and a
---- click on the track jumps to the line of the pressed row.
+--- click on the track jumps to the line of the pressed row. On a snacks list,
+--- the press and the drag select an item instead of a line.
 
 local layout = require("scrollbar.layout")
 local mouse_core = require("scrollbar.shared.mouse")
@@ -32,6 +33,11 @@ end
 ---@param row integer
 ---@return integer
 local function track_line(current, row)
+    if current.source_kind == "snacks_list" then
+        -- The list buffer holds only the visible rows, so the rows map to the
+        -- items of the render before the press.
+        return layout.row_to_line(row, current.height, current.geometry.total_extent)
+    end
     return layout.track_row_to_line(
         current.source_win,
         row,
@@ -64,6 +70,7 @@ local function start(state, row, col, screen_row, screen_col)
     return {
         source_win = state.source_win,
         source_buf = state.source_buf,
+        source_kind = state.source_kind,
         float_win = state.float_win,
         float_buf = state.float_buf,
         sides = state.sides,

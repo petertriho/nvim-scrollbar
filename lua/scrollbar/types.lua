@@ -12,6 +12,8 @@
 ---@alias ScrollbarHighlightDefinition table<string, any> A table accepted by nvim_set_hl()
 ---@alias ScrollbarHighlight string|ScrollbarHighlightDefinition
 ---@alias ScrollbarProviderOption boolean|ScrollbarSearchProviderConfig|ScrollbarMarksProviderConfig
+---@alias ScrollbarFloatKind "snacks_list"|"snacks_preview"|"telescope_results"|"telescope_preview"|"custom"
+---@alias ScrollbarSourceKind "normal"|ScrollbarFloatKind A normal window, or the kind of a floating source window
 
 ---@class ScrollbarUserWindowConfig
 ---@field border? string|(string|string[])[] `nvim_open_win` border. The default `"none"` keeps 'winborder' out
@@ -132,6 +134,22 @@
 ---@field filetypes? string[]
 ---@field buftypes? string[]
 ---@field when? fun(context: ScrollbarProfileContext): boolean
+---@field floats? true|ScrollbarFloatKind[] Match only floating source windows: every kind, or the listed kinds
+
+---@class ScrollbarUserSnacksFloats
+---@field list? boolean The picker list. The scrollbar only
+---@field preview? boolean The picker preview
+
+---@class ScrollbarUserTelescopeFloats
+---@field results? boolean The picker results
+---@field preview? boolean The picker preview
+
+---@class ScrollbarUserFloatsTable
+---@field snacks? boolean|ScrollbarUserSnacksFloats `true` turns on every window of the snacks.nvim picker that the block supports
+---@field telescope? boolean|ScrollbarUserTelescopeFloats `true` turns on every window of the Telescope picker
+---@field when? fun(context: ScrollbarFloatContext): boolean Admits other floats with the kind `"custom"`
+
+---@alias ScrollbarUserFloats boolean|ScrollbarUserFloatsTable `true` turns on every built-in picker window that the block supports
 
 ---@class ScrollbarUserAppearance
 ---@field preset? string Built-in preset. The options at the same level win over it
@@ -153,6 +171,7 @@
 ---@field enabled? boolean
 ---@field show? boolean
 ---@field visibility? ScrollbarVisibility
+---@field floats? ScrollbarUserFloats Floating windows that get a scrollbar. Off by default
 ---@field autohide? boolean|ScrollbarUserAutohideConfig
 ---@field max_lines? false|integer
 ---@field throttle_ms? integer
@@ -290,10 +309,16 @@
 
 ---@alias ScrollbarEffectiveProviderPlan table<string, ScrollbarEffectiveProvider>
 
+---@class ScrollbarFloatsConfig
+---@field enabled boolean Whether any kind or `when` is on
+---@field kinds table<ScrollbarFloatKind, boolean> Toggles of the built-in kinds. `custom` is not a key
+---@field when false|fun(context: ScrollbarFloatContext): boolean
+
 ---@class ScrollbarConfig
 ---@field enabled boolean
 ---@field show boolean
 ---@field visibility ScrollbarVisibility
+---@field floats ScrollbarFloatsConfig
 ---@field autohide false|ScrollbarAutohideConfig
 ---@field max_lines false|integer
 ---@field throttle_ms integer
@@ -321,12 +346,16 @@
 ---@field buftype string
 ---@field bufname string
 
+---@class ScrollbarFloatContext: ScrollbarProfileContext
+---@field config vim.api.keyset.win_config The `nvim_win_get_config` result of the float
+
 ---@class ScrollbarCompiledMatcher
 ---@field filetypes false|string[]
 ---@field filetype_lookup false|table<string, true>
 ---@field buftypes false|string[]
 ---@field buftype_lookup false|table<string, true>
 ---@field when false|fun(context: ScrollbarProfileContext): boolean
+---@field floats false|true|table<string, true> `false` matches only normal windows. `true` or a kind lookup matches only floats
 
 ---@class ScrollbarCompiledVariant
 ---@field id integer The root variant has ID 0. A profile variant uses its one-based declaration index
@@ -336,6 +365,7 @@
 ---@class ScrollbarConfigSelection
 ---@field config ScrollbarConfig
 ---@field variant_id integer
+---@field kind? ScrollbarSourceKind Set by the source policy
 
 ---@class ScrollbarMark
 ---@field line integer Zero-based source buffer line
@@ -566,6 +596,8 @@
 ---@field footprint? ScrollbarStackFootprint Own stacking footprint from the last render
 ---@field sides ScrollbarWindowSides Border size of each side of the float
 ---@field window_signature string Signature of the `window` configuration that opened the float
+---@field source_kind? ScrollbarSourceKind Kind of the source window at the last render
+---@field source_position? integer[] Screen position of a floating source window at the last render
 
 ---@class ScrollbarFlattenedMarksCache
 ---@field source_buf integer
@@ -621,6 +653,7 @@
 ---@class ScrollbarInteractionState
 ---@field source_win integer
 ---@field source_buf integer
+---@field source_kind? ScrollbarSourceKind Kind of the source window at press time
 ---@field float_win integer
 ---@field float_buf integer
 ---@field sides ScrollbarWindowSides Border size of each side of the float at press time

@@ -54,6 +54,7 @@
 ---@field enabled? boolean
 ---@field show? boolean
 ---@field visibility? ScrollbarVisibility
+---@field floats? ScrollbarUserFloats Floating windows that get a minimap. Off by default. The snacks list is not supported
 ---@field autohide? boolean|ScrollbarUserAutohideConfig
 ---@field max_lines? false|integer
 ---@field throttle_ms? integer
@@ -79,6 +80,7 @@
 ---@field enabled boolean
 ---@field show boolean
 ---@field visibility ScrollbarVisibility
+---@field floats ScrollbarFloatsConfig
 ---@field autohide false|ScrollbarAutohideConfig
 ---@field max_lines false|integer
 ---@field throttle_ms integer
@@ -108,6 +110,7 @@
 ---@class ScrollbarMinimapConfigSelection
 ---@field config ScrollbarMinimapConfig
 ---@field variant_id integer
+---@field kind? ScrollbarSourceKind Set by the source policy
 
 ---@class ScrollbarMinimapSquashHighlight
 ---@field hl_group string
@@ -238,6 +241,7 @@
 ---@field footprint ScrollbarStackFootprint Stacking footprint of this minimap from the last render
 ---@field sides ScrollbarWindowSides Border size of each side of the float
 ---@field window_signature string Signature of the `window` configuration that opened the float
+---@field source_position? integer[] Screen position of a floating source window at the last render
 
 ---@class ScrollbarMinimapRendererWorker
 ---@field request fun(request: table): boolean

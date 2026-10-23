@@ -20,6 +20,7 @@ require("scrollbar").setup({
         visibility = "all", -- "all" or "active"
         autohide = false, -- true, or { delay_ms = 1000 }
         max_lines = false,
+        floats = false, -- true, or a table, see Floats
         throttle_ms = 50,
         events = { -- see Events
             "BufEnter", "BufWinEnter", "WinEnter",
@@ -73,6 +74,7 @@ You set global options only at the root of the `minimap` block.
 | `visibility` | `"all"` | Uses the same rules as the scrollbar. See [Visibility](../visibility.md). |
 | `autohide` | `false` | `true` conceals each minimap after 1000 ms without cursor or scroll activity in its window. `{ delay_ms = n }` sets the delay. |
 | `max_lines` | `false` | A buffer with more lines than this number gets no minimap. |
+| `floats` | `false` | Floats that get a minimap. The built-in kinds are the preview of the snacks.nvim picker, and the results and the preview of the Telescope picker. The minimap does not support the snacks list. A `when` function selects other floats. See [Floats](../floats.md). |
 | `throttle_ms` | `50` | Renders that are queued within this interval combine into one frame. `0` renders as fast as possible. |
 | `events` | see Defaults | Autocommand events that update the minimap. See [Events](#events). |
 | `backend` | `"worker"` | Where Treesitter collection and the squash of the source lines run. See [Backends](#backends). |
@@ -340,7 +342,8 @@ of the `search` provider, which `providers.search.backend` sets.
 ## Profiles
 
 Minimap profiles work like [scrollbar profiles](../configuration.md#profiles).
-They match on `filetypes`, `buftypes`, and `when`, and the first match wins.
+They match on `filetypes`, `buftypes`, `when`, and `floats`, and the first
+match wins. The minimap rejects `"snacks_list"` in `match.floats`.
 Each profile has a required `match` and any appearance options:
 
 ```lua
@@ -428,6 +431,8 @@ starts with `[nvim-scrollbar]` and gives the full option path.
 - `events`: a list or a table keyed by autocommand event name. See
   [Events](../configuration.md#events).
 - `placement.row` and `placement.col`: signed integers.
+- `floats`: the same values as `scrollbar.floats`, except that a `snacks.list`
+  key is an error. See [Floats](../floats.md).
 - `columns_per_dot`: a positive integer.
 - `scale`: `"fixed"`, `"fit"`, or a positive integer. `encoding`: `"braille"`
   or `"block"`.
@@ -452,6 +457,7 @@ with fixed, overlap, pressed, or legacy groups.
 - [Minimap](README.md)
 - [Presets](../presets.md)
 - [Configuration](../configuration.md)
+- [Floats](../floats.md)
 - [Treesitter provider](../providers/treesitter.md)
 - [LSP semantic tokens](../providers/lsp_semantic_tokens.md)
 - [Migration](../migration.md)

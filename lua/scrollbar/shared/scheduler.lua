@@ -56,6 +56,7 @@ local NO_PEERS = {}
 ---@field timer any
 ---@field timer_armed boolean
 ---@field dirty table<integer, true>
+---@field dirty_all boolean Whether the next flush renders every source window of that time
 ---@field flushing boolean
 ---@field augroup integer
 ---@field uv any
@@ -330,7 +331,12 @@ M.new = function(spec)
 
     ---@param current ScrollbarSchedulerCoreRuntime
     local function arm_timer(current)
-        if runtime ~= current or current.timer_armed or current.flushing or next(current.dirty) == nil then
+        if
+            runtime ~= current
+            or current.timer_armed
+            or current.flushing
+            or (next(current.dirty) == nil and not current.dirty_all)
+        then
             return
         end
 
@@ -634,6 +640,7 @@ M.new = function(spec)
             timer = timer,
             timer_armed = false,
             dirty = {},
+            dirty_all = false,
             flushing = false,
             augroup = augroup,
             uv = uv,
@@ -818,13 +825,18 @@ M.new = function(spec)
         return count
     end
 
-    ---@return integer
+    ---Queue every source window. The flush renders the source windows of the
+    ---flush time, so a window that becomes a source before the flush renders
+    ---too. A picker can open its windows, and the `WinEnter` that calls this
+    ---function, before it registers the state that makes them sources.
+    ---@return integer count Windows that were not queued before
     instance.invalidate_all = function()
         local current = runtime
         if current == nil then
             return 0
         end
 
+        current.dirty_all = true
         local count = 0
         for _, winid in ipairs(source_windows(current)) do
             if not current.dirty[winid] then
@@ -832,6 +844,7 @@ M.new = function(spec)
             end
             queue_window(current, winid)
         end
+        arm_timer(current)
         return count
     end
 
@@ -907,22 +920,28 @@ M.new = function(spec)
             current.timer:stop()
             current.timer_armed = false
         end
-        if next(current.dirty) == nil then
+        if next(current.dirty) == nil and not current.dirty_all then
             return false
         end
 
         local pending = current.dirty
+        local all = current.dirty_all
         current.dirty = {}
+        current.dirty_all = false
         current.flushing = true
 
-        local windows = {}
-        for winid in pairs(pending) do
-            table.insert(windows, winid)
-        end
-        table.sort(windows)
+        local sources = source_windows(current)
         local eligible = {}
-        for _, winid in ipairs(source_windows(current)) do
+        for _, winid in ipairs(sources) do
             eligible[winid] = true
+        end
+        local windows = sources
+        if not all then
+            windows = {}
+            for winid in pairs(pending) do
+                table.insert(windows, winid)
+            end
+            table.sort(windows)
         end
         for _, winid in ipairs(windows) do
             if runtime ~= current then
@@ -974,6 +993,7 @@ M.new = function(spec)
         text_change_subscribers = {}
         cursor_activity_subscribers = {}
         current.dirty = {}
+        current.dirty_all = false
         current.timer_armed = false
         local hide_windows = {}
         for winid in pairs(current.hide_timers) do

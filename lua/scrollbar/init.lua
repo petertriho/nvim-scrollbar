@@ -134,11 +134,13 @@ M.setup = function(overrides)
                 source_windows = renderer.source_windows,
                 is_buffer_eligible = renderer.is_buffer_eligible,
                 is_source_window = renderer.is_source_window,
+                source_kind = renderer.source_kind,
             },
             minimap = {
                 source_windows = minimap_renderer.source_windows,
                 is_buffer_eligible = minimap_renderer.is_buffer_eligible,
                 is_source_window = minimap_renderer.is_source_window,
+                source_kind = minimap_renderer.source_kind,
             },
         },
     })
