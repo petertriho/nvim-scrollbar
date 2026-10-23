@@ -145,6 +145,11 @@ M.configure_window = function(float_win, owned_var, winhighlight, winblend, wo)
     vim.api.nvim_set_option_value("winfixbuf", true, { win = float_win })
     vim.api.nvim_set_option_value("list", false, { win = float_win })
     vim.api.nvim_set_option_value("spell", false, { win = float_win })
+    -- A click puts the cursor of the float on the clicked cell. With
+    -- 'virtualedit', the cursor can be past the end of the empty line, and a
+    -- global 'sidescrolloff' then scrolls the float sideways. The overlays
+    -- start at column 0, so they move out of view.
+    vim.api.nvim_set_option_value("sidescrolloff", 0, { win = float_win })
     vim.api.nvim_set_option_value("winhighlight", winhighlight, { win = float_win })
     if winblend ~= nil then
         vim.api.nvim_set_option_value("winblend", winblend, { win = float_win })

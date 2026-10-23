@@ -141,8 +141,9 @@ local function setup_screen(child)
     return setup
 end
 
-local function input_mouse(child, setup, action, row)
-    child.api.nvim_input_mouse("left", action, "", 0, setup.position[1] + row, setup.position[2])
+---@param col? integer Column in the float, 0 by default
+local function input_mouse(child, setup, action, row, col)
+    child.api.nvim_input_mouse("left", action, "", 0, setup.position[1] + row, setup.position[2] + (col or 0))
     vim.uv.sleep(30)
 end
 
@@ -175,6 +176,48 @@ T["first press from the source window starts a drag"] = function()
     input_mouse(child, setup, "release", 9)
 
     expect.equality(child.fn.line("w0", setup.source_win) > pressed_top, true)
+    expect.equality(child.api.nvim_get_current_win(), setup.source_win)
+end
+
+T["click and drag on the last column do not scroll the float sideways"] = function()
+    local child = new_child()
+    reset_modules(child)
+    -- The cursor of the float can be past the end of its empty lines, and the
+    -- global 'sidescrolloff' keeps columns after the cursor.
+    child.o.virtualedit = "all"
+    child.o.sidescrolloff = 8
+    child.o.sidescroll = 1
+    configure(child, { enabled = true, width = 8, height = 16 })
+    local setup = setup_screen(child)
+    local last = 7
+    local expected = child.lua_func(function(projection)
+        return require("scrollbar.minimap.projection").row_line(projection, 10) + 1
+    end, setup.projection)
+    local leftcols = {}
+    local function record()
+        leftcols[#leftcols + 1] = child.fn.getwininfo(setup.float_win)[1].leftcol
+    end
+
+    input_mouse(child, setup, "press", 10, last)
+    record()
+    input_mouse(child, setup, "release", 10, last)
+    record()
+    -- The click reached the float.
+    expect.equality(child.api.nvim_win_get_cursor(setup.source_win)[1], expected)
+
+    local clicked_top = child.fn.line("w0", setup.source_win)
+    input_mouse(child, setup, "press", 6, last)
+    record()
+    input_mouse(child, setup, "drag", 9, last)
+    record()
+    input_mouse(child, setup, "drag", 12, last)
+    record()
+    input_mouse(child, setup, "release", 12, last)
+    record()
+    -- The drag scrolled the source.
+    expect.equality(child.fn.line("w0", setup.source_win) ~= clicked_top, true)
+
+    expect.equality(leftcols, { 0, 0, 0, 0, 0, 0 })
     expect.equality(child.api.nvim_get_current_win(), setup.source_win)
 end
 
