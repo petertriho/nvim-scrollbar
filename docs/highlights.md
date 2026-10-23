@@ -98,6 +98,20 @@ are not valid mark types. A scrollbar mark type with one of these names claims
 the same group as the frame, and setup fails. The minimap rejects the names as
 minimap mark types.
 
+## Search Highlights
+
+The scrollbar and the minimap do not show search highlights. `'hlsearch'` is a
+global option, so Neovim matches the last search pattern in every window,
+floats included. The rows of each float are overlay virtual text on empty
+buffer lines. Thus the pattern matches no text of the float, and the marks
+keep their colors. Tools that read the buffer of a float, such as `:Inspect`,
+find only empty lines.
+
+As a backstop, the `winhighlight` of each float maps `Search`, `CurSearch`, and
+`IncSearch` to `Scrollbar.NoSearch`. The plugin does not define this group, so
+it is empty. The overlays cover the cells of the float, so the mapping has no
+visible effect.
+
 ## Minimap Groups
 
 Static minimap groups keep these default links:
