@@ -1,4 +1,5 @@
-NVIM ?= nvim
+# Not `?=`: Neovim sets $NVIM to its server address in :terminal and in jobs. The flake sets $SCROLLBAR_NVIM.
+NVIM := $(or $(SCROLLBAR_NVIM),nvim)
 STYLUA ?= stylua
 SELENE ?= selene
 LUA_LANGUAGE_SERVER ?= lua-language-server
@@ -37,7 +38,7 @@ bench:
 
 # Compares the benchmarks of REF with the working tree
 bench-compare:
-	NVIM="$(NVIM)" scripts/bench-compare.sh "$(REF)"
+	SCROLLBAR_NVIM="$(NVIM)" scripts/bench-compare.sh "$(REF)"
 
 benchmark: benchmark-render
 

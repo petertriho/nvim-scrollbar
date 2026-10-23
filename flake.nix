@@ -45,7 +45,12 @@
                 pkgs.git
               ]
               ++ extraPackages;
-              inherit env;
+              # make runs this Neovim, and .envrc removes it from PATH. Each shell sets it, because `nix develop` keeps
+              # the variable of the direnv shell.
+              env = {
+                SCROLLBAR_NVIM = "${neovim}/bin/nvim";
+              }
+              // env;
               # scripts/nightly-cache.sh reads the store path of Neovim from here
               passthru = { inherit neovim; };
             };

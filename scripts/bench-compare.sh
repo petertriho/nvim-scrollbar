@@ -7,14 +7,14 @@
 #       change in lua/. The script exits with 1 when the working tree regressed.
 #
 # Environment:
-#   NVIM                 The Neovim to run (default: nvim).
+#   SCROLLBAR_NVIM       The Neovim to run (default: nvim).
 #   BENCH_RUNS           Runs of each side (default: 2). The sides alternate, and each side uses its best run.
 #   GITHUB_STEP_SUMMARY  When it is set, the report is also appended there as Markdown.
 set -euo pipefail
 
 rev=${1:-main}
 shift || true
-nvim=${NVIM:-nvim}
+nvim=${SCROLLBAR_NVIM:-nvim}
 runs=${BENCH_RUNS:-2}
 root=$(git rev-parse --show-toplevel)
 tmp=$(mktemp -d)

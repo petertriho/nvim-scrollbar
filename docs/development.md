@@ -24,6 +24,11 @@ To load the default shell when you enter the repository:
 2. Install direnv and hook it into your shell.
 3. In the repository, run `direnv allow`.
 
+With direnv, `nvim` still opens the Neovim of your machine, because `.envrc`
+removes the Neovim of the shell from `PATH`. `make` runs the Neovim of the
+shell from `$SCROLLBAR_NVIM`, which each shell sets. `nix develop` keeps the
+Neovim of the shell on `PATH`.
+
 The flake has four shells. Each shell has StyLua, Selene, lua-language-server,
 make, and git.
 
@@ -72,6 +77,10 @@ To use a different tool, set its variable: `NVIM`, `STYLUA`, `SELENE`,
 ```sh
 make test NVIM=~/.local/bin/nvim
 ```
+
+`make` reads `NVIM` only from the command line. It ignores the environment
+variable `$NVIM`, because Neovim sets it to its server address in `:terminal`
+and in jobs. To set the Neovim in the environment, set `$SCROLLBAR_NVIM`.
 
 `make typecheck` gets `$VIMRUNTIME` from `$(NVIM)`, so lua-language-server
 checks the code against the Neovim API of that version.
