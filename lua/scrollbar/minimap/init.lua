@@ -7,9 +7,10 @@
 --- configuration, calls `require("scrollbar.minimap").setup()`, and disposes
 --- both subsystems on reconfigure.
 ---
---- The default is `minimap.enabled = false`. The dispatcher calls `M.setup`
---- also when the minimap is disabled. In that case, `M.setup` must return early.
---- It must not spawn the worker or create floats.
+--- The default is `minimap.enabled = false`. The dispatcher loads this module
+--- and calls `M.setup` only when the minimap is enabled, so a disabled minimap
+--- costs no module loads. A direct call of `M.setup` with a disabled minimap
+--- must return early. It must not spawn the worker or create floats.
 
 local config = require("scrollbar.minimap.config")
 local controls_module = require("scrollbar.shared.controls")

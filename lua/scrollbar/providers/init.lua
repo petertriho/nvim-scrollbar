@@ -1059,7 +1059,10 @@ M.setup = function(options)
 
     local active_config = vim.deepcopy(options.config or config.get())
     local renderer = require("scrollbar.renderer")
-    local minimap_renderer = require("scrollbar.minimap.renderer")
+    -- The minimap renderer loads only when a minimap policy is missing.
+    local function minimap_renderer(name)
+        return require("scrollbar.minimap.renderer")[name]
+    end
     local supplied_policies = options.consumer_policies or {}
     local scrollbar_policy = supplied_policies.scrollbar or {}
     local minimap_policy = supplied_policies.minimap or {}
@@ -1080,10 +1083,10 @@ M.setup = function(options)
                 source_kind = scrollbar_policy.source_kind or renderer.source_kind,
             },
             minimap = {
-                source_windows = minimap_policy.source_windows or minimap_renderer.source_windows,
-                is_buffer_eligible = minimap_policy.is_buffer_eligible or minimap_renderer.is_buffer_eligible,
-                is_source_window = minimap_policy.is_source_window or minimap_renderer.is_source_window,
-                source_kind = minimap_policy.source_kind or minimap_renderer.source_kind,
+                source_windows = minimap_policy.source_windows or minimap_renderer("source_windows"),
+                is_buffer_eligible = minimap_policy.is_buffer_eligible or minimap_renderer("is_buffer_eligible"),
+                is_source_window = minimap_policy.is_source_window or minimap_renderer("is_source_window"),
+                source_kind = minimap_policy.source_kind or minimap_renderer("source_kind"),
             },
         },
         invalidate_buffer = options.invalidate_buffer or noop,

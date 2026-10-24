@@ -1,8 +1,5 @@
 local config = require("scrollbar.config")
 local highlights = require("scrollbar.highlights")
-local minimap = require("scrollbar.minimap")
-local minimap_renderer = require("scrollbar.minimap.renderer")
-local minimap_scheduler = require("scrollbar.minimap.scheduler")
 local mouse = require("scrollbar.mouse")
 local providers = require("scrollbar.providers")
 local renderer = require("scrollbar.renderer")
@@ -30,6 +27,31 @@ local BUILTINS = {
 ---@type table<string, ScrollbarProvider>
 local owned_builtins = {}
 
+-- The minimap modules load only when the minimap is enabled, or when a
+-- provider asks for the minimap source windows. A minimap that is not loaded
+-- has no floats.
+local MINIMAP_RENDERER = "scrollbar.minimap.renderer"
+
+---@type ScrollbarSchedulerPeer
+local minimap_peer = {
+    is_owned_float_buffer = function(bufnr)
+        local minimap_renderer = package.loaded[MINIMAP_RENDERER]
+        return minimap_renderer ~= nil and minimap_renderer.is_owned_float_buffer(bufnr)
+    end,
+    is_owned_float_window = function(winid)
+        local minimap_renderer = package.loaded[MINIMAP_RENDERER]
+        return minimap_renderer ~= nil and minimap_renderer.is_owned_float_window(winid)
+    end,
+}
+
+---@param name string
+---@return function
+local function minimap_policy(name)
+    return function(...)
+        return require(MINIMAP_RENDERER)[name](...)
+    end
+end
+
 local function remove_orphaned_renderer_resources()
     for _, winid in ipairs(vim.api.nvim_list_wins()) do
         if renderer.is_owned_window(winid) then
@@ -46,7 +68,10 @@ end
 local function dispose_runtime()
     -- Both renderers close every float, so nothing needs to move first.
     stack.reset()
-    minimap.dispose()
+    local minimap = package.loaded["scrollbar.minimap"]
+    if minimap ~= nil then
+        minimap.dispose()
+    end
     mouse.dispose()
     scheduler.dispose()
     providers.dispose()
@@ -114,7 +139,7 @@ M.setup = function(overrides)
     -- Each scheduler ignores the floats of the other renderer: their own
     -- updates, such as the option toggles of a buffer rewrite, are not source
     -- activity.
-    scheduler.setup({ config = active_config, renderer = renderer, peers = { minimap_renderer } })
+    scheduler.setup({ config = active_config, renderer = renderer, peers = { minimap_peer } })
     stack.register("scrollbar", function(source_win)
         if renderer.reposition(source_win) then
             scheduler.invalidate_window(source_win)
@@ -123,7 +148,10 @@ M.setup = function(overrides)
     mouse.setup({ config = active_config, renderer = renderer, scheduler = scheduler })
 
     -- Both store consumers must be subscribed before provider setup publishes.
-    minimap.setup(nil, { on_text_change = scheduler.subscribe_text_change, peers = { renderer } })
+    if active_minimap_config.enabled then
+        local minimap = require("scrollbar.minimap")
+        minimap.setup(nil, { on_text_change = scheduler.subscribe_text_change, peers = { renderer } })
+    end
     providers.setup({
         config = active_config,
         provider_plan = provider_plan,
@@ -137,16 +165,16 @@ M.setup = function(overrides)
                 source_kind = renderer.source_kind,
             },
             minimap = {
-                source_windows = minimap_renderer.source_windows,
-                is_buffer_eligible = minimap_renderer.is_buffer_eligible,
-                is_source_window = minimap_renderer.is_source_window,
-                source_kind = minimap_renderer.source_kind,
+                source_windows = minimap_policy("source_windows"),
+                is_buffer_eligible = minimap_policy("is_buffer_eligible"),
+                is_source_window = minimap_policy("is_source_window"),
+                source_kind = minimap_policy("source_kind"),
             },
         },
     })
     scheduler.invalidate_all()
     if active_minimap_config.enabled then
-        minimap_scheduler.invalidate_all()
+        require("scrollbar.minimap.scheduler").invalidate_all()
     end
 end
 
