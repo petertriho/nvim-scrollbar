@@ -1,0 +1,142 @@
+{
+  "author.png": {
+    "sha256": "ff9edd2f249afb47af64a9965e046a4aa784471411de6e3f003b75c8d243d473",
+    "url": "https://github.com/user-attachments/assets/fc574ec5-2c6c-4b1d-bd6e-84d0d54a4229"
+  },
+  "autohide.gif": {
+    "sha256": "652d8c3d1eac948e0a665b3e20b9c2acc6cd03a7eb79c261d60964c270c13c41",
+    "url": "https://github.com/user-attachments/assets/1efa7a90-fcc2-4950-b527-0853efb23760"
+  },
+  "defaults-minimap.png": {
+    "sha256": "51ad2cfb95e20ceaeefa14dccff6f4a46a2aa7f0a9a26f0f610aba3672316718",
+    "url": "https://github.com/user-attachments/assets/a363fdba-6b9a-4c5c-b48f-0b455ef3acb5"
+  },
+  "defaults.png": {
+    "sha256": "4c684678c293818b5cd774e29b1e5a85ed59b437698a96ca8da0db2f6f131ec8",
+    "url": "https://github.com/user-attachments/assets/e929bc90-dd77-4fcf-9ab0-c6a3d37503af"
+  },
+  "diagnostics.png": {
+    "sha256": "03e6423c9bb30e1ffb59ab8c3a4fcc4e83572ba44b3fa52712999a2c032c7ec7",
+    "url": "https://github.com/user-attachments/assets/0c0e9ce7-d8db-4e32-830a-f656cc03f2db"
+  },
+  "git-hunks.png": {
+    "sha256": "e97e3d58c78b075862de4be7b7ceb9b1fd7f37ac9fe1168e2d65b41f61cfef31",
+    "url": "https://github.com/user-attachments/assets/9e45ec88-a6da-4225-b6e0-c5f67f7dd7f8"
+  },
+  "gutter-modes.png": {
+    "sha256": "2ba86131b67b225ada448e7d7548a2e6363c35fe638d788192d372ef4c564b40",
+    "url": "https://github.com/user-attachments/assets/5b68c860-0eb3-46a8-b9ef-29f113cfe4c5"
+  },
+  "hero.gif": {
+    "sha256": "b4e6ade307bcd4dfa28dcbfa7a93d5f54d7b440efde6e981b49bc14677593583",
+    "url": "https://github.com/user-attachments/assets/4e1a6a1c-c9d1-416d-91eb-d27b4ff1a936"
+  },
+  "marks.png": {
+    "sha256": "4266b8ecb86bbf093988cf832b8896fe96b093f1c8dc38e71e3a5da75f6655a1",
+    "url": "https://github.com/user-attachments/assets/3bb187a9-72fa-4d3e-8355-da319f4b7078"
+  },
+  "minimap-blocks.png": {
+    "sha256": "8d9df0a5308725c17faf9e188ada702c1179eeb42c4731b18e47c659f694d1a5",
+    "url": "https://github.com/user-attachments/assets/57ec2ff6-e896-4c7d-b23c-120afb55efef"
+  },
+  "minimap-compact.png": {
+    "sha256": "4e3364f5b53ef9411a1193c59e444040a1aece47e68214375b9ea89a4191c2ec",
+    "url": "https://github.com/user-attachments/assets/d2fda972-87d8-4b16-bb58-1f4b933a6a28"
+  },
+  "minimap-minimal.png": {
+    "sha256": "8326efaeffe82b0a1e965af924c7820a904e0ece4360ae1b97368782f14c65bb",
+    "url": "https://github.com/user-attachments/assets/6a047eea-4adc-4543-b195-1138ad89552a"
+  },
+  "minimap-overview.png": {
+    "sha256": "91380d6db02a86bc215e1f207b13e4335e0ecdeadd2c5be47c46fd29b2176de3",
+    "url": "https://github.com/user-attachments/assets/06c22400-57cd-4280-bf5b-bcce09101bf8"
+  },
+  "minimap-sublime.png": {
+    "sha256": "dbb07fe2e3baa664f2bcf3c153e67da46b3af1ac25dd57a0d05d3d66c85870f8",
+    "url": "https://github.com/user-attachments/assets/ddd3871e-d763-49f1-9bab-a84aefb4f028"
+  },
+  "minimap-vscode.png": {
+    "sha256": "ff66247f69495e9948a8231e2a98db5aef260512820611cd1de02839a4819114",
+    "url": "https://github.com/user-attachments/assets/455084cd-b41e-4af3-9ac1-ab1f19c558fb"
+  },
+  "minimap-xcode.png": {
+    "sha256": "ac102dc8ec5e4d6832b250cc15a2b5b3d293bcdaa17914895b7b34a30fb174dc",
+    "url": "https://github.com/user-attachments/assets/c1d62d3c-62ba-4a2a-b327-f61c64b11424"
+  },
+  "minimap-zed.png": {
+    "sha256": "a6e77c2f84c3277b43542e0597a2ff4b1f0a90db472f660d8c53c866dc064f94",
+    "url": "https://github.com/user-attachments/assets/2336e316-6581-4e9e-91e6-7706a35e671e"
+  },
+  "minimap.gif": {
+    "sha256": "88b29a58fd2c9ca692015790e0edec94a63320a2c756d48389d58d3d672433f7",
+    "url": "https://github.com/user-attachments/assets/c2844052-aa78-4896-b675-62b278d0d528"
+  },
+  "profiles.png": {
+    "sha256": "5771bdaf684756f4d76f715f2a068d6f932e2a741193473ee48f0658b99bda9c",
+    "url": "https://github.com/user-attachments/assets/90ffcc9a-f6f3-45de-859a-cf385079953c"
+  },
+  "recipe-minimap-grid.png": {
+    "sha256": "84c70823f3017cf9c0ef35d6bbe79d46d67bf118ab0dda880c0d952ef244c4f9",
+    "url": "https://github.com/user-attachments/assets/c131c15b-0937-4a93-9173-4dc05550137f"
+  },
+  "scrollbar-eclipse.png": {
+    "sha256": "5db1e04330a0a2e260b5c50c81f6bc466c3128c10baaac3fbcec971a11735126",
+    "url": "https://github.com/user-attachments/assets/5da4932c-f2e3-4a6d-90df-aae48a8d3be4"
+  },
+  "scrollbar-emacs.png": {
+    "sha256": "b3eebe95b55fed3102e9c3cd8a3f1bcbb399529a1791d0070e9eb43dc7bfd9f0",
+    "url": "https://github.com/user-attachments/assets/3283ab34-45d5-455b-a34b-efa7aef984f1"
+  },
+  "scrollbar-gvim.png": {
+    "sha256": "c49697347b76265f2fe9ac37ff1e173038ccae7a17cd96f29ac39a7cc756eb0e",
+    "url": "https://github.com/user-attachments/assets/1b056d6b-97ec-49f3-8d80-e662a92b246c"
+  },
+  "scrollbar-intellij.png": {
+    "sha256": "ba9ec939e09e407760325a23c10b5f4e0f298f0932a2e8bb862682b9a56da5f8",
+    "url": "https://github.com/user-attachments/assets/e8c24c98-5c1e-49dd-8e2e-f44f17b9c6eb"
+  },
+  "scrollbar-minimal.png": {
+    "sha256": "6a1b99ef9b60f35bcd1efd2c0949165945aae86eda4f6bba13f706a93a673a31",
+    "url": "https://github.com/user-attachments/assets/7c00180b-4223-430b-ba75-5d3b2e4b82da"
+  },
+  "scrollbar-navigate.png": {
+    "sha256": "75985a95121e0e4140f379682f054714a4e39f78b380fe778a2e0bd972716b1b",
+    "url": "https://github.com/user-attachments/assets/deac0485-3420-4b7f-bdaa-a73822114edb"
+  },
+  "scrollbar-review.png": {
+    "sha256": "2eab3d0999956fd83195b9dc5ac1617d5568ffbcdc70eeef732f08b6a0c71a66",
+    "url": "https://github.com/user-attachments/assets/d09678ac-15d2-4afa-8f5c-8adda9481004"
+  },
+  "scrollbar-search.png": {
+    "sha256": "50550d3fd6abcff13ac6059a59fee93f77e3d62756b816135f36edcd7c575db4",
+    "url": "https://github.com/user-attachments/assets/95389804-70f8-4707-bb5d-6eaf48c9e444"
+  },
+  "scrollbar-sublime.png": {
+    "sha256": "dfd5a2c223fc362714e7ebc1e07fc184603afb05e78faa62386f02c781f43b53",
+    "url": "https://github.com/user-attachments/assets/33d12f16-614f-4b57-8d9c-bd66c8f8dd79"
+  },
+  "scrollbar-vscode.png": {
+    "sha256": "d8b5309b5e05d9ef8b9339815ed286113780b216f7848b25032e99a356b6ff47",
+    "url": "https://github.com/user-attachments/assets/1ccc987b-3aa5-4ff9-8758-11ef6d787149"
+  },
+  "scrollbar-xcode.png": {
+    "sha256": "d8004acb2eb7e63207c2cf7d34469193a40acbe8aea30695899e5b3374e6cd72",
+    "url": "https://github.com/user-attachments/assets/02c6f169-9db5-43d9-8a57-779f41af5958"
+  },
+  "scrollbar-zed.png": {
+    "sha256": "1f1311c86b444a245a06a0efb5b72e80ff4f976f94c4be9382586a131b320629",
+    "url": "https://github.com/user-attachments/assets/6c7aeb07-a4fb-4ba6-8f94-04acb3b537b2"
+  },
+  "search.gif": {
+    "sha256": "32e1c05047eb049b815652ecc076e08a16c8b27b6c9103e4b75d1fc410528720",
+    "url": "https://github.com/user-attachments/assets/45b02437-b7c7-4b25-a684-c7d5244a313c"
+  },
+  "treesitter.png": {
+    "sha256": "cae9b4400c0cc41cbbf82656c05683b58992b6d27fd3a14fd1ee5e9be3c19bf4",
+    "url": "https://github.com/user-attachments/assets/511ed7bc-1e2d-4f43-9067-e7561c7a261e"
+  },
+  "units.png": {
+    "sha256": "cf753128a4b732d572528d4386d498e39f43eb1a19d09d1d787743fa2a29426e",
+    "url": "https://github.com/user-attachments/assets/2e98c0b9-b8f8-4af5-8ced-c5827f2e0f81"
+  }
+}

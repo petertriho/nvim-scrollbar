@@ -1,365 +1,289 @@
 <div align="center">
   <h1>nvim-scrollbar</h1>
-  <h5>Extensible Neovim Scrollbar</h5>
+  <h5>Extensible floating scrollbars for Neovim</h5>
 </div>
 
-> [!IMPORTANT]
-> On 2026-11-16, v2 replaces v1 on the `main` branch. v2 changes the `setup()`
-> options, removes the `scrollbar.handlers` modules, and needs Neovim 0.11 or
-> newer. To keep v1, pin the `v1` branch or the `v1.0.0` tag. See
-> [#121](https://github.com/petertriho/nvim-scrollbar/issues/121).
+![The default scrollbar and minimap while scrolling past diagnostics, Git hunks, and search matches](https://github.com/user-attachments/assets/4e1a6a1c-c9d1-416d-91eb-d27b4ff1a936)
 
-![diagnostics](./assets/diagnostics.gif)
-
-## Features
-
-- ALE
-- Cursor
-- Diagnostics (COC and Native)
-- Git (requires [gitsigns.nvim](https://github.com/lewis6991/gitsigns.nvim))
-- Search (requires [nvim-hlslens](https://github.com/kevinhwang91/nvim-hlslens))
+`nvim-scrollbar` shows one floating scrollbar for each source window. Each
+split window gets its own thumb. The scrollbar has typed mark lanes, optional
+screen-line positions that follow wraps and folds, and mouse navigation. An
+optional floating minimap shows a compressed view of the buffer, with a
+viewport tint, a cursor accent, provider marks, and mouse navigation.
 
 ## Requirements
 
-- Neovim >= 0.5.1
-- [nvim-hlslens](https://github.com/kevinhwang91/nvim-hlslens) (optional)
-- [gitsigns.nvim](https://github.com/lewis6991/gitsigns.nvim) (optional)
+- Neovim 0.11 or newer
+- For mouse interaction, the Neovim `mouse` option must enable the modes that
+  you want, for example `set mouse=a`. The plugin never changes `mouse`.
+- Optional integrations:
+  [gitsigns.nvim](https://github.com/lewis6991/gitsigns.nvim),
+  [mini.diff](https://github.com/nvim-mini/mini.diff),
+  [vim-signify](https://github.com/mhinz/vim-signify),
+  [vgit.nvim](https://github.com/tanvirtin/vgit.nvim),
+  [ALE](https://github.com/dense-analysis/ale), and
+  [coc.nvim](https://github.com/neoclide/coc.nvim)
 
 ## Installation
 
-[vim-plug](https://github.com/junegunn/vim-plug)
+If you upgrade from v1, read the [migration guide](docs/migration.md) first.
+If you are not ready to migrate, pin the `v1` branch, for example
+`{ "petertriho/nvim-scrollbar", branch = "v1" }` with lazy.nvim.
+
+[lazy.nvim](https://github.com/folke/lazy.nvim):
+
+```lua
+{
+    "petertriho/nvim-scrollbar",
+    opts = {},
+}
+```
+
+With `opts = {}`, lazy.nvim calls `require("scrollbar").setup({})`. Put any
+configuration overrides inside `opts`.
+
+[vim-plug](https://github.com/junegunn/vim-plug):
 
 ```vim
 Plug 'petertriho/nvim-scrollbar'
 ```
 
-[packer.nvim](https://github.com/wbthomason/packer.nvim)
-
-```lua
-use("petertriho/nvim-scrollbar")
-```
-
-## Setup
+With vim-plug or another manual installation, configure the plugin from Lua:
 
 ```lua
 require("scrollbar").setup()
-
 ```
 
-<details>
-  <summary>Search</summary>
+## Quick Start
 
-![search](./assets/search.gif)
-
-#### Setup (Packer)
-
-```lua
-use {
-  "kevinhwang91/nvim-hlslens",
-  config = function()
-    -- require('hlslens').setup() is not required
-    require("scrollbar.handlers.search").setup({
-        -- hlslens config overrides
-    })
-  end,
-}
-```
-
-OR
-
-```lua
-use {
-  "kevinhwang91/nvim-hlslens",
-  config = function()
-    require("hlslens").setup({
-       build_position_cb = function(plist, _, _, _)
-            require("scrollbar.handlers.search").handler.show(plist.start_pos)
-       end,
-    })
-
-    vim.cmd([[
-        augroup scrollbar_search_hide
-            autocmd!
-            autocmd CmdlineLeave : lua require('scrollbar.handlers.search').handler.hide()
-        augroup END
-    ]])
-  end,
-}
-```
-
-If you want to leave only search marks and disable virtual text:
-
-```lua
-require("scrollbar.handlers.search").setup({
-    override_lens = function() end,
-})
-```
-
-</details>
-
-<details>
-  <summary>Git Signs</summary>
-
-https://user-images.githubusercontent.com/889383/201331485-477677a7-40a9-4731-998a-34779f7123ff.mp4
-
-Display git changes in the sidebar. Requires [gitsigns.nvim](https://github.com/lewis6991/gitsigns.nvim) to be installed.
-
-#### Setup (Packer)
-
-```lua
-use {
-  "lewis6991/gitsigns.nvim",
-  config = function()
-    require('gitsigns').setup()
-    require("scrollbar.handlers.gitsigns").setup()
-  end
-}
-```
-</details>
-
-## Config
-
-<details>
-  <summary>Defaults</summary>
+By default, the cursor, diagnostic, search, and named-mark providers are
+enabled for every eligible source window. A small custom setup can look like
+this:
 
 ```lua
 require("scrollbar").setup({
-    show = true,
-    show_in_active_only = false,
-    set_highlights = true,
-    folds = 1000, -- handle folds, set to number to disable folds if no. of lines in buffer exceeds this
-    max_lines = false, -- disables if no. of lines in buffer exceeds this
-    hide_if_all_visible = false, -- Hides everything if all lines are visible
-    throttle_ms = 100,
-    handle = {
-        text = " ",
-        blend = 30, -- Integer between 0 and 100. 0 for fully opaque and 100 to full transparent. Defaults to 30.
-        color = nil,
-        color_nr = nil, -- cterm
-        highlight = "CursorColumn",
-        hide_if_all_visible = true, -- Hides handle if all lines are visible
+    providers = {
+        search = { incsearch = true },
+        marks = { numbers = true },
     },
-    marks = {
-        Cursor = {
-            text = "•",
-            priority = 0,
-            gui = nil,
-            color = nil,
-            cterm = nil,
-            color_nr = nil, -- cterm
-            highlight = "Normal",
-        },
-        Search = {
-            text = { "-", "=" },
-            priority = 1,
-            gui = nil,
-            color = nil,
-            cterm = nil,
-            color_nr = nil, -- cterm
-            highlight = "Search",
-        },
-        Error = {
-            text = { "-", "=" },
-            priority = 2,
-            gui = nil,
-            color = nil,
-            cterm = nil,
-            color_nr = nil, -- cterm
-            highlight = "DiagnosticVirtualTextError",
-        },
-        Warn = {
-            text = { "-", "=" },
-            priority = 3,
-            gui = nil,
-            color = nil,
-            cterm = nil,
-            color_nr = nil, -- cterm
-            highlight = "DiagnosticVirtualTextWarn",
-        },
-        Info = {
-            text = { "-", "=" },
-            priority = 4,
-            gui = nil,
-            color = nil,
-            cterm = nil,
-            color_nr = nil, -- cterm
-            highlight = "DiagnosticVirtualTextInfo",
-        },
-        Hint = {
-            text = { "-", "=" },
-            priority = 5,
-            gui = nil,
-            color = nil,
-            cterm = nil,
-            color_nr = nil, -- cterm
-            highlight = "DiagnosticVirtualTextHint",
-        },
-        Misc = {
-            text = { "-", "=" },
-            priority = 6,
-            gui = nil,
-            color = nil,
-            cterm = nil,
-            color_nr = nil, -- cterm
-            highlight = "Normal",
-        },
-        GitAdd = {
-            text = "┆",
-            priority = 7,
-            gui = nil,
-            color = nil,
-            cterm = nil,
-            color_nr = nil, -- cterm
-            highlight = "GitSignsAdd",
-        },
-        GitChange = {
-            text = "┆",
-            priority = 7,
-            gui = nil,
-            color = nil,
-            cterm = nil,
-            color_nr = nil, -- cterm
-            highlight = "GitSignsChange",
-        },
-        GitDelete = {
-            text = "▁",
-            priority = 7,
-            gui = nil,
-            color = nil,
-            cterm = nil,
-            color_nr = nil, -- cterm
-            highlight = "GitSignsDelete",
-        },
-    },
-    excluded_buftypes = {
-        "terminal",
-    },
-    excluded_filetypes = {
-        "blink-cmp-menu",
-        "dropbar_menu",
-        "dropbar_menu_fzf",
-        "DressingInput",
-        "cmp_docs",
-        "cmp_menu",
-        "noice",
-        "prompt",
-        "TelescopePrompt",
-    },
-    autocmd = {
-        render = {
-            "BufWinEnter",
-            "TabEnter",
-            "TermEnter",
-            "WinEnter",
-            "CmdwinLeave",
-            "TextChanged",
-            "VimResized",
-            "WinScrolled",
-        },
-        clear = {
-            "BufWinLeave",
-            "TabLeave",
-            "TermLeave",
-            "WinLeave",
-        },
-    },
-    handlers = {
-        cursor = true,
-        diagnostic = true,
-        gitsigns = false, -- Requires gitsigns
-        handle = true,
-        search = false, -- Requires hlslens
-        ale = false, -- Requires ALE
+    scrollbar = {
+        preset = "zed",
+        autohide = true,
     },
 })
 ```
 
-</details>
+This example enables autohide. The scrollbars start concealed. Cursor movement
+or scrolling in a source window reveals the scrollbar of that window.
 
-## Colors/Highlights
+The built-in scrollbar presets are `vscode`, `zed`, `intellij`, `minimal`,
+`review`, `search`, `navigate`, `gvim`, `eclipse`, `sublime`, `emacs`, and
+`xcode`. The [showcase](https://github.com/petertriho/nvim-scrollbar/issues/120)
+has a screenshot and the setup of every scrollbar preset and minimap preset.
 
-Color takes precedence over highlight i.e. if color is defined, that will be
-used to define the highlight instead of highlight.
-
-Mark type highlights are in the format of `Scrollbar<MarkType>` and
-`Scrollbar<MarkType>Handle`. If you wish to define these yourself, add
-`set_highlights = false` to the setup.
-
-- `ScrollbarHandle`
-- `ScrollbarCursorHandle`
-- `ScrollbarCursor`
-- `ScrollbarSearchHandle`
-- `ScrollbarSearch`
-- `ScrollbarErrorHandle`
-- `ScrollbarError`
-- `ScrollbarWarnHandle`
-- `ScrollbarWarn`
-- `ScrollbarInfoHandle`
-- `ScrollbarInfo`
-- `ScrollbarHintHandle`
-- `ScrollbarHint`
-- `ScrollbarMiscHandle`
-- `ScrollbarMisc`
-- `ScrollbarGitAdd`
-- `ScrollbarGitAddHandle`
-- `ScrollbarGitChange`
-- `ScrollbarGitChangeHandle`
-- `ScrollbarGitDelete`
-- `ScrollbarGitDeleteHandle`
-
-### Example config with [tokyonight.nvim](https://github.com/folke/tokyonight.nvim) colors
+An ordered list of profiles can select a different appearance for each source
+window:
 
 ```lua
-local colors = require("tokyonight.colors").setup()
-
 require("scrollbar").setup({
-    handle = {
-        color = colors.bg_highlight,
+    scrollbar = {
+        preset = "zed",
+        profiles = {
+            {
+                match = { filetypes = { "markdown", "text" } },
+                preset = "minimal",
+            },
+            {
+                match = { filetypes = { "lua" } },
+                preset = "review",
+            },
+        },
     },
-    marks = {
-        Search = { color = colors.orange },
-        Error = { color = colors.error },
-        Warn = { color = colors.warning },
-        Info = { color = colors.info },
-        Hint = { color = colors.hint },
-        Misc = { color = colors.purple },
-    }
 })
 ```
 
-## Custom Handlers
+The plugin uses the first profile that matches. Profiles change only appearance
+options. Providers, exclusions, visibility, autohide, and `max_lines` are
+global.
 
-One can define custom handlers consisting of a name and a lua function that returns a list of marks as follows:
+Setup rejects unknown keys and invalid values. See the
+[configuration reference](docs/configuration.md) for every default and accepted
+value.
 
-```lua
-require("scrollbar.handlers").register(name, handler_function)
-```
+## Minimap
 
-`handler_function` receives the buffer number as argument and must return a list of tables with `line`, `text`, `type`, and `level` keys. Only the `line` key is required.
-
-| Key     | Description                                                   |
-| ------- | ------------------------------------------------------------- |
-| `line`  | The line number. _Required_.                                  |
-| `text`  | Marker text. Defaults to global settings depending on `type`. |
-| `type`  | The marker type. Default is `Misc`.                           |
-| `level` | Marker level. Default is `1`.                                 |
-
-E.g. the following marks the first three lines in every buffer.
+The minimap is disabled by default. It has its own configuration block,
+profiles, mouse handling, and commands. It does not show, hide, or move the
+scrollbar. Both renderers share the top-level `providers`, `marks`, and
+`exclude` tables.
 
 ```lua
-require("scrollbar.handlers").register("my_marks", function(bufnr)
-    return {
-        { line = 0 },
-        { line = 1, text = "x", type = "Warn" },
-        { line = 2, type = "Error" }
-    }
-end)
+require("scrollbar").setup({
+    minimap = {
+        enabled = true,
+    },
+})
 ```
 
-## Acknowledgements
+By default, each source window gets a 16-column minimap at its north-east
+corner, beside the scrollbar. The minimap draws the text as Braille dots, with
+one source line in each row of dots, and it scrolls with the source window.
+`scale = "fit"` shows the whole buffer instead, and `encoding = "block"` draws
+`█` cells. Treesitter colors the dots by default when the buffer has a parser.
+LSP semantic-token colors are an opt-in provider:
 
-- [kevinhwang91/nvim-hlslens](https://github.com/kevinhwang91/nvim-hlslens) for implementation on how to hide search results
+```lua
+require("scrollbar").setup({
+    providers = {
+        lsp_semantic_tokens = true,
+    },
+    minimap = {
+        enabled = true,
+    },
+})
+```
+
+The minimap has eight presets: `vscode`, `sublime`, `zed`, `xcode`,
+`overview`, `compact`, `minimal`, and `blocks`. A minimap preset is separate
+from the scrollbar preset:
+
+```lua
+require("scrollbar").setup({
+    scrollbar = { preset = "zed" },
+    minimap = {
+        enabled = true,
+        preset = "zed",
+    },
+})
+```
+
+Provider marks, such as diagnostics, search matches, and Git hunks, tint the
+occupied cells of their row. `minimap.marks` changes the priority or the
+highlight of a mark type for the minimap. The value `false` hides a type:
+
+```lua
+require("scrollbar").setup({
+    minimap = {
+        enabled = true,
+        marks = {
+            Search = { priority = 0, highlight = "IncSearch" },
+            Hint = false,
+        },
+    },
+})
+```
+
+`minimap.blend` sets the blend of the full float. `minimap.background_blend`
+sets the blend of only the base surface. See
+[Minimap configuration](docs/minimap/configuration.md#blend). By default, the
+minimap of the active source window hides while the editing cursor is inside
+the minimap.
+
+The automatic highlight groups of the minimap have their own public names,
+such as `ScrollbarMinimapSearch`. Setup keeps your existing definitions of the
+public scrollbar and minimap groups.
+
+See the [minimap documentation](docs/minimap/README.md) for the map, placement,
+marks, and mouse behavior.
+
+## Pickers and Floats
+
+By default, the scrollbar and the minimap show only on normal windows. With
+`floats = true` in its block, the scrollbar or the minimap also shows on these
+floats:
+
+- The list and the preview of the snacks.nvim picker
+- The results and the preview of the Telescope picker
+
+A `when` function selects other floats:
+
+```lua
+require("scrollbar").setup({
+    scrollbar = {
+        floats = {
+            snacks = true,
+            telescope = true,
+            when = function(context)
+                return context.filetype == "lazy"
+            end,
+        },
+    },
+})
+```
+
+A bar on a float uses the z-index of that float + 1. A click or a drag on the
+bar of the snacks list selects an item. See [Floats](docs/floats.md).
+
+## Providers
+
+| Provider | Scrollbar | Minimap | Source | Dependency |
+| --- | --- | --- | --- | --- |
+| [`cursor`](docs/providers/cursor.md) | on | on | Source-window cursor | None |
+| [`diagnostic`](docs/providers/diagnostic.md) | on | on | Neovim `vim.diagnostic` | None |
+| [`search`](docs/providers/search.md) | on | on | Native `/` and `?` search | None |
+| [`marks`](docs/providers/marks.md) | on | on | Letter marks, and optional numbered marks | None |
+| [`gitsigns`](docs/providers/gitsigns.md) | off | off | Git hunks | gitsigns.nvim |
+| [`mini_diff`](docs/providers/mini_diff.md) | off | off | mini.diff hunks | mini.diff |
+| [`signify`](docs/providers/signify.md) | off | off | vim-signify hunks | vim-signify |
+| [`vgit`](docs/providers/vgit.md) | off | off | vgit hunks | vgit.nvim |
+| [`ale`](docs/providers/ale.md) | off | off | ALE location list | ALE |
+| [`coc`](docs/providers/coc.md) | off | off | Coc diagnostic list | coc.nvim |
+| [`treesitter`](docs/providers/treesitter.md) | unavailable | on | Treesitter highlight captures | Installed parser |
+| [`lsp_semantic_tokens`](docs/providers/lsp_semantic_tokens.md) | unavailable | off | LSP semantic tokens | Attached LSP client |
+
+Configure the providers in the top-level `providers` table. A provider value is
+`false`, `true`, or a table of options. In a table, the `scrollbar` and
+`minimap` flags select the renderers that show the provider. Each built-in
+provider runs once, and only when an enabled renderer uses it.
+
+See the [provider overview](docs/providers/README.md) for the shared rules,
+dependencies, update behavior, and links to every provider. To add a new data
+source, use the [custom provider API](docs/providers/custom.md).
+
+## Documentation
+
+### Guides
+
+- [Configuration](docs/configuration.md): defaults, providers, exclusions, mark
+  types, layout lanes, profiles, precedence, and validation
+- [Presets](docs/presets.md): the twelve scrollbar presets, the eight minimap
+  presets, and their precedence
+- [Visibility](docs/visibility.md): source-window visibility, autohide,
+  hide-on-cursor behavior, commands, and Lua APIs
+- [Floats](docs/floats.md): scrollbars and minimaps on the windows of the
+  snacks.nvim and Telescope pickers and on other floats
+- [Layout and geometry](docs/layout-and-geometry.md): layout lanes, placement,
+  line and screen-line units, and wide scrollbars
+- [Mouse](docs/mouse.md): clicks, mark navigation, thumb dragging, and focus
+  behavior
+- [Highlights](docs/highlights.md): generated groups, direct definitions,
+  blending, and manual highlights
+- [Migration](docs/migration.md): changes required from earlier releases
+- [Development](docs/development.md): tests, quality checks, benchmarks, and CI
+
+### Provider Guides
+
+- [Provider overview](docs/providers/README.md)
+- [Cursor](docs/providers/cursor.md)
+- [Diagnostics](docs/providers/diagnostic.md)
+- [Search](docs/providers/search.md)
+- [Marks](docs/providers/marks.md)
+- [Gitsigns](docs/providers/gitsigns.md)
+- [MiniDiff](docs/providers/mini_diff.md)
+- [Signify](docs/providers/signify.md)
+- [Vgit](docs/providers/vgit.md)
+- [ALE](docs/providers/ale.md)
+- [Coc](docs/providers/coc.md)
+- [Treesitter](docs/providers/treesitter.md)
+- [LSP semantic tokens](docs/providers/lsp_semantic_tokens.md)
+- [Custom providers](docs/providers/custom.md)
+
+### Minimap Guides
+
+- [Minimap overview](docs/minimap/README.md): placement, size, marks, and mouse
+  behavior
+- [Minimap configuration](docs/minimap/configuration.md)
 
 ## License
 
-[MIT](https://choosealicense.com/licenses/mit/)
+[MIT](LICENSE)

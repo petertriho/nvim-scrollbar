@@ -1,0 +1,187 @@
+# Highlights
+
+The scrollbar and the minimap generate automatic highlights independently. When
+the top-level `set_highlights = true` (the default), setup creates the scrollbar
+groups. It also creates the minimap groups when the minimap is enabled. The
+plugin updates these groups after each `ColorScheme` event. The plugin creates
+public groups only as `default = true` links, so it keeps existing user or
+colorscheme definitions.
+
+## Sources
+
+- A string `track.highlight` or `thumb.highlight` contributes its resolved
+  background.
+- A string `highlight` of a mark type contributes its resolved foreground. The
+  top-level `marks.<Type>.highlight` applies to both renderers.
+  `scrollbar.marks.<Type>.highlight` and `minimap.marks.<Type>.highlight`
+  override it for one renderer.
+- The plugin uses a table as a direct `nvim_set_hl()` definition.
+
+```lua
+require("scrollbar").setup({
+    marks = {
+        Search = { highlight = { fg = "#ff9e64", bold = true } },
+    },
+    scrollbar = {
+        track = { highlight = "PmenuSbar" },
+        thumb = { highlight = { bg = "#3b4261", blend = 20 } },
+    },
+})
+```
+
+The resting thumb uses `PmenuThumb` by default. The plugin derives pressed thumb
+backgrounds from `PmenuSel`. When the resolved or direct definition does not
+already set `blend`, the plugin adds `thumb.blend`. Mark-over-thumb groups
+deep-merge the thumb background and the mark definition. Mark fields take
+precedence.
+
+A user or a colorscheme can define a public group, for example
+`ScrollbarThumb` or `ScrollbarSearch`. The overlap groups then merge that
+definition instead of the generated definition. Thus a mark keeps its color
+over the thumb, and the thumb keeps its background behind the mark. The plugin
+reads these definitions at setup and after each `ColorScheme` event.
+
+## Generated Groups
+
+- `ScrollbarBase`: a transparent, float-wide base for undeclared cells.
+- `ScrollbarTrack`: backgrounds for explicitly declared tracks.
+- `ScrollbarThumb` and `ScrollbarThumbPressed`.
+- `Scrollbar<MarkType>`.
+- `Scrollbar<MarkType>Thumb` and `Scrollbar<MarkType>ThumbPressed`.
+
+Examples include `ScrollbarSearch`, `ScrollbarSearchThumb`,
+`ScrollbarSearchThumbPressed`, `ScrollbarMark`, and `ScrollbarErrorThumb`.
+Track backgrounds and content layers combine in the declared layer order.
+
+In automatic mode, the scrollbar also creates the legacy `Handle` names:
+`ScrollbarHandle`, `ScrollbarHandlePressed`, `Scrollbar<MarkType>Handle`, and
+`Scrollbar<MarkType>HandlePressed`. These names are default links to their
+canonical `Thumb` equivalents. They are not separately owned definitions.
+
+The canonical names above belong to the root configuration. In automatic mode,
+each profile also gets its own internal groups. As a result, windows that are
+visible at the same time can use different track, thumb, blend, mark, overlap,
+and pressed definitions.
+
+A profile copies the final definition of a root group when the profile has the
+same options for that group as the root. The final definition is the user or
+colorscheme definition of the public group, or else the generated definition.
+These options select each group:
+
+- Track: `track.highlight`.
+- Thumb: `thumb.highlight` and `thumb.blend`.
+- Pressed thumb: `thumb.blend`.
+- Mark: the `highlight` of the mark type.
+- Overlap and pressed overlap: the options of the thumb or the pressed thumb,
+  and the `highlight` of the mark type.
+
+For example, a profile that sets only `placement` uses the `ScrollbarSearch`
+definition of a colorscheme. A profile that sets `thumb.blend` generates its own
+thumb groups and overlap groups.
+
+## Frame Groups
+
+The border, the title, and the footer of each float use static groups. The
+plugin creates them as default links:
+
+| Group | Default link | Float |
+| --- | --- | --- |
+| `ScrollbarFloatBorder` | `FloatBorder` | Scrollbar |
+| `ScrollbarFloatTitle` | `FloatTitle` | Scrollbar |
+| `ScrollbarFloatFooter` | `FloatFooter` | Scrollbar |
+| `ScrollbarMinimapFloatBorder` | `FloatBorder` | Minimap |
+| `ScrollbarMinimapFloatTitle` | `FloatTitle` | Minimap |
+| `ScrollbarMinimapFloatFooter` | `FloatFooter` | Minimap |
+
+The `winhighlight` of each float maps `FloatBorder`, `FloatTitle`, and
+`FloatFooter` to these groups. All profiles use the same groups. To change the
+frame of one profile, set `window.wo.winhighlight` in that profile:
+
+```lua
+require("scrollbar").setup({
+    scrollbar = {
+        window = { border = "rounded" },
+        profiles = {
+            {
+                match = { filetypes = { "help" } },
+                window = { wo = { winhighlight = "FloatBorder:DiagnosticInfo" } },
+            },
+        },
+    },
+})
+```
+
+The entries of `window.wo.winhighlight` add to the mapping of the renderer.
+An entry for a group replaces the entry of the renderer for that group. See
+[Window](configuration.md#window).
+
+The groups own these names, so `FloatBorder`, `FloatTitle`, and `FloatFooter`
+are not valid mark types. A scrollbar mark type with one of these names claims
+the same group as the frame, and setup fails. The minimap rejects the names as
+minimap mark types.
+
+## Search Highlights
+
+The scrollbar and the minimap do not show search highlights. `'hlsearch'` is a
+global option, so Neovim matches the last search pattern in every window,
+floats included. The rows of each float are overlay virtual text on empty
+buffer lines. Thus the pattern matches no text of the float, and the marks
+keep their colors. Tools that read the buffer of a float, such as `:Inspect`,
+find only empty lines.
+
+As a backstop, the `winhighlight` of each float maps `Search`, `CurSearch`, and
+`IncSearch` to `Scrollbar.NoSearch`. The plugin does not define this group, so
+it is empty. The overlays cover the cells of the float, so the mapping has no
+visible effect.
+
+## Minimap Groups
+
+Static minimap groups keep these default links:
+
+| Group | Default link |
+| --- | --- |
+| `ScrollbarMinimapBase` | `Normal` |
+| `ScrollbarMinimapContent` | `Comment` |
+| `ScrollbarMinimapViewport` | `Visual` |
+| `ScrollbarMinimapCursor` | `Cursor` |
+
+Every mark type that the minimap shows uses a distinct public group named
+`ScrollbarMinimap<Type>`, for example `ScrollbarMinimapSearch`. In automatic
+mode, each minimap profile also gets its own internal groups. A profile with
+the same `highlight` for a mark type as the root copies the final root group.
+That is the user or colorscheme definition of `ScrollbarMinimap<Type>`, or else
+the generated definition. A profile with another `highlight` copies its own
+source. These groups do not link automatically to the final `Scrollbar<Type>`
+groups.
+
+To share manual colors, you can link the public names explicitly:
+
+```lua
+vim.api.nvim_set_hl(0, "ScrollbarMinimapSearch", { link = "ScrollbarSearch" })
+vim.api.nvim_set_hl(0, "ScrollbarMinimapError", { link = "ScrollbarError" })
+```
+
+## Manual Groups
+
+With the top-level `set_highlights = false`, the plugin creates and changes no
+scrollbar groups, including the base group and the legacy aliases. A manual
+configuration must define the canonical Thumb names. It is not sufficient to
+define only the legacy Handle names.
+
+In manual mode, every profile uses the same canonical groups. As a result,
+profile-specific highlight sources and blend values need
+`set_highlights = true`. There is no public API for profile-specific manual
+highlights.
+
+With the same option, the plugin also writes no minimap groups. Every minimap
+profile then uses the canonical `ScrollbarMinimap<Type>` names. Define those
+groups manually.
+
+The floats still map their frames to the [frame groups](#frame-groups). When
+you use a border, a title, or a footer in manual mode, define those groups too.
+
+## Related
+
+- [Configuration](configuration.md)
+- [Layout and geometry](layout-and-geometry.md)
+- [Migration](migration.md)
