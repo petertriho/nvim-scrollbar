@@ -156,9 +156,10 @@ local function reconcile_source_buffers(context)
     end
 end
 
+-- Not vim.version(): each call builds the complete API metadata of api_info().
+-- vim.fn.has() checks the version without that cost.
 local function has_complete_mark_set_events()
-    local version = vim.version()
-    return version.major > 0 or version.minor > 12 or (version.minor == 12 and version.patch >= 2)
+    return vim.fn.has("nvim-0.12.2") == 1
 end
 
 ---@param context ScrollbarProviderContext
