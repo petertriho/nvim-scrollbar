@@ -107,4 +107,54 @@ T["ColorScheme refreshes cached private definitions without changing public grou
     expect.equality(result.after_public, result.changed_public)
 end
 
+T["profiles that keep the source of the root copy the final root mark group"] = function()
+    local child = new_child()
+    local result = child.lua_func(function()
+        vim.api.nvim_set_hl(0, "Search", { fg = "#c0caf5" })
+        vim.api.nvim_set_hl(0, "ErrorSource", { fg = "#111111" })
+        vim.api.nvim_set_hl(0, "ScrollbarMinimapSearch", { fg = "#ff9e64", default = true })
+        require("scrollbar").setup({
+            scrollbar = { show = false },
+            marks = { Error = { highlight = "ErrorSource" } },
+            minimap = {
+                enabled = true,
+                show = false,
+                backend = "sync",
+                profiles = {
+                    { match = { filetypes = { "lua" } }, width = 4 },
+                    {
+                        match = { filetypes = { "text" } },
+                        marks = { Search = { highlight = { fg = "#666666" } } },
+                    },
+                },
+            },
+        })
+        local get = function(name)
+            return vim.api.nvim_get_hl(0, { name = name, link = false })
+        end
+        local function snapshot()
+            return {
+                inherited = get("ScrollbarMinimapProfile1.Search"),
+                inherited_error = get("ScrollbarMinimapProfile1.Error"),
+                own = get("ScrollbarMinimapProfile2.Search"),
+            }
+        end
+        local first = snapshot()
+
+        vim.cmd("hi clear")
+        vim.api.nvim_set_hl(0, "Search", { fg = "#c0caf5" })
+        vim.api.nvim_set_hl(0, "ErrorSource", { fg = "#111111" })
+        vim.cmd("doautocmd ColorScheme")
+        return { first = first, second = snapshot() }
+    end)
+
+    expect.equality(result.first.inherited, { fg = 0xFF9E64 })
+    expect.equality(result.first.inherited_error, { fg = 0x111111 })
+    expect.equality(result.first.own, { fg = 0x666666 })
+
+    -- Without a definition of the public group, the profile copies the generated definition.
+    expect.equality(result.second.inherited, { fg = 0xC0CAF5 })
+    expect.equality(result.second.own, { fg = 0x666666 })
+end
+
 return T

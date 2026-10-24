@@ -35,6 +35,12 @@ already set `blend`, the plugin adds `thumb.blend`. Mark-over-thumb groups
 deep-merge the thumb background and the mark definition. Mark fields take
 precedence.
 
+A user or a colorscheme can define a public group, for example
+`ScrollbarThumb` or `ScrollbarSearch`. The overlap groups then merge that
+definition instead of the generated definition. Thus a mark keeps its color
+over the thumb, and the thumb keeps its background behind the mark. The plugin
+reads these definitions at setup and after each `ColorScheme` event.
+
 ## Generated Groups
 
 - `ScrollbarBase`: a transparent, float-wide base for undeclared cells.
@@ -56,6 +62,22 @@ The canonical names above belong to the root configuration. In automatic mode,
 each profile also gets its own internal groups. As a result, windows that are
 visible at the same time can use different track, thumb, blend, mark, overlap,
 and pressed definitions.
+
+A profile copies the final definition of a root group when the profile has the
+same options for that group as the root. The final definition is the user or
+colorscheme definition of the public group, or else the generated definition.
+These options select each group:
+
+- Track: `track.highlight`.
+- Thumb: `thumb.highlight` and `thumb.blend`.
+- Pressed thumb: `thumb.blend`.
+- Mark: the `highlight` of the mark type.
+- Overlap and pressed overlap: the options of the thumb or the pressed thumb,
+  and the `highlight` of the mark type.
+
+For example, a profile that sets only `placement` uses the `ScrollbarSearch`
+definition of a colorscheme. A profile that sets `thumb.blend` generates its own
+thumb groups and overlap groups.
 
 ## Frame Groups
 
@@ -125,9 +147,12 @@ Static minimap groups keep these default links:
 
 Every mark type that the minimap shows uses a distinct public group named
 `ScrollbarMinimap<Type>`, for example `ScrollbarMinimapSearch`. In automatic
-mode, each minimap profile also gets its own internal groups. These groups copy
-the configured source. They do not link automatically to the final
-`Scrollbar<Type>` groups.
+mode, each minimap profile also gets its own internal groups. A profile with
+the same `highlight` for a mark type as the root copies the final root group.
+That is the user or colorscheme definition of `ScrollbarMinimap<Type>`, or else
+the generated definition. A profile with another `highlight` copies its own
+source. These groups do not link automatically to the final `Scrollbar<Type>`
+groups.
 
 To share manual colors, you can link the public names explicitly:
 

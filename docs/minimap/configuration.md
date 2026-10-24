@@ -398,7 +398,9 @@ Each shown mark type also gets a public `ScrollbarMinimap<Type>` group, such as
 The plugin copies a direct table. It does not overwrite a public definition
 that already exists. In automatic mode, each profile gets its own internal
 groups, so that profiles that show at the same time can use different
-definitions.
+definitions. A profile with the same `highlight` for a mark type as the root
+copies the final root group, also when a user or a colorscheme defines it. See
+[Highlights](../highlights.md#minimap-groups).
 
 With `set_highlights = false`, setup and `ColorScheme` write no minimap groups.
 Every profile renders through the canonical `ScrollbarMinimap<Type>` names. In

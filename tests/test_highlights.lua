@@ -300,6 +300,156 @@ T["refreshes private definitions while preserving public links and later user ov
     })
 end
 
+T["builds the overlap groups from a public mark group that a colorscheme defines"] = function()
+    local child = new_child()
+    local result = child.lua_func(function(config)
+        local get = function(name)
+            return vim.api.nvim_get_hl(0, { name = name, link = false })
+        end
+        local link = function(name)
+            return vim.api.nvim_get_hl(0, { name = name, link = true }).link
+        end
+        local function snapshot()
+            return {
+                search = get("ScrollbarSearch"),
+                search_link = link("ScrollbarSearch"),
+                generated_search = get("ScrollbarGenerated.Search"),
+                search_thumb = get("ScrollbarSearchThumb"),
+                search_pressed = get("ScrollbarSearchThumbPressed"),
+                error_thumb = get("ScrollbarErrorThumb"),
+            }
+        end
+        -- Clears the groups and sets the definitions, as a colorscheme does.
+        local function colorscheme(definitions)
+            vim.cmd("hi clear")
+            vim.api.nvim_set_hl(0, "Search", { fg = "#c0caf5", bg = "#3d59a1" })
+            vim.api.nvim_set_hl(0, "PmenuThumb", { bg = "#445566" })
+            vim.api.nvim_set_hl(0, "PmenuSel", { bg = "#778899" })
+            vim.api.nvim_set_hl(0, "ErrorSource", { fg = "#111111" })
+            for name, definition in pairs(definitions) do
+                vim.api.nvim_set_hl(0, name, definition)
+            end
+        end
+
+        colorscheme({
+            ScrollbarSearch = { fg = "#ff9e64", default = true },
+            ErrorTarget = { fg = "#db4b4b", bold = true },
+            ScrollbarError = { link = "ErrorTarget" },
+        })
+        require("scrollbar").setup(config)
+        local first = snapshot()
+
+        colorscheme({ ScrollbarSearch = { fg = "#00ff00" } })
+        vim.cmd("doautocmd ColorScheme")
+        local second = snapshot()
+
+        colorscheme({})
+        vim.cmd("doautocmd ColorScheme")
+        return { first = first, second = second, third = snapshot() }
+    end, base_config({ marks = { Error = { highlight = "ErrorSource" } } }))
+
+    expect.equality(result.first.search, { fg = 0xFF9E64, default = true })
+    expect.equality(result.first.generated_search, { fg = 0xC0CAF5 })
+    expect.equality(result.first.search_thumb, { fg = 0xFF9E64, bg = 0x445566, blend = 30 })
+    expect.equality(result.first.search_pressed, { fg = 0xFF9E64, bg = 0x778899, blend = 30 })
+    expect.equality(result.first.error_thumb, {
+        fg = 0xDB4B4B,
+        bg = 0x445566,
+        blend = 30,
+        bold = true,
+        cterm = { bold = true },
+    })
+
+    expect.equality(result.second.search, { fg = 0x00FF00 })
+    expect.equality(result.second.search_thumb, { fg = 0x00FF00, bg = 0x445566, blend = 30 })
+    expect.equality(result.second.error_thumb, { fg = 0x111111, bg = 0x445566, blend = 30 })
+
+    -- Without a definition, the public group links to the generated group again.
+    expect.equality(result.third.search_link, "ScrollbarGenerated.Search")
+    expect.equality(result.third.search, { fg = 0xC0CAF5 })
+    expect.equality(result.third.search_thumb, { fg = 0xC0CAF5, bg = 0x445566, blend = 30 })
+    expect.equality(result.third.search_pressed, { fg = 0xC0CAF5, bg = 0x778899, blend = 30 })
+end
+
+T["builds the overlap groups from public thumb groups that a colorscheme defines"] = function()
+    local child = new_child()
+    local result = child.lua_func(function(config)
+        vim.api.nvim_set_hl(0, "Search", { fg = "#c0caf5" })
+        vim.api.nvim_set_hl(0, "PmenuThumb", { bg = "#445566" })
+        vim.api.nvim_set_hl(0, "PmenuSel", { bg = "#778899" })
+        vim.api.nvim_set_hl(0, "ScrollbarThumb", { bg = "#101010", default = true })
+        vim.api.nvim_set_hl(0, "PressedTarget", { bg = "#202020", blend = 5 })
+        vim.api.nvim_set_hl(0, "ScrollbarThumbPressed", { link = "PressedTarget" })
+        require("scrollbar").setup(config)
+        local get = function(name)
+            return vim.api.nvim_get_hl(0, { name = name, link = false })
+        end
+        return {
+            generated_thumb = get("ScrollbarGenerated.Thumb"),
+            search_thumb = get("ScrollbarSearchThumb"),
+            search_pressed = get("ScrollbarSearchThumbPressed"),
+        }
+    end, base_config())
+
+    expect.equality(result.generated_thumb, { bg = 0x445566, blend = 30 })
+    expect.equality(result.search_thumb, { fg = 0xC0CAF5, bg = 0x101010 })
+    expect.equality(result.search_pressed, { fg = 0xC0CAF5, bg = 0x202020, blend = 5 })
+end
+
+T["copies the final root groups into the profiles that keep the options of the root"] = function()
+    local child = new_child()
+    local result = child.lua_func(function(config)
+        vim.api.nvim_set_hl(0, "Search", { fg = "#c0caf5" })
+        vim.api.nvim_set_hl(0, "PmenuThumb", { bg = "#445566" })
+        vim.api.nvim_set_hl(0, "PmenuSel", { bg = "#778899" })
+        vim.api.nvim_set_hl(0, "ScrollbarTrack", { bg = "#030303" })
+        vim.api.nvim_set_hl(0, "ScrollbarThumb", { bg = "#101010" })
+        vim.api.nvim_set_hl(0, "ScrollbarSearch", { fg = "#ff9e64" })
+        config.scrollbar.profiles = {
+            { match = { filetypes = { "lua" } }, placement = { anchor = "NE" } },
+            {
+                match = { filetypes = { "text" } },
+                track = { highlight = { bg = "#040404" } },
+                thumb = { blend = 11 },
+                marks = { Search = { highlight = { fg = "#666666" } } },
+            },
+        }
+        require("scrollbar").setup(config)
+        local get = function(name)
+            return vim.api.nvim_get_hl(0, { name = name, link = false })
+        end
+        return {
+            inherited_track = get("ScrollbarProfile1.Track"),
+            inherited_thumb = get("ScrollbarProfile1.Thumb"),
+            inherited_pressed = get("ScrollbarProfile1.ThumbPressed"),
+            inherited_search = get("ScrollbarProfile1.Search"),
+            inherited_search_thumb = get("ScrollbarProfile1.SearchThumb"),
+            inherited_error = get("ScrollbarProfile1.Error"),
+            own_track = get("ScrollbarProfile2.Track"),
+            own_thumb = get("ScrollbarProfile2.Thumb"),
+            own_pressed = get("ScrollbarProfile2.ThumbPressed"),
+            own_search = get("ScrollbarProfile2.Search"),
+            own_search_thumb = get("ScrollbarProfile2.SearchThumb"),
+            own_error_thumb = get("ScrollbarProfile2.ErrorThumb"),
+        }
+    end, base_config({ marks = { Error = { highlight = { fg = "#222222" } } } }))
+
+    expect.equality(result.inherited_track, { bg = 0x030303 })
+    expect.equality(result.inherited_thumb, { bg = 0x101010 })
+    expect.equality(result.inherited_pressed, { bg = 0x778899, blend = 30 })
+    expect.equality(result.inherited_search, { fg = 0xFF9E64 })
+    expect.equality(result.inherited_search_thumb, { fg = 0xFF9E64, bg = 0x101010 })
+    expect.equality(result.inherited_error, { fg = 0x222222 })
+
+    -- The options of the profile select generated definitions.
+    expect.equality(result.own_track, { bg = 0x040404 })
+    expect.equality(result.own_thumb, { bg = 0x445566, blend = 11 })
+    expect.equality(result.own_pressed, { bg = 0x778899, blend = 11 })
+    expect.equality(result.own_search, { fg = 0x666666 })
+    expect.equality(result.own_search_thumb, { fg = 0x666666, bg = 0x445566, blend = 11 })
+    expect.equality(result.own_error_thumb, { fg = 0x222222, bg = 0x445566, blend = 11 })
+end
+
 T["internal namespaces do not capture valid custom mark groups"] = function()
     local child = new_child()
     local result = child.lua_func(

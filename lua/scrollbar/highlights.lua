@@ -128,39 +128,135 @@ local function set_root_highlight(public_name, definition)
     set_default_link(public_name, private_name)
 end
 
----@param active_config ScrollbarConfig
----@param root boolean
-local function set_variant_highlights(active_config, root)
-    local groups = active_config.highlights
-    local track = background_highlight(active_config.track.highlight, nil, "PmenuSbar", "#000000")
-    local thumb = thumb_highlight(active_config.thumb)
-    local pressed = background_highlight("PmenuSel", active_config.thumb.blend, "PmenuThumb", "#ffffff")
-
-    if root then
-        set_root_highlight(groups.track, track)
-        set_root_highlight(groups.thumb, thumb)
-        set_root_highlight(groups.thumb_pressed, pressed)
-    else
-        vim.api.nvim_set_hl(0, groups.track, track)
-        vim.api.nvim_set_hl(0, groups.thumb, thumb)
-        vim.api.nvim_set_hl(0, groups.thumb_pressed, pressed)
+--- The definition of a public group that a user or a colorscheme sets. The
+--- default link of the plugin to `private_name`, an empty group, and a missing
+--- group give nil. `:hi clear` leaves an empty group, and the default link
+--- applies to it.
+---@param public_name string
+---@param private_name string
+---@return vim.api.keyset.highlight?
+M.external_definition = function(public_name, private_name)
+    local definition = get_highlight(public_name)
+    if definition == nil or vim.api.nvim_get_hl(0, { name = public_name }).link == private_name then
+        return nil
     end
+    -- With `default`, nvim_set_hl would keep the earlier definition of a derived group.
+    definition.default = nil
+    if next(definition) == nil then
+        return nil
+    end
+    -- With link = false, the other keys of nvim_get_hl are valid keys of nvim_set_hl
+    return definition --[[@as vim.api.keyset.highlight]]
+end
+
+---@class ScrollbarHighlightEntry
+---@field key string
+---@field name string
+---@field source any The options that select the definition
+---@field generate fun(final: table<string, vim.api.keyset.highlight>): vim.api.keyset.highlight
+
+---@class ScrollbarVariantHighlights
+---@field sources table<string, any>
+---@field final table<string, vim.api.keyset.highlight>
+
+--- The groups of one variant. An overlap entry comes after the thumb entry and
+--- the mark entry that it merges.
+---@param active_config ScrollbarConfig
+---@return ScrollbarHighlightEntry[]
+local function variant_entries(active_config)
+    local groups = active_config.highlights
+    local track = active_config.track
+    local thumb = active_config.thumb
+    local entries = {
+        {
+            key = "track",
+            name = groups.track,
+            source = track.highlight,
+            generate = function()
+                return background_highlight(track.highlight, nil, "PmenuSbar", "#000000")
+            end,
+        },
+        {
+            key = "thumb",
+            name = groups.thumb,
+            source = { thumb.highlight, thumb.blend },
+            generate = function()
+                return thumb_highlight(thumb)
+            end,
+        },
+        {
+            key = "thumb_pressed",
+            name = groups.thumb_pressed,
+            source = thumb.blend,
+            generate = function()
+                return background_highlight("PmenuSel", thumb.blend, "PmenuThumb", "#ffffff")
+            end,
+        },
+    }
     for mark_type, properties in pairs(active_config.marks) do
         local mark_groups = groups.marks[mark_type]
-        local mark = mark_highlight(properties)
-        local overlap = vim.tbl_deep_extend("force", {}, thumb, mark)
-        local pressed_overlap = vim.tbl_deep_extend("force", {}, pressed, mark)
-        if root then
-            set_root_highlight(mark_groups.mark, mark)
-            set_root_highlight(mark_groups.thumb, overlap)
-            set_root_highlight(mark_groups.thumb_pressed, pressed_overlap)
+        -- A mark type cannot contain a dot, so the keys are unique.
+        local key = "marks." .. mark_type
+        entries[#entries + 1] = {
+            key = key,
+            name = mark_groups.mark,
+            source = properties.highlight,
+            generate = function()
+                return mark_highlight(properties)
+            end,
+        }
+        entries[#entries + 1] = {
+            key = key .. ".thumb",
+            name = mark_groups.thumb,
+            source = { thumb.highlight, thumb.blend, properties.highlight },
+            generate = function(final)
+                return vim.tbl_deep_extend("force", {}, final.thumb, final[key])
+            end,
+        }
+        entries[#entries + 1] = {
+            key = key .. ".thumb_pressed",
+            name = mark_groups.thumb_pressed,
+            source = { thumb.blend, properties.highlight },
+            generate = function(final)
+                return vim.tbl_deep_extend("force", {}, final.thumb_pressed, final[key])
+            end,
+        }
+    end
+    return entries
+end
+
+--- Set the groups of one variant. The final definition of a root group is the
+--- user or colorscheme definition of the public group, or else the generated
+--- definition. The overlap groups merge the final definitions, so a mark keeps
+--- its color over the thumb. A profile copies the final definition of a root
+--- group when it has the same options for the group as the root, so an option
+--- in the profile wins.
+---@param active_config ScrollbarConfig
+---@param root? ScrollbarVariantHighlights Nil for the root itself
+---@return ScrollbarVariantHighlights
+local function set_variant_highlights(active_config, root)
+    local sources = {}
+    local final = {}
+    for _, entry in ipairs(variant_entries(active_config)) do
+        sources[entry.key] = entry.source
+        if root == nil then
+            -- The private group keeps the generated definition. The public group links to it again when the external
+            -- definition goes away.
+            local generated = entry.generate(final)
+            set_root_highlight(entry.name, generated)
+            final[entry.key] = M.external_definition(entry.name, generated_name(entry.name)) or generated
         else
-            vim.api.nvim_set_hl(0, mark_groups.mark, mark)
-            vim.api.nvim_set_hl(0, mark_groups.thumb, overlap)
-            vim.api.nvim_set_hl(0, mark_groups.thumb_pressed, pressed_overlap)
+            local root_final = root.final[entry.key]
+            if root_final ~= nil and vim.deep_equal(entry.source, root.sources[entry.key]) then
+                final[entry.key] = vim.deepcopy(root_final)
+            else
+                final[entry.key] = entry.generate(final)
+            end
+            vim.api.nvim_set_hl(0, entry.name, final[entry.key])
         end
     end
-    if root then
+    if root == nil then
+        local groups = active_config.highlights
         set_default_link(M.get_legacy_highlight_name("", true), groups.thumb)
         set_default_link(M.get_legacy_highlight_name("", true, true), groups.thumb_pressed)
         for mark_type in pairs(active_config.marks) do
@@ -169,6 +265,7 @@ local function set_variant_highlights(active_config, root)
             set_default_link(M.get_legacy_highlight_name(mark_type, true, true), mark_groups.thumb_pressed)
         end
     end
+    return { sources = sources, final = final }
 end
 
 M.set_highlights = function()
@@ -182,8 +279,11 @@ M.set_highlights = function()
     set_default_link("ScrollbarFloatBorder", "FloatBorder")
     set_default_link("ScrollbarFloatTitle", "FloatTitle")
     set_default_link("ScrollbarFloatFooter", "FloatFooter")
+    local root = set_variant_highlights(active_config, nil)
     for _, variant in ipairs(config.get_variants()) do
-        set_variant_highlights(variant.config, variant.id == 0)
+        if variant.id > 0 then
+            set_variant_highlights(variant.config, root)
+        end
     end
 end
 

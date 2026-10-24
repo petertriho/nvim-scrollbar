@@ -60,15 +60,26 @@ M.set = function()
     set_default_link("ScrollbarMinimapFloatTitle", "FloatTitle")
     set_default_link("ScrollbarMinimapFloatFooter", "FloatFooter")
 
+    -- The final definition of a root group is the user or colorscheme
+    -- definition of the public group, or else the generated definition. A
+    -- profile copies it when the profile has the same source as the root.
+    local root_final = {}
+    for mark_type, spec in pairs(root.marks) do
+        local private_name = generated_name(spec.group)
+        local generated = definition(spec.highlight)
+        vim.api.nvim_set_hl(0, private_name, generated)
+        set_default_link(spec.group, private_name)
+        root_final[mark_type] = highlights.external_definition(spec.group, private_name) or generated
+    end
     for _, variant in ipairs(config.get_variants()) do
-        for _, spec in pairs(variant.config.marks) do
-            local resolved = definition(spec.highlight)
-            if variant.id == 0 then
-                local private_name = generated_name(spec.group)
-                vim.api.nvim_set_hl(0, private_name, resolved)
-                set_default_link(spec.group, private_name)
-            else
-                vim.api.nvim_set_hl(0, spec.group, resolved)
+        if variant.id > 0 then
+            for mark_type, spec in pairs(variant.config.marks) do
+                local root_spec = root.marks[mark_type]
+                if root_spec ~= nil and vim.deep_equal(spec.highlight, root_spec.highlight) then
+                    vim.api.nvim_set_hl(0, spec.group, vim.deepcopy(root_final[mark_type]))
+                else
+                    vim.api.nvim_set_hl(0, spec.group, definition(spec.highlight))
+                end
             end
         end
     end
