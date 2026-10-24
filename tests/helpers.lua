@@ -277,6 +277,13 @@ M.wait_for_worker_status = function(child, expected)
     end, expected)
 end
 
+--- The worker starts at the first search. A search command line starts it,
+--- also when the user leaves the command line without a search.
+M.start_search_worker = function(child)
+    child.type_keys("/", "<Esc>")
+    return M.wait_for_worker_status(child, "ready")
+end
+
 M.accept_search = function(child, direction, pattern)
     child.type_keys(10, direction, pattern, "<CR>")
 end

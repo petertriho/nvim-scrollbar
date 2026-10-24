@@ -132,12 +132,14 @@ case, the selected source window can still affect the results.
 ### Worker
 
 `backend = "worker"` is the default. The provider starts one embedded headless
-Neovim process from `vim.v.progpath`. All searched buffers share this process.
-Scans run outside the event loop of the parent Neovim.
+Neovim process from `vim.v.progpath` at the first search: when you open a `/`
+or `?` command line, or when the first search scan starts. A session without a
+search starts no process. All searched buffers share this process. Scans run
+outside the event loop of the parent Neovim.
 
-A new setup stops the existing worker before it starts a replacement. If the
-new configuration selects the synchronous backend, no replacement starts. The
-worker also stops when the parent Neovim exits.
+A new setup stops the existing worker. The replacement starts at the next
+search. If the new configuration selects the synchronous backend, no
+replacement starts. The worker also stops when the parent Neovim exits.
 
 ### Synchronous
 
@@ -190,7 +192,8 @@ it uses the synchronous backend for the rest of that setup.
 
 After a failure, the worker does not restart automatically within the same
 setup. A new `require("scrollbar").setup(...)` call replaces that setup.
-Depending on the new configuration, the new setup can start a new worker.
+Depending on the new configuration, the next search after the new setup can
+start a new worker.
 
 ## Appearance
 

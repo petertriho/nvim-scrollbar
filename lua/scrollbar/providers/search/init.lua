@@ -77,6 +77,23 @@ local request_states = {}
 ---@type "sync"|"worker"
 local backend = "sync"
 
+-- The worker options of a setup whose worker has not started. The worker
+-- starts at the first search, so a session without a search starts no child
+-- process.
+---@type table?
+local worker_start
+
+local function start_worker()
+    local start_options = worker_start
+    if start_options == nil then
+        return
+    end
+    worker_start = nil
+    if not worker.setup(start_options) then
+        backend = "sync"
+    end
+end
+
 ---@type fun(event: string, payload?: table)?
 local timing_hook
 
@@ -334,6 +351,7 @@ local function execute_request(context, bufnr, generation)
         return
     end
 
+    start_worker()
     if backend == "worker" then
         state.worker_request = request
         if worker.request(request) then
@@ -592,17 +610,13 @@ function M.setup(context)
     local worker_test = package.loaded["scrollbar.test.search_worker"]
     timing_hook = type(worker_test) == "table" and worker_test.on_timing or nil
     backend = type(worker_test) == "table" and worker_test.backend or search_options.backend
-    if backend == "worker" then
-        if
-            not worker.setup({
+    worker_start = backend == "worker"
+            and {
                 on_result = handle_worker_result,
                 on_failure = handle_worker_failure,
                 test = worker_test,
-            })
-        then
-            backend = "sync"
-        end
-    end
+            }
+        or nil
 
     local group = context.create_augroup("events")
     text_change_group = context.create_augroup("text_change")
@@ -611,6 +625,8 @@ function M.setup(context)
         group = group,
         pattern = SEARCH_CMDLINE_PATTERN,
         callback = function()
+            -- The child boots while the user types the pattern.
+            start_worker()
             commandline = {
                 bufnr = vim.api.nvim_get_current_buf(),
                 pattern = vim.fn.getreg("/"),
@@ -725,6 +741,7 @@ function M.dispose(context)
     end
     active_context = nil
     backend = "sync"
+    worker_start = nil
     worker.dispose()
     timing_hook = nil
     commandline = nil

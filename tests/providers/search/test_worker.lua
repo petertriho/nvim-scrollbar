@@ -110,7 +110,7 @@ end
 
 T["a write after an edit does not stall the next search"] = function()
     local child = new_worker_child(false)
-    expect.equality(helpers.wait_for_worker_status(child, "ready"), true)
+    expect.equality(helpers.start_search_worker(child), true)
     child.lua([[
         vim.cmd("edit " .. vim.fn.fnameescape(vim.fn.tempname() .. ".txt"))
         vim.api.nvim_buf_set_lines(0, 0, -1, false, { "foo", "bar", "foo", "bar", "baz" })
@@ -303,7 +303,7 @@ end
 
 T["obsolete worker callbacks cannot publish into a new session"] = function()
     local child = new_worker_child(false)
-    expect.equality(helpers.wait_for_worker_status(child, "ready"), true)
+    expect.equality(helpers.start_search_worker(child), true)
     local old_session = child.lua_get([[require("scrollbar.providers.search.worker").status().session]])
 
     child.lua([[
@@ -311,7 +311,7 @@ T["obsolete worker callbacks cannot publish into a new session"] = function()
         providers.dispose()
         providers.setup({ config = require("scrollbar.config").get() })
     ]])
-    expect.equality(helpers.wait_for_worker_status(child, "ready"), true)
+    expect.equality(helpers.start_search_worker(child), true)
     child.lua_func(function(session)
         -- selene: allow(global_usage)
         _G.__scrollbar_search_worker_callback(session, "result", {
@@ -389,7 +389,7 @@ end
 
 T["repeated setup, disposal, and parent shutdown clean worker ownership"] = function()
     local child = new_worker_child(false)
-    expect.equality(helpers.wait_for_worker_status(child, "ready"), true)
+    expect.equality(helpers.start_search_worker(child), true)
     local first = child.lua_get([[require("scrollbar.providers.search.worker").status()]])
 
     child.lua([[
@@ -397,7 +397,7 @@ T["repeated setup, disposal, and parent shutdown clean worker ownership"] = func
         providers.dispose()
         providers.setup({ config = require("scrollbar.config").get() })
     ]])
-    expect.equality(helpers.wait_for_worker_status(child, "ready"), true)
+    expect.equality(helpers.start_search_worker(child), true)
     local second = child.lua_get([[require("scrollbar.providers.search.worker").status()]])
     expect.no_equality(second.session, first.session)
     expect.no_equality(second.job_id, first.job_id)

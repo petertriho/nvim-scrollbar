@@ -69,7 +69,7 @@ T["providers.search=true normalizes configuration and scans an existing search"]
     )
 end
 
-T["production setup starts one shared search worker"] = function()
+T["production setup starts one shared search worker at the first search"] = function()
     local child = new_child()
     child.lua([[
         package.loaded["scrollbar.test.jobstarts"] = 0
@@ -81,13 +81,27 @@ T["production setup starts one shared search worker"] = function()
     ]])
 
     helpers.setup_search_default(child, true)
-    expect.equality(helpers.wait_for_worker_status(child, "ready"), true)
     helpers.set_lines(child, { "start", "production", "production" })
-    helpers.accept_search(child, "/", "production")
+    expect.equality(child.lua_get([=[package.loaded["scrollbar.test.jobstarts"]]=]), 0)
+    expect.equality(child.lua_get([[require("scrollbar.providers.search.worker").status().state]]), "disposed")
 
+    helpers.accept_search(child, "/", "production")
     expect.equality(helpers.wait_for_mark_lines(child, { 1, 2 }), true)
+    helpers.accept_search(child, "?", "start")
+    expect.equality(helpers.wait_for_mark_lines(child, { 0 }), true)
     expect.equality(child.lua_get([=[package.loaded["scrollbar.test.jobstarts"]]=]), 1)
     expect.equality(child.lua_get([[require("scrollbar.providers.search.worker").status().state]]), "ready")
+end
+
+T["a search outside the command line starts the search worker"] = function()
+    local child = new_child()
+    helpers.setup_search_default(child, false)
+    helpers.set_lines(child, { "start", "word", "word" })
+    child.api.nvim_win_set_cursor(0, { 2, 0 })
+    child.type_keys("*")
+
+    expect.equality(helpers.wait_for_mark_lines(child, { 1, 2 }), true)
+    expect.equality(helpers.wait_for_worker_status(child, "ready"), true)
 end
 
 T["providers.search.backend=sync disables child startup"] = function()

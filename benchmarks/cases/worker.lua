@@ -19,6 +19,19 @@ local function search_round_trip(kind)
         hooks = { SEARCH_CALLBACK },
         setup = function()
             local state = search.setup(kind, "worker")
+            -- The worker starts at the first search, so a search before the runs starts it.
+            local searched = false
+            search.next_pattern(state)
+            search.run(state, function()
+                searched = true
+            end)
+            if
+                not vim.wait(fixtures.READY_TIMEOUT_MS, function()
+                    return searched
+                end, 1)
+            then
+                error("the first search did not publish", 0)
+            end
             fixtures.wait_until_ready(require("scrollbar.providers.search.worker"))
             return state
         end,
