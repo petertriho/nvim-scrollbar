@@ -82,7 +82,7 @@ T["normalizes a fresh one-column default without setup-only state"] = function()
         row = 0,
         col = 0,
         gutter = "inner",
-        zindex = 50,
+        zindex = 30,
     })
     expect.equality(second.layout.direction, "auto")
     expect.equality(second.layout.width, 1)

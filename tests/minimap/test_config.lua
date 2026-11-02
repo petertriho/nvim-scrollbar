@@ -97,7 +97,7 @@ T["defaults to disabled with sensible defaults"] = function()
         anchor = "NE",
         row = 0,
         col = 0,
-        zindex = 50,
+        zindex = 30,
         stack = "inner",
     })
     expect.equality(result.blend, 0)

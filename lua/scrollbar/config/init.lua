@@ -29,7 +29,7 @@ local DEFAULTS = {
         row = 0,
         col = 0,
         gutter = "inner",
-        zindex = 50,
+        zindex = 30,
     },
     hide_on_cursor = true,
     hide_if_all_visible = false,

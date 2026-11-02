@@ -29,7 +29,7 @@ local DEFAULTS = {
         anchor = "NE",
         row = 0,
         col = 0,
-        zindex = 50,
+        zindex = 30,
         stack = "inner",
     },
     blend = 0,

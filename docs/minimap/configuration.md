@@ -45,7 +45,7 @@ require("scrollbar").setup({
             anchor = "NE", -- "NW", "NE", "SW", or "SE"
             row = 0,
             col = 0,
-            zindex = 50,
+            zindex = 30,
             stack = "inner", -- "inner", "outer", "above", or "below"
         },
         blend = 0,
@@ -97,7 +97,7 @@ You set appearance options at the root of the `minimap` block or in a
 | `placement.anchor` | `"NE"` | Corner used as the origin of `row` and `col`. |
 | `placement.row` | `0` | Row offset from the anchor. |
 | `placement.col` | `0` | Column offset from the anchor. |
-| `placement.zindex` | `50` | `nvim_open_win()` z-index. |
+| `placement.zindex` | `30` | `nvim_open_win()` z-index. |
 | `placement.stack` | `"inner"` | Arrangement with a scrollbar on the same side. See [Placement Beside the Scrollbar](#placement-beside-the-scrollbar). |
 | `blend` | `0` | Pseudo-transparency of the full float, `0` to `100`. |
 | `hide_on_cursor` | `true` | Hides the minimap of the active source window while the cursor is inside it. See [Cursor Yielding](#cursor-yielding). |

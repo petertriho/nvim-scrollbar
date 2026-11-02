@@ -923,7 +923,7 @@ T["resolves every anchor and restores protected float configuration"] = function
     expect.equality(result.protected.width, 2)
     expect.equality(result.protected.focusable, false)
     expect.equality(result.protected.mouse, false)
-    expect.equality(result.protected.zindex, 50)
+    expect.equality(result.protected.zindex, 30)
 end
 
 T["applies inner and outer gutters only to window-relative west placements that reserve the gutter"] = function()

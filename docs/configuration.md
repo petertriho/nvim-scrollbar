@@ -116,7 +116,7 @@ require("scrollbar").setup({
             row = 0,
             col = 0,
             gutter = "inner", -- "inner", "outer", or "overlap"
-            zindex = 50,
+            zindex = 30,
         },
         hide_on_cursor = true,
         hide_if_all_visible = false,

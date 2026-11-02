@@ -90,7 +90,7 @@ sufficient, the lane keeps the ordered prefix and omits the tail. Marks with
 `"editor"` uses editor coordinates and renders only for the active source
 window. `anchor` selects `NW`, `NE`, `SW`, or `SE`. The signed `row` and `col`
 offsets apply literally. `zindex` sets the `nvim_open_win` z-index (default
-`50`).
+`30`).
 
 When the minimap is on the same side, `minimap.placement.stack` puts the two
 floats side by side or sets which one is on top. See

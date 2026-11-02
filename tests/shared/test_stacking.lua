@@ -108,8 +108,8 @@ T["inner places the minimap beside the text and the scrollbar at the east edge"]
     flush(child)
 
     expect.equality(floats(child), {
-        scrollbar = { left = 79, width = 1, zindex = 50, hide = false },
-        minimap = { left = 75, width = 4, zindex = 50, hide = false },
+        scrollbar = { left = 79, width = 1, zindex = 30, hide = false },
+        minimap = { left = 75, width = 4, zindex = 30, hide = false },
     })
     expect.equality(screen_row(child):sub(-5), "MMMMS")
 end
@@ -120,8 +120,8 @@ T["outer places the scrollbar beside the text and the minimap at the east edge"]
     flush(child)
 
     expect.equality(floats(child), {
-        scrollbar = { left = 75, width = 1, zindex = 50, hide = false },
-        minimap = { left = 76, width = 4, zindex = 50, hide = false },
+        scrollbar = { left = 75, width = 1, zindex = 30, hide = false },
+        minimap = { left = 76, width = 4, zindex = 30, hide = false },
     })
     expect.equality(screen_row(child):sub(-5), "SMMMM")
 end
@@ -154,8 +154,8 @@ T["above keeps the minimap on top after hide and show cycles"] = function()
     flush(child)
 
     expect.equality(floats(child), {
-        scrollbar = { left = 79, width = 1, zindex = 49, hide = false },
-        minimap = { left = 76, width = 4, zindex = 50, hide = false },
+        scrollbar = { left = 79, width = 1, zindex = 29, hide = false },
+        minimap = { left = 76, width = 4, zindex = 30, hide = false },
     })
     expect.equality(screen_row(child):sub(-4), "MMMM")
     cycle_hide(child, "scrollbar.renderer")
@@ -168,8 +168,8 @@ T["below keeps the scrollbar on top after hide and show cycles"] = function()
     flush(child)
 
     expect.equality(floats(child), {
-        scrollbar = { left = 79, width = 1, zindex = 50, hide = false },
-        minimap = { left = 76, width = 4, zindex = 49, hide = false },
+        scrollbar = { left = 79, width = 1, zindex = 30, hide = false },
+        minimap = { left = 76, width = 4, zindex = 29, hide = false },
     })
     expect.equality(screen_row(child):sub(-4), "MMMS")
     cycle_hide(child, "scrollbar.minimap.renderer")
@@ -178,11 +178,11 @@ end
 
 T["different explicit z-indexes win over above and below"] = function()
     local child = new_child()
-    setup(child, { minimap = { placement = { stack = "above", zindex = 40 } } })
+    setup(child, { minimap = { placement = { stack = "above", zindex = 20 } } })
     flush(child)
 
-    expect.equality(floats(child).scrollbar.zindex, 50)
-    expect.equality(floats(child).minimap.zindex, 40)
+    expect.equality(floats(child).scrollbar.zindex, 30)
+    expect.equality(floats(child).minimap.zindex, 20)
     expect.equality(screen_row(child):sub(-4), "MMMS")
 end
 
@@ -257,7 +257,7 @@ T["an autohidden outer scrollbar keeps the minimap slot"] = function()
     child.lua([[require("scrollbar.renderer").conceal(vim.api.nvim_get_current_win())]])
     expect.equality(floats(child), {
         scrollbar = false,
-        minimap = { left = 75, width = 4, zindex = 50, hide = false },
+        minimap = { left = 75, width = 4, zindex = 30, hide = false },
     })
 
     -- A concealed render keeps the held footprint.
@@ -275,7 +275,7 @@ T["MinimapHide moves an inner scrollbar to the edge at once"] = function()
 
     child.cmd("MinimapHide")
     expect.equality(floats(child), {
-        scrollbar = { left = 79, width = 1, zindex = 50, hide = false },
+        scrollbar = { left = 79, width = 1, zindex = 30, hide = false },
         minimap = false,
     })
 
@@ -296,7 +296,7 @@ T["a minimap-excluded filetype moves an inner scrollbar to the edge"] = function
     child.lua([[vim.bo.filetype = "stackft"]])
     flush(child)
     expect.equality(floats(child), {
-        scrollbar = { left = 79, width = 1, zindex = 50, hide = false },
+        scrollbar = { left = 79, width = 1, zindex = 30, hide = false },
         minimap = false,
     })
 end
@@ -311,7 +311,7 @@ T["hide_if_all_visible on the outer scrollbar moves the minimap to the edge"] = 
     flush(child)
     expect.equality(floats(child), {
         scrollbar = false,
-        minimap = { left = 76, width = 4, zindex = 50, hide = false },
+        minimap = { left = 76, width = 4, zindex = 30, hide = false },
     })
 end
 
@@ -377,7 +377,7 @@ T["a repositioned minimap checks the cursor overlap again"] = function()
         end)
     ]])
     flush(child)
-    expect.equality(floats(child).minimap, { left = 75, width = 4, zindex = 50, hide = false })
+    expect.equality(floats(child).minimap, { left = 75, width = 4, zindex = 30, hide = false })
 
     child.lua([[
         local win = vim.api.nvim_get_current_win()
@@ -386,7 +386,7 @@ T["a repositioned minimap checks the cursor overlap again"] = function()
         require("scrollbar.scheduler").invalidate_all()
         require("scrollbar.scheduler").flush()
     ]])
-    expect.equality(floats(child).minimap, { left = 74, width = 4, zindex = 50, hide = true })
+    expect.equality(floats(child).minimap, { left = 74, width = 4, zindex = 30, hide = true })
 end
 
 T["does not stack a pair with mixed relative modes or opposite sides"] = function()
@@ -421,7 +421,7 @@ T["a disabled minimap leaves the scrollbar float config unchanged"] = function()
             minimap_footprints = require("scrollbar.shared.stack").windows("minimap"),
         }
     end)
-    expect.equality(result, { col = 80, zindex = 50, minimap_footprints = {} })
+    expect.equality(result, { col = 80, zindex = 30, minimap_footprints = {} })
 end
 
 T["each split stacks on its own and a closed split drops its footprints"] = function()
@@ -467,7 +467,7 @@ T["an inactive window under scrollbar visibility active moves the minimap to the
     expect.equality(floats(child, active).minimap.left, active_width - 5)
     expect.equality(floats(child, other), {
         scrollbar = false,
-        minimap = { left = other_width - 4, width = 4, zindex = 50, hide = false },
+        minimap = { left = other_width - 4, width = 4, zindex = 30, hide = false },
     })
 end
 
