@@ -102,6 +102,10 @@ floats side by side or sets which one is on top. See
 - `"outer"` reserves gutter cells at the source-window edge.
 - `"overlap"` reserves no cells and covers the existing gutter.
 
+An east scrollbar covers the last columns of the text. By default,
+`overlap.reserve` keeps the text away from it. See
+[Overlap](configuration.md#overlap).
+
 ![A west scrollbar with gutter = "inner", "outer", and "overlap" in three splits](https://github.com/user-attachments/assets/5b68c860-0eb3-46a8-b9ef-29f113cfe4c5)
 
 The gutter placement depends on the relative mode and the anchor:

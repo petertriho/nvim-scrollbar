@@ -2,6 +2,7 @@ local config = require("scrollbar.config")
 local float = require("scrollbar.shared.float")
 local float_states = require("scrollbar.shared.float_states")
 local layout = require("scrollbar.layout")
+local overlap = require("scrollbar.overlap")
 local providers = require("scrollbar.providers")
 local snacks_list = require("scrollbar.floats.snacks")
 local source_policy = require("scrollbar.shared.source_policy")
@@ -13,8 +14,7 @@ local M = {}
 
 local NAMESPACE = vim.api.nvim_create_namespace("ScrollbarRenderer")
 local AUGROUP_NAME = "ScrollbarRendererLifecycle"
-local FLOAT_WINHIGHLIGHT = "Normal:ScrollbarBase,NormalNC:ScrollbarBase,EndOfBuffer:ScrollbarBase,"
-    .. "FloatBorder:ScrollbarFloatBorder,FloatTitle:ScrollbarFloatTitle,FloatFooter:ScrollbarFloatFooter,"
+local FRAME_WINHIGHLIGHT = "FloatBorder:ScrollbarFloatBorder,FloatTitle:ScrollbarFloatTitle,FloatFooter:ScrollbarFloatFooter,"
     .. float.SEARCH_WINHIGHLIGHT
 -- Window and buffer variable that marks a scrollbar float, also from an
 -- earlier setup.
@@ -43,6 +43,31 @@ local owned_float_buffers = {}
 
 ---@type table<integer, ScrollbarStatuscolumnReservation>
 local statuscolumn_reservations = {}
+
+-- Source windows with a statuscolumn reservation or a text reservation. The
+-- float states release them when a source window goes away.
+---@type table<integer, true>
+local retained = {}
+
+-- Compiled configurations do not change, so each one keeps one
+-- `winhighlight` value.
+---@type table<ScrollbarConfig, string>
+local winhighlights = setmetatable({}, { __mode = "k" })
+
+---@param active_config ScrollbarConfig
+---@return string
+local function float_winhighlight(active_config)
+    local value = winhighlights[active_config]
+    if value == nil then
+        local base = active_config.highlights.base
+        value = window_config.winhighlight(
+            string.format("Normal:%s,NormalNC:%s,EndOfBuffer:%s,%s", base, base, base, FRAME_WINHIGHLIGHT),
+            active_config.window
+        )
+        winhighlights[active_config] = value
+    end
+    return value
+end
 
 ---@type table<integer, ScrollbarFlattenedMarksCache>
 local flattened_cache = {}
@@ -340,8 +365,12 @@ local floats = float_states.new({
     states = states,
     states_by_float = states_by_float,
     owned_float_buffers = owned_float_buffers,
-    retained = statuscolumn_reservations,
-    release = release_statuscolumn,
+    retained = retained,
+    release = function(source_win)
+        release_statuscolumn(source_win)
+        overlap.release(source_win)
+        retained[source_win] = nil
+    end,
     forget = clear_render_caches,
     forget_buffer = function(bufnr)
         clear_buffer_caches(bufnr)
@@ -523,9 +552,32 @@ local function configure_buffer(float_buf)
 end
 
 ---@param float_win integer
----@param window ScrollbarWindowConfig
-local function configure_window(float_win, window)
-    float.configure_window(float_win, OWNED_VAR, window_config.winhighlight(FLOAT_WINHIGHLIGHT, window), nil, window.wo)
+---@param active_config ScrollbarConfig
+local function configure_window(float_win, active_config)
+    float.configure_window(
+        float_win,
+        OWNED_VAR,
+        float_winhighlight(active_config),
+        overlap.float_winblend(active_config),
+        active_config.window.wo
+    )
+end
+
+---Apply the `winblend` and the `winhighlight` of the configuration to an
+---existing float. A profile change can change both.
+---@param state ScrollbarWindowState
+---@param active_config ScrollbarConfig
+local function update_presentation(state, active_config)
+    local winblend = overlap.float_winblend(active_config)
+    if state.winblend ~= winblend then
+        vim.api.nvim_set_option_value("winblend", winblend, { win = state.float_win })
+        state.winblend = winblend
+    end
+    local winhighlight = float_winhighlight(active_config)
+    if state.winhighlight ~= winhighlight then
+        vim.api.nvim_set_option_value("winhighlight", winhighlight, { win = state.float_win })
+        state.winhighlight = winhighlight
+    end
 end
 
 ---@param source_win integer
@@ -534,7 +586,7 @@ end
 ---@param variant_id integer
 ---@param active_float_config table<string, any>
 ---@param configure_owned_buffer fun(float_buf: integer)
----@param configure_owned_window fun(float_win: integer, window: ScrollbarWindowConfig)
+---@param configure_owned_window fun(float_win: integer, active_config: ScrollbarConfig)
 ---@return ScrollbarWindowState
 local function create_state(
     source_win,
@@ -553,7 +605,7 @@ local function create_state(
         window.open,
         configure_owned_buffer,
         function(opened_win)
-            configure_owned_window(opened_win, window)
+            configure_owned_window(opened_win, active_config)
         end
     )
     local state = {
@@ -567,6 +619,7 @@ local function create_state(
         width = 0,
         height = 0,
         rows = {},
+        written_rows = {},
         highlights = {},
         rendered_highlights = {},
         hitmap = {},
@@ -576,6 +629,8 @@ local function create_state(
         geometry = { unit = "line", total_extent = 0, viewport_start = 0, viewport_end = 0 },
         sides = window.sides,
         window_signature = window.signature,
+        winblend = overlap.float_winblend(active_config),
+        winhighlight = float_winhighlight(active_config),
     }
     states[source_win] = state
     states_by_float[float_win] = state
@@ -952,23 +1007,82 @@ local function rendered_highlights(highlights, pressed, active_config)
     return result
 end
 
+---Replace the row under the cursor with a row that shows the text below the
+---float. The function copies only the outer lists.
+---@param rows string[]
+---@param highlights ScrollbarHighlightSpan[][]
+---@param cleared_row? integer
+---@param width integer
+---@return string[] rows
+---@return ScrollbarHighlightSpan[][] highlights
+local function with_cleared_row(rows, highlights, cleared_row, width)
+    if cleared_row == nil or rows[cleared_row] == nil then
+        return rows, highlights
+    end
+    local written_rows = {}
+    local written_highlights = {}
+    for row = 1, #rows do
+        written_rows[row] = rows[row]
+        written_highlights[row] = highlights[row]
+    end
+    written_rows[cleared_row] = string.rep(" ", width)
+    written_highlights[cleared_row] = {
+        { start_col = 0, end_col = width, highlight = overlap.CLEAR_GROUP, priority = 0 },
+    }
+    return written_rows, written_highlights
+end
+
 ---@param state ScrollbarWindowState
 ---@param output ScrollbarLayoutOutput
 ---@param width integer
 ---@param height integer
+---@param cleared_row? integer
 ---@return ScrollbarHighlightSpan[][]
-local function update_buffer(state, output, width, height)
+local function update_buffer(state, output, width, height, cleared_row)
     local highlights = rendered_highlights(output.highlights, state.handle_pressed, state.config)
+    local rows, written_highlights = with_cleared_row(output.rows, highlights, cleared_row, width)
     float.write_rows(
         state.float_buf,
         NAMESPACE,
-        state.rows,
+        state.written_rows,
         state.rendered_highlights,
-        output.rows,
-        highlights,
+        rows,
+        written_highlights,
         state.width ~= width or state.height ~= height
     )
-    return highlights
+    state.written_rows = rows
+    return written_highlights
+end
+
+---Reserve the text columns under an east scrollbar of a normal window, or
+---release the reservation.
+---@param state ScrollbarWindowState
+---@param active_config ScrollbarConfig
+---@param kind ScrollbarSourceKind
+---@param area table<string, integer>
+---@param width integer Content width of the float
+local function update_text_reservation(state, active_config, kind, area, width)
+    local source_win = state.source_win
+    local covered = 0
+    if
+        active_config.overlap.reserve
+        and kind == "normal"
+        and active_config.placement.relative == "window"
+        and not west_anchor(active_config)
+    then
+        -- An east float has its right edge at `col`.
+        local left = state.float_config.col - frame_width(active_config, width)
+        covered = math.max(0, math.min(area.width - area.textoff, area.width - left))
+    end
+    local changed = overlap.reserve(source_win, covered, area.width - area.textoff)
+    if changed and active_config.unit == "screenline" then
+        -- 'wrapcolumn' changed the screen lines, so the geometry of this
+        -- render is out of date.
+        local scheduler = package.loaded["scrollbar.scheduler"]
+        if scheduler ~= nil then
+            scheduler.invalidate_window(source_win)
+        end
+    end
 end
 
 -- Each render of a snacks list queues a render of its bar.
@@ -1229,14 +1343,20 @@ local function render_source(source_win, selection, root_config)
         )
         local moved = float.track_source(state, source_win, floating)
         float.apply_config(state, active_float_config, cursor_position_available, moved)
+        update_presentation(state, active_config)
     end
 
-    float.update_cursor_visibility(state, cursor_row, cursor_col)
+    local cleared_row =
+        float.update_cursor_visibility(state, cursor_row, cursor_col, active_config.hide_on_cursor == "row")
+    update_text_reservation(state, active_config, kind, area, output.width)
+    retained[source_win] = (statuscolumn_reservations[source_win] ~= nil or overlap.reservations[source_win] ~= nil)
+        or nil
 
     state.config = active_config
     state.variant_id = selection.variant_id
     state.source_kind = kind
-    local active_highlights = update_buffer(state, output, output.width, content_height)
+    local active_highlights = update_buffer(state, output, output.width, content_height, cleared_row)
+    state.cleared_row = cleared_row
     state.width = output.width
     state.height = content_height
     state.rows = output.rows
@@ -1346,19 +1466,25 @@ M.set_handle_pressed = function(float_win, pressed)
         return true
     end
 
-    local highlights = rendered_highlights(state.highlights, pressed, state.config)
+    local rows, highlights = with_cleared_row(
+        state.rows,
+        rendered_highlights(state.highlights, pressed, state.config),
+        state.cleared_row,
+        state.width
+    )
     local ok = pcall(
         float.write_rows,
         state.float_buf,
         NAMESPACE,
-        state.rows,
+        state.written_rows,
         state.rendered_highlights,
-        state.rows,
+        rows,
         highlights,
         false
     )
     if ok then
         state.handle_pressed = pressed
+        state.written_rows = rows
         state.rendered_highlights = highlights
     end
     return ok

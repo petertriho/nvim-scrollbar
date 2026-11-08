@@ -253,15 +253,15 @@ end
 ---@param state ScrollbarFloatState
 ---@param cursor_row? integer
 ---@param cursor_col? integer
----@return boolean
-local function cursor_overlaps(state, cursor_row, cursor_col)
+---@return integer? row One-based content row under the cursor, 0 for the border, or nil outside the float
+local function cursor_float_row(state, cursor_row, cursor_col)
     if cursor_row == nil or cursor_col == nil then
-        return false
+        return nil
     end
 
     local ok, position = pcall(vim.api.nvim_win_get_position, state.float_win)
     if not ok or type(position) ~= "table" then
-        return false
+        return nil
     end
 
     local top = position[1]
@@ -276,23 +276,49 @@ local function cursor_overlaps(state, cursor_row, cursor_col)
         or height <= 0
         or width <= 0
     then
-        return false
+        return nil
     end
     -- The position is the corner of the frame, so the border counts too.
     local sides = state.sides
-    height = height + sides.top + sides.bottom
-    width = width + sides.left + sides.right
+    local frame_height = height + sides.top + sides.bottom
+    local frame_width = width + sides.left + sides.right
+    if
+        cursor_row < top
+        or cursor_row >= top + frame_height
+        or cursor_col < left
+        or cursor_col >= left + frame_width
+    then
+        return nil
+    end
 
-    return cursor_row >= top and cursor_row < top + height and cursor_col >= left and cursor_col < left + width
+    local row = cursor_row - top - sides.top + 1
+    local col = cursor_col - left - sides.left
+    if row < 1 or row > height or col < 0 or col >= width then
+        return 0
+    end
+    return row
 end
 
+---Hide the float while the cursor is inside it. With `by_row`, only the
+---border hides the float. A cursor in the content returns its row, so the
+---caller can clear that row instead.
 ---@param state ScrollbarFloatState
 ---@param cursor_row? integer
 ---@param cursor_col? integer
-M.update_cursor_visibility = function(state, cursor_row, cursor_col)
-    local hidden = cursor_overlaps(state, cursor_row, cursor_col)
+---@param by_row? boolean
+---@return integer? cleared_row One-based content row under the cursor, with `by_row`
+M.update_cursor_visibility = function(state, cursor_row, cursor_col, by_row)
+    local row = cursor_float_row(state, cursor_row, cursor_col)
+    local hidden = row ~= nil
+    local cleared_row = nil
+    if by_row then
+        hidden = row == 0
+        if row ~= nil and row > 0 then
+            cleared_row = row
+        end
+    end
     if state.hidden_by_cursor == hidden then
-        return
+        return cleared_row
     end
 
     local active_float_config = copy_config(state.float_config)
@@ -300,6 +326,7 @@ M.update_cursor_visibility = function(state, cursor_row, cursor_col)
     vim.api.nvim_win_set_config(state.float_win, active_float_config)
     state.float_config = active_float_config
     state.hidden_by_cursor = hidden
+    return cleared_row
 end
 
 M.resolve_position = function()
@@ -382,7 +409,8 @@ M.reposition = function(state, footprint, origin, zindex)
     if cursor_position_available then
         M.resolve_position()
     end
-    M.update_cursor_visibility(state, cursor_row, cursor_col)
+    -- In row mode, the next render clears the row under the cursor.
+    M.update_cursor_visibility(state, cursor_row, cursor_col, state.config.hide_on_cursor == "row")
     return true
 end
 

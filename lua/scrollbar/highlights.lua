@@ -1,4 +1,5 @@
 local const = require("scrollbar.config.const")
+local overlap = require("scrollbar.overlap")
 
 local M = {}
 local GENERATED_PREFIX = const.NAME_PREFIX .. "Generated."
@@ -26,15 +27,25 @@ M.get_highlight_groups = function(active_config, variant_id, automatic)
             mark = M.get_highlight_name(mark_type, false, false, prefix),
             thumb = M.get_highlight_name(mark_type, true, false, prefix),
             thumb_pressed = M.get_highlight_name(mark_type, true, true, prefix),
+            tint = M.get_highlight_name(mark_type .. "Tint", false, false, prefix),
         }
     end
+    local show_through = active_config.overlap.show_through
     return {
-        base = "ScrollbarBase",
+        base = M.get_highlight_name("Base", false, false, prefix),
+        surface = show_through and M.surface_name(show_through) or nil,
         track = M.get_highlight_name("Track", false, false, prefix),
         thumb = M.get_highlight_name("", true, false, prefix),
         thumb_pressed = M.get_highlight_name("", true, true, prefix),
         marks = marks,
     }
+end
+
+---The blend-only group under a mark that has no track or thumb below it.
+---@param blend integer
+---@return string
+M.surface_name = function(blend)
+    return GENERATED_PREFIX .. "Surface" .. blend
 end
 
 M.get_legacy_highlight_name = function(mark_type, thumb, pressed)
@@ -100,8 +111,28 @@ local function background_highlight(source, blend, fallback_hl, fallback_hex)
     return highlight
 end
 
-local function thumb_highlight(properties)
-    return background_highlight(properties.highlight, properties.blend, "PmenuThumb", "#ffffff")
+---@param highlight ScrollbarHighlight
+---@param blend integer
+local function thumb_highlight(highlight, blend)
+    return background_highlight(highlight, blend, "PmenuThumb", "#ffffff")
+end
+
+---The background of a tint: the foreground of the mark, or else its
+---background.
+---@param mark vim.api.keyset.highlight
+---@param blend integer
+---@return vim.api.keyset.highlight
+local function tint_highlight(mark, blend)
+    local color = mark.fg or mark.bg
+    local link = mark.link
+    if color == nil and type(link) == "string" then
+        local linked = get_highlight(link)
+        color = linked and (linked.fg or linked.bg)
+    end
+    if color == nil then
+        color = M.highlight_to_hex_color("Normal", "fg", "Normal", "#ffffff")
+    end
+    return { bg = color, blend = blend }
 end
 
 local function mark_highlight(properties)
@@ -167,32 +198,47 @@ local function variant_entries(active_config)
     local groups = active_config.highlights
     local track = active_config.track
     local thumb = active_config.thumb
+    local base_blend = overlap.base_blend(active_config)
+    local surface_blend = overlap.surface_blend(active_config)
+    local thumb_blend = overlap.thumb_blend(active_config)
     local entries = {
+        {
+            key = "base",
+            name = groups.base,
+            source = base_blend,
+            generate = function()
+                -- A profile keeps the colors of a user definition of the
+                -- public base group.
+                local external = M.external_definition("ScrollbarBase", generated_name("ScrollbarBase"))
+                return overlap.with_blend(external or {}, base_blend)
+            end,
+        },
         {
             key = "track",
             name = groups.track,
-            source = track.highlight,
+            source = { track.highlight, surface_blend },
             generate = function()
-                return background_highlight(track.highlight, nil, "PmenuSbar", "#000000")
+                return background_highlight(track.highlight, surface_blend, "PmenuSbar", "#000000")
             end,
         },
         {
             key = "thumb",
             name = groups.thumb,
-            source = { thumb.highlight, thumb.blend },
+            source = { thumb.highlight, thumb_blend },
             generate = function()
-                return thumb_highlight(thumb)
+                return thumb_highlight(thumb.highlight, thumb_blend)
             end,
         },
         {
             key = "thumb_pressed",
             name = groups.thumb_pressed,
-            source = thumb.blend,
+            source = thumb_blend,
             generate = function()
-                return background_highlight("PmenuSel", thumb.blend, "PmenuThumb", "#ffffff")
+                return background_highlight("PmenuSel", thumb_blend, "PmenuThumb", "#ffffff")
             end,
         },
     }
+    local tint = active_config.overlap.marks == "tint"
     for mark_type, properties in pairs(active_config.marks) do
         local mark_groups = groups.marks[mark_type]
         -- A mark type cannot contain a dot, so the keys are unique.
@@ -208,7 +254,7 @@ local function variant_entries(active_config)
         entries[#entries + 1] = {
             key = key .. ".thumb",
             name = mark_groups.thumb,
-            source = { thumb.highlight, thumb.blend, properties.highlight },
+            source = { thumb.highlight, thumb_blend, properties.highlight },
             generate = function(final)
                 return vim.tbl_deep_extend("force", {}, final.thumb, final[key])
             end,
@@ -216,11 +262,21 @@ local function variant_entries(active_config)
         entries[#entries + 1] = {
             key = key .. ".thumb_pressed",
             name = mark_groups.thumb_pressed,
-            source = { thumb.blend, properties.highlight },
+            source = { thumb_blend, properties.highlight },
             generate = function(final)
                 return vim.tbl_deep_extend("force", {}, final.thumb_pressed, final[key])
             end,
         }
+        if tint then
+            entries[#entries + 1] = {
+                key = key .. ".tint",
+                name = mark_groups.tint,
+                source = { surface_blend, properties.highlight },
+                generate = function(final)
+                    return tint_highlight(final[key], surface_blend)
+                end,
+            }
+        end
     end
     return entries
 end
@@ -268,14 +324,29 @@ local function set_variant_highlights(active_config, root)
     return { sources = sources, final = final }
 end
 
+--- Define the groups that carry only a blend. The renderer needs them also
+--- when `set_highlights` is false, because they hold no colors to customize.
+---@param config_module table
+local function set_blend_groups(config_module)
+    for _, variant in ipairs(config_module.get_variants()) do
+        if variant.config.hide_on_cursor == "row" then
+            vim.api.nvim_set_hl(0, overlap.CLEAR_GROUP, overlap.blend_only(100))
+        end
+        local show_through = variant.config.overlap.show_through
+        if show_through then
+            vim.api.nvim_set_hl(0, M.surface_name(show_through), overlap.blend_only(show_through))
+        end
+    end
+end
+
 M.set_highlights = function()
     local config = require("scrollbar.config")
     local active_config = config.get()
+    set_blend_groups(config)
     if not active_config.set_highlights then
         return
     end
 
-    set_root_highlight(active_config.highlights.base, {})
     set_default_link("ScrollbarFloatBorder", "FloatBorder")
     set_default_link("ScrollbarFloatTitle", "FloatTitle")
     set_default_link("ScrollbarFloatFooter", "FloatFooter")

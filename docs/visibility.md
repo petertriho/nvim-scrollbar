@@ -91,6 +91,18 @@ While the scrollbar is hidden, it does not capture mouse input. Mouse input on
 those cells goes to the source window. To keep the scrollbar visible under the
 cursor, set `scrollbar.hide_on_cursor = false`.
 
+`scrollbar.hide_on_cursor = "row"` keeps the scrollbar visible and clears only
+the row under the cursor. The cleared row shows the text below it with its own
+colors. The other rows keep the track, the thumb, and the marks. When the
+cursor moves to another row, the plugin rewrites only the old row and the new
+row.
+
+- The cleared row still takes mouse input, like the other rows.
+- If the cursor is on the border of the float, the whole scrollbar hides, as
+  with `true`. A border cell cannot be cleared.
+- The row mode applies only to the scrollbar. `minimap.hide_on_cursor` accepts
+  only `true` and `false`.
+
 The minimap has the same option, `minimap.hide_on_cursor`, which is also
 `true` by default. It applies only to the minimap of the active source window,
 and it does not need the `cursor` provider. The minimap does this check when

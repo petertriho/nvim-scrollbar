@@ -46,6 +46,7 @@ local OPTION_PATTERNS = {
     "tabstop",
     "winbar",
     "wrap",
+    "wrapcolumn",
 }
 
 local STORE_CHANNELS = { marks = true }
@@ -72,9 +73,9 @@ M.setup = function(options)
         config = active_config,
         renderer = options.renderer or require("scrollbar.renderer"),
         on_colorscheme = options.on_colorscheme or function()
-            if active_config.set_highlights then
-                require("scrollbar.highlights").set_highlights()
-            end
+            -- `:hi clear` also removes the blend-only groups, so the call
+            -- runs also when `set_highlights` is false.
+            require("scrollbar.highlights").set_highlights()
         end,
         channels = STORE_CHANNELS,
         option_pattern = OPTION_PATTERNS,

@@ -130,9 +130,9 @@ M.setup = function(overrides)
     text_tick.setup()
     reconcile_builtins(provider_plan)
 
-    if active_config.set_highlights then
-        highlights.set_highlights()
-    end
+    -- The call also defines the blend-only groups when `set_highlights` is
+    -- false.
+    highlights.set_highlights()
     update_commands(active_config.enabled)
 
     renderer.setup()

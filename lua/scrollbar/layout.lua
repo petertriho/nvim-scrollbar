@@ -231,6 +231,9 @@ local EXTENT_OPTION_PATTERNS = {
     "showbreak",
     "tabstop",
     "wrap",
+    -- Neovim releases without 'wrapcolumn' read it as an error value, which
+    -- does not change.
+    "wrapcolumn",
 }
 
 -- Capture the scope of each option at module load, so that the digest can
@@ -2203,6 +2206,9 @@ end
 
 local function mark_highlight(config, column, column_offset, expanded_lane_id, mark, in_thumb_row)
     local groups = config.highlights.marks[mark.type]
+    if config.overlap.marks == "tint" then
+        return groups.tint
+    end
     if not in_thumb_row then
         return groups.mark
     end
@@ -2227,6 +2233,12 @@ local function render_row(input, row, marks, width, column_offset, expanded_lane
         and row <= input.geometry.handle.last_row
     local winners = collect_row_marks(input.config, marks, width, column_offset, expanded_lane_id, in_thumb_row)
     local thumb_starts = thumb_glyphs(input.config, column_offset, winners, in_thumb_row)
+    -- A tint mark is a background, so its cells are spaces.
+    local tint = input.config.overlap.marks == "tint"
+    -- With `show_through`, the base does not cover the text. A glyph mark
+    -- without a track or a thumb below it takes the blend of the surface, so
+    -- the glyph does not fade.
+    local surface = not tint and input.config.highlights.surface or nil
     local parts = {}
     local spans = {}
     local hit_cells = {}
@@ -2239,7 +2251,7 @@ local function render_row(input, row, marks, width, column_offset, expanded_lane
         local text = " "
         local cell_width = 1
         if mark and mark.column == column then
-            text = mark.text
+            text = tint and string.rep(" ", mark.width) or mark.text
             cell_width = mark.width
         elseif thumb then
             text = thumb.text
@@ -2249,10 +2261,13 @@ local function render_row(input, row, marks, width, column_offset, expanded_lane
         parts[#parts + 1] = text
         local next_byte_column = byte_column + #text
         local layers = layers_at(input.config, column, column_offset, expanded_lane_id)
+        local backed = false
         for _, layer in ipairs(layers) do
             if layer.kind == "track" then
+                backed = true
                 add_span(spans, byte_column, next_byte_column, input.config.highlights.track, layer.priority)
             elseif layer.kind == "thumb" and in_thumb_row then
+                backed = true
                 add_span(spans, byte_column, next_byte_column, input.config.highlights.thumb, layer.priority)
             elseif
                 layer.kind == "marks"
@@ -2268,6 +2283,9 @@ local function render_row(input, row, marks, width, column_offset, expanded_lane
                     layer.priority
                 )
             end
+        end
+        if surface ~= nil and not backed and mark and mark.column == column then
+            add_span(spans, byte_column, next_byte_column, surface, -math.huge)
         end
 
         for cell = column, column + cell_width - 1 do

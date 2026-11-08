@@ -71,6 +71,13 @@
 ---@field highlight? ScrollbarHighlight
 ---@field hide_if_all_visible? boolean
 
+---@alias ScrollbarMarkStyle "glyph"|"tint" How a mark draws: its text, or a background in the color of the mark
+
+---@class ScrollbarUserOverlapConfig
+---@field reserve? boolean Keep the text away from an east scrollbar
+---@field show_through? false|integer Blend from 1 to 100 that shows the text below the scrollbar
+---@field marks? ScrollbarMarkStyle
+
 ---@class ScrollbarUserMarkTypeConfig
 ---@field text? ScrollbarText
 ---@field priority? integer
@@ -157,12 +164,13 @@
 ---@field preset? string Built-in preset. The options at the same level win over it
 ---@field unit? ScrollbarUnit
 ---@field placement? ScrollbarUserPlacement
----@field hide_on_cursor? boolean
+---@field hide_on_cursor? boolean|"row"
 ---@field hide_if_all_visible? boolean
 ---@field mouse? boolean
 ---@field layout? ScrollbarUserLayoutConfig
 ---@field track? ScrollbarUserTrackConfig
 ---@field thumb? ScrollbarUserThumbConfig
+---@field overlap? ScrollbarUserOverlapConfig
 ---@field marks? false|table<string, false|ScrollbarUserMarkTypeConfig>
 ---@field window? ScrollbarUserWindowConfig
 
@@ -244,6 +252,11 @@
 ---@field highlight ScrollbarHighlight
 ---@field hide_if_all_visible boolean
 
+---@class ScrollbarOverlapConfig
+---@field reserve boolean
+---@field show_through false|integer
+---@field marks ScrollbarMarkStyle
+
 ---@class ScrollbarMarkTypeConfig
 ---@field text string[] Density variants from least to most dense. An empty list for `Mark` uses the provider text
 ---@field priority integer
@@ -268,9 +281,11 @@
 ---@field mark string
 ---@field thumb string
 ---@field thumb_pressed string
+---@field tint string Background in the color of the mark, for `overlap.marks = "tint"`
 
 ---@class ScrollbarHighlightGroups
 ---@field base string
+---@field surface? string Blend-only group under a glyph mark without a track or thumb, with `show_through`
 ---@field track string
 ---@field thumb string
 ---@field thumb_pressed string
@@ -331,12 +346,13 @@
 ---@field exclude ScrollbarExcludeConfig
 ---@field unit ScrollbarUnit
 ---@field placement ScrollbarPlacement
----@field hide_on_cursor boolean
+---@field hide_on_cursor boolean|"row"
 ---@field hide_if_all_visible boolean
 ---@field mouse boolean
 ---@field layout ScrollbarLayoutConfig
 ---@field track ScrollbarTrackConfig
 ---@field thumb ScrollbarThumbConfig
+---@field overlap ScrollbarOverlapConfig
 ---@field marks table<string, ScrollbarMarkTypeConfig> Shown mark types
 ---@field window ScrollbarWindowConfig
 ---@field highlights ScrollbarHighlightGroups Compiled canonical or profile-internal group names
@@ -599,6 +615,10 @@
 ---@field handle false|ScrollbarHandleGeometry
 ---@field handle_pressed boolean
 ---@field hidden_by_cursor boolean
+---@field cleared_row? integer One-based content row that `hide_on_cursor = "row"` clears
+---@field written_rows string[] Rows of the last write, with the cleared row
+---@field winblend integer `winblend` of the float
+---@field winhighlight string `winhighlight` of the float
 ---@field geometry ScrollbarRendererGeometry
 ---@field footprint? ScrollbarStackFootprint Own stacking footprint from the last render
 ---@field sides ScrollbarWindowSides Border size of each side of the float

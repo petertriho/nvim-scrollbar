@@ -49,6 +49,11 @@ local DEFAULTS = {
         highlight = "PmenuThumb",
         hide_if_all_visible = true,
     },
+    overlap = {
+        reserve = true,
+        show_through = false,
+        marks = "glyph",
+    },
     marks = {},
     window = {
         border = "none",
@@ -78,6 +83,7 @@ local APPEARANCE_KEYS = {
     layout = { direction = true, columns = true },
     track = { highlight = true },
     thumb = { text = true, blend = true, highlight = true, hide_if_all_visible = true },
+    overlap = { reserve = true, show_through = true, marks = true },
     marks = { ["*"] = { text = true, priority = true, highlight = true } },
     -- `scrollbar.config.window` validates the keys of `window`.
     window = { ["*"] = true },
@@ -364,7 +370,45 @@ local function layout_config(value)
             priority = mark.priority,
         }
     end
-    return { unit = value.unit, layout = value.layout.cache, marks = marks }
+    return {
+        unit = value.unit,
+        layout = value.layout.cache,
+        marks = marks,
+        mark_style = value.overlap.marks,
+        show_through = value.overlap.show_through,
+    }
+end
+
+---@param value any
+---@param path string
+---@return boolean|"row"
+local function hide_on_cursor(value, path)
+    if value == "row" or type(value) == "boolean" then
+        return value
+    end
+    invalid(path .. ' must be a boolean or "row"')
+    return value
+end
+
+---@param value any
+---@param path string
+---@return ScrollbarOverlapConfig
+local function overlap_config(value, path)
+    local function at(name)
+        return path .. "." .. name
+    end
+    local overlap = schema.table(value, path)
+    local show_through = overlap.show_through
+    if show_through ~= false then
+        if not schema.is_integer(show_through) or show_through < 1 or show_through > 100 then
+            invalid(at("show_through") .. " must be false or an integer between 1 and 100")
+        end
+    end
+    return {
+        reserve = schema.boolean(overlap.reserve, at("reserve")),
+        show_through = show_through,
+        marks = schema.enum(overlap.marks, at("marks"), { "glyph", "tint" }),
+    }
 end
 
 ---@param value table Layered options merged onto the defaults
@@ -398,9 +442,10 @@ local function normalize(value, shared, path, variant_id)
         exclude = shared.exclude.scrollbar,
         unit = schema.enum(value.unit, at("unit"), { "line", "screenline" }),
         placement = normalized_placement,
-        hide_on_cursor = schema.boolean(value.hide_on_cursor, at("hide_on_cursor")),
+        hide_on_cursor = hide_on_cursor(value.hide_on_cursor, at("hide_on_cursor")),
         hide_if_all_visible = schema.boolean(value.hide_if_all_visible, at("hide_if_all_visible")),
         mouse = schema.boolean(value.mouse, at("mouse")),
+        overlap = overlap_config(value.overlap, at("overlap")),
         layout = compile_layout(value.layout, normalized_placement.anchor, at("layout")),
         track = { highlight = schema.highlight(track.highlight, at("track.highlight")) },
         thumb = {
@@ -477,6 +522,9 @@ local function validate_public_highlight_groups(scrollbar_variants, minimap_vari
             claim("Scrollbar" .. mark_type .. "ThumbPressed", owner .. " pressed thumb overlap")
             claim("Scrollbar" .. mark_type .. "Handle", owner .. " legacy handle overlap")
             claim("Scrollbar" .. mark_type .. "HandlePressed", owner .. " pressed legacy handle overlap")
+            if variant.config.overlap.marks == "tint" then
+                claim("Scrollbar" .. mark_type .. "Tint", owner .. " tint")
+            end
         end
     end
     for _, variant in ipairs(minimap_variants) do

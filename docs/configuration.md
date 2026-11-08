@@ -120,7 +120,7 @@ require("scrollbar").setup({
             gutter = "inner", -- "inner", "outer", or "overlap"
             zindex = 30,
         },
-        hide_on_cursor = true,
+        hide_on_cursor = true, -- true, false, or "row"
         hide_if_all_visible = false,
         mouse = true,
         layout = {
@@ -135,6 +135,11 @@ require("scrollbar").setup({
             blend = 30,
             highlight = "PmenuThumb",
             hide_if_all_visible = true,
+        },
+        overlap = { -- see Overlap
+            reserve = true,
+            show_through = false, -- false, or a blend from 1 to 100
+            marks = "glyph", -- "glyph" or "tint"
         },
         marks = {}, -- overrides of the shared mark types
         window = { -- see Window
@@ -171,15 +176,18 @@ require("scrollbar").setup({
 | `preset` | `nil` | Name of a [built-in preset](presets.md#scrollbar-presets). |
 | `unit` | `"line"` | `"line"` counts buffer lines. `"screenline"` counts screen lines, so it accounts for wrapped lines and closed folds. See [Units](layout-and-geometry.md#units). |
 | `placement` | see Defaults | Position of the float. See [Layout and geometry](layout-and-geometry.md). |
-| `hide_on_cursor` | `true` | Hides the scrollbar of the active window while the cursor is inside the scrollbar. |
+| `hide_on_cursor` | `true` | `true` hides the scrollbar of the active window while the cursor is inside the scrollbar. `"row"` clears only the row of the scrollbar under the cursor. See [Cursor Intersection](visibility.md#cursor-intersection). |
 | `hide_if_all_visible` | `false` | Hides the whole scrollbar when the buffer fits in the window. |
 | `mouse` | `true` | Makes the float take mouse input and adds the mouse mappings. See [Mouse](mouse.md). |
 | `layout` | see Defaults | Columns and layers. See [Layout](#layout). |
 | `track.highlight` | `"PmenuSbar"` | Track highlight: a group name or an `nvim_set_hl()` table. |
 | `thumb.text` | `" "` | One string with a positive display width and no control characters. |
-| `thumb.blend` | `30` | Integer from `0` to `100`. |
+| `thumb.blend` | `30` | Integer from `0` to `100`. The text below the thumb shows through it with this blend. |
 | `thumb.highlight` | `"PmenuThumb"` | A group name or an `nvim_set_hl()` table. |
 | `thumb.hide_if_all_visible` | `true` | Hides only the thumb when the buffer fits in the window. |
+| `overlap.reserve` | `true` | Keeps the text away from an east scrollbar. See [Overlap](#overlap). |
+| `overlap.show_through` | `false` | `false`, or a blend from `1` to `100`. The text below the scrollbar shows through the track, the thumb, and the empty cells. |
+| `overlap.marks` | `"glyph"` | `"glyph"` draws the text of each mark. `"tint"` draws each mark as a background in the color of the mark. |
 | `marks` | `{}` | Overrides of the shared mark types for the scrollbar. See [Marks](#marks). |
 | `window` | see Defaults | Border, title, footer, and window options of the float. See [Window](#window). |
 
@@ -233,6 +241,70 @@ require("scrollbar").setup({
   again.
 - To use the border of other floats, set `border = vim.o.winborder`. This works
   when `'winborder'` is a style name, such as `"rounded"`.
+- The renderer sets the `'winblend'` of the float, so the float does not get
+  the global `'winblend'`. `wo.winblend` makes the whole scrollbar
+  see-through. It also sets the blend of the track and the empty cells when
+  `overlap.show_through` is `false`.
+
+### Overlap
+
+The scrollbar float covers the last columns of the text area. `overlap`
+controls how the scrollbar shares these cells with the text. `reserve` is on
+by default, and the other options are off. A profile can set `overlap`.
+
+```lua
+require("scrollbar").setup({
+    scrollbar = {
+        overlap = {
+            reserve = true,
+            show_through = 60,
+            marks = "tint",
+        },
+    },
+})
+```
+
+`reserve = true` (the default) keeps the text away from the scrollbar. Set
+`reserve = false` to leave the window options alone. The reservation applies
+only to a window-relative scrollbar with an east anchor (`NE` or `SE`) on a
+normal window. For a west anchor, use `placement.gutter`. The reservation counts the
+columns that the float covers, including its border and a negative
+`placement.col`. When the scrollbar is beside the minimap and nearer the text,
+the reservation also includes the minimap.
+
+- Without `'wrap'`, the plugin sets the window-local `'sidescrolloff'` to the
+  number of covered columns. The text scrolls sideways before the cursor gets
+  under the scrollbar, so the scrollbar stays visible. A larger
+  `'sidescrolloff'` stays. Neovim applies `'sidescrolloff'` on both sides, so
+  the left margin also grows when the window is scrolled sideways.
+- With `'wrap'`, the plugin sets the window-local `'wrapcolumn'`, so the text
+  wraps before the scrollbar. Neovim releases without `'wrapcolumn'` get no
+  reservation for `'wrap'`. A smaller `'wrapcolumn'` stays.
+- The reservation changes only a value that it set. If you change the option,
+  your value becomes the new original value. The plugin restores the original
+  value when the scrollbar is hidden, is disposed, becomes ineligible, or the
+  reservation ends.
+- Autohide also ends the reservation while it conceals the scrollbar. With
+  `'wrap'`, the text wraps again at the window edge until the scrollbar shows.
+
+`show_through` is a blend from `1` to `100`. The text below the scrollbar shows
+through the track and the thumb with this blend, and it shows through the
+empty cells with no change. The thumb uses the larger value of `thumb.blend`
+and `show_through`. Higher values show more text and less of the scrollbar.
+The text shows through only a cell that holds a space, so the text of a mark
+or a thumb glyph, such as `"█"`, still covers the text.
+
+`marks = "tint"` draws each mark as spaces with the color of the mark as the
+background. With `show_through`, the text shows on top of the color. A tint
+has no glyph, so named marks lose their letters. The tint groups are
+`Scrollbar<MarkType>Tint`. See [Highlights](highlights.md#blend).
+
+Neovim implements the blend as UI pseudo-transparency. It works best with
+`'termguicolors'`. Without it, Neovim approximates the blended colors in the
+terminal palette.
+
+For the cursor, see also `hide_on_cursor = "row"` in
+[Cursor Intersection](visibility.md#cursor-intersection).
 
 ## Providers
 

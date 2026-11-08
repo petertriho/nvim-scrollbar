@@ -31,7 +31,8 @@ require("scrollbar").setup({
 
 The resting thumb uses `PmenuThumb` by default. The plugin derives pressed thumb
 backgrounds from `PmenuSel`. When the resolved or direct definition does not
-already set `blend`, the plugin adds `thumb.blend`. Mark-over-thumb groups
+already set `blend`, the plugin adds the blend of the thumb, and it adds the
+blend of the track to the track. See [Blend](#blend). Mark-over-thumb groups
 deep-merge the thumb background and the mark definition. Mark fields take
 precedence.
 
@@ -43,11 +44,14 @@ reads these definitions at setup and after each `ColorScheme` event.
 
 ## Generated Groups
 
-- `ScrollbarBase`: a transparent, float-wide base for undeclared cells.
+- `ScrollbarBase`: a float-wide base for undeclared cells, without colors.
 - `ScrollbarTrack`: backgrounds for explicitly declared tracks.
 - `ScrollbarThumb` and `ScrollbarThumbPressed`.
 - `Scrollbar<MarkType>`.
 - `Scrollbar<MarkType>Thumb` and `Scrollbar<MarkType>ThumbPressed`.
+- `Scrollbar<MarkType>Tint`: the background of a tint mark. The plugin creates
+  it only with `overlap.marks = "tint"`. Its background is the foreground of
+  the mark group, or else the background of the mark group.
 
 Examples include `ScrollbarSearch`, `ScrollbarSearchThumb`,
 `ScrollbarSearchThumbPressed`, `ScrollbarMark`, and `ScrollbarErrorThumb`.
@@ -59,25 +63,62 @@ In automatic mode, the scrollbar also creates the legacy `Handle` names:
 canonical `Thumb` equivalents. They are not separately owned definitions.
 
 The canonical names above belong to the root configuration. In automatic mode,
-each profile also gets its own internal groups. As a result, windows that are
-visible at the same time can use different track, thumb, blend, mark, overlap,
-and pressed definitions.
+each profile also gets its own internal groups, including its own base. As a
+result, windows that are visible at the same time can use different base,
+track, thumb, blend, mark, overlap, tint, and pressed definitions.
 
 A profile copies the final definition of a root group when the profile has the
 same options for that group as the root. The final definition is the user or
 colorscheme definition of the public group, or else the generated definition.
 These options select each group:
 
-- Track: `track.highlight`.
-- Thumb: `thumb.highlight` and `thumb.blend`.
-- Pressed thumb: `thumb.blend`.
+- Base: the blend of the base.
+- Track: `track.highlight` and the blend of the track.
+- Thumb: `thumb.highlight` and the blend of the thumb.
+- Pressed thumb: the blend of the thumb.
 - Mark: the `highlight` of the mark type.
 - Overlap and pressed overlap: the options of the thumb or the pressed thumb,
   and the `highlight` of the mark type.
+- Tint: the `highlight` of the mark type and the blend of the track.
+
+[Blend](#blend) gives the rules for each blend.
 
 For example, a profile that sets only `placement` uses the `ScrollbarSearch`
 definition of a colorscheme. A profile that sets `thumb.blend` generates its own
 thumb groups and overlap groups.
+
+## Blend
+
+Neovim blends the cells of a float only when the float has `'winblend'`
+greater than `0`. A cell then takes the `blend` of its highlight group. A
+cell with a group that does not set `blend` takes the `'winblend'` of the
+float. A space cell with a blend shows the character of the window below it.
+
+The plugin sets the `'winblend'` of the scrollbar float, so the float does not
+get the global `'winblend'`, and each generated group sets its own `blend`:
+
+| Group | Blend |
+| --- | --- |
+| Base | `100` with `overlap.show_through`, else `window.wo.winblend`, else `0` |
+| Track and tint | `overlap.show_through`, else `window.wo.winblend`, else `0` |
+| Thumb and pressed thumb | The larger value of `thumb.blend` and `overlap.show_through` |
+| Mark | No blend. A mark takes the blend of the layer below it |
+
+The `'winblend'` of the float is `window.wo.winblend` when you set it.
+Otherwise, it is `overlap.show_through` when you set it. Otherwise, it is `1`
+when the thumb blends or `hide_on_cursor = "row"`, and `0` when no cell
+blends. Because the groups set their own blend, a value of `1` only turns
+blending on. A public group of a user or a colorscheme that does not set
+`blend` gets the `'winblend'` of the float.
+
+With `overlap.show_through`, a glyph mark that has no track or thumb below it
+gets the internal `ScrollbarGenerated.Surface<blend>` group, so the glyph does
+not fade into the text. `hide_on_cursor = "row"` uses the internal
+`ScrollbarGenerated.Clear` group. These internal groups set only a blend and a
+special color. Neovim drops a group that sets only a blend. A special color
+shows only with an underline style, so it does not change a cell. The plugin
+creates these groups also in manual mode, because they hold no colors to
+customize.
 
 ## Frame Groups
 
@@ -172,6 +213,12 @@ In manual mode, every profile uses the same canonical groups. As a result,
 profile-specific highlight sources and blend values need
 `set_highlights = true`. There is no public API for profile-specific manual
 highlights.
+
+In manual mode, set `blend` in your groups yourself. A group without `blend`
+gets the `'winblend'` of the float. See [Blend](#blend). With
+`overlap.show_through`, give `ScrollbarBase` `blend = 100`, so the empty cells
+do not dim the text. With `overlap.marks = "tint"`, define the
+`Scrollbar<MarkType>Tint` groups.
 
 With the same option, the plugin also writes no minimap groups. Every minimap
 profile then uses the canonical `ScrollbarMinimap<Type>` names. Define those
