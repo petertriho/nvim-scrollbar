@@ -43,6 +43,7 @@ local DEFAULT_EXCLUDE = {
         "snacks_picker_input",
         "TelescopePrompt",
     },
+    unfocusable = true,
 }
 
 -- Autocmd events with a dedicated handler in both schedulers. Any other event
@@ -145,6 +146,24 @@ local function normalize_marks(value)
     return { specs = specs, hidden = hidden }
 end
 
+---The renderers that one exclude entry applies to.
+---@param entry any `true`, `false`, or a table that sets a renderer to `false` to keep it
+---@param path string
+---@return { scrollbar: boolean, minimap: boolean }
+local function exclude_targets(entry, path)
+    if type(entry) == "boolean" then
+        return { scrollbar = entry, minimap = entry }
+    end
+    if type(entry) ~= "table" then
+        schema.invalid(path .. " must be a boolean or table")
+    end
+    schema.check_keys(entry, TARGET_KEYS, path)
+    return {
+        scrollbar = entry.scrollbar == nil or schema.boolean(entry.scrollbar, path .. ".scrollbar"),
+        minimap = entry.minimap == nil or schema.boolean(entry.minimap, path .. ".minimap"),
+    }
+end
+
 ---@param value any
 ---@param defaults string[]
 ---@param path string
@@ -175,20 +194,7 @@ local function normalize_exclude_field(value, defaults, path)
             if type(name) ~= "string" then
                 schema.invalid(path .. " must be a dense list or a table keyed by name, not both")
             end
-            local entry_path = path .. "." .. name
-            if entry == true then
-                exclude_both(name)
-            elseif entry == false then
-                entries[name] = nil
-            elseif type(entry) == "table" then
-                schema.check_keys(entry, TARGET_KEYS, entry_path)
-                entries[name] = {
-                    scrollbar = entry.scrollbar == nil or schema.boolean(entry.scrollbar, entry_path .. ".scrollbar"),
-                    minimap = entry.minimap == nil or schema.boolean(entry.minimap, entry_path .. ".minimap"),
-                }
-            else
-                schema.invalid(entry_path .. " must be a boolean or table")
-            end
+            entries[name] = exclude_targets(entry, path .. "." .. name)
         end
     end
 
@@ -211,13 +217,26 @@ local function normalize_exclude(value)
         value = {}
     end
     schema.table(value, "exclude")
-    schema.check_keys(value, { buftypes = true, filetypes = true }, "exclude")
+    schema.check_keys(value, { buftypes = true, filetypes = true, unfocusable = true }, "exclude")
 
     local buftypes = normalize_exclude_field(value.buftypes, DEFAULT_EXCLUDE.buftypes, "exclude.buftypes")
     local filetypes = normalize_exclude_field(value.filetypes, DEFAULT_EXCLUDE.filetypes, "exclude.filetypes")
+    local unfocusable = value.unfocusable
+    if unfocusable == nil then
+        unfocusable = DEFAULT_EXCLUDE.unfocusable
+    end
+    unfocusable = exclude_targets(unfocusable, "exclude.unfocusable")
     return {
-        scrollbar = { buftypes = buftypes.scrollbar, filetypes = filetypes.scrollbar },
-        minimap = { buftypes = buftypes.minimap, filetypes = filetypes.minimap },
+        scrollbar = {
+            buftypes = buftypes.scrollbar,
+            filetypes = filetypes.scrollbar,
+            unfocusable = unfocusable.scrollbar,
+        },
+        minimap = {
+            buftypes = buftypes.minimap,
+            filetypes = filetypes.minimap,
+            unfocusable = unfocusable.minimap,
+        },
     }
 end
 

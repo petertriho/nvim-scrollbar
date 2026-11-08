@@ -737,4 +737,98 @@ T["editor-relative profiles render only for the active source beside window-rela
     })
 end
 
+T["exclude.unfocusable keeps the renderers off normal windows that are not focusable"] = function()
+    local child = helpers.new_child()
+    MiniTest.finally(function()
+        helpers.stop_child(child)
+    end)
+
+    local result = child.lua_func(function()
+        local lines = {}
+        for index = 1, 200 do
+            lines[index] = "line " .. index
+        end
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        local editor = vim.api.nvim_get_current_win()
+        local pane = vim.api.nvim_open_win(vim.api.nvim_get_current_buf(), false, {
+            split = "right",
+            win = editor,
+            focusable = false,
+        })
+
+        local function setup(unfocusable)
+            require("scrollbar").setup({
+                set_highlights = false,
+                providers = {
+                    cursor = false,
+                    diagnostic = false,
+                    search = false,
+                    marks = false,
+                    gitsigns = false,
+                    mini_diff = false,
+                    ale = false,
+                    coc = false,
+                },
+                exclude = { buftypes = {}, filetypes = {}, unfocusable = unfocusable },
+                scrollbar = {
+                    throttle_ms = 1000,
+                    unit = "line",
+                    mouse = false,
+                    thumb = { text = "H", hide_if_all_visible = false },
+                },
+                minimap = { enabled = true, backend = "sync" },
+            })
+        end
+
+        local scrollbar = require("scrollbar.renderer")
+        local minimap = require("scrollbar.minimap.renderer")
+        local function render()
+            scrollbar.invalidate_source_selection()
+            minimap.invalidate_source_selection()
+            local scrollbar_scheduler = require("scrollbar.scheduler")
+            local minimap_scheduler = require("scrollbar.minimap.scheduler")
+            scrollbar_scheduler.invalidate_all()
+            scrollbar_scheduler.flush()
+            minimap_scheduler.invalidate_all()
+            -- A sync render can queue the window once more for its own cells.
+            for _ = 1, 5 do
+                if not minimap_scheduler.flush() then
+                    break
+                end
+            end
+        end
+        local function rendered()
+            return {
+                scrollbar = { editor = scrollbar.get_state(editor) ~= nil, pane = scrollbar.get_state(pane) ~= nil },
+                minimap = { editor = minimap.get_state(editor) ~= nil, pane = minimap.get_state(pane) ~= nil },
+            }
+        end
+
+        setup(nil)
+        render()
+        local default = rendered()
+        setup({ minimap = false })
+        render()
+        local scrollbar_only = rendered()
+        vim.api.nvim_win_set_config(pane, { focusable = true })
+        render()
+        return { default = default, scrollbar_only = scrollbar_only, focusable = rendered() }
+    end)
+
+    expect.equality(result, {
+        default = {
+            scrollbar = { editor = true, pane = false },
+            minimap = { editor = true, pane = false },
+        },
+        scrollbar_only = {
+            scrollbar = { editor = true, pane = false },
+            minimap = { editor = true, pane = true },
+        },
+        focusable = {
+            scrollbar = { editor = true, pane = true },
+            minimap = { editor = true, pane = true },
+        },
+    })
+end
+
 return T

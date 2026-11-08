@@ -269,6 +269,7 @@ T["accepts the complete typed runtime schema"] = function()
     expect.equality(result.exclude, {
         buftypes = { terminal = true, nofile = true },
         filetypes = { prompt = true },
+        unfocusable = true,
     })
     expect.equality(plan().marks.options, { letters = false, numbers = true })
     expect.equality(plan().gitsigns.options, true)
@@ -619,8 +620,22 @@ T["exclude"]["a dense list replaces the defaults and an empty list clears them"]
     expect.equality(result.exclude.buftypes, { terminal = true })
 
     result = set_top({ exclude = { buftypes = {}, filetypes = {} } })
-    expect.equality(result.exclude, { buftypes = {}, filetypes = {} })
-    expect.equality(config.get_minimap().exclude, { buftypes = {}, filetypes = {} })
+    expect.equality(result.exclude, { buftypes = {}, filetypes = {}, unfocusable = true })
+    expect.equality(config.get_minimap().exclude, { buftypes = {}, filetypes = {}, unfocusable = true })
+end
+
+T["exclude"]["unfocusable takes a boolean or a table of renderers"] = function()
+    local config = require("scrollbar.config")
+    local function targets(value)
+        local result = set_top({ exclude = { unfocusable = value } })
+        return { scrollbar = result.exclude.unfocusable, minimap = config.get_minimap().exclude.unfocusable }
+    end
+
+    expect.equality(targets(nil), { scrollbar = true, minimap = true })
+    expect.equality(targets(true), { scrollbar = true, minimap = true })
+    expect.equality(targets(false), { scrollbar = false, minimap = false })
+    expect.equality(targets({ minimap = false }), { scrollbar = true, minimap = false })
+    expect.equality(targets({ scrollbar = false }), { scrollbar = false, minimap = true })
 end
 
 T["exclude"]["rejects malformed entries"] = function()
@@ -642,6 +657,9 @@ T["exclude"]["rejects malformed entries"] = function()
         "exclude.filetypes must be a dense list or a table keyed by name"
     )
     expect_invalid_top({ exclude = { windows = {} } }, "unknown option 'exclude.windows'")
+    expect_invalid_top({ exclude = { unfocusable = "yes" } }, "exclude.unfocusable must be a boolean or table")
+    expect_invalid_top({ exclude = { unfocusable = { other = true } } }, "unknown option 'exclude.unfocusable.other'")
+    expect_invalid_top({ exclude = { unfocusable = { minimap = 1 } } }, "exclude.unfocusable.minimap must be a boolean")
 end
 
 local ALL_EVENTS = {

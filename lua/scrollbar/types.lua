@@ -129,6 +129,7 @@
 ---@class ScrollbarUserExcludeConfig
 ---@field buftypes? ScrollbarUserExcludeList A list replaces the defaults. A table keyed by name merges with them
 ---@field filetypes? ScrollbarUserExcludeList A list replaces the defaults. A table keyed by name merges with them
+---@field unfocusable? ScrollbarUserExcludeEntry Exclude normal windows that are not focusable. Defaults to true
 
 ---@class ScrollbarUserProfileMatcher
 ---@field filetypes? string[]
@@ -254,6 +255,7 @@
 ---@class ScrollbarExcludeConfig
 ---@field buftypes table<string, true>
 ---@field filetypes table<string, true>
+---@field unfocusable boolean Whether normal windows that are not focusable are excluded
 
 ---@class ScrollbarSharedConfig
 ---@field set_highlights boolean

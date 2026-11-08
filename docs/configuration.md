@@ -51,6 +51,7 @@ require("scrollbar").setup({
             "snacks_picker_input",
             "TelescopePrompt",
         },
+        unfocusable = true,
     },
     providers = {
         cursor = true,
@@ -299,8 +300,23 @@ exclude = {
   entries.
 - A table that mixes list entries and keyed entries is a setup error.
 
+`exclude.unfocusable` excludes the normal windows that are not focusable.
+Plugins open such windows with `focusable = false` as decorations, for example
+the line-number and connector panes of a diff view. The default is `true`. The
+value takes the same forms as one entry above:
+
+```lua
+exclude = {
+    unfocusable = false,                -- these windows get both renderers
+    -- unfocusable = { minimap = false }, -- excluded from the scrollbar only
+}
+```
+
+`exclude.unfocusable` applies only to normal windows.
+
 Invalid and unloaded buffers are never eligible. Each renderer also excludes
-its own floats, and floating windows never get a scrollbar or a minimap.
+its own floats. A floating window is a source only when the
+[`floats`](floats.md) option of the renderer block admits it.
 `max_lines` in each renderer block is a separate eligibility limit.
 
 ## Marks

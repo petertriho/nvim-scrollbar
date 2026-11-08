@@ -4,8 +4,9 @@
 --- source windows. The scrollbar renderer and the minimap renderer each build one policy over
 --- their own configuration module and float registries.
 ---
---- Each source window has a kind. A normal window has the kind `"normal"`. A
---- floating window is a source only when the `floats` option of the block
+--- Each source window has a kind. A normal window has the kind `"normal"`.
+--- With `exclude.unfocusable`, a normal window that is not focusable is not a
+--- source. A floating window is a source only when the `floats` option of the block
 --- admits it: a built-in picker kind with its toggle on, or another float that
 --- the `when` matcher accepts (kind `"custom"`). The floats of both renderers
 --- and external windows are never sources.
@@ -236,6 +237,11 @@ M.new = function(options)
             return nil
         end
         if window_config.relative == "" then
+            -- A split that is not focusable is usually a decoration of another
+            -- plugin, such as the line-number or connector pane of a diff view.
+            if window_config.focusable == false and root_config.exclude.unfocusable then
+                return nil
+            end
             return "normal"
         end
         return float_kind(winid, window_config, root_config)

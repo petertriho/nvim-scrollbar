@@ -110,6 +110,7 @@ T["defaults to disabled with sensible defaults"] = function()
     expect.equality(result.exclude, {
         buftypes = { terminal = true },
         filetypes = DEFAULT_EXCLUDED_FILETYPES,
+        unfocusable = true,
     })
     expect.equality(result.marks, FULL_MARKS)
     for _, removed in ipairs({
