@@ -1074,10 +1074,12 @@ local function update_text_reservation(state, active_config, kind, area, width)
         local left = state.float_config.col - frame_width(active_config, width)
         covered = math.max(0, math.min(area.width - area.textoff, area.width - left))
     end
-    local changed = overlap.reserve(source_win, covered, area.width - area.textoff)
+    local changed = overlap.reserve(source_win, covered, area.width - area.textoff, active_config.overlap.reserve)
     if changed and active_config.unit == "screenline" then
-        -- 'wrapcolumn' changed the screen lines, so the geometry of this
-        -- render is out of date.
+        -- 'wrapcolumn' or the pads changed the screen lines, so the geometry
+        -- of this render is out of date. The screen cache does not see a
+        -- change of the pads.
+        layout.clear_screen_cache(source_win)
         local scheduler = package.loaded["scrollbar.scheduler"]
         if scheduler ~= nil then
             scheduler.invalidate_window(source_win)

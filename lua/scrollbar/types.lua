@@ -73,8 +73,10 @@
 
 ---@alias ScrollbarMarkStyle "glyph"|"tint" How a mark draws: its text, or a background in the color of the mark
 
+---@alias ScrollbarReserve boolean|"virtual_text" `"virtual_text"` also pads the wrap points of a window with 'wrap'
+
 ---@class ScrollbarUserOverlapConfig
----@field reserve? boolean Keep the text away from an east scrollbar
+---@field reserve? ScrollbarReserve Keep the text away from an east scrollbar
 ---@field show_through? false|integer Blend from 1 to 100 that shows the text below the scrollbar
 ---@field marks? ScrollbarMarkStyle
 
@@ -253,7 +255,7 @@
 ---@field hide_if_all_visible boolean
 
 ---@class ScrollbarOverlapConfig
----@field reserve boolean
+---@field reserve ScrollbarReserve
 ---@field show_through false|integer
 ---@field marks ScrollbarMarkStyle
 

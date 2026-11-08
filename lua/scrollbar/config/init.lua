@@ -398,6 +398,10 @@ local function overlap_config(value, path)
         return path .. "." .. name
     end
     local overlap = schema.table(value, path)
+    local reserve = overlap.reserve
+    if type(reserve) ~= "boolean" and reserve ~= "virtual_text" then
+        invalid(at("reserve") .. ' must be a boolean or "virtual_text"')
+    end
     local show_through = overlap.show_through
     if show_through ~= false then
         if not schema.is_integer(show_through) or show_through < 1 or show_through > 100 then
@@ -405,7 +409,7 @@ local function overlap_config(value, path)
         end
     end
     return {
-        reserve = schema.boolean(overlap.reserve, at("reserve")),
+        reserve = reserve,
         show_through = show_through,
         marks = schema.enum(overlap.marks, at("marks"), { "glyph", "tint" }),
     }

@@ -185,7 +185,7 @@ require("scrollbar").setup({
 | `thumb.blend` | `30` | Integer from `0` to `100`. The text below the thumb shows through it with this blend. |
 | `thumb.highlight` | `"PmenuThumb"` | A group name or an `nvim_set_hl()` table. |
 | `thumb.hide_if_all_visible` | `true` | Hides only the thumb when the buffer fits in the window. |
-| `overlap.reserve` | `true` | Keeps the text away from an east scrollbar. See [Overlap](#overlap). |
+| `overlap.reserve` | `true` | `true`, `false`, or `"virtual_text"` (experimental). Keeps the text away from an east scrollbar. See [Overlap](#overlap). |
 | `overlap.show_through` | `false` | `false`, or a blend from `1` to `100`. The text below the scrollbar shows through the track, the thumb, and the empty cells. |
 | `overlap.marks` | `"glyph"` | `"glyph"` draws the text of each mark. `"tint"` draws each mark as a background in the color of the mark. |
 | `marks` | `{}` | Overrides of the shared mark types for the scrollbar. See [Marks](#marks). |
@@ -286,6 +286,56 @@ the reservation also includes the minimap.
   reservation ends.
 - Autohide also ends the reservation while it conceals the scrollbar. With
   `'wrap'`, the text wraps again at the window edge until the scrollbar shows.
+
+`reserve = "virtual_text"` is experimental. Its behavior can change in a later
+release without a deprecation. It changes only a window with `'wrap'` on a
+Neovim release without `'wrapcolumn'`. In other windows, and with
+`'wrapcolumn'`, it does the same as `reserve = true`.
+
+The plugin inserts blank inline virtual text (a pad) at each wrap point of the
+lines that the window shows. The pad fills the rest of the screen row. Thus
+the row ends before the scrollbar, and the next character starts the next
+row. The scrollbar covers no text.
+
+- The pads are extmarks on the lines that the window can show. The plugin
+  updates them before the redraw after a scroll, a resize, a text change, a
+  buffer change, a fold command, and a change of an option that changes the
+  wrapping.
+- Each window has its own pads, because the pad positions depend on the width
+  of the window. The plugin uses the experimental `nvim__ns_set()` to show the
+  pads of a window only in that window. Without that function, a buffer gets
+  pads only while one window shows it.
+- The pads count tabs, `'tabstop'`, `'vartabstop'`, wide characters, control
+  characters, combining characters, `'list'`, `'showbreak'`, `'breakindent'`
+  with the `shift`, `min`, and `sbr` items of `'breakindentopt'`, and
+  `'linebreak'` with `'breakat'`.
+- A blank space in the covered columns hides no text, so it gets no pad. When
+  `'list'` shows spaces, a space gets a pad like other characters.
+- The plugin removes the pads in the same cases in which it restores an option.
+
+The pads have these limits:
+
+- The pads do not count concealed text (`'conceallevel'`), other inline
+  virtual text such as LSP inlay hints, the `list` and `column` items of
+  `'breakindentopt'`, or the `n` flag of `'cpoptions'`. On a line with one of
+  these, a row can end too early, or text can be under the scrollbar.
+- The pads are part of the virtual columns. On a wrapped line after a pad,
+  `'colorcolumn'`, `'cursorcolumn'`, `virtcol()`, and the `|` command count the
+  pad cells.
+- With `unit = "screenline"`, the thumb counts the rows that the pads add only
+  after the plugin measures the lines again. A scroll does not start a new
+  measurement, so the thumb can be off by a few rows.
+
+The pads make Neovim slower, because Neovim measures and draws the inline
+virtual text. These times are from a 120x48 window in tmux with Neovim 0.12.6.
+The buffer had 10,000 lines of 150 ASCII cells, 1,000 ASCII cells, or 150
+bytes of UTF-8 text with tabs.
+
+| Operation | `reserve = true` | `reserve = "virtual_text"` |
+| --------- | ---------------- | -------------------------- |
+| `:redraw!` | 210 to 270 µs | 300 to 510 µs (+41% to +91%) |
+| `<C-d>`, a render, and a redraw | 220 to 340 µs | 530 to 990 µs (+117% to +194%) |
+| One typed character and a redraw | 47 to 93 µs | 129 to 301 µs (+85% to +224%) |
 
 `show_through` is a blend from `1` to `100`. The text below the scrollbar shows
 through the track and the thumb with this blend, and it shows through the

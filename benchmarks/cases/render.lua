@@ -6,7 +6,8 @@ local MARK_COUNT = 2000
 local PROVIDER = "benchmark_render"
 
 ---@param unit "line" | "screenline"
-local function configure(unit)
+---@param reserve? boolean | "virtual_text" The `overlap.reserve` value (default true)
+local function configure(unit, reserve)
     require("scrollbar.config").set({
         set_highlights = false,
         exclude = { buftypes = {}, filetypes = {} },
@@ -20,6 +21,7 @@ local function configure(unit)
             unit = unit,
             throttle_ms = 0,
             thumb = { text = "H", hide_if_all_visible = false },
+            overlap = { reserve = reserve == nil and true or reserve },
         },
     })
     require("scrollbar.renderer").setup()
@@ -49,6 +51,7 @@ end
 ---@class bench.RenderOptions
 ---@field wrapped? boolean
 ---@field windows? integer The number of windows that show the buffer (default 1).
+---@field reserve? boolean | "virtual_text" The `overlap.reserve` value (default true).
 ---@field change? fun(state: bench.RenderState)
 
 ---@param unit "line" | "screenline"
@@ -83,7 +86,7 @@ local function render_case(unit, name, opts)
                 ),
                 "the store rejected the marks"
             )
-            configure(unit)
+            configure(unit, opts.reserve)
             ---@type bench.RenderState
             local state = { bufnr = bufnr, windows = windows, toggle = false, topline = 1 }
             render(state)
@@ -150,4 +153,9 @@ return {
     render_case("screenline", "wrapped_steady", { wrapped = true }),
     render_case("screenline", "wrapped_scroll", { wrapped = true, change = scroll }),
     render_case("screenline", "wrapped_edit", { wrapped = true, change = edit }),
+    -- The pads of `reserve = "virtual_text"`. Without a main loop, no autocmd
+    -- runs, so the render updates the pads after each scroll.
+    render_case("line", "virtual_text_steady", { wrapped = true, reserve = "virtual_text" }),
+    render_case("line", "virtual_text_scroll", { wrapped = true, reserve = "virtual_text", change = scroll }),
+    render_case("screenline", "virtual_text_scroll", { wrapped = true, reserve = "virtual_text", change = scroll }),
 }

@@ -12,9 +12,12 @@
 --- window without 'wrap', 'sidescrolloff' keeps the cursor out of the columns
 --- under the scrollbar. In a window with 'wrap', 'wrapcolumn' wraps the text
 --- before the scrollbar. Neovim releases without 'wrapcolumn' have only the
---- 'sidescrolloff' part. The reservation keeps the original values and
---- restores them only when the current value is still the applied value, so an
---- edit of the user wins.
+--- 'sidescrolloff' part, unless `reserve` is `"virtual_text"`: then inline
+--- virtual text pads each wrap point (`scrollbar.wrap_padding`). The
+--- reservation keeps the original values and restores them only when the
+--- current value is still the applied value, so an edit of the user wins.
+
+local wrap_padding = require("scrollbar.wrap_padding")
 
 local M = {}
 
@@ -124,12 +127,15 @@ M.float_winblend = function(active_config)
 end
 
 ---@class ScrollbarTextReservation
----@field option string The window-local option that the reservation sets
----@field original integer The local value before the reservation
----@field applied integer The value that the reservation set
+---@field option string The window-local option that the reservation sets, or `"virtual_text"` for the pads
+---@field original integer The local value before the reservation, or 0 for the pads
+---@field applied integer The value that the reservation set, or 0 for the pads
 
 ---@type table<integer, ScrollbarTextReservation>
 local reservations = {}
+
+-- The `option` of a reservation with inline virtual text.
+local VIRTUAL_TEXT = "virtual_text"
 
 M.reservations = reservations
 
@@ -159,6 +165,10 @@ end
 M.release = function(source_win)
     local reservation = reservations[source_win]
     reservations[source_win] = nil
+    if reservation ~= nil and reservation.option == VIRTUAL_TEXT then
+        wrap_padding.release(source_win)
+        return
+    end
     if reservation == nil or not vim.api.nvim_win_is_valid(source_win) then
         return
     end
@@ -194,14 +204,18 @@ end
 ---@param source_win integer
 ---@param width integer Text columns that the scrollbar covers at the right edge
 ---@param text_width integer Columns of the text area, without the gutter
----@return boolean changed Whether the call changed the 'wrapcolumn' of the window
-M.reserve = function(source_win, width, text_width)
+---@param mode? ScrollbarReserve The `overlap.reserve` value. `"virtual_text"` pads the wrap points when Neovim has no 'wrapcolumn'
+---@return boolean changed Whether the call changed the screen lines of the window
+M.reserve = function(source_win, width, text_width, mode)
     if width <= 0 and reservations[source_win] == nil then
         return false
     end
     WINDOW_OPTIONS.win = source_win
     local wrap = vim.api.nvim_get_option_value("wrap", WINDOW_OPTIONS)
-    local option = wrap and "wrapcolumn" or "sidescrolloff"
+    local option = "sidescrolloff"
+    if wrap then
+        option = (mode == VIRTUAL_TEXT and not WRAPCOLUMN_SUPPORTED) and VIRTUAL_TEXT or "wrapcolumn"
+    end
     local changed = false
 
     ---@type ScrollbarTextReservation?
@@ -211,17 +225,21 @@ M.reserve = function(source_win, width, text_width)
         and (
             width <= 0
             or reservation.option ~= option
-            or local_value(source_win, reservation.option) ~= reservation.applied
+            or (option ~= VIRTUAL_TEXT and local_value(source_win, reservation.option) ~= reservation.applied)
         )
     then
         -- The reservation ends, 'wrap' changed, or the user edited the option.
         -- An edit of the user becomes the new original value.
-        changed = reservation.option == "wrapcolumn"
+        changed = reservation.option ~= "sidescrolloff"
         M.release(source_win)
         reservation = nil
     end
     if width <= 0 or (option == "wrapcolumn" and not WRAPCOLUMN_SUPPORTED) then
         return changed
+    end
+    if option == VIRTUAL_TEXT then
+        reservations[source_win] = reservation or { option = VIRTUAL_TEXT, original = 0, applied = 0 }
+        return wrap_padding.apply(source_win, width, text_width) or changed
     end
 
     local original = reservation and reservation.original or local_value(source_win, option)

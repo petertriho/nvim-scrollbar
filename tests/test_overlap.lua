@@ -112,7 +112,8 @@ T["config validates the overlap block"] = function()
         { { show_through = 0 }, "scrollbar.overlap.show_through must be false or an integer between 1 and 100" },
         { { show_through = 101 }, "scrollbar.overlap.show_through must be false or an integer between 1 and 100" },
         { { show_through = true }, "scrollbar.overlap.show_through must be false or an integer between 1 and 100" },
-        { { reserve = 1 }, "scrollbar.overlap.reserve must be a boolean" },
+        { { reserve = 1 }, 'scrollbar.overlap.reserve must be a boolean or "virtual_text"' },
+        { { reserve = "virtual" }, 'scrollbar.overlap.reserve must be a boolean or "virtual_text"' },
         { { marks = "glyphs" }, "scrollbar.overlap.marks must be one of: glyph, tint" },
         { { extra = true }, "extra" },
     }
@@ -120,6 +121,19 @@ T["config validates the overlap block"] = function()
         local message = setup_error(child, { scrollbar = { overlap = case[1] } })
         expect.no_equality(message:find(case[2], 1, true), nil)
     end
+end
+
+T["config accepts the virtual_text reserve and keeps true as the default"] = function()
+    local child = new_child()
+    local accepted = child.lua_func(function()
+        local config = require("scrollbar.config")
+        local values = { config.set({}).overlap.reserve }
+        for _, value in ipairs({ true, false, "virtual_text" }) do
+            values[#values + 1] = config.set({ scrollbar = { overlap = { reserve = value } } }).overlap.reserve
+        end
+        return values
+    end)
+    expect.equality(accepted, { true, true, false, "virtual_text" })
 end
 
 T["a profile can set the overlap block"] = function()
@@ -482,6 +496,359 @@ T["reserve moves from sidescrolloff to wrapcolumn when wrap turns on"] = functio
     if result.supported then
         expect.equality(result.wrapcolumn, result.expected)
     end
+end
+
+-- The tests of `reserve = "virtual_text"` run where Neovim has no
+-- 'wrapcolumn'. With 'wrapcolumn', the reservation uses it, and no pads exist.
+local function virtual_text_child()
+    local child = new_child()
+    if child.lua_get([[(pcall(vim.api.nvim_get_option_info2, "wrapcolumn", {}))]]) then
+        MiniTest.skip("Neovim has 'wrapcolumn', which the reservation prefers")
+    end
+    child.lua([[
+        vim.wo.wrap = true
+
+        -- The pads of a window: { row, col, width } for each mark.
+        package.loaded["scrollbar.test.pads"] = function(win, buf)
+            win = win == 0 and vim.api.nvim_get_current_win() or win
+            local state = require("scrollbar.wrap_padding").states[win]
+            if state == nil then
+                return {}
+            end
+            local result = {}
+            local marks = vim.api.nvim_buf_get_extmarks(buf or 0, state.ns, 0, -1, { details = true })
+            for _, mark in ipairs(marks) do
+                local details = mark[4]
+                assert(details.virt_text_pos == "inline" and details.right_gravity == false)
+                result[#result + 1] = { mark[2], mark[3], #details.virt_text[1][1] }
+            end
+            return result
+        end
+
+        -- Characters of the visible lines that end in the covered columns,
+        -- and pads that do not end their row.
+        -- A `head` of false skips the check of the row starts.
+        package.loaded["scrollbar.test.wrap_errors"] = function(win, covered, head)
+            win = win == 0 and vim.api.nvim_get_current_win() or win
+            local buf = vim.api.nvim_win_get_buf(win)
+            local info = vim.fn.getwininfo(win)[1]
+            local width = info.width - info.textoff
+            local state = require("scrollbar.wrap_padding").states[win]
+            local errors = {}
+            local first, last = vim.fn.line("w0", win), vim.fn.line("w$", win)
+            for lnum = first, last do
+                local line = vim.api.nvim_buf_get_lines(buf, lnum - 1, lnum, false)[1]
+                local padded = {}
+                for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(buf, state.ns, { lnum - 1, 0 }, { lnum - 1, -1 }, {})) do
+                    padded[mark[3] + 1] = true
+                end
+                local col = 1
+                while col <= #line do
+                    local size = vim.str_utf_end(line, col) + 1
+                    local byte = line:byte(col)
+                    local range = vim.fn.virtcol({ lnum, col }, true, win)
+                    local cells = vim.fn.strdisplaywidth(line:sub(col, col + size - 1))
+                    -- The start of a padded character is the start of its
+                    -- pad. The end of a character can include a 'linebreak'
+                    -- fill.
+                    local last_cell = padded[col] and range[2] or range[1] + cells - 1
+                    local start_cell = last_cell - cells + 1
+                    if byte ~= 9 and byte ~= 32 and (last_cell - 1) % width + 1 > width - covered then
+                        errors[#errors + 1] = string.format("line %d col %d in the covered columns", lnum, col)
+                    end
+                    if head ~= false and padded[col] and (start_cell - 1) % width ~= (head or 0) then
+                        errors[#errors + 1] = string.format("line %d col %d does not start a row", lnum, col)
+                    end
+                    col = col + size
+                end
+            end
+            return errors
+        end
+    ]])
+    return child
+end
+
+local VIRTUAL_TEXT = { overlap = { reserve = "virtual_text" } }
+
+T["virtual_text pads the wrap points of the visible lines"] = function()
+    local child = virtual_text_child()
+    local result = child.lua_func(function(config)
+        local source_win = vim.api.nvim_get_current_win()
+        require("scrollbar.test.set_config")(config)
+        local renderer = require("scrollbar.renderer")
+        renderer.setup()
+        renderer.render(source_win)
+        local pads = require("scrollbar.test.pads")(0)
+        local rows = {}
+        for _, pad in ipairs(pads) do
+            assert(pad[2] == 78 and pad[3] == 2, vim.inspect(pad))
+            rows[#rows + 1] = pad[1]
+        end
+        return {
+            rows = rows,
+            height = vim.api.nvim_win_get_height(source_win),
+            sidescrolloff = vim.api.nvim_get_option_value("sidescrolloff", { scope = "local", win = source_win }),
+            errors = require("scrollbar.test.wrap_errors")(0, 2),
+        }
+    end, overlap_config(VIRTUAL_TEXT))
+    -- Each line of 120 cells needs one pad. The lines from the top line to
+    -- the window height get pads.
+    local expected = {}
+    for row = 0, result.height - 1 do
+        expected[#expected + 1] = row
+    end
+    expect.equality(result.rows, expected)
+    expect.equality(result.sidescrolloff, -1)
+    expect.equality(result.errors, {})
+end
+
+T["virtual_text pads follow a scroll and an edit"] = function()
+    local child = virtual_text_child()
+    child.lua_func(function(config)
+        require("scrollbar.test.set_config")(config)
+        local renderer = require("scrollbar.renderer")
+        renderer.setup()
+        renderer.render(vim.api.nvim_get_current_win())
+    end, overlap_config(VIRTUAL_TEXT))
+    local function pads_of(row)
+        return child.lua_func(function(target)
+            local result = {}
+            for _, pad in ipairs(require("scrollbar.test.pads")(0)) do
+                if pad[1] == target then
+                    result[#result + 1] = { pad[2], pad[3] }
+                end
+            end
+            return result
+        end, row)
+    end
+
+    child.type_keys("100Gzt")
+    expect.equality(pads_of(0), {})
+    expect.equality(pads_of(99), { { 78, 2 } })
+
+    -- An insert of 40 characters makes the line need a second pad.
+    child.type_keys("I", string.rep("y", 40))
+    expect.equality(pads_of(99), { { 78, 2 }, { 156, 2 } })
+    child.type_keys("<Esc>", "0", "dw")
+    expect.equality(pads_of(99), {})
+    child.type_keys("u")
+    expect.equality(pads_of(99), { { 78, 2 }, { 156, 2 } })
+    expect.equality(child.lua_get([[require("scrollbar.test.wrap_errors")(0, 2)]]), {})
+end
+
+T["virtual_text pads count tabs, wide characters, and the cells before a continuation row"] = function()
+    local child = virtual_text_child()
+    local result = child.lua_func(function(config)
+        local lines = {
+            "\tTAB\tline\twith\ttabs\t" .. string.rep("0123456789", 12),
+            "日本語のテキスト" .. string.rep("あいうえおかきくけこ", 9),
+            "ctrl\1\2\3" .. string.rep("XYZ", 50),
+            string.rep("x", 77) .. "日本" .. string.rep("z", 100),
+            "    indented " .. string.rep("abcdefghij", 20),
+        }
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        local source_win = vim.api.nvim_get_current_win()
+        require("scrollbar.test.set_config")(config)
+        local renderer = require("scrollbar.renderer")
+        renderer.setup()
+        renderer.render(source_win)
+        local check = require("scrollbar.test.wrap_errors")
+        local errors = { plain = check(0, 2) }
+        vim.cmd("set tabstop=3")
+        errors.tabstop = check(0, 2)
+        vim.cmd("set list listchars=eol:$")
+        errors.list = check(0, 2)
+        vim.cmd("set nolist vartabstop=4,6,10")
+        errors.vartabstop = check(0, 2)
+        -- 'showbreak' cells take a part of each continuation row.
+        vim.cmd("set vartabstop= showbreak=>>")
+        errors.showbreak = check(0, 2, 2)
+        vim.cmd("set showbreak= breakindent breakindentopt=shift:2")
+        errors.breakindent = check(0, 2, false)
+        local indented = {}
+        for _, pad in ipairs(require("scrollbar.test.pads")(0)) do
+            if pad[1] == 4 then
+                indented[#indented + 1] = { pad[2], pad[3] }
+            end
+        end
+        return { errors = errors, indented = indented }
+    end, overlap_config(VIRTUAL_TEXT))
+    expect.equality(
+        result.errors,
+        { plain = {}, tabstop = {}, list = {}, vartabstop = {}, showbreak = {}, breakindent = {} }
+    )
+    -- The indent of 4 cells and the shift of 2 start each continuation row,
+    -- so a continuation row holds 72 cells of text.
+    expect.equality(result.indented, { { 78, 2 }, { 150, 2 } })
+end
+
+T["virtual_text pads move a word with linebreak"] = function()
+    local child = virtual_text_child()
+    local result = child.lua_func(function(config)
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, {
+            -- The word fits in 80 columns, but not in the 78 usable columns.
+            string.rep("w", 74) .. " abcd efg",
+            -- The word does not fit in 80 columns, so Neovim moves it.
+            string.rep("w", 76) .. " abcdef ghi",
+        })
+        local source_win = vim.api.nvim_get_current_win()
+        require("scrollbar.test.set_config")(config)
+        local renderer = require("scrollbar.renderer")
+        renderer.setup()
+        renderer.render(source_win)
+        local before = require("scrollbar.test.pads")(0)
+        vim.cmd("set linebreak")
+        return {
+            before = before,
+            after = require("scrollbar.test.pads")(0),
+            errors = require("scrollbar.test.wrap_errors")(0, 2),
+        }
+    end, overlap_config(VIRTUAL_TEXT))
+    expect.equality(result.before, { { 0, 78, 2 }, { 1, 78, 2 } })
+    -- Neovim moves the word of the second line, so it needs no pad.
+    expect.equality(result.after, { { 0, 75, 5 } })
+    expect.equality(result.errors, {})
+end
+
+T["virtual_text pads keep a blank space in the covered columns"] = function()
+    local child = virtual_text_child()
+    local result = child.lua_func(function(config)
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, {
+            -- The space is in the first covered column, and the next word
+            -- starts in the second.
+            string.rep("w", 78) .. " rest",
+            string.rep("w", 78) .. "  rest",
+        })
+        local source_win = vim.api.nvim_get_current_win()
+        require("scrollbar.test.set_config")(config)
+        local renderer = require("scrollbar.renderer")
+        renderer.setup()
+        renderer.render(source_win)
+        local pads = require("scrollbar.test.pads")(0)
+        vim.cmd("set list listchars=space:.")
+        return { blank = pads, shown = require("scrollbar.test.pads")(0) }
+    end, overlap_config(VIRTUAL_TEXT))
+    -- The pad fills the last covered column. Two spaces fill the row, so the
+    -- second line needs no pad.
+    expect.equality(result.blank, { { 0, 79, 1 } })
+    -- 'list' shows each space, so a space gets a pad like a character.
+    expect.equality(result.shown, { { 0, 78, 2 }, { 1, 78, 2 } })
+end
+
+T["virtual_text pads each window of a buffer for its own width"] = function()
+    local child = virtual_text_child()
+    local result = child.lua_func(function(config)
+        local renderer = require("scrollbar.renderer")
+        local left = vim.api.nvim_get_current_win()
+        vim.cmd("vsplit")
+        local right = vim.fn.win_getid(vim.fn.winnr("l"))
+        left = vim.api.nvim_get_current_win()
+        vim.api.nvim_win_set_width(left, 30)
+        require("scrollbar.test.set_config")(config)
+        renderer.setup()
+        renderer.render(left)
+        renderer.render(right)
+        local pads = require("scrollbar.test.pads")
+        return {
+            left = pads(left)[1],
+            right = pads(right)[1],
+            right_width = vim.api.nvim_win_get_width(right),
+            -- The pads of one window do not move the text of the other.
+            left_virtcol = vim.fn.virtcol({ 1, 30 }, true, left)[2],
+            right_virtcol = vim.fn.virtcol({ 1, 30 }, true, right)[2],
+            errors = {
+                left = require("scrollbar.test.wrap_errors")(left, 2),
+                right = require("scrollbar.test.wrap_errors")(right, 2),
+            },
+        }
+    end, overlap_config(VIRTUAL_TEXT))
+    expect.equality(result.left, { 0, 28, 2 })
+    expect.equality(result.right, { 0, result.right_width - 2, 2 })
+    expect.equality(result.left_virtcol, 32)
+    expect.equality(result.right_virtcol, 30)
+    expect.equality(result.errors, { left = {}, right = {} })
+end
+
+T["virtual_text pads a buffer only in one window without a window scope"] = function()
+    local child = virtual_text_child()
+    local result = child.lua_func(function(config)
+        -- A Neovim release without `nvim__ns_set`.
+        vim.api.nvim__ns_set = nil
+        local source_win = vim.api.nvim_get_current_win()
+        require("scrollbar.test.set_config")(config)
+        local renderer = require("scrollbar.renderer")
+        renderer.setup()
+        renderer.render(source_win)
+        local pads = require("scrollbar.test.pads")
+        local single = #pads(source_win)
+        vim.cmd("split")
+        local split = #pads(source_win)
+        vim.cmd("close")
+        renderer.render(source_win)
+        return { single = single, split = split, closed = #pads(source_win) }
+    end, overlap_config(VIRTUAL_TEXT))
+    expect.no_equality(result.single, 0)
+    expect.equality(result.split, 0)
+    expect.equality(result.closed, result.single)
+end
+
+T["virtual_text pads go away with nowrap, another buffer, another reserve, and dispose"] = function()
+    local child = virtual_text_child()
+    local result = child.lua_func(function(config, off)
+        local source_win = vim.api.nvim_get_current_win()
+        local first_buf = vim.api.nvim_get_current_buf()
+        local renderer = require("scrollbar.renderer")
+        local function all_pads(buf)
+            return #vim.api.nvim_buf_get_extmarks(buf, -1, 0, -1, { type = "virt_text" })
+        end
+        require("scrollbar.test.set_config")(config)
+        renderer.setup()
+        renderer.render(source_win)
+        local counts = { start = all_pads(first_buf) }
+
+        -- The OptionSet autocmd removes the pads before the next render.
+        vim.wo.wrap = false
+        counts.nowrap = all_pads(first_buf)
+        renderer.render(source_win)
+        counts.sidescrolloff = vim.api.nvim_get_option_value("sidescrolloff", { scope = "local", win = source_win })
+        vim.wo.wrap = true
+        renderer.render(source_win)
+        counts.wrap = all_pads(first_buf)
+
+        -- Another buffer in the window takes the pads.
+        vim.cmd("enew")
+        local second_buf = vim.api.nvim_get_current_buf()
+        vim.api.nvim_buf_set_lines(second_buf, 0, -1, false, { string.rep("z", 100) })
+        vim.wo.wrap = true
+        renderer.render(source_win)
+        counts.first_after_enew = all_pads(first_buf)
+        counts.second = all_pads(second_buf)
+
+        require("scrollbar.test.set_config")(off)
+        renderer.render(source_win)
+        counts.reserve_off = all_pads(second_buf)
+
+        require("scrollbar.test.set_config")(config)
+        renderer.render(source_win)
+        counts.again = all_pads(second_buf)
+        renderer.dispose(source_win)
+        counts.disposed = all_pads(second_buf)
+        counts.states = vim.tbl_count(require("scrollbar.wrap_padding").states)
+        local ok, autocmds = pcall(vim.api.nvim_get_autocmds, { group = "ScrollbarWrapPadding" })
+        counts.autocmds = ok and #autocmds or 0
+        return counts
+    end, overlap_config(VIRTUAL_TEXT), overlap_config({ overlap = { reserve = true } }))
+    expect.no_equality(result.start, 0)
+    expect.equality(result.nowrap, 0)
+    expect.equality(result.sidescrolloff, 2)
+    expect.no_equality(result.wrap, 0)
+    expect.equality(result.first_after_enew, 0)
+    expect.equality(result.second, 1)
+    expect.equality(result.reserve_off, 0)
+    expect.equality(result.again, 1)
+    expect.equality(result.disposed, 0)
+    expect.equality(result.states, 0)
+    expect.equality(result.autocmds, 0)
 end
 
 return T
