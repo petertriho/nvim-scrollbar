@@ -9,7 +9,8 @@
 --- source. A floating window is a source only when the `floats` option of the block
 --- admits it: a built-in picker kind with its toggle on, or another float that
 --- the `when` matcher accepts (kind `"custom"`). The floats of both renderers
---- and external windows are never sources.
+--- and external windows are never sources. Last, the `exclude.when` matcher
+--- can exclude any window that the other rules accept.
 ---
 --- The exported predicates serve hot event paths (provider collect and
 --- publish re-checks, scheduler activity) that run several times per
@@ -33,10 +34,11 @@ local NO_GROUP = {}
 -- The eligibility of a normal window (window normality and buffer
 -- eligibility) costs about 2 µs. Its inputs are the window, the buffer and its
 -- line count (`max_lines`), and the static root excludes, never the profile
--- matchers. A float also reads the picker state or calls `floats.when`. The
--- memo keeps the kind of the window. The schedulers clear the memo on topology
--- and option events. For standalone use, the TTL bounds the staleness of a
--- filetype or buftype change, and of a change of the picker state.
+-- matchers. A float also reads the picker state or calls `floats.when`, and
+-- an `exclude.when` matcher runs for every window. The memo keeps the kind of
+-- the window. The schedulers clear the memo on topology and option events. For
+-- standalone use, the TTL bounds the staleness of a filetype or buftype
+-- change, of a change of the picker state, and of an `exclude.when` result.
 local ELIGIBILITY_TTL_MS = 50
 
 -- A full selection also resolves `config.select` and the active source
@@ -164,21 +166,28 @@ M.new = function(options)
         return ok and window_config.relative == ""
     end
 
-    ---@param when fun(context: ScrollbarFloatContext): boolean
     ---@param winid integer
-    ---@param window_config vim.api.keyset.win_config
-    ---@param root_config table
-    ---@return boolean
-    local function when_matches(when, winid, window_config, root_config)
+    ---@return ScrollbarProfileContext
+    local function window_context(winid)
         local bufnr = vim.api.nvim_win_get_buf(winid)
-        local ok, matched = pcall(when, {
+        return {
             winid = winid,
             bufnr = bufnr,
             filetype = vim.bo[bufnr].filetype,
             buftype = vim.bo[bufnr].buftype,
             bufname = vim.api.nvim_buf_get_name(bufnr),
-            config = window_config,
-        })
+        }
+    end
+
+    ---Call a user matcher. An error counts as no match and notifies once for
+    ---each option and distinct message until the next setup.
+    ---@param option string Option path in the notification, such as `"floats.when"`
+    ---@param when fun(context: table): boolean
+    ---@param context table
+    ---@param root_config table
+    ---@return boolean
+    local function when_matches(option, when, context, root_config)
+        local ok, matched = pcall(when, context)
         if ok then
             return matched and true or false
         end
@@ -187,10 +196,11 @@ M.new = function(options)
             notified_root = root_config
         end
         local message = tostring(matched)
-        if not notified[message] then
-            notified[message] = true
+        local key = option .. "\0" .. message
+        if not notified[key] then
+            notified[key] = true
             vim.notify(
-                string.format("[nvim-scrollbar] %s floats.when matcher failed: %s", label, message),
+                string.format("[nvim-scrollbar] %s %s matcher failed: %s", label, option, message),
                 vim.log.levels.ERROR
             )
         end
@@ -219,7 +229,12 @@ M.new = function(options)
         if kind ~= nil then
             return floats.kinds[kind] and kind or nil
         end
-        if floats.when == false or not when_matches(floats.when, winid, window_config, root_config) then
+        if floats.when == false then
+            return nil
+        end
+        local context = window_context(winid) --[[@as ScrollbarFloatContext]]
+        context.config = window_config
+        if not when_matches("floats.when", floats.when, context, root_config) then
             return nil
         end
         return "custom"
@@ -297,6 +312,15 @@ M.new = function(options)
         end
         if not buffer_eligible(vim.api.nvim_win_get_buf(source_win), root_config, line_count) then
             return nil
+        end
+        local when = root_config.exclude.when
+        if when then
+            local context = window_context(source_win) --[[@as ScrollbarExcludeContext]]
+            context.renderer = label
+            -- An error keeps the window eligible, as if the option were unset.
+            if when_matches("exclude.when", when, context, root_config) then
+                return nil
+            end
         end
         return kind
     end

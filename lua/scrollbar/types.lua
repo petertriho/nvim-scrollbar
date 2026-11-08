@@ -130,6 +130,7 @@
 ---@field buftypes? ScrollbarUserExcludeList A list replaces the defaults. A table keyed by name merges with them
 ---@field filetypes? ScrollbarUserExcludeList A list replaces the defaults. A table keyed by name merges with them
 ---@field unfocusable? ScrollbarUserExcludeEntry Exclude normal windows that are not focusable. Defaults to true
+---@field when? false|fun(context: ScrollbarExcludeContext): boolean Excludes each source window for which it returns a truthy value
 
 ---@class ScrollbarUserProfileMatcher
 ---@field filetypes? string[]
@@ -256,6 +257,7 @@
 ---@field buftypes table<string, true>
 ---@field filetypes table<string, true>
 ---@field unfocusable boolean Whether normal windows that are not focusable are excluded
+---@field when false|fun(context: ScrollbarExcludeContext): boolean
 
 ---@class ScrollbarSharedConfig
 ---@field set_highlights boolean
@@ -350,6 +352,9 @@
 
 ---@class ScrollbarFloatContext: ScrollbarProfileContext
 ---@field config vim.api.keyset.win_config The `nvim_win_get_config` result of the float
+
+---@class ScrollbarExcludeContext: ScrollbarProfileContext
+---@field renderer "scrollbar"|"minimap" The renderer that asks
 
 ---@class ScrollbarCompiledMatcher
 ---@field filetypes false|string[]

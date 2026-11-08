@@ -52,6 +52,7 @@ require("scrollbar").setup({
             "TelescopePrompt",
         },
         unfocusable = true,
+        when = false,
     },
     providers = {
         cursor = true,
@@ -313,6 +314,42 @@ exclude = {
 ```
 
 `exclude.unfocusable` applies only to normal windows.
+
+`exclude.when` is `false` or a function. The function gets a table for each
+window that the other rules accept, normal or floating. If it returns a truthy
+value, the window gets no bar from that renderer:
+
+```lua
+{
+    renderer = "scrollbar", -- or "minimap"
+    winid = source_win,
+    bufnr = source_buf,
+    filetype = vim.bo[source_buf].filetype,
+    buftype = vim.bo[source_buf].buftype,
+    bufname = vim.api.nvim_buf_get_name(source_buf),
+}
+```
+
+This example keeps both renderers off the tabs of diffbandit.nvim:
+
+```lua
+exclude = {
+    when = function(context)
+        local diffbandit = package.loaded.diffbandit
+        return diffbandit ~= nil
+            and diffbandit.is_running({ tab = vim.api.nvim_win_get_tabpage(context.winid) })
+    end,
+}
+```
+
+- The plugin calls `when` often, also before each render. Keep the function
+  fast, free of side effects, and non-blocking.
+- Each render calls `when` again. A change of the state that `when` reads
+  applies at the next render of the window.
+- If `when` raises an error, the window is not excluded. A notification
+  appears once for each renderer and distinct error message until the next
+  setup, for example
+  `[nvim-scrollbar] scrollbar exclude.when matcher failed: <message>`.
 
 Invalid and unloaded buffers are never eligible. Each renderer also excludes
 its own floats. A floating window is a source only when the

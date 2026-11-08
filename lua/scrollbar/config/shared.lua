@@ -217,7 +217,7 @@ local function normalize_exclude(value)
         value = {}
     end
     schema.table(value, "exclude")
-    schema.check_keys(value, { buftypes = true, filetypes = true, unfocusable = true }, "exclude")
+    schema.check_keys(value, { buftypes = true, filetypes = true, unfocusable = true, when = true }, "exclude")
 
     local buftypes = normalize_exclude_field(value.buftypes, DEFAULT_EXCLUDE.buftypes, "exclude.buftypes")
     local filetypes = normalize_exclude_field(value.filetypes, DEFAULT_EXCLUDE.filetypes, "exclude.filetypes")
@@ -226,16 +226,24 @@ local function normalize_exclude(value)
         unfocusable = DEFAULT_EXCLUDE.unfocusable
     end
     unfocusable = exclude_targets(unfocusable, "exclude.unfocusable")
+    local when = value.when
+    if when == nil then
+        when = false
+    elseif when ~= false and type(when) ~= "function" then
+        schema.invalid("exclude.when must be false or a function")
+    end
     return {
         scrollbar = {
             buftypes = buftypes.scrollbar,
             filetypes = filetypes.scrollbar,
             unfocusable = unfocusable.scrollbar,
+            when = when,
         },
         minimap = {
             buftypes = buftypes.minimap,
             filetypes = filetypes.minimap,
             unfocusable = unfocusable.minimap,
+            when = when,
         },
     }
 end

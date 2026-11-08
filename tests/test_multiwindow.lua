@@ -831,4 +831,137 @@ T["exclude.unfocusable keeps the renderers off normal windows that are not focus
     })
 end
 
+T["exclude.when excludes the windows it accepts for each renderer, and an error keeps them"] = function()
+    local child = helpers.new_child()
+    MiniTest.finally(function()
+        helpers.stop_child(child)
+    end)
+
+    local result = child.lua_func(function()
+        local lines = {}
+        for index = 1, 200 do
+            lines[index] = "line " .. index
+        end
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        local editor = vim.api.nvim_get_current_win()
+        local other_buf = vim.api.nvim_create_buf(false, true)
+        vim.api.nvim_buf_set_lines(other_buf, 0, -1, false, lines)
+        vim.api.nvim_buf_set_name(other_buf, "/tmp/scrollbar-exclude-when.txt")
+        vim.bo[other_buf].filetype = "excludetest"
+        local other = vim.api.nvim_open_win(other_buf, false, { split = "right", win = editor })
+
+        local contexts = {}
+        local fail = false
+        require("scrollbar").setup({
+            set_highlights = false,
+            providers = {
+                cursor = false,
+                diagnostic = false,
+                search = false,
+                marks = false,
+                gitsigns = false,
+                mini_diff = false,
+                ale = false,
+                coc = false,
+            },
+            exclude = {
+                buftypes = {},
+                filetypes = {},
+                when = function(context)
+                    if context.winid == other then
+                        contexts[context.renderer] = context
+                    end
+                    if fail then
+                        error("boom", 0)
+                    end
+                    return context.winid == other and context.renderer == "scrollbar"
+                end,
+            },
+            scrollbar = {
+                throttle_ms = 1000,
+                unit = "line",
+                mouse = false,
+                thumb = { text = "H", hide_if_all_visible = false },
+            },
+            minimap = { enabled = true, backend = "sync" },
+        })
+
+        local scrollbar = require("scrollbar.renderer")
+        local minimap = require("scrollbar.minimap.renderer")
+        local function render()
+            scrollbar.invalidate_source_selection()
+            minimap.invalidate_source_selection()
+            local scrollbar_scheduler = require("scrollbar.scheduler")
+            local minimap_scheduler = require("scrollbar.minimap.scheduler")
+            scrollbar_scheduler.invalidate_all()
+            scrollbar_scheduler.flush()
+            minimap_scheduler.invalidate_all()
+            -- A sync render can queue the window once more for its own cells.
+            for _ = 1, 5 do
+                if not minimap_scheduler.flush() then
+                    break
+                end
+            end
+        end
+        local function rendered()
+            return {
+                scrollbar = { editor = scrollbar.get_state(editor) ~= nil, other = scrollbar.get_state(other) ~= nil },
+                minimap = { editor = minimap.get_state(editor) ~= nil, other = minimap.get_state(other) ~= nil },
+            }
+        end
+
+        render()
+        local accepted = rendered()
+        local context = contexts.scrollbar
+
+        local notes = {}
+        rawset(vim, "notify", function(message, level)
+            notes[#notes + 1] = { message, level }
+        end)
+        fail = true
+        render()
+        render()
+        table.sort(notes, function(a, b)
+            return a[1] < b[1]
+        end)
+
+        return {
+            accepted = accepted,
+            context = {
+                renderer = context.renderer,
+                winid = context.winid == other,
+                bufnr = context.bufnr == other_buf,
+                filetype = context.filetype,
+                buftype = context.buftype,
+                bufname = context.bufname,
+            },
+            minimap_renderer = contexts.minimap.renderer,
+            failed = rendered(),
+            notes = notes,
+        }
+    end)
+
+    expect.equality(result.accepted, {
+        scrollbar = { editor = true, other = false },
+        minimap = { editor = true, other = true },
+    })
+    expect.equality(result.context, {
+        renderer = "scrollbar",
+        winid = true,
+        bufnr = true,
+        filetype = "excludetest",
+        buftype = "nofile",
+        bufname = "/tmp/scrollbar-exclude-when.txt",
+    })
+    expect.equality(result.minimap_renderer, "minimap")
+    expect.equality(result.failed, {
+        scrollbar = { editor = true, other = true },
+        minimap = { editor = true, other = true },
+    })
+    expect.equality(result.notes, {
+        { "[nvim-scrollbar] minimap exclude.when matcher failed: boom", vim.log.levels.ERROR },
+        { "[nvim-scrollbar] scrollbar exclude.when matcher failed: boom", vim.log.levels.ERROR },
+    })
+end
+
 return T

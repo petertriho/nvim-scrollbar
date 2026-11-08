@@ -270,6 +270,7 @@ T["accepts the complete typed runtime schema"] = function()
         buftypes = { terminal = true, nofile = true },
         filetypes = { prompt = true },
         unfocusable = true,
+        when = false,
     })
     expect.equality(plan().marks.options, { letters = false, numbers = true })
     expect.equality(plan().gitsigns.options, true)
@@ -620,8 +621,23 @@ T["exclude"]["a dense list replaces the defaults and an empty list clears them"]
     expect.equality(result.exclude.buftypes, { terminal = true })
 
     result = set_top({ exclude = { buftypes = {}, filetypes = {} } })
-    expect.equality(result.exclude, { buftypes = {}, filetypes = {}, unfocusable = true })
-    expect.equality(config.get_minimap().exclude, { buftypes = {}, filetypes = {}, unfocusable = true })
+    local empty = { buftypes = {}, filetypes = {}, unfocusable = true, when = false }
+    expect.equality(result.exclude, empty)
+    expect.equality(config.get_minimap().exclude, empty)
+end
+
+T["exclude"]["when is false or a function that both renderers share"] = function()
+    local config = require("scrollbar.config")
+    local function when()
+        return false
+    end
+    local result = set_top({ exclude = { when = when } })
+    expect.equality(result.exclude.when, when)
+    expect.equality(config.get_minimap().exclude.when, when)
+
+    result = set_top({ exclude = { when = false } })
+    expect.equality(result.exclude.when, false)
+    expect.equality(config.get_minimap().exclude.when, false)
 end
 
 T["exclude"]["unfocusable takes a boolean or a table of renderers"] = function()
@@ -660,6 +676,7 @@ T["exclude"]["rejects malformed entries"] = function()
     expect_invalid_top({ exclude = { unfocusable = "yes" } }, "exclude.unfocusable must be a boolean or table")
     expect_invalid_top({ exclude = { unfocusable = { other = true } } }, "unknown option 'exclude.unfocusable.other'")
     expect_invalid_top({ exclude = { unfocusable = { minimap = 1 } } }, "exclude.unfocusable.minimap must be a boolean")
+    expect_invalid_top({ exclude = { when = true } }, "exclude.when must be false or a function")
 end
 
 local ALL_EVENTS = {
