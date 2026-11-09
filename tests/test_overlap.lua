@@ -526,7 +526,8 @@ local function virtual_text_child()
         end
 
         -- Characters of the visible lines that end in the covered columns,
-        -- and pads that do not end their row.
+        -- and pads that do not end their row. With 'linebreak', a pad before
+        -- a 'breakat' character can end the row after that character.
         -- A `head` of false skips the check of the row starts.
         package.loaded["scrollbar.test.wrap_errors"] = function(win, covered, head)
             win = win == 0 and vim.api.nvim_get_current_win() or win
@@ -534,30 +535,59 @@ local function virtual_text_child()
             local info = vim.fn.getwininfo(win)[1]
             local width = info.width - info.textoff
             local state = require("scrollbar.wrap_padding").states[win]
+            local linebreak = vim.wo[win].linebreak
             local errors = {}
             local first, last = vim.fn.line("w0", win), vim.fn.line("w$", win)
             for lnum = first, last do
                 local line = vim.api.nvim_buf_get_lines(buf, lnum - 1, lnum, false)[1]
-                local padded = {}
-                for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(buf, state.ns, { lnum - 1, 0 }, { lnum - 1, -1 }, {})) do
-                    padded[mark[3] + 1] = true
+                -- The pad width at each padded column (1-based)
+                local pads = {}
+                local marks = vim.api.nvim_buf_get_extmarks(
+                    buf,
+                    state.ns,
+                    { lnum - 1, 0 },
+                    { lnum - 1, -1 },
+                    { details = true }
+                )
+                for _, mark in ipairs(marks) do
+                    pads[mark[3] + 1] = #mark[4].virt_text[1][1]
                 end
                 local col = 1
+                local after_break = false
                 while col <= #line do
                     local size = vim.str_utf_end(line, col) + 1
                     local byte = line:byte(col)
                     local range = vim.fn.virtcol({ lnum, col }, true, win)
                     local cells = vim.fn.strdisplaywidth(line:sub(col, col + size - 1))
-                    -- The start of a padded character is the start of its
-                    -- pad. The end of a character can include a 'linebreak'
-                    -- fill.
-                    local last_cell = padded[col] and range[2] or range[1] + cells - 1
-                    local start_cell = last_cell - cells + 1
+                    -- The range of a padded character starts with its pad.
+                    -- The end of a character can include a 'linebreak' fill.
+                    local pad = pads[col]
+                    local start_cell = range[1]
+                    if pad ~= nil then
+                        start_cell = range[1] + pad
+                        -- A pad that ends its row moves the character to the
+                        -- next row, after the cells of 'showbreak' and
+                        -- 'breakindent'.
+                        if (start_cell - 1) % width == 0 then
+                            start_cell = range[2] - cells + 1
+                        end
+                    end
+                    local last_cell = start_cell + cells - 1
                     if byte ~= 9 and byte ~= 32 and (last_cell - 1) % width + 1 > width - covered then
                         errors[#errors + 1] = string.format("line %d col %d in the covered columns", lnum, col)
                     end
-                    if head ~= false and padded[col] and (start_cell - 1) % width ~= (head or 0) then
-                        errors[#errors + 1] = string.format("line %d col %d does not start a row", lnum, col)
+                    local starts_row = (start_cell - 1) % width == (head or 0)
+                    if head ~= false and (pad ~= nil or after_break) and not starts_row then
+                        if pad ~= nil and linebreak and vim.o.breakat:find(line:sub(col, col), 1, true) then
+                            -- The word after the 'breakat' character must
+                            -- start the next row.
+                            after_break = true
+                        else
+                            errors[#errors + 1] = string.format("line %d col %d does not start a row", lnum, col)
+                            after_break = false
+                        end
+                    else
+                        after_break = false
                     end
                     col = col + size
                 end
@@ -702,11 +732,51 @@ T["virtual_text pads move a word with linebreak"] = function()
             before = before,
             after = require("scrollbar.test.pads")(0),
             errors = require("scrollbar.test.wrap_errors")(0, 2),
+            pad_before_break = vim.fn.has("nvim-0.13") == 1,
         }
     end, overlap_config(VIRTUAL_TEXT))
     expect.equality(result.before, { { 0, 78, 2 }, { 1, 78, 2 } })
-    -- Neovim moves the word of the second line, so it needs no pad.
-    expect.equality(result.after, { { 0, 75, 5 } })
+    -- Neovim moves the word of the second line, so it needs no pad. From
+    -- Neovim 0.13, the pad goes before the space, because Neovim counts a pad
+    -- at the first character of the word as a part of the word.
+    expect.equality(result.after, result.pad_before_break and { { 0, 74, 1 } } or { { 0, 75, 5 } })
+    expect.equality(result.errors, {})
+end
+
+T["virtual_text pads move a word after a 'breakat' character that shows"] = function()
+    local child = virtual_text_child()
+    local result = child.lua_func(function(config)
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, {
+            -- The word fits in 80 columns, but not in the 78 usable columns.
+            string.rep("w", 74) .. "-abcd efg",
+            -- A pad before the hyphen that moves the word would also move the
+            -- hyphen into the covered columns.
+            string.rep("w", 77) .. "-a b",
+            -- The word fits in the usable columns, but the hyphen after it
+            -- does not.
+            string.rep("w", 73) .. " xy  -abcdef",
+        })
+        vim.cmd("set linebreak")
+        local source_win = vim.api.nvim_get_current_win()
+        require("scrollbar.test.set_config")(config)
+        local renderer = require("scrollbar.renderer")
+        renderer.setup()
+        renderer.render(source_win)
+        return {
+            pads = require("scrollbar.test.pads")(0),
+            errors = require("scrollbar.test.wrap_errors")(0, 2),
+            pad_before_break = vim.fn.has("nvim-0.13") == 1,
+        }
+    end, overlap_config(VIRTUAL_TEXT))
+    if result.pad_before_break then
+        -- The hyphen of the first line stays after a blank cell. The hyphen
+        -- of the second line starts the next row. Neovim also counts a pad at
+        -- a 'breakat' character after a word, so the third line moves the
+        -- word with its hyphen.
+        expect.equality(result.pads, { { 0, 74, 1 }, { 1, 77, 3 }, { 2, 73, 2 } })
+    else
+        expect.equality(result.pads, { { 0, 75, 5 }, { 1, 78, 2 }, { 2, 78, 2 } })
+    end
     expect.equality(result.errors, {})
 end
 
