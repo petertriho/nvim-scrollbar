@@ -77,6 +77,7 @@ local WIDTH_LIMIT = 2048
 ---@field tab_cells integer? The cells of a tab that 'list' shows as `^I`
 ---@field blank_space boolean Whether a space shows as a blank cell
 ---@field showbreak integer Cells of 'showbreak'
+---@field showbreak_chars integer Characters of 'showbreak'
 ---@field breakindent boolean
 ---@field bri_shift integer
 ---@field bri_min integer
@@ -111,6 +112,11 @@ local NO_PADS = {}
 -- at the first character of a word then moves with the word, so the pad goes
 -- before the 'breakat' character in front of the word.
 local PAD_BEFORE_BREAK = vim.fn.has("nvim-0.13") == 1
+
+-- Neovim 0.13 measures a tab at the start of a continuation row from the
+-- virtual column before the 'showbreak' and 'breakindent' cells. Older
+-- versions take only the characters of 'showbreak' off that column.
+local TAB_BEFORE_HEAD = vim.fn.has("nvim-0.13") == 1
 
 -- The most passes over a 'linebreak' line from Neovim 0.13. A pass that must
 -- move a word that stays starts the next pass, and the last pass keeps its
@@ -386,6 +392,50 @@ local function word_cells(line, chars, count, start, vcol, after, limit, state)
     return cells, text, shown, last, index, tabbed
 end
 
+---The cells that Neovim takes off the virtual column of a tab at the start
+---of a continuation row, when the tab is not a 'linebreak' point.
+---@param continuation integer
+---@param state ScrollbarWrapPaddingState
+---@return integer
+local function row_tab_shift(continuation, state)
+    if TAB_BEFORE_HEAD then
+        return continuation
+    end
+    -- Neovim 0.12 takes 'showbreak' off only when it shows right before the
+    -- tab. With "sbr" in 'breakindentopt', the indent shows after it.
+    if state.bri_sbr and continuation ~= state.showbreak then
+        return 0
+    end
+    return state.showbreak_chars
+end
+
+---The cells of a tab at the start of a continuation row. Neovim measures a
+---tab at a 'linebreak' point from `vcol`, and other tabs from `vcol - shift`.
+---@param line string
+---@param chars string[]?
+---@param count integer
+---@param index integer The index of the tab
+---@param vcol integer The virtual column after the 'showbreak' and 'breakindent' cells
+---@param leading boolean Whether only 'breakat' characters come before the tab
+---@param shift integer From `row_tab_shift`
+---@param state ScrollbarWrapPaddingState
+---@return integer
+local function row_tab_cells(line, chars, count, index, vcol, leading, shift, state)
+    if shift ~= 0 then
+        local breakat = state.breakat
+        local point = breakat[9] == true and not leading and index < count
+        if point then
+            local next_character = chars and chars[index + 1] or nil
+            local next_byte = next_character and next_character:byte(1) or line:byte(index + 1)
+            point = not breakat[next_byte]
+        end
+        if not point then
+            vcol = vcol - shift
+        end
+    end
+    return character_cells(nil, 9, vcol, state)
+end
+
 ---The pads of a line of printable ASCII, which has one cell for each byte.
 ---@param line string
 ---@param state ScrollbarWrapPaddingState
@@ -498,10 +548,16 @@ local function linebreak_pads(line, chars, count, state, width, usable, continua
     -- before that character have `room` cells, and the character is at
     -- `quirk_vcol`.
     local staying, room, quirk_vcol = 0, 0, 0
+    local shift = row_tab_shift(continuation, state)
     for index = 1, count do
         local character = chars and chars[index] or nil
         local byte = character and character:byte(1) or line:byte(index)
-        local cells = character_cells(character, byte, vcol, state)
+        local cells
+        if byte == 9 and not filled and index > 1 then
+            cells = row_tab_cells(line, chars, count, index, vcol, leading, shift, state)
+        else
+            cells = character_cells(character, byte, vcol, state)
+        end
         -- A blank space in the covered columns hides no text.
         local blank = byte == 32 and state.blank_space
         if filled and col + cells > usable and not (blank and col + cells <= width) then
@@ -515,7 +571,7 @@ local function linebreak_pads(line, chars, count, state, width, usable, continua
             vcol = vcol + pad + continuation
             col = continuation
             if byte == 9 then
-                cells = character_cells(character, byte, vcol, state)
+                cells = row_tab_cells(line, chars, count, index, vcol, leading, shift, state)
             end
         end
         local is_break = breakat[byte] == true
@@ -674,10 +730,16 @@ local function line_pads(line, state)
     local filled = false
     local leading = true
     local pad_next = false
+    local shift = row_tab_shift(continuation, state)
     for index = 1, count do
         local character = chars and chars[index] or nil
         local byte = character and character:byte(1) or line:byte(index)
-        local cells = character_cells(character, byte, vcol, state)
+        local cells
+        if byte == 9 and not filled and index > 1 then
+            cells = row_tab_cells(line, chars, count, index, vcol, leading, shift, state)
+        else
+            cells = character_cells(character, byte, vcol, state)
+        end
         -- A blank space in the covered columns hides no text.
         local hidden_blank = byte == 32 and state.blank_space and col + cells <= width
         if filled and (pad_next or (col + cells > usable and not hidden_blank)) then
@@ -689,7 +751,7 @@ local function line_pads(line, state)
             vcol = vcol + math.max(pad, 0) + continuation
             col = continuation
             if byte == 9 then
-                cells = character_cells(character, byte, vcol, state)
+                cells = row_tab_cells(line, chars, count, index, vcol, leading, shift, state)
             end
         end
         pad_next = false
@@ -932,6 +994,7 @@ local function read_options(state, win)
         and (listchars:find("space:", 1, true) or listchars:find("lead:", 1, true) or listchars:find("trail:", 1, true))
     )
     state.showbreak = (showbreak == "" or showbreak == "NONE") and 0 or api.nvim_strwidth(showbreak)
+    state.showbreak_chars = state.showbreak == 0 and 0 or vim.fn.strchars(showbreak, 1)
     state.breakindent = breakindent
     parse_breakindentopt(state, briopt)
     state.linebreak = linebreak
@@ -1156,6 +1219,7 @@ M.apply = function(win, covered, text_width)
             tabstop = 8,
             blank_space = true,
             showbreak = 0,
+            showbreak_chars = 0,
             breakindent = false,
             bri_shift = 0,
             bri_min = 20,

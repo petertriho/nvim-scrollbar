@@ -786,6 +786,62 @@ T["virtual_text pads move a word after a 'breakat' character that shows"] = func
     expect.equality(result.errors, {})
 end
 
+T["virtual_text pads measure a tab that starts a continuation row"] = function()
+    local child = virtual_text_child()
+    local result = child.lua_func(function(config)
+        -- A pad moves the tab of each line to the start of the next row.
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, {
+            string.rep("a", 78) .. "\t" .. string.rep("b", 100),
+            -- The comma after the tab is a 'breakat' character, so the tab
+            -- is not a 'linebreak' point.
+            string.rep("a", 78) .. "\t," .. string.rep(string.rep("b", 22) .. " ", 4),
+            "    " .. string.rep("a", 74) .. "\t" .. string.rep("b", 100),
+        })
+        local source_win = vim.api.nvim_get_current_win()
+        require("scrollbar.test.set_config")(config)
+        local renderer = require("scrollbar.renderer")
+        renderer.setup()
+        renderer.render(source_win)
+        local check = require("scrollbar.test.wrap_errors")
+        local function pads_of(row)
+            local pads = {}
+            for _, pad in ipairs(require("scrollbar.test.pads")(0)) do
+                if pad[1] == row then
+                    pads[#pads + 1] = { pad[2], pad[3] }
+                end
+            end
+            return pads
+        end
+        local found = { tab_before_head = vim.fn.has("nvim-0.13") == 1, errors = {} }
+        -- Neovim measures the tab from the column before 'showbreak'.
+        vim.cmd("set showbreak=>>")
+        found.showbreak = pads_of(0)
+        found.errors.showbreak = check(0, 2, 2)
+        vim.cmd("set linebreak")
+        found.linebreak = pads_of(1)
+        found.errors.linebreak = check(0, 2, 2)
+        vim.cmd("set showbreak= nolinebreak breakindent")
+        found.breakindent = pads_of(2)
+        -- Neovim 0.12 and earlier measure the tab from the column after the
+        -- indent on the screen, but not in virtcol().
+        if found.tab_before_head then
+            found.errors.breakindent = check(0, 2, false)
+        end
+        return found
+    end, overlap_config(VIRTUAL_TEXT))
+    -- The tab gets 8 cells after 'showbreak', so 68 cells of text follow it.
+    expect.equality(result.showbreak, { { 78, 2 }, { 147, 2 } })
+    if result.tab_before_head then
+        expect.equality(result.linebreak, { { 78, 2 }, { 125, 1 } })
+        expect.equality(result.breakindent, { { 78, 2 }, { 145, 2 } })
+        expect.equality(result.errors, { showbreak = {}, linebreak = {}, breakindent = {} })
+    else
+        expect.equality(result.linebreak, { { 78, 2 }, { 126, 23 } })
+        expect.equality(result.breakindent, { { 78, 2 }, { 149, 2 } })
+        expect.equality(result.errors, { showbreak = {}, linebreak = {} })
+    end
+end
+
 T["virtual_text pads keep a blank space in the covered columns"] = function()
     local child = virtual_text_child()
     local result = child.lua_func(function(config)
