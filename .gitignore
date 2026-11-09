@@ -1,0 +1,5 @@
+/deps/
+/.direnv/
+/result
+.auto/
+/scripts/demo/out/

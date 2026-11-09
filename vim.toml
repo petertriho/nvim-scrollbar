@@ -1,2 +1,5 @@
 [vim]
 any = true
+
+[MiniTest]
+any = true
