@@ -755,6 +755,12 @@ T["virtual_text pads move a word after a 'breakat' character that shows"] = func
             -- The word fits in the usable columns, but the hyphen after it
             -- does not.
             string.rep("w", 73) .. " xy  -abcdef",
+            -- A pad before the hyphen would move the hyphen into the covered
+            -- columns, and the word in front of the hyphen stays.
+            string.rep("w", 73) .. " xyz-ab",
+            -- A pad before the second tab would move the tab into the covered
+            -- columns, and the word in front of the tab stays.
+            string.rep("w", 57) .. " ab\t\tabcdefg",
         })
         vim.cmd("set linebreak")
         local source_win = vim.api.nvim_get_current_win()
@@ -771,11 +777,11 @@ T["virtual_text pads move a word after a 'breakat' character that shows"] = func
     if result.pad_before_break then
         -- The hyphen of the first line stays after a blank cell. The hyphen
         -- of the second line starts the next row. Neovim also counts a pad at
-        -- a 'breakat' character after a word, so the third line moves the
-        -- word with its hyphen.
-        expect.equality(result.pads, { { 0, 74, 1 }, { 1, 77, 3 }, { 2, 73, 2 } })
+        -- a 'breakat' character after a word, so the other lines move the
+        -- word in front of the hyphen or the tab.
+        expect.equality(result.pads, { { 0, 74, 1 }, { 1, 77, 3 }, { 2, 73, 2 }, { 3, 73, 3 }, { 4, 57, 8 } })
     else
-        expect.equality(result.pads, { { 0, 75, 5 }, { 1, 78, 2 }, { 2, 78, 2 } })
+        expect.equality(result.pads, { { 0, 75, 5 }, { 1, 78, 2 }, { 2, 78, 2 }, { 3, 78, 2 }, { 4, 62, 8 } })
     end
     expect.equality(result.errors, {})
 end

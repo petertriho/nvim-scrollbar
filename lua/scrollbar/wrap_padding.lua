@@ -112,6 +112,11 @@ local NO_PADS = {}
 -- before the 'breakat' character in front of the word.
 local PAD_BEFORE_BREAK = vim.fn.has("nvim-0.13") == 1
 
+-- The most passes over a 'linebreak' line from Neovim 0.13. A pass that must
+-- move a word that stays starts the next pass, and the last pass keeps its
+-- pads.
+local MAX_PASSES = 8
+
 ---@type table<integer, table>
 local pad_texts = {}
 
@@ -339,12 +344,17 @@ end
 ---@return integer cells The cells with the 'breakat' characters after the word
 ---@return integer text The cells without them
 ---@return integer shown The cells without the blank spaces at the end, at the columns where Neovim shows them
+---@return integer last The cells of the last character, as `cells` counts them
+---@return integer stop The index of the first character after the counted characters
+---@return boolean tabbed Whether the counted characters include a tab
 local function word_cells(line, chars, count, start, vcol, after, limit, state)
     local breakat = state.breakat
     local blank_space = state.blank_space
-    local cells, text, shown, real = 0, 0, 0, 0
+    local cells, text, shown, real, last = 0, 0, 0, 0, 0
+    local tabbed = false
     local previous_break = true
-    for index = start, count do
+    local index = start
+    while index <= count do
         local character = chars and chars[index] or nil
         local byte = character and character:byte(1) or line:byte(index)
         local is_break = breakat[byte] == true
@@ -355,7 +365,9 @@ local function word_cells(line, chars, count, start, vcol, after, limit, state)
         -- character. Only a tab gets other cells at the column where it shows.
         local size = character_cells(character, byte, vcol + cells, state)
         cells = cells + size
+        last = size
         if byte == 9 then
+            tabbed = true
             size = character_cells(character, byte, after + real, state)
         end
         real = real + size
@@ -365,50 +377,13 @@ local function word_cells(line, chars, count, start, vcol, after, limit, state)
         if byte ~= 32 or not blank_space then
             shown = real
         end
+        index = index + 1
         if cells > limit then
             break
         end
         previous_break = is_break
     end
-    return cells, text, shown
-end
-
----The pad before a 'breakat' character that makes Neovim move the word after
----the character to the next row.
----@param character string?
----@param byte integer The first byte of the 'breakat' character
----@param col integer The cells of the row before the character
----@param vcol integer The virtual column of the character
----@param cells integer The cells of the character
----@param word integer The cells of the word, from `word_cells`
----@param width integer
----@param state ScrollbarWrapPaddingState
----@return integer pad
----@return integer cells The cells of the character after the pad
-local function break_pad(character, byte, col, vcol, cells, word, width, state)
-    local pad = width + 1 - col - cells - word
-    cells = character_cells(character, byte, vcol + pad, state)
-    -- A pad before a tab makes the tab narrower until the tab passes a tab
-    -- stop.
-    while col + pad + cells + word <= width do
-        pad = pad + 1
-        cells = character_cells(character, byte, vcol + pad, state)
-    end
-    return pad, cells
-end
-
----Add a pad. A pad at the column of the last pad joins it.
----@param pads integer[]
----@param byte_col integer
----@param cells integer
-local function add_pad(pads, byte_col, cells)
-    local count = #pads
-    if count > 0 and pads[count - 1] == byte_col then
-        pads[count] = pads[count] + cells
-    else
-        pads[count + 1] = byte_col
-        pads[count + 2] = cells
-    end
+    return cells, text, shown, last, index, tabbed
 end
 
 ---The pads of a line of printable ASCII, which has one cell for each byte.
@@ -432,14 +407,218 @@ local function plain_pads(line, state, usable, continuation)
     return pads
 end
 
+---The pad before a 'breakat' character that makes Neovim move the word after
+---the character to the next row. With the pad, a visible 'breakat' character
+---must end before the covered columns, and the word in front of it must
+---still fit in its row.
+---@param line string
+---@param chars string[]?
+---@param count integer
+---@param index integer The index of the 'breakat' character
+---@param col integer The cells of the row before the character
+---@param vcol integer The virtual column of the character
+---@param word integer The cells of the next word, from `word_cells`
+---@param tabbed boolean Whether the next word includes a tab
+---@param room integer? The cells for the character and the pad in the measure of the word in front, or nil when no word stays in front
+---@param quirk_vcol integer The virtual column of the character in that measure
+---@param width integer
+---@param usable integer
+---@param state ScrollbarWrapPaddingState
+---@return integer? pad Nil when no pad meets each condition
+---@return integer cells The cells of the character after the pad
+local function move_pad(line, chars, count, index, col, vcol, word, tabbed, room, quirk_vcol, width, usable, state)
+    local character = chars and chars[index] or nil
+    local byte = character and character:byte(1) or line:byte(index)
+    local blank = byte == 32 and state.blank_space
+    local pad = width + 1 - col - character_cells(character, byte, vcol, state) - word
+    while pad <= width - col do
+        local cells = character_cells(character, byte, vcol + pad, state)
+        local moves = col + pad + cells + word > width
+        if moves and tabbed then
+            -- The redraw measures the word from the column after the pad, so
+            -- its tabs can get other cells.
+            local drawn = word_cells(line, chars, count, index + 1, vcol + pad, vcol + pad + cells, width, state)
+            moves = col + pad + cells + drawn > width
+        end
+        if moves then
+            -- A larger pad moves the character further, so it cannot help.
+            if not blank and col + pad + cells > usable then
+                return nil, 0
+            end
+            if room ~= nil and pad + character_cells(character, byte, quirk_vcol + pad, state) > room then
+                return nil, 0
+            end
+            return pad, cells
+        end
+        pad = pad + 1
+    end
+    return nil, 0
+end
+
+---Add a pad. A pad at the column of the last pad joins it.
+---@param pads integer[]
+---@param byte_col integer
+---@param cells integer
+local function add_pad(pads, byte_col, cells)
+    local count = #pads
+    if count > 0 and pads[count - 1] == byte_col then
+        pads[count] = pads[count] + cells
+    else
+        pads[count + 1] = byte_col
+        pads[count + 2] = cells
+    end
+end
+
+---The pads of a line with 'linebreak' from Neovim 0.13. For 'linebreak',
+---Neovim counts the pads in a word and in the 'breakat' characters after it.
+---Thus a pad that moves a word goes before the 'breakat' character in front
+---of the word. When a word stays on the row of its 'breakat' character, no
+---pad in the word may make Neovim move it. When no pad can then move the next
+---word, the word in front must move: the caller runs the line again with the
+---'breakat' character of that word in `forced`.
+---@param line string
+---@param chars string[]?
+---@param count integer
+---@param state ScrollbarWrapPaddingState
+---@param width integer
+---@param usable integer
+---@param continuation integer
+---@param forced table<integer, true>? The 'breakat' characters whose word must move
+---@param last_pass boolean Whether the pass keeps a pad that moves a word that stays
+---@return integer[]? pads Nil when a word must move
+---@return integer index The 'breakat' character of that word
+local function linebreak_pads(line, chars, count, state, width, usable, continuation, forced, last_pass)
+    local breakat = state.breakat
+    local pads = {}
+    local col, vcol, byte_col = 0, 0, 0
+    local filled = false
+    local leading = true
+    -- The index of the 'breakat' character in front of the word that stays on
+    -- its row, or 0. In the measure of that word, its last character and a pad
+    -- before that character have `room` cells, and the character is at
+    -- `quirk_vcol`.
+    local staying, room, quirk_vcol = 0, 0, 0
+    for index = 1, count do
+        local character = chars and chars[index] or nil
+        local byte = character and character:byte(1) or line:byte(index)
+        local cells = character_cells(character, byte, vcol, state)
+        -- A blank space in the covered columns hides no text.
+        local blank = byte == 32 and state.blank_space
+        if filled and col + cells > usable and not (blank and col + cells <= width) then
+            -- The pad would make Neovim move the word that stays.
+            if staying ~= 0 and not last_pass then
+                return nil, staying
+            end
+            local pad = width - col
+            pads[#pads + 1] = byte_col
+            pads[#pads + 1] = pad
+            vcol = vcol + pad + continuation
+            col = continuation
+            if byte == 9 then
+                cells = character_cells(character, byte, vcol, state)
+            end
+        end
+        local is_break = breakat[byte] == true
+        leading = leading and is_break
+        local point = false
+        if not leading and is_break and index < count then
+            local next_character = chars and chars[index + 1] or nil
+            local next_byte = next_character and next_character:byte(1) or line:byte(index + 1)
+            point = not breakat[next_byte]
+        end
+        if point then
+            local stays = false
+            local force = forced ~= nil and forced[index] == true
+            -- A second pass measures the word again after this character
+            -- moves to the next row.
+            for _ = 1, 2 do
+                local word, _, shown, last, stop, tabbed =
+                    word_cells(line, chars, count, index + 1, vcol, vcol + cells, width, state)
+                if col + cells + word > width then
+                    -- Neovim fills the rest of the row after this character,
+                    -- and the word starts the next row.
+                    cells = math.max(cells, width - col)
+                    break
+                end
+                if col + cells + shown <= usable and not force then
+                    stays = true
+                    room = width - col - cells - (word - last)
+                    quirk_vcol = vcol + word - last
+                    -- The last counted character is the next 'breakat'
+                    -- character when a word follows it.
+                    staying = stop <= count and index or 0
+                    break
+                end
+                local pad, padded = move_pad(
+                    line,
+                    chars,
+                    count,
+                    index,
+                    col,
+                    vcol,
+                    word,
+                    tabbed,
+                    staying ~= 0 and room or nil,
+                    quirk_vcol,
+                    width,
+                    usable,
+                    state
+                )
+                if pad ~= nil then
+                    add_pad(pads, byte_col, pad)
+                    col = col + pad
+                    vcol = vcol + pad
+                    -- Neovim fills the rest of the row after this character.
+                    cells = math.max(padded, width - col)
+                    break
+                end
+                if staying ~= 0 and not last_pass then
+                    return nil, staying
+                end
+                if not filled or col == continuation then
+                    -- The character already starts a row. In a row this
+                    -- narrow, the character can be in the covered columns.
+                    pad = width + 1 - col - cells - word
+                    add_pad(pads, byte_col, pad)
+                    col = col + pad
+                    vcol = vcol + pad
+                    cells = math.max(cells, width - col)
+                    break
+                end
+                -- No word stays in front of this character, so a pad before
+                -- it moves only this character to the next row.
+                pad = width - col
+                add_pad(pads, byte_col, pad)
+                vcol = vcol + pad + continuation
+                col = continuation
+                cells = character_cells(character, byte, vcol, state)
+                -- The word moved with this character.
+                force = false
+            end
+            if not stays then
+                staying = 0
+            end
+        end
+        col = col + cells
+        vcol = vcol + cells
+        byte_col = byte_col + (character and #character or 1)
+        filled = true
+        -- A full row continues on the next row without a pad. A character
+        -- wider than the rest of the row, such as a long tab, continues there.
+        while col >= width do
+            col = continuation + col - width
+            vcol = vcol + continuation
+            filled = col > continuation
+        end
+    end
+    return pads, 0
+end
+
 ---The pads of one line: the byte column (0-based) and the width of each pad,
 ---in pairs. Each pad fills the rest of a screen row whose next character
 ---does not fit before the covered columns. With 'linebreak', a pad also
 ---moves a word that does not fit to the next row, where Neovim would move it
----for the full width. Before Neovim 0.13, that pad is at the first character
----of the word. From Neovim 0.13, it is before the 'breakat' character in
----front of the word, and Neovim fills the rest of the row after that
----character.
+---for the full width.
 ---@param line string
 ---@param state ScrollbarWrapPaddingState
 ---@return integer[]
@@ -461,10 +640,32 @@ local function line_pads(line, state)
             return pads
         end
     end
-    local pads = {}
 
     local chars = characters(line)
     local count = chars and #chars or length
+    if PAD_BEFORE_BREAK and state.linebreak then
+        local pads, index = linebreak_pads(line, chars, count, state, width, usable, continuation, nil, false)
+        local forced = nil
+        local passes = 1
+        while pads == nil do
+            -- After the word of `index` moves, the words after it can stay.
+            local next_forced = { [index] = true }
+            if forced ~= nil then
+                for point in pairs(forced) do
+                    if point < index then
+                        next_forced[point] = true
+                    end
+                end
+            end
+            forced = next_forced
+            passes = passes + 1
+            pads, index =
+                linebreak_pads(line, chars, count, state, width, usable, continuation, forced, passes == MAX_PASSES)
+        end
+        return #pads == 0 and NO_PADS or pads
+    end
+
+    local pads = {}
     local breakat = state.linebreak and state.breakat or nil
     -- `col` counts the cells of the current screen row. `vcol` is the
     -- virtual column, which also counts the pads and the cells before the
@@ -473,53 +674,13 @@ local function line_pads(line, state)
     local filled = false
     local leading = true
     local pad_next = false
-    -- Whether the current word follows its 'breakat' character on the same
-    -- row. From Neovim 0.13, a pad in such a word, or at the 'breakat'
-    -- character after it, makes Neovim move the word to the next row.
-    local follows_break = false
     for index = 1, count do
         local character = chars and chars[index] or nil
         local byte = character and character:byte(1) or line:byte(index)
         local cells = character_cells(character, byte, vcol, state)
-        -- The word after a 'breakat' character, which 'linebreak' can move.
-        -- From Neovim 0.13, the 'breakat' characters after the word also
-        -- decide whether it fits, because a pad there moves the word.
-        local word, text, shown
-        if breakat ~= nil then
-            local is_break = breakat[byte] == true
-            leading = leading and is_break
-            if not leading and is_break and index < count then
-                local next_character = chars and chars[index + 1] or nil
-                local next_byte = next_character and next_character:byte(1) or line:byte(index + 1)
-                if not breakat[next_byte] then
-                    word, text, shown = word_cells(line, chars, count, index + 1, vcol, vcol + cells, width, state)
-                    if PAD_BEFORE_BREAK then
-                        text = shown
-                    end
-                end
-            end
-        end
         -- A blank space in the covered columns hides no text.
-        local blank = byte == 32 and state.blank_space
-        local wrap = filled and (pad_next or (col + cells > usable and not (blank and col + cells <= width)))
-        if
-            PAD_BEFORE_BREAK
-            and word ~= nil
-            and filled
-            and not wrap
-            and not follows_break
-            and not blank
-            and col + cells + word <= width
-            and col + cells + text > usable
-        then
-            -- When the pad that moves the word would also move this character
-            -- into the covered columns, this character starts the next row.
-            -- After a word that follows its 'breakat' character, that pad
-            -- would also move the word, so the character stays.
-            local pad, padded = break_pad(character, byte, col, vcol, cells, word, width, state)
-            wrap = col + pad + padded > usable
-        end
-        if wrap then
+        local hidden_blank = byte == 32 and state.blank_space and col + cells <= width
+        if filled and (pad_next or (col + cells > usable and not hidden_blank)) then
             local pad = width - col
             if pad > 0 then
                 pads[#pads + 1] = byte_col
@@ -530,32 +691,24 @@ local function line_pads(line, state)
             if byte == 9 then
                 cells = character_cells(character, byte, vcol, state)
             end
-            if word ~= nil then
-                word, text, shown = word_cells(line, chars, count, index + 1, vcol, vcol + cells, width, state)
-                if PAD_BEFORE_BREAK then
-                    text = shown
-                end
-            end
         end
         pad_next = false
-        if word ~= nil then
-            follows_break = false
-            if col + cells + word > width then
-                -- Neovim fills the rest of the row after this character, and
-                -- the word starts the next row.
-                cells = math.max(cells, width - col)
-            elseif col + cells + text > usable then
-                if PAD_BEFORE_BREAK then
-                    local pad, padded = break_pad(character, byte, col, vcol, cells, word, width, state)
-                    add_pad(pads, byte_col, pad)
-                    col = col + pad
-                    vcol = vcol + pad
-                    cells = math.max(padded, width - col)
-                else
-                    pad_next = true
+        if breakat ~= nil then
+            local is_break = breakat[byte] == true
+            leading = leading and is_break
+            if not leading and is_break and index < count then
+                local next_character = chars and chars[index + 1] or nil
+                local next_byte = next_character and next_character:byte(1) or line:byte(index + 1)
+                if not breakat[next_byte] then
+                    local word, text = word_cells(line, chars, count, index + 1, vcol, vcol + cells, width, state)
+                    if col + cells + word > width then
+                        -- Neovim fills the rest of the row after this
+                        -- character, and the word starts the next row.
+                        cells = math.max(cells, width - col)
+                    elseif col + cells + text > usable then
+                        pad_next = true
+                    end
                 end
-            else
-                follows_break = true
             end
         end
         col = col + cells

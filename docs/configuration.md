@@ -315,8 +315,9 @@ row. The scrollbar covers no text.
   scrollbar to the next row. Neovim 0.13 counts the pads in a word and in the
   `'breakat'` characters after it as a part of the word. Thus the pad goes
   before the `'breakat'` character in front of the word. A blank cell can then
-  show before a `'breakat'` character such as `-`, or the character can start
-  the next row with the word.
+  show before a `'breakat'` character such as `-`. When the pad would move
+  that character under the scrollbar, the character, or the word in front of
+  it, also moves to the next row.
 - The plugin removes the pads in the same cases in which it restores an option.
 
 The pads have these limits:
@@ -325,10 +326,6 @@ The pads have these limits:
   virtual text such as LSP inlay hints, the `list` and `column` items of
   `'breakindentopt'`, or the `n` flag of `'cpoptions'`. On a line with one of
   these, a row can end too early, or text can be under the scrollbar.
-- With `'linebreak'` in Neovim 0.13, a `'breakat'` character such as `-` can
-  be under the scrollbar when the word after it is not wider than the
-  scrollbar. When a tab is the `'breakat'` character in front of a word, a
-  pad can show in the middle of a row.
 - The pads are part of the virtual columns. On a wrapped line after a pad,
   `'colorcolumn'`, `'cursorcolumn'`, `virtcol()`, and the `|` command count the
   pad cells.
