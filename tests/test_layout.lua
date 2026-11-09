@@ -82,6 +82,49 @@ T["normalized geometry keeps a minimum one-row handle for large documents"] = fu
     expect.equality(geometry.handle.first_row, geometry.handle.last_row)
 end
 
+T["handle keeps one size while a viewport of constant span scrolls"] = function()
+    local failures = {}
+    for _, case in ipairs({ { 357, 50 }, { 357, 22 }, { 1000, 40 }, { 200, 10 }, { 100000, 50 } }) do
+        local total, height = case[1], case[2]
+        local sizes = {}
+        for start = 0, total - height do
+            local stop = start + height - 1
+            local handle = layout.handle_geometry(start, stop, total, height)
+            sizes[handle.last_row - handle.first_row + 1] = true
+            local problems = {}
+            -- The rows of all the visible lines are inside the handle.
+            if layout.map_position(start, total, height) < handle.first_row then
+                problems[#problems + 1] = "first line above"
+            end
+            if layout.map_position(stop, total, height) > handle.last_row then
+                problems[#problems + 1] = "last line below"
+            end
+            if start == 0 and handle.first_row ~= 0 then
+                problems[#problems + 1] = "top not at row 0"
+            end
+            if stop == total - 1 and handle.last_row ~= height - 1 then
+                problems[#problems + 1] = "bottom not at the last row"
+            end
+            if #problems > 0 then
+                failures[#failures + 1] = ("total=%d height=%d start=%d: %s"):format(
+                    total,
+                    height,
+                    start,
+                    table.concat(problems, ", ")
+                )
+            end
+        end
+        if vim.tbl_count(sizes) ~= 1 then
+            failures[#failures + 1] = ("total=%d height=%d: %d handle sizes"):format(
+                total,
+                height,
+                vim.tbl_count(sizes)
+            )
+        end
+    end
+    expect.equality(failures, {})
+end
+
 T["normalized geometry accepts cached mark rows while recomputing the viewport handle"] = function()
     local marks = { mark(0), mark(50), mark(99) }
     local mark_rows = layout.normalized_mark_rows({ height = 10, line_count = 100, marks = marks })
@@ -1097,8 +1140,8 @@ T["screen geometry reuses the mark rows on a scroll in a folded window"] = funct
 
     expect.equality(result.moved, true)
     expect.equality(result.same_rows, true)
-    -- The two calls map the handle. The mark rows come from the cache.
-    expect.equality(result.calls, 2)
+    -- The one call maps the handle. The mark rows come from the cache.
+    expect.equality(result.calls, 1)
 end
 
 T["screen geometry follows a fold that moves to another chunk"] = function()

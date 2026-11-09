@@ -3939,9 +3939,9 @@ T["window"]["keeps the frame inside the text area and shortens the track"] = fun
         expect.equality(case.footprint_width, case.width + 2)
     end
     -- The thumb covers the 10 visible lines of 15 on both units. A viewport of
-    -- 8 rows would end the thumb at row 3.
+    -- 8 rows would end the thumb at row 4.
     expect.equality(result.screenline.handle, result.line.handle)
-    expect.equality(result.line.handle.last_row, 4)
+    expect.equality(result.line.handle.last_row, 5)
     expect.equality(result.south.row, 10)
     expect.equality(result.south.height, 8)
 end

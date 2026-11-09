@@ -684,7 +684,7 @@ T["drags from the translated east handle column"] = function()
     expect.equality(setup.handle.column, 3)
 
     drag(child, setup, setup.handle.first_row, 5, setup.handle.column)
-    expect.equality(child.api.nvim_win_get_cursor(setup.source_win)[1], 112)
+    expect.equality(child.api.nvim_win_get_cursor(setup.source_win)[1], 134)
 end
 
 T["keeps a mark-over-handle press as an exact mark click without movement"] = function()
@@ -726,7 +726,7 @@ T["turns a mark-over-handle press into a handle drag after movement"] = function
     local active = child.lua_get([[require("scrollbar.mouse").get_interaction()]])
     expect.equality(active.dragging, true)
     input_mouse(child, "release", setup.position[1] + 5, screen_col)
-    expect.equality(child.api.nvim_win_get_cursor(setup.source_win)[1], 112)
+    expect.equality(child.api.nvim_win_get_cursor(setup.source_win)[1], 134)
     expect.equality(child.api.nvim_get_current_win(), setup.source_win)
 end
 
@@ -795,11 +795,11 @@ T["drags to top middle and bottom while preserving the handle grab offset"] = fu
         config = mouse_config(),
     })
     expect.equality(setup.handle.first_row, 0)
-    expect.equality(setup.handle.last_row, 2)
+    expect.equality(setup.handle.last_row, 3)
 
     local cases = {
         { release_row = 0, expected_line = 1 },
-        { release_row = 5, expected_line = 17 },
+        { release_row = 5, expected_line = 20 },
         { release_row = 9, expected_line = 30 },
     }
     for _, case in ipairs(cases) do

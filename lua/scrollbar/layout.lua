@@ -35,8 +35,22 @@ M.handle_geometry = function(viewport_start, viewport_end, total_extent, height)
     end
 
     local first_row = M.map_position(viewport_start, total_extent, height)
-    local last_row = M.map_position(math.max(viewport_start, viewport_end), total_extent, height)
-    return { first_row = first_row, last_row = math.max(first_row, last_row) }
+    if total_extent <= height or height <= 1 then
+        -- Each line has its own row, so the handle keeps its size.
+        local last_row = M.map_position(math.max(viewport_start, viewport_end), total_extent, height)
+        return { first_row = first_row, last_row = math.max(first_row, last_row) }
+    end
+    -- The viewport spans `d` track rows, and `d` is usually fractional. When
+    -- the rows of the two ends are rounded down separately, they are
+    -- `floor(d)` or `ceil(d)` rows apart, depending on the scroll position.
+    -- The handle then changes size by one row during a scroll. The handle
+    -- always takes the `ceil(d)` size, so it holds the rows of all the visible
+    -- lines. At the end of the document, it moves up to stay in the track.
+    local maximum = total_extent - 1
+    local distance = math.max(0, math.min(viewport_end, maximum) - viewport_start)
+    local size = math.min(height, math.floor((distance * (height - 1) + maximum - 1) / maximum) + 1)
+    first_row = math.min(first_row, height - size)
+    return { first_row = first_row, last_row = first_row + size - 1 }
 end
 
 -- Returns the smallest line value whose display row is >= r for the given

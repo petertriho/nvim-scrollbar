@@ -419,7 +419,7 @@ T["the snacks list bar follows the list position, not the buffer"] = function()
     end, float_config())
 
     expect.equality(result.top, {
-        handle = { 0, 0 },
+        handle = { 0, 1 },
         geometry = { unit = "line", total_extent = 100, viewport_start = 0, viewport_end = 9 },
     })
     expect.equality(result.middle, {
@@ -938,7 +938,7 @@ T["a click on the snacks list track moves the list"] = function()
         })
     )
 
-    expect.equality(result.handle, { 0, 0 })
+    expect.equality(result.handle, { 0, 1 })
     child.api.nvim_input_mouse("left", "press", "", 0, result.row, result.col)
     vim.uv.sleep(30)
     child.api.nvim_input_mouse("left", "release", "", 0, result.row, result.col)
