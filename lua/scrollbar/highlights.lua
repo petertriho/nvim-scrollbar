@@ -75,22 +75,104 @@ local function get_highlight(name)
     return ok and highlight or nil
 end
 
+---@param highlight? vim.api.keyset.get_hl_info
 ---@param property "fg" | "bg"
-M.highlight_to_hex_color = function(hl, property, fallback_hl, fallback_hex)
-    local highlight = get_highlight(hl) or get_highlight(fallback_hl)
-
-    local hex_color = fallback_hex
-    if highlight ~= nil then
-        local color = highlight[property]
-        if color then
-            local hex_ok
-            hex_ok, hex_color = pcall(M.to_hex_color, color)
-            if not hex_ok then
-                hex_color = fallback_hex
-            end
+---@param fallback_hex string
+---@return string
+local function hex_color(highlight, property, fallback_hex)
+    local color = highlight and highlight[property]
+    if color then
+        local ok, hex = pcall(M.to_hex_color, color)
+        if ok then
+            return hex
         end
     end
-    return hex_color
+    return fallback_hex
+end
+
+---@param property "fg" | "bg"
+M.highlight_to_hex_color = function(hl, property, fallback_hl, fallback_hex)
+    return hex_color(get_highlight(hl) or get_highlight(fallback_hl), property, fallback_hex)
+end
+
+-- The levels of the 6x6x6 color cube of the 256-color palette
+local CUBE_LEVELS = { 0, 95, 135, 175, 215, 255 }
+
+---@param value integer A channel from 0 to 255
+---@return integer index From 0 to 5
+local function cube_index(value)
+    if value < 48 then
+        return 0
+    end
+    if value < 115 then
+        return 1
+    end
+    return math.min(5, math.floor((value - 35) / 40))
+end
+
+--- The nearest color of the 256-color palette. The result is never one of the
+--- 16 system colors, because each terminal defines those colors differently.
+---@param color integer|string An RGB integer, `#rrggbb`, or a color name
+---@return integer?
+M.palette_color = function(color)
+    if type(color) == "string" then
+        color = vim.api.nvim_get_color_by_name(color)
+    end
+    if type(color) ~= "number" or color < 0 then
+        return nil
+    end
+    local red = math.floor(color / 65536) % 256
+    local green = math.floor(color / 256) % 256
+    local blue = color % 256
+    local r, g, b = cube_index(red), cube_index(green), cube_index(blue)
+    local cube_distance = (CUBE_LEVELS[r + 1] - red) ^ 2
+        + (CUBE_LEVELS[g + 1] - green) ^ 2
+        + (CUBE_LEVELS[b + 1] - blue) ^ 2
+    -- The gray ramp, 232 to 255, has the levels 8, 18, ..., 238.
+    local gray = math.max(0, math.min(23, math.floor(((red + green + blue) / 3 - 8) / 10 + 0.5)))
+    local level = 8 + 10 * gray
+    local gray_distance = (level - red) ^ 2 + (level - green) ^ 2 + (level - blue) ^ 2
+    if gray_distance < cube_distance then
+        return 232 + gray
+    end
+    return 16 + 36 * r + 6 * g + b
+end
+
+--- The color number of one channel without 'termguicolors'. With
+--- `cterm.reverse`, the terminal swaps the two channels.
+---@param highlight vim.api.keyset.get_hl_info|vim.api.keyset.highlight
+---@param property "fg" | "bg"
+---@return integer?
+local function cterm_color(highlight, property)
+    local cterm = highlight.cterm
+    local reverse = type(cterm) == "table" and cterm.reverse == true
+    local color
+    if (property == "bg") == reverse then
+        color = highlight.ctermfg
+    else
+        color = highlight.ctermbg
+    end
+    return type(color) == "number" and color or nil
+end
+
+--- One channel of a group: the GUI color, and the color number for a terminal
+--- without 'termguicolors'. When the group has no color number for the
+--- channel, the number is the nearest palette color to the GUI color. The
+--- definition does not copy `cterm.reverse`, because a generated group
+--- combines with the groups below it, and a blended cell drops the attribute.
+---@param name string
+---@param property "fg" | "bg"
+---@param fallback_hl string The group to read when `name` does not exist
+---@param fallback_hex string The GUI color when the group has none
+---@return vim.api.keyset.highlight
+M.channel_definition = function(name, property, fallback_hl, fallback_hex)
+    local highlight = get_highlight(name) or get_highlight(fallback_hl)
+    local hex = hex_color(highlight, property, fallback_hex)
+    local cterm = highlight and cterm_color(highlight, property) or M.palette_color(hex)
+    if property == "fg" then
+        return { fg = hex, ctermfg = cterm }
+    end
+    return { bg = hex, ctermbg = cterm }
 end
 
 local function background_highlight(source, blend, fallback_hl, fallback_hex)
@@ -102,9 +184,7 @@ local function background_highlight(source, blend, fallback_hl, fallback_hex)
         return highlight
     end
 
-    local highlight = {
-        bg = M.highlight_to_hex_color(source, "bg", fallback_hl, fallback_hex),
-    }
+    local highlight = M.channel_definition(source, "bg", fallback_hl, fallback_hex)
     if blend ~= nil then
         highlight.blend = blend
     end
@@ -123,16 +203,18 @@ end
 ---@param blend integer
 ---@return vim.api.keyset.highlight
 local function tint_highlight(mark, blend)
-    local color = mark.fg or mark.bg
+    ---@type vim.api.keyset.highlight|vim.api.keyset.get_hl_info
+    local source = mark
     local link = mark.link
-    if color == nil and type(link) == "string" then
-        local linked = get_highlight(link)
-        color = linked and (linked.fg or linked.bg)
+    if mark.fg == nil and mark.bg == nil and type(link) == "string" then
+        source = get_highlight(link) or {}
     end
+    local color = source.fg or source.bg
     if color == nil then
         color = M.highlight_to_hex_color("Normal", "fg", "Normal", "#ffffff")
     end
-    return { bg = color, blend = blend }
+    local cterm = cterm_color(source, "fg") or cterm_color(source, "bg") or M.palette_color(color)
+    return { bg = color, ctermbg = cterm, blend = blend }
 end
 
 local function mark_highlight(properties)
@@ -140,9 +222,7 @@ local function mark_highlight(properties)
         return vim.deepcopy(properties.highlight)
     end
 
-    return {
-        fg = M.highlight_to_hex_color(properties.highlight, "fg", "Normal", "#000000"),
-    }
+    return M.channel_definition(properties.highlight, "fg", "Normal", "#000000")
 end
 
 local function generated_name(public_name)

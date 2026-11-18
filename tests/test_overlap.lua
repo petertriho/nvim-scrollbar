@@ -211,16 +211,16 @@ T["show_through blends the track, the thumb, and the base"] = function()
     end)
 
     expect.equality(result.base, { blend = 100, sp = 0 })
-    expect.equality(result.track, { bg = 0x112233, blend = 60 })
+    expect.equality(result.track, { bg = 0x112233, ctermbg = 235, blend = 60 })
     -- The thumb shows the text at least as much as the track.
-    expect.equality(result.thumb, { bg = 0x445566, blend = 60 })
-    expect.equality(result.tint, { bg = 0xFF0000, blend = 60 })
+    expect.equality(result.thumb, { bg = 0x445566, ctermbg = 240, blend = 60 })
+    expect.equality(result.tint, { bg = 0xFF0000, ctermbg = 196, blend = 60 })
     expect.equality(result.surface, { blend = 60, sp = 0 })
     expect.equality(result.clear, { blend = 100, sp = 0 })
     expect.equality(result.profile_base, { blend = 100, sp = 0 })
-    expect.equality(result.profile_track, { bg = 0x112233, blend = 20 })
-    expect.equality(result.profile_thumb, { bg = 0x445566, blend = 80 })
-    expect.equality(result.profile_tint, { bg = 0xFF0000, blend = 20 })
+    expect.equality(result.profile_track, { bg = 0x112233, ctermbg = 235, blend = 20 })
+    expect.equality(result.profile_thumb, { bg = 0x445566, ctermbg = 240, blend = 80 })
+    expect.equality(result.profile_tint, { bg = 0xFF0000, ctermbg = 196, blend = 20 })
 end
 
 T["the blend-only groups exist without automatic highlights"] = function()

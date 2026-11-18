@@ -17,6 +17,21 @@ colorscheme definitions.
   override it for one renderer.
 - The plugin uses a table as a direct `nvim_set_hl()` definition.
 
+A resolved color has a GUI color and a color number for a terminal without
+`'termguicolors'`:
+
+- The number is the `ctermbg` or the `ctermfg` of the group. When the group
+  sets `cterm.reverse`, the terminal swaps the two, so the background comes
+  from `ctermfg` and the foreground comes from `ctermbg`.
+- When the group has no number for the channel, the plugin uses the nearest
+  color of the 256-color palette to the GUI color. Thus the default track and
+  thumb show also when `PmenuSbar` and `PmenuThumb` have no cterm colors.
+- The plugin does not copy `cterm.reverse`. A generated group combines with
+  the groups below it, and Neovim drops the attribute in a cell that blends.
+
+A table keeps its own cterm keys. Without `ctermfg` or `ctermbg`, the table has
+no color without `'termguicolors'`.
+
 ```lua
 require("scrollbar").setup({
     marks = {

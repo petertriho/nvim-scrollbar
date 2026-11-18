@@ -614,13 +614,13 @@ T["generates overlay highlights through user-preserving public links"] = functio
 
     expect.no_equality(result.search_target:match("^ScrollbarMinimapGenerated%."), nil)
     expect.no_equality(result.direct_target:match("^ScrollbarMinimapGenerated%."), nil)
-    expect.equality(result.first.search, { fg = 0x123456 })
+    expect.equality(result.first.search, { fg = 0x123456, ctermfg = 23 })
     expect.equality(result.first.direct, { fg = 0xABCDEF, bold = true, cterm = { bold = true } })
     expect.equality(result.second.search_target, result.search_target)
     expect.equality(result.second.direct_target, result.direct_target)
-    expect.equality(result.second.search, { fg = 0x234567 })
+    expect.equality(result.second.search, { fg = 0x234567, ctermfg = 23 })
     expect.equality(result.second.direct, result.first.direct)
-    expect.equality(result.refreshed_private, { fg = 0x234567 })
+    expect.equality(result.refreshed_private, { fg = 0x234567, ctermfg = 23 })
     expect.equality(result.preserved_after, result.preserved_before)
     expect.equality(result.public_override, {
         fg = 0x556677,

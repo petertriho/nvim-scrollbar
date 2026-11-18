@@ -12,9 +12,7 @@ local function definition(source)
     if type(source) == "table" then
         return vim.deepcopy(source)
     end
-    return {
-        fg = highlights.highlight_to_hex_color(source, "fg", "Normal", "#000000"),
-    }
+    return highlights.channel_definition(source, "fg", "Normal", "#000000")
 end
 
 local function generated_name(public_name)

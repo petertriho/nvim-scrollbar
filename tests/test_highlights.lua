@@ -55,12 +55,13 @@ T["generates canonical Thumb groups transparent base and equivalent Handle alias
     end, base_config())
 
     expect.equality(result.base, { blend = 0, sp = 0 })
-    expect.equality(result.track, { bg = 0x112233, blend = 0 })
-    expect.equality(result.thumb, { bg = 0x445566, blend = 30 })
-    expect.equality(result.thumb_pressed, { bg = 0x778899, blend = 30 })
-    expect.equality(result.mark, { fg = 0xABCDEF })
-    expect.equality(result.overlap, { fg = 0xABCDEF, bg = 0x445566, blend = 30 })
-    expect.equality(result.overlap_pressed, { fg = 0xABCDEF, bg = 0x778899, blend = 30 })
+    -- A source without cterm colors gives the nearest palette colors.
+    expect.equality(result.track, { bg = 0x112233, ctermbg = 235, blend = 0 })
+    expect.equality(result.thumb, { bg = 0x445566, ctermbg = 240, blend = 30 })
+    expect.equality(result.thumb_pressed, { bg = 0x778899, ctermbg = 102, blend = 30 })
+    expect.equality(result.mark, { fg = 0xABCDEF, ctermfg = 153 })
+    expect.equality(result.overlap, { fg = 0xABCDEF, ctermfg = 153, bg = 0x445566, ctermbg = 240, blend = 30 })
+    expect.equality(result.overlap_pressed, { fg = 0xABCDEF, ctermfg = 153, bg = 0x778899, ctermbg = 102, blend = 30 })
     expect.equality(result.legacy_thumb, result.thumb)
     expect.equality(result.legacy_thumb_pressed, result.thumb_pressed)
     expect.equality(result.legacy_overlap, result.overlap)
@@ -106,24 +107,80 @@ T["applies full highlight tables and projects string sources by channel"] = func
         })
     )
 
-    expect.equality(result.track, { bg = 0x234567, blend = 0 })
-    expect.equality(result.thumb, { bg = 0x123456, blend = 27 })
-    expect.equality(result.pressed, { bg = 0x345678, blend = 27 })
-    expect.equality(result.string_mark, { fg = 0x654321 })
-    expect.equality(result.string_overlap, { fg = 0x654321, bg = 0x123456, blend = 27 })
+    expect.equality(result.track, { bg = 0x234567, ctermbg = 23, blend = 0 })
+    expect.equality(result.thumb, { bg = 0x123456, ctermbg = 23, blend = 27 })
+    expect.equality(result.pressed, { bg = 0x345678, ctermbg = 60, blend = 27 })
+    expect.equality(result.string_mark, { fg = 0x654321, ctermfg = 58 })
+    expect.equality(result.string_overlap, { fg = 0x654321, ctermfg = 58, bg = 0x123456, ctermbg = 23, blend = 27 })
     expect.equality(result.table_mark, {
         fg = 0xFEDCBA,
         bg = 0x445566,
         underline = true,
         cterm = { underline = true },
     })
+    -- The table sets no ctermbg, so the thumb keeps its own.
     expect.equality(result.table_overlap, {
         fg = 0xFEDCBA,
         bg = 0x445566,
+        ctermbg = 23,
         blend = 27,
         underline = true,
         cterm = { underline = true },
     })
+end
+
+T["projects the cterm colors of string sources for a terminal without termguicolors"] = function()
+    local child = new_child()
+    local result = child.lua_func(
+        function(config)
+            vim.o.termguicolors = false
+            -- The defaults of Neovim: PmenuSbar has only cterm.reverse, and PmenuThumb has no cterm colors.
+            vim.api.nvim_set_hl(0, "PmenuSbar", { bg = "#2c2e33", cterm = { reverse = true } })
+            vim.api.nvim_set_hl(0, "PmenuThumb", { bg = "#4f5258" })
+            vim.api.nvim_set_hl(0, "PmenuSel", { cterm = { reverse = true }, reverse = true })
+            vim.api.nvim_set_hl(0, "NumberedSource", { fg = "#ff0000", ctermfg = 9, ctermbg = 4 })
+            vim.api.nvim_set_hl(
+                0,
+                "ReversedSource",
+                { fg = "#00ff00", ctermfg = 2, ctermbg = 3, cterm = { reverse = true } }
+            )
+            require("scrollbar").setup(config)
+            local get = function(name)
+                return vim.api.nvim_get_hl(0, { name = name, link = false })
+            end
+            return {
+                track = get("ScrollbarTrack"),
+                thumb = get("ScrollbarThumb"),
+                pressed = get("ScrollbarThumbPressed"),
+                numbered = get("ScrollbarError"),
+                numbered_thumb = get("ScrollbarErrorThumb"),
+                numbered_tint = get("ScrollbarErrorTint"),
+                reversed = get("ScrollbarWarn"),
+                reversed_tint = get("ScrollbarWarnTint"),
+                minimap_numbered = get("ScrollbarMinimapError"),
+            }
+        end,
+        base_config({ overlap = { marks = "tint" } }, {
+            marks = {
+                Error = { highlight = "NumberedSource" },
+                Warn = { highlight = "ReversedSource" },
+            },
+            minimap = { enabled = true, show = false },
+        })
+    )
+
+    -- A group without cterm colors gives the nearest palette color. The plugin does not copy cterm.reverse.
+    expect.equality(result.track, { bg = 0x2C2E33, ctermbg = 236, blend = 0 })
+    expect.equality(result.thumb, { bg = 0x4F5258, ctermbg = 240, blend = 30 })
+    expect.equality(result.pressed, { bg = 0xFFFFFF, ctermbg = 231, blend = 30 })
+    -- A group with cterm colors gives its own number for the channel.
+    expect.equality(result.numbered, { fg = 0xFF0000, ctermfg = 9 })
+    expect.equality(result.numbered_thumb, { fg = 0xFF0000, ctermfg = 9, bg = 0x4F5258, ctermbg = 240, blend = 30 })
+    expect.equality(result.numbered_tint, { bg = 0xFF0000, ctermbg = 9, blend = 0 })
+    -- With cterm.reverse, the terminal shows ctermbg as the foreground.
+    expect.equality(result.reversed, { fg = 0x00FF00, ctermfg = 3 })
+    expect.equality(result.reversed_tint, { bg = 0x00FF00, ctermbg = 3, blend = 0 })
+    expect.equality(result.minimap_numbered, { fg = 0xFF0000, ctermfg = 9 })
 end
 
 T["resolves string sources through links and falls back for missing groups"] = function()
@@ -166,10 +223,10 @@ T["resolves string sources through links and falls back for missing groups"] = f
         })
     )
 
-    expect.equality(result.first.track, { bg = 0x234567, blend = 0 })
-    expect.equality(result.first.thumb, { bg = 0x445566, blend = 30 })
-    expect.equality(result.first.empty_mark, { fg = 0x000000 })
-    expect.equality(result.first.missing_mark, { fg = 0x0A0B0C })
+    expect.equality(result.first.track, { bg = 0x234567, ctermbg = 23, blend = 0 })
+    expect.equality(result.first.thumb, { bg = 0x445566, ctermbg = 240, blend = 30 })
+    expect.equality(result.first.empty_mark, { fg = 0x000000, ctermfg = 16 })
+    expect.equality(result.first.missing_mark, { fg = 0x0A0B0C, ctermfg = 232 })
     expect.equality(result.second, result.first)
     expect.equality(result.missing_thumb_exists, 0)
     expect.equality(result.missing_mark_exists, 0)
@@ -286,10 +343,10 @@ T["refreshes private definitions while preserving public links and later user ov
     expect.no_equality(result.first_links.track:match("^ScrollbarGenerated%."), nil)
     expect.no_equality(result.first_links.thumb:match("^ScrollbarGenerated%."), nil)
     expect.no_equality(result.first_links.mark:match("^ScrollbarGenerated%."), nil)
-    expect.equality(result.first.track, { bg = 0x102030, blend = 0 })
+    expect.equality(result.first.track, { bg = 0x102030, ctermbg = 234, blend = 0 })
     expect.equality(result.first.thumb, { bg = 0x112233, blend = 30 })
     expect.equality(result.first.mark, { fg = 0xABCDEF })
-    expect.equality(result.second.track, { bg = 0x203040, blend = 0 })
+    expect.equality(result.second.track, { bg = 0x203040, ctermbg = 236, blend = 0 })
     expect.equality(result.second.thumb, { bg = 0x223344, blend = 30 })
     expect.equality(result.second.mark, { fg = 0xFEDCBA })
     expect.equality(result.refreshed_private_mark, { fg = 0xFEDCBA })
@@ -349,26 +406,36 @@ T["builds the overlap groups from a public mark group that a colorscheme defines
     end, base_config({ marks = { Error = { highlight = "ErrorSource" } } }))
 
     expect.equality(result.first.search, { fg = 0xFF9E64, default = true })
-    expect.equality(result.first.generated_search, { fg = 0xC0CAF5 })
-    expect.equality(result.first.search_thumb, { fg = 0xFF9E64, bg = 0x445566, blend = 30 })
-    expect.equality(result.first.search_pressed, { fg = 0xFF9E64, bg = 0x778899, blend = 30 })
+    expect.equality(result.first.generated_search, { fg = 0xC0CAF5, ctermfg = 153 })
+    expect.equality(result.first.search_thumb, { fg = 0xFF9E64, bg = 0x445566, ctermbg = 240, blend = 30 })
+    expect.equality(result.first.search_pressed, { fg = 0xFF9E64, bg = 0x778899, ctermbg = 102, blend = 30 })
     expect.equality(result.first.error_thumb, {
         fg = 0xDB4B4B,
         bg = 0x445566,
+        ctermbg = 240,
         blend = 30,
         bold = true,
         cterm = { bold = true },
     })
 
     expect.equality(result.second.search, { fg = 0x00FF00 })
-    expect.equality(result.second.search_thumb, { fg = 0x00FF00, bg = 0x445566, blend = 30 })
-    expect.equality(result.second.error_thumb, { fg = 0x111111, bg = 0x445566, blend = 30 })
+    expect.equality(result.second.search_thumb, { fg = 0x00FF00, bg = 0x445566, ctermbg = 240, blend = 30 })
+    expect.equality(
+        result.second.error_thumb,
+        { fg = 0x111111, ctermfg = 233, bg = 0x445566, ctermbg = 240, blend = 30 }
+    )
 
     -- Without a definition, the public group links to the generated group again.
     expect.equality(result.third.search_link, "ScrollbarGenerated.Search")
-    expect.equality(result.third.search, { fg = 0xC0CAF5 })
-    expect.equality(result.third.search_thumb, { fg = 0xC0CAF5, bg = 0x445566, blend = 30 })
-    expect.equality(result.third.search_pressed, { fg = 0xC0CAF5, bg = 0x778899, blend = 30 })
+    expect.equality(result.third.search, { fg = 0xC0CAF5, ctermfg = 153 })
+    expect.equality(
+        result.third.search_thumb,
+        { fg = 0xC0CAF5, ctermfg = 153, bg = 0x445566, ctermbg = 240, blend = 30 }
+    )
+    expect.equality(
+        result.third.search_pressed,
+        { fg = 0xC0CAF5, ctermfg = 153, bg = 0x778899, ctermbg = 102, blend = 30 }
+    )
 end
 
 T["builds the overlap groups from public thumb groups that a colorscheme defines"] = function()
@@ -391,9 +458,9 @@ T["builds the overlap groups from public thumb groups that a colorscheme defines
         }
     end, base_config())
 
-    expect.equality(result.generated_thumb, { bg = 0x445566, blend = 30 })
-    expect.equality(result.search_thumb, { fg = 0xC0CAF5, bg = 0x101010 })
-    expect.equality(result.search_pressed, { fg = 0xC0CAF5, bg = 0x202020, blend = 5 })
+    expect.equality(result.generated_thumb, { bg = 0x445566, ctermbg = 240, blend = 30 })
+    expect.equality(result.search_thumb, { fg = 0xC0CAF5, ctermfg = 153, bg = 0x101010 })
+    expect.equality(result.search_pressed, { fg = 0xC0CAF5, ctermfg = 153, bg = 0x202020, blend = 5 })
 end
 
 T["copies the final root groups into the profiles that keep the options of the root"] = function()
@@ -436,18 +503,18 @@ T["copies the final root groups into the profiles that keep the options of the r
 
     expect.equality(result.inherited_track, { bg = 0x030303 })
     expect.equality(result.inherited_thumb, { bg = 0x101010 })
-    expect.equality(result.inherited_pressed, { bg = 0x778899, blend = 30 })
+    expect.equality(result.inherited_pressed, { bg = 0x778899, ctermbg = 102, blend = 30 })
     expect.equality(result.inherited_search, { fg = 0xFF9E64 })
     expect.equality(result.inherited_search_thumb, { fg = 0xFF9E64, bg = 0x101010 })
     expect.equality(result.inherited_error, { fg = 0x222222 })
 
     -- The options of the profile select generated definitions.
     expect.equality(result.own_track, { bg = 0x040404, blend = 0 })
-    expect.equality(result.own_thumb, { bg = 0x445566, blend = 11 })
-    expect.equality(result.own_pressed, { bg = 0x778899, blend = 11 })
+    expect.equality(result.own_thumb, { bg = 0x445566, ctermbg = 240, blend = 11 })
+    expect.equality(result.own_pressed, { bg = 0x778899, ctermbg = 102, blend = 11 })
     expect.equality(result.own_search, { fg = 0x666666 })
-    expect.equality(result.own_search_thumb, { fg = 0x666666, bg = 0x445566, blend = 11 })
-    expect.equality(result.own_error_thumb, { fg = 0x222222, bg = 0x445566, blend = 11 })
+    expect.equality(result.own_search_thumb, { fg = 0x666666, bg = 0x445566, ctermbg = 240, blend = 11 })
+    expect.equality(result.own_error_thumb, { fg = 0x222222, bg = 0x445566, ctermbg = 240, blend = 11 })
 end
 
 T["internal namespaces do not capture valid custom mark groups"] = function()

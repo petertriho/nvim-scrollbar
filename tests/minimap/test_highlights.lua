@@ -149,11 +149,11 @@ T["profiles that keep the source of the root copy the final root mark group"] = 
     end)
 
     expect.equality(result.first.inherited, { fg = 0xFF9E64 })
-    expect.equality(result.first.inherited_error, { fg = 0x111111 })
+    expect.equality(result.first.inherited_error, { fg = 0x111111, ctermfg = 233 })
     expect.equality(result.first.own, { fg = 0x666666 })
 
     -- Without a definition of the public group, the profile copies the generated definition.
-    expect.equality(result.second.inherited, { fg = 0xC0CAF5 })
+    expect.equality(result.second.inherited, { fg = 0xC0CAF5, ctermfg = 153 })
     expect.equality(result.second.own, { fg = 0x666666 })
 end
 
