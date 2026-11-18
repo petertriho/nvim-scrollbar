@@ -6,7 +6,8 @@ no provider-specific options.
 
 ## Setup
 
-Install ALE. Then enable the provider:
+Install ALE. ALE sends its problems to `vim.diagnostic` by default, so read
+[Neovim Diagnostics](#neovim-diagnostics) first. Then enable the provider:
 
 ```lua
 require("scrollbar").setup({
@@ -18,6 +19,31 @@ require("scrollbar").setup({
 
 The provider reads the diagnostics that ALE already has. It does not start a
 lint run, and it does not configure linters.
+
+## Neovim Diagnostics
+
+In Neovim, ALE sends its problems to `vim.diagnostic` by default. The default
+of the ALE option `g:ale_use_neovim_diagnostics_api` is `has('nvim-0.7')`,
+which is true for each Neovim version that this plugin supports. The
+[`diagnostic` provider](diagnostic.md) is on by default, so it already shows
+the ALE problems. ALE also keeps the problems in `g:ale_buffer_info`. Thus
+with `ale = true` as well, each problem gets one mark from each provider.
+
+Use one of these setups:
+
+- Keep the defaults, and do not enable `ale`. The `diagnostic` provider maps
+  the ALE types `E`, `W`, and `I` to `Error`, `Warn`, and `Info`.
+- Turn off the diagnostics API of ALE, and enable `ale`:
+
+  ```lua
+  vim.g.ale_use_neovim_diagnostics_api = 0
+
+  require("scrollbar").setup({
+      providers = {
+          ale = true,
+      },
+  })
+  ```
 
 ## Marks
 
@@ -66,6 +92,8 @@ You do not have to run scrollbar setup again.
 ## Troubleshooting
 
 - Use `:ALEInfo` to make sure that ALE linted the buffer.
+- If each ALE problem shows two marks, see
+  [Neovim Diagnostics](#neovim-diagnostics).
 - Inspect the source data with
   `:lua print(vim.inspect(vim.g.ale_buffer_info[tostring(vim.api.nvim_get_current_buf())]))`.
 - If the ALE state changed and no `ALELintPost` event followed, run

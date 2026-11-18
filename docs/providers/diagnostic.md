@@ -43,8 +43,9 @@ them. Buffers that are invalid, unloaded, or excluded produce no diagnostic
 marks. Buffers that have more lines than `max_lines` also produce none.
 
 This provider does not read ALE or Coc data, unless those tools also publish
-into `vim.diagnostic`. ALE and Coc have their own providers, which are disabled
-by default.
+into `vim.diagnostic`. ALE does that by default, see
+[ALE](ale.md#neovim-diagnostics). ALE and Coc have their own providers, which
+are disabled by default.
 
 ## Updates
 
