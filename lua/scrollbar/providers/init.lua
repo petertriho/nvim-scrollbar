@@ -38,6 +38,8 @@ local M = {}
 ---@field invalidate_window fun(winid: integer)
 ---@field on_text_change? fun(fn: fun(args: table), events?: string[]): boolean? Scheduler text-change dispatch. Nil in standalone setups
 ---@field on_cursor_activity? fun(fn: fun(args: table), events?: string[]): boolean? Scheduler cursor-activity dispatch. Nil in standalone setups
+---@field buffer_refresh boolean Whether the buffer refresh autocmd of the manager exists
+---@field window_refresh boolean Whether the window refresh autocmd of the manager exists
 
 ---@type table<string, ScrollbarManagedProvider>
 local registry = {}
@@ -677,6 +679,67 @@ local function deactivate_entry(entry)
     entry.setup_ok = false
 end
 
+---Create the refresh autocmd of the manager for each scope that an active
+---provider gives to the manager. Without such a provider, the autocmd does not
+---exist, so a TextChanged* keystroke does not walk the registry. All built-in
+---providers own their refresh, so the default setup has no manager autocmds.
+---@param entry ScrollbarManagedProvider
+local function install_refresh_dispatch(entry)
+    local ownership = entry.provider.refresh_owner
+    if manager == nil or manager_group == nil or ownership == nil or not is_active(entry) then
+        return
+    end
+    if not manager.buffer_refresh and (ownership.buffer == "manager" or ownership.minimap_buffer == "manager") then
+        manager.buffer_refresh = true
+        vim.api.nvim_create_autocmd({ "BufEnter", "TextChanged", "TextChangedI", "TextChangedP" }, {
+            group = manager_group,
+            callback = function(args)
+                if manager == nil then
+                    return
+                end
+                for _, name in ipairs(order) do
+                    local registered = registry[name]
+                    local owner = registered.provider.refresh_owner
+                    if owner ~= nil and owner.buffer == "manager" then
+                        refresh_entry(registered, args.buf)
+                    end
+                    if owner ~= nil and owner.minimap_buffer == "manager" then
+                        refresh_minimap_entry(registered, args.buf)
+                    end
+                end
+            end,
+        })
+    end
+    if not manager.window_refresh and (ownership.window == "manager" or ownership.minimap_window == "manager") then
+        manager.window_refresh = true
+        vim.api.nvim_create_autocmd({ "BufWinEnter", "WinEnter" }, {
+            group = manager_group,
+            callback = function(args)
+                if manager == nil then
+                    return
+                end
+                local winid = vim.api.nvim_get_current_win()
+                for _, name in ipairs(order) do
+                    local registered = registry[name]
+                    local owner = registered.provider.refresh_owner
+                    if owner ~= nil and owner.window == "manager" then
+                        if args.event == "BufWinEnter" then
+                            store.clear_window(registered.provider.name, winid)
+                        end
+                        refresh_window_entry(registered, winid)
+                    end
+                    if owner ~= nil and owner.minimap_window == "manager" then
+                        if args.event == "BufWinEnter" then
+                            store.clear_minimap_points(registered.provider.name, winid)
+                        end
+                        refresh_minimap_window_entry(registered, winid)
+                    end
+                end
+            end,
+        })
+    end
+end
+
 ---@param provider ScrollbarProvider
 ---@return ScrollbarProviderTargets
 local function normalize_targets(provider)
@@ -872,6 +935,7 @@ local function register(provider, builtin)
     table.insert(order, provider.name)
 
     if manager ~= nil and is_active(entry) then
+        install_refresh_dispatch(entry)
         activate_entry(entry)
     end
 end
@@ -1091,6 +1155,8 @@ M.setup = function(options)
         },
         invalidate_buffer = options.invalidate_buffer or noop,
         invalidate_window = options.invalidate_window or noop,
+        buffer_refresh = false,
+        window_refresh = false,
     }
     if options.invalidate_buffer ~= nil or options.invalidate_window ~= nil then
         legacy_unsubscribe = store.subscribe(function(event)
@@ -1106,73 +1172,8 @@ M.setup = function(options)
     end
 
     manager_group = vim.api.nvim_create_augroup("ScrollbarProviderManager", { clear = true })
-    -- Register the refresh dispatch that the manager owns only when at least
-    -- one active provider claims it. All built-in providers own their refresh,
-    -- so the default installation registers no manager autocmds. Without this
-    -- check, every TextChanged* keystroke pays for a registry walk that cannot
-    -- dispatch anything.
-    local manager_buffer_refresh = false
-    local manager_window_refresh = false
     for _, name in ipairs(order) do
-        local entry = registry[name]
-        if is_active(entry) then
-            local ownership = entry.provider.refresh_owner
-            if ownership ~= nil then
-                manager_buffer_refresh = manager_buffer_refresh
-                    or ownership.buffer == "manager"
-                    or ownership.minimap_buffer == "manager"
-                manager_window_refresh = manager_window_refresh
-                    or ownership.window == "manager"
-                    or ownership.minimap_window == "manager"
-            end
-        end
-    end
-    if manager_buffer_refresh then
-        vim.api.nvim_create_autocmd({ "BufEnter", "TextChanged", "TextChangedI", "TextChangedP" }, {
-            group = manager_group,
-            callback = function(args)
-                if manager == nil then
-                    return
-                end
-                for _, name in ipairs(order) do
-                    local entry = registry[name]
-                    local ownership = entry.provider.refresh_owner
-                    if ownership ~= nil and ownership.buffer == "manager" then
-                        refresh_entry(entry, args.buf)
-                    end
-                    if ownership ~= nil and ownership.minimap_buffer == "manager" then
-                        refresh_minimap_entry(entry, args.buf)
-                    end
-                end
-            end,
-        })
-    end
-    if manager_window_refresh then
-        vim.api.nvim_create_autocmd({ "BufWinEnter", "WinEnter" }, {
-            group = manager_group,
-            callback = function(args)
-                if manager == nil then
-                    return
-                end
-                local winid = vim.api.nvim_get_current_win()
-                for _, name in ipairs(order) do
-                    local entry = registry[name]
-                    local ownership = entry.provider.refresh_owner
-                    if ownership ~= nil and ownership.window == "manager" then
-                        if args.event == "BufWinEnter" then
-                            store.clear_window(entry.provider.name, winid)
-                        end
-                        refresh_window_entry(entry, winid)
-                    end
-                    if ownership ~= nil and ownership.minimap_window == "manager" then
-                        if args.event == "BufWinEnter" then
-                            store.clear_minimap_points(entry.provider.name, winid)
-                        end
-                        refresh_minimap_window_entry(entry, winid)
-                    end
-                end
-            end,
-        })
+        install_refresh_dispatch(registry[name])
     end
 
     for _, name in ipairs(order) do
