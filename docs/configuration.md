@@ -506,9 +506,12 @@ marks = {
   providers can still publish it. A renderer override table can show it again.
 - `text` is a string or a dense list of strings. Each string must have a
   positive display width and no control characters. A list gives density
-  variants. Only `Mark.text` can be an empty list. An empty list keeps the
-  literal mark names from the built-in marks provider. The minimap does not use
-  `text`.
+  variants. A scrollbar row with n marks of one type, from all providers, uses
+  entry n. A row with more marks than entries uses the last entry. For
+  example, `{ "-", "=", "≡" }` shows `-` for one mark, `=` for two marks, and
+  `≡` for three or more marks. Only `Mark.text` can be an empty list. An empty
+  list keeps the literal mark names from the built-in marks provider. The
+  minimap does not use `text`.
 - `priority` is a non-negative integer. In one mark lane, the lower number wins
   a collision. Separate mark layers use their declared stack order instead.
 - `highlight` is a non-empty group name or an `nvim_set_hl()` definition table.

@@ -222,6 +222,34 @@ T["does not leak a multi-cell glyph across different column layer profiles"] = f
     expect.equality(result.hitmap[1][2], { track = false, thumb = false })
 end
 
+T["selects the text entry from the count of marks of one type in a row"] = function()
+    local result = compose({
+        config = config({
+            layout = { columns = { { "marks" } } },
+            marks = { Error = { text = { "-", "=", "#" } } },
+        }),
+        height = 4,
+        handle = { first_row = -1, last_row = -1 },
+        -- Rows 1 and 3 hold marks of two providers.
+        marks = {
+            { provider = "alpha", line = 0, type = "Error" },
+            { provider = "alpha", line = 10, type = "Error" },
+            { provider = "beta", line = 10, type = "Error" },
+            { provider = "alpha", line = 20, type = "Error" },
+            { provider = "alpha", line = 21, type = "Error" },
+            { provider = "alpha", line = 22, type = "Error" },
+            { provider = "alpha", line = 30, type = "Error" },
+            { provider = "alpha", line = 31, type = "Error" },
+            { provider = "beta", line = 32, type = "Error" },
+            { provider = "beta", line = 33, type = "Error" },
+        },
+        mark_rows = { 0, 1, 1, 2, 2, 2, 3, 3, 3, 3 },
+    })
+
+    -- A row with more marks than entries uses the last entry.
+    expect.equality(result.rows, { "-", "=", "#", "#" })
+end
+
 T["keeps compact search exactly equivalent to ordinary search marks"] = function()
     local active_config = config({
         layout = { columns = { { "marks" }, { "track" } } },
