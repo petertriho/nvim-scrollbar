@@ -2330,8 +2330,10 @@ local function render_row(input, row, marks, width, column_offset, expanded_lane
 end
 
 -- Cache of the composed output, keyed by the identity of the resolved mark
--- layer. Each entry holds the handle rows, the height, and the compiled
--- layout cache, which fully determine the compose result. Each window
+-- layer. Each entry holds the handle rows, the height, the compiled layout
+-- cache, and the highlight groups, which fully determine the compose result.
+-- The layout cache has no highlight groups, because the mark layer does not
+-- use them. A profile can change only the groups. Each window
 -- rebuild produces a distinct layer table. Thus windows that share a variant
 -- keep separate entries and do not evict each other. Weak keys keep an entry
 -- alive exactly as long as its layer (an entry never references its key). An
@@ -2414,6 +2416,7 @@ M.compose = function(input)
     local mark_layer = input.mark_layer or resolve_mark_layer(input)
     local handle_geometry = input.geometry.handle
     local layout_cache = input.config.layout_cache
+    local groups = input.config.highlights
     local cached = compose_cache[mark_layer]
     if
         cached ~= nil
@@ -2421,6 +2424,7 @@ M.compose = function(input)
         and cached.handle_last == handle_geometry.last_row
         and cached.height == input.height
         and (cached.layout_cache == layout_cache or vim.deep_equal(cached.layout_cache, layout_cache))
+        and (cached.groups == groups or vim.deep_equal(cached.groups, groups))
     then
         return cached.output
     end
@@ -2430,8 +2434,8 @@ M.compose = function(input)
     local hitmap = {}
     -- Row-level reuse across rebuilds that share the identity of the marks
     -- table. The reference entry must agree on every input that determines
-    -- the output (handle rows, height, layout cache, width, column offset,
-    -- expansion lane).
+    -- the output (handle rows, height, layout cache, highlight groups, width,
+    -- column offset, expansion lane).
     local reuse = nil
     local identity = mark_layer.marks_identity
     if identity ~= nil then
@@ -2442,6 +2446,7 @@ M.compose = function(input)
             and reference.handle_last == handle_geometry.last_row
             and reference.height == input.height
             and (reference.layout_cache == layout_cache or vim.deep_equal(reference.layout_cache, layout_cache))
+            and (reference.groups == groups or vim.deep_equal(reference.groups, groups))
             and reference.width == mark_layer.width
             and reference.column_offset == mark_layer.column_offset
             and reference.expanded_lane_id == mark_layer.expanded_lane_id
@@ -2484,6 +2489,7 @@ M.compose = function(input)
         handle_last = handle_geometry.last_row,
         height = input.height,
         layout_cache = layout_cache,
+        groups = groups,
         output = output,
     }
     if identity ~= nil then
@@ -2494,6 +2500,7 @@ M.compose = function(input)
             handle_last = handle_geometry.last_row,
             height = input.height,
             layout_cache = layout_cache,
+            groups = groups,
             width = mark_layer.width,
             column_offset = mark_layer.column_offset,
             expanded_lane_id = mark_layer.expanded_lane_id,

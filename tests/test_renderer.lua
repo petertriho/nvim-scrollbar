@@ -2712,6 +2712,63 @@ T["profile switches compare explicit cache inputs and invalidate only their sour
     })
 end
 
+T["a profile switch that changes only highlights writes the groups of the new profile"] = function()
+    local child = new_child()
+    local result = child.lua_func(function(base_config)
+        local lines = {}
+        for index = 1, 200 do
+            lines[index] = "line " .. index
+        end
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        local source_win = vim.api.nvim_get_current_win()
+        local profile_active = false
+        base_config.profiles = {
+            {
+                match = {
+                    when = function()
+                        return profile_active
+                    end,
+                },
+                track = { highlight = { bg = "#010101" } },
+                thumb = { highlight = { bg = "#020202" } },
+                marks = { Misc = { highlight = { fg = "#030303" } } },
+            },
+        }
+        require("scrollbar.test.set_config")(base_config, { set_highlights = true })
+        require("scrollbar.shared.store").set(
+            "test",
+            vim.api.nvim_get_current_buf(),
+            { { line = 0, type = "Misc" }, { line = 100, type = "Misc" } }
+        )
+        local renderer = require("scrollbar.renderer")
+        renderer.setup()
+        local namespace = vim.api.nvim_get_namespaces().ScrollbarRenderer
+
+        local function groups()
+            local state = assert(renderer.render(source_win))
+            local found = {}
+            for _, extmark in
+                ipairs(require("scrollbar.test.float").extmarks(state.float_buf, namespace, 0, -1, { details = true }))
+            do
+                found[#found + 1] = assert(extmark[4]).hl_group
+            end
+            table.sort(found)
+            return vim.fn.uniq(found)
+        end
+
+        local root = groups()
+        profile_active = true
+        local profile = groups()
+        profile_active = false
+        local restored = groups()
+        return { root = root, profile = profile, restored = restored }
+    end, renderer_config())
+
+    expect.equality(result.root, { "ScrollbarMisc", "ScrollbarThumb", "ScrollbarTrack" })
+    expect.equality(result.profile, { "ScrollbarProfile1.Misc", "ScrollbarProfile1.Thumb", "ScrollbarProfile1.Track" })
+    expect.equality(result.restored, result.root)
+end
+
 T["direct config sets validate retained line caches by selected input"] = function()
     local child = new_child()
     local result = child.lua_func(function(base_config)
