@@ -116,14 +116,115 @@ local function incsearch_enabled()
     return vim.o.incsearch
 end
 
+-- The characters that `*` and `#` escape with a backslash, with 'magic' and
+-- without it. In a backward search, `#` also escapes `?`, but the pattern
+-- that Neovim keeps has a plain `?`.
+local STAR_ESCAPED = {
+    magic = {
+        ["/"] = true,
+        ["."] = true,
+        ["*"] = true,
+        ["~"] = true,
+        ["["] = true,
+        ["^"] = true,
+        ["$"] = true,
+        ["\\"] = true,
+    },
+    nomagic = { ["/"] = true, ["^"] = true, ["$"] = true, ["\\"] = true },
+}
+
+---The literal word of a pattern that `*`, `#`, `g*`, or `g#` can make: text in
+---which a backslash escapes only the characters that these commands escape,
+---maybe after `\<` and before `\>`. Another pattern gives nil.
+---@param pattern string
+---@return string?
+local function star_word(pattern)
+    local body = pattern:gsub("^\\<", ""):gsub("\\>$", "")
+    local magic = vim.o.magic
+    local escaped = magic and STAR_ESCAPED.magic or STAR_ESCAPED.nomagic
+    local special = magic and "[%.%*~%[%^%$]" or "[%^%$]"
+    local parts = {}
+    local index = 1
+    while index <= #body do
+        local char = body:sub(index, index)
+        if char == "\\" then
+            local next_char = body:sub(index + 1, index + 1)
+            if not escaped[next_char] then
+                return nil
+            end
+            parts[#parts + 1] = next_char
+            index = index + 2
+        elseif char:find(special) then
+            return nil
+        else
+            parts[#parts + 1] = char
+            index = index + 1
+        end
+    end
+    return #parts > 0 and table.concat(parts) or nil
+end
+
+---@type integer?
+local probe_buf
+
+---Whether the last search pattern ignores 'smartcase'. `*`, `#`, `g*`, and
+---`g#` ignore it, and `n`, `N`, and 'hlsearch' keep that rule for the pattern.
+---No option or function gives the rule. searchcount() compiles a pattern with
+---the rule of the last search pattern, so the check counts the matches of the
+---pattern in a buffer that holds the word in lowercase. Only the four commands
+---set the rule, and they make a literal word, so other patterns use the option.
 ---@param bufnr integer
 ---@param pattern string
+---@return boolean
+local function ignores_smartcase(bufnr, pattern)
+    if not (vim.o.ignorecase and vim.o.smartcase) or vim.fn.getreg("/") ~= pattern then
+        return false
+    end
+    local word = star_word(pattern)
+    if word == nil then
+        return false
+    end
+    local lower = vim.fn.tolower(word)
+    if lower == word then
+        -- Without an uppercase letter, 'smartcase' changes nothing.
+        return false
+    end
+    if probe_buf == nil or not vim.api.nvim_buf_is_valid(probe_buf) then
+        probe_buf = vim.api.nvim_create_buf(false, true)
+        vim.bo[probe_buf].undolevels = -1
+        vim.b[probe_buf].scrollbar_owned = true
+    end
+    vim.bo[probe_buf].iskeyword = vim.bo[bufnr].iskeyword
+    vim.api.nvim_buf_set_lines(probe_buf, 0, -1, false, { lower })
+    local ok, count = pcall(vim.api.nvim_buf_call, probe_buf, function()
+        -- searchcount() writes `pattern` to the last used pattern, which can be
+        -- the pattern of :s, and it restores only the last search pattern. The
+        -- check gives the last used pattern itself, so the write changes
+        -- nothing.
+        return vim.fn.searchcount({ pattern = pattern, recompute = true, maxcount = 1, timeout = 100 })
+    end)
+    return ok and type(count) == "table" and (count.total or 0) > 0
+end
+
+---The 'smartcase' of a request. The user types an incremental pattern, so it
+---uses the option.
+---@param bufnr integer
+---@param pattern string
+---@param mode ScrollbarSearchRequestMode
+---@return boolean
+local function request_smartcase(bufnr, pattern, mode)
+    return vim.o.smartcase and (mode == "incsearch" or not ignores_smartcase(bufnr, pattern))
+end
+
+---@param bufnr integer
+---@param pattern string
+---@param smartcase boolean
 ---@return string
-local function search_signature(bufnr, pattern)
+local function search_signature(bufnr, pattern, smartcase)
     return table.concat({
         pattern,
         tostring(vim.o.ignorecase),
-        tostring(vim.o.smartcase),
+        tostring(smartcase),
         tostring(vim.o.magic),
         vim.bo[bufnr].iskeyword,
     }, "\0")
@@ -310,7 +411,13 @@ local function request_is_current(request)
         return false
     end
 
-    local signature_ok, signature = pcall(search_signature, request.bufnr, request.pattern)
+    local signature_ok, signature = pcall(function()
+        return search_signature(
+            request.bufnr,
+            request.pattern,
+            request_smartcase(request.bufnr, request.pattern, request.mode)
+        )
+    end)
     if not signature_ok or signature ~= request.signature then
         return false
     end
@@ -365,7 +472,12 @@ local function execute_request(context, bufnr, generation)
     if scan_started ~= nil then
         emit_timing("sync_scan_started")
     end
-    local compact = scan(context, bufnr, request.pattern)
+    local pattern = request.pattern
+    if request.ignorecase and vim.o.smartcase and not request.smartcase then
+        -- `\c` ignores case in the whole pattern, as the last search does.
+        pattern = "\\c" .. pattern
+    end
+    local compact = scan(context, bufnr, pattern)
     if scan_started ~= nil then
         emit_timing("sync_scan", { duration_ms = (vim.uv.hrtime() - scan_started) / 1000000 })
     end
@@ -495,7 +607,8 @@ local function request_refresh(context, bufnr, pattern, mode, ignore_visibility)
     end
 
     local changedtick = text_tick.get(bufnr)
-    local signature = search_signature(bufnr, pattern)
+    local smartcase = request_smartcase(bufnr, pattern, mode)
+    local signature = search_signature(bufnr, pattern, smartcase)
     local state = request_state(bufnr)
     local pending = {
         bufnr = bufnr,
@@ -507,7 +620,7 @@ local function request_refresh(context, bufnr, pattern, mode, ignore_visibility)
         mode = mode,
         ignore_visibility = ignore_visibility == true,
         ignorecase = vim.o.ignorecase,
-        smartcase = vim.o.smartcase,
+        smartcase = smartcase,
         magic = vim.o.magic,
         iskeyword = vim.bo[bufnr].iskeyword,
     }
