@@ -706,7 +706,8 @@ the root options apply.
 
 Profile selection is not cached. The predicates run again each time a
 selection is necessary, including before every render. Keep them fast, free of
-side effects, and non-blocking.
+side effects, and non-blocking. For a predicate that follows the search state,
+see [Search-only layout](providers/search.md#search-only-layout).
 
 If a callback raises an error, that render uses the root options. A
 notification appears once for each distinct pair of profile index and error

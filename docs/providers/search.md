@@ -218,6 +218,47 @@ the same rendered row, the row uses later entries. For the complete appearance
 rules, see [Highlights](../highlights.md) and
 [Layout and geometry](../layout-and-geometry.md).
 
+## Search-Only Layout
+
+A [profile](../configuration.md#profiles) can show only the search marks while
+a search is active. This `when` predicate uses the same visibility rules as the
+provider. It also matches while a `/` or `?` command line is open, so
+incremental previews use the same layout:
+
+```lua
+local function searching()
+    local cmdtype = vim.fn.getcmdtype()
+    if cmdtype == "/" or cmdtype == "?" then
+        return true
+    end
+    return vim.o.hlsearch and vim.v.hlsearch == 1 and vim.fn.getreg("/") ~= ""
+end
+
+require("scrollbar").setup({
+    scrollbar = {
+        profiles = {
+            {
+                match = { when = searching },
+                layout = {
+                    columns = {
+                        { "track", "thumb", { types = { "Search" } } },
+                    },
+                },
+            },
+        },
+    },
+})
+```
+
+When the predicate stops matching, for example after `:nohlsearch`, the window
+uses the root layout again. To keep the cursor mark, use
+`types = { "Cursor", "Search" }`, as the [`search` preset](../presets.md) does.
+
+The plugin selects the profile again before each render. The predicate reads
+only options, a register, and the command-line type, and it does not start a
+scan. The first profile that matches wins, so put this profile before other
+profiles that can match the same windows.
+
 ## Troubleshooting
 
 ### No accepted search marks
@@ -281,3 +322,4 @@ finish before new marks show.
 - [Visibility and commands](../visibility.md)
 - [Highlights](../highlights.md)
 - [Layout and geometry](../layout-and-geometry.md)
+- [Profiles](../configuration.md#profiles)
