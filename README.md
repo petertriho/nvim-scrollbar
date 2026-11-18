@@ -3,7 +3,7 @@
   <h5>Extensible floating scrollbars for Neovim</h5>
 </div>
 
-![The default scrollbar and minimap while scrolling past diagnostics, Git hunks, and search matches](https://github.com/user-attachments/assets/4e1a6a1c-c9d1-416d-91eb-d27b4ff1a936)
+![The default scrollbar and minimap while scrolling past diagnostics, Git hunks, and search matches](https://github.com/user-attachments/assets/b3d11b3b-6112-459b-b0f8-a7d77cca3470)
 
 `nvim-scrollbar` shows one floating scrollbar for each source window. Each
 split window gets its own thumb. The scrollbar has typed mark lanes, optional

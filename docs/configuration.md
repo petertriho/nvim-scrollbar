@@ -670,7 +670,7 @@ In this image, `zed` is the root preset, the Lua split uses `review`, and the
 Markdown split uses `minimal`. The Makefile split matches no profile, so it
 uses `zed`:
 
-![Three splits with the review, minimal, and zed presets selected by filetype profiles](https://github.com/user-attachments/assets/90ffcc9a-f6f3-45de-859a-cf385079953c)
+![Three splits with the review, minimal, and zed presets selected by filetype profiles](https://github.com/user-attachments/assets/6e6ab82f-d3d9-464d-954c-cd756148b396)
 
 `match` must contain at least one matcher:
 

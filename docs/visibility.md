@@ -53,7 +53,7 @@ event must be in [`events`](configuration.md#events). After 1000 ms of
 inactivity, autohide conceals that window independently. To change the delay,
 use `autohide = { delay_ms = 500 }`.
 
-![The scrollbar shows while the window scrolls and hides after one second without activity](https://github.com/user-attachments/assets/1efa7a90-fcc2-4950-b527-0853efb23760)
+![The scrollbar shows while the window scrolls and hides after one second without activity](https://github.com/user-attachments/assets/cdbbc994-60c8-40e7-ae6b-4ad6299ceb3b)
 
 Provider updates, option changes, resizes, colorscheme changes, and
 `:ScrollbarRefresh` can rerender a revealed scrollbar. They do not reveal a

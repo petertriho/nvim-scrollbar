@@ -106,7 +106,7 @@ An east scrollbar covers the last columns of the text. By default,
 `overlap.reserve` keeps the text away from it. See
 [Overlap](configuration.md#overlap).
 
-![A west scrollbar with gutter = "inner", "outer", and "overlap" in three splits](https://github.com/user-attachments/assets/5b68c860-0eb3-46a8-b9ef-29f113cfe4c5)
+![A west scrollbar with gutter = "inner", "outer", and "overlap" in three splits](https://github.com/user-attachments/assets/bacd87ed-1a0b-4116-8296-c74f1c6099b2)
 
 The gutter placement depends on the relative mode and the anchor:
 
@@ -206,7 +206,7 @@ offsets affect both the marks and the thumb geometry.
 In this image, both splits have wrapped lines and a closed fold. The left split
 uses `unit = "line"`, and the right split uses `unit = "screenline"`:
 
-![Two splits with wrapped lines and a closed fold, with unit = "line" on the left and unit = "screenline" on the right](https://github.com/user-attachments/assets/2e98c0b9-b8f8-4af5-8ced-c5827f2e0f81)
+![Two splits with wrapped lines and a closed fold, with unit = "line" on the left and unit = "screenline" on the right](https://github.com/user-attachments/assets/1ddbc22b-8ea0-473a-8c3a-6cae80b8bdfd)
 
 ## Examples
 
