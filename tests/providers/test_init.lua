@@ -1480,6 +1480,72 @@ T["dispatches automatic window refreshes by owner regardless of setup"] = functi
     })
 end
 
+T["dispatches automatic refreshes to providers registered after setup"] = function()
+    local providers = require("scrollbar.providers")
+    local target = new_buffer({ "one" })
+    local winid = show_buffer(target)
+    local calls = { buffer = 0, window = 0 }
+
+    providers.setup({
+        source_windows = function()
+            return { winid }
+        end,
+        is_buffer_eligible = function(bufnr)
+            return bufnr == target
+        end,
+        is_source_window = function(source_win)
+            return source_win == winid
+        end,
+    })
+    providers.register({
+        name = "late-buffer",
+        refresh_owner = { buffer = "manager" },
+        refresh = function()
+            calls.buffer = calls.buffer + 1
+            return {}
+        end,
+    })
+    providers.register({
+        name = "late-window",
+        refresh_owner = { window = "manager" },
+        refresh_window = function()
+            calls.window = calls.window + 1
+            return {}
+        end,
+    })
+    -- A second late provider of one scope adds no second autocmd.
+    providers.register({
+        name = "late-buffer-2",
+        refresh_owner = { buffer = "manager" },
+        refresh = function()
+            return {}
+        end,
+    })
+    expect.equality(calls, { buffer = 1, window = 1 })
+
+    vim.api.nvim_exec_autocmds("TextChanged", { buffer = target })
+    vim.api.nvim_exec_autocmds("WinEnter", { buffer = target })
+    expect.equality(calls, { buffer = 2, window = 2 })
+    expect.equality(#vim.api.nvim_get_autocmds({ group = "ScrollbarProviderManager", event = "TextChanged" }), 1)
+    expect.equality(#vim.api.nvim_get_autocmds({ group = "ScrollbarProviderManager", event = "WinEnter" }), 1)
+
+    -- The next setup keeps the dispatch.
+    providers.setup({
+        source_windows = function()
+            return { winid }
+        end,
+        is_buffer_eligible = function(bufnr)
+            return bufnr == target
+        end,
+        is_source_window = function(source_win)
+            return source_win == winid
+        end,
+    })
+    vim.api.nvim_exec_autocmds("TextChanged", { buffer = target })
+    vim.api.nvim_exec_autocmds("WinEnter", { buffer = target })
+    expect.equality(calls, { buffer = 4, window = 4 })
+end
+
 T["keeps mixed dual-scope refresh ownership independent"] = function()
     local providers = require("scrollbar.providers")
     local target = new_buffer({ "one" })
