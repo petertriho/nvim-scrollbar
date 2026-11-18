@@ -394,8 +394,9 @@ with theme-owned default links:
 
 Each shown mark type also gets a public `ScrollbarMinimap<Type>` group, such as
 `ScrollbarMinimapError`, `ScrollbarMinimapSearch`, or
-`ScrollbarMinimapGitAdd`. A string source contributes its resolved foreground.
-The plugin copies a direct table. It does not overwrite a public definition
+`ScrollbarMinimapGitAdd`. A string source contributes its resolved foreground,
+with a cterm color as [Highlights](../highlights.md#sources) describes. The
+plugin copies a direct table. It does not overwrite a public definition
 that already exists. In automatic mode, each profile gets its own internal
 groups, so that profiles that show at the same time can use different
 definitions. A profile with the same `highlight` for a mark type as the root
