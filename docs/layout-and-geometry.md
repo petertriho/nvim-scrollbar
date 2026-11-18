@@ -177,9 +177,9 @@ source window:
 - The top and bottom border rows make the track shorter. The track has the
   height of the text area minus the border rows. The thumb and the marks map
   the buffer to these content rows.
-- `hide_if_all_visible` and `thumb.hide_if_all_visible` compare the buffer
-  with the text area of the source window. The border does not change the
-  result.
+- `hide_if_all_visible` and `thumb.hide_if_all_visible` check whether the
+  text area of the source window shows the whole buffer. The border does not
+  change the result.
 - The left and right border columns make the float wider. The layout sets the
   width of the content. The gutter reservation and the arrangement beside the
   minimap use the full width of the frame.

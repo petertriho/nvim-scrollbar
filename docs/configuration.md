@@ -177,14 +177,14 @@ require("scrollbar").setup({
 | `unit` | `"line"` | `"line"` counts buffer lines. `"screenline"` counts screen lines, so it accounts for wrapped lines and closed folds. See [Units](layout-and-geometry.md#units). |
 | `placement` | see Defaults | Position of the float. See [Layout and geometry](layout-and-geometry.md). |
 | `hide_on_cursor` | `true` | `true` hides the scrollbar of the active window while the cursor is inside the scrollbar. `"row"` clears only the row of the scrollbar under the cursor. See [Cursor Intersection](visibility.md#cursor-intersection). |
-| `hide_if_all_visible` | `false` | Hides the whole scrollbar when the buffer fits in the window. |
+| `hide_if_all_visible` | `false` | Hides the whole scrollbar when the window shows the whole buffer. See [Documents That Fit](visibility.md#documents-that-fit). |
 | `mouse` | `true` | Makes the float take mouse input and adds the mouse mappings. See [Mouse](mouse.md). |
 | `layout` | see Defaults | Columns and layers. See [Layout](#layout). |
 | `track.highlight` | `"PmenuSbar"` | Track highlight: a group name or an `nvim_set_hl()` table. |
 | `thumb.text` | `" "` | One string with a positive display width and no control characters. |
 | `thumb.blend` | `30` | Integer from `0` to `100`. The text below the thumb shows through it with this blend. |
 | `thumb.highlight` | `"PmenuThumb"` | A group name or an `nvim_set_hl()` table. |
-| `thumb.hide_if_all_visible` | `true` | Hides only the thumb when the buffer fits in the window. |
+| `thumb.hide_if_all_visible` | `true` | Hides only the thumb when the window shows the whole buffer. |
 | `overlap.reserve` | `true` | `true`, `false`, or `"virtual_text"` (experimental). Keeps the text away from an east scrollbar. See [Overlap](#overlap). |
 | `overlap.show_through` | `false` | `false`, or a blend from `1` to `100`. The text below the scrollbar shows through the track, the thumb, and the empty cells. |
 | `overlap.marks` | `"glyph"` | `"glyph"` draws the text of each mark. `"tint"` draws each mark as a background in the color of the mark. |

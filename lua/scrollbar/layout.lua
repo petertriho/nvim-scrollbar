@@ -24,13 +24,25 @@ M.map_position = function(position, total_extent, height)
     return math.floor(clamped_position * (height - 1) / maximum_position)
 end
 
+---Whether the viewport shows the whole document: its first and its last
+---position. A document with fewer positions than the window has rows does not
+---always fit. Wrapped lines can push lines out of the window, and a scroll
+---can move the first lines above it.
+---@param viewport_start integer
+---@param viewport_end integer
+---@param total_extent integer
+---@return boolean
+M.shows_all = function(viewport_start, viewport_end, total_extent)
+    return total_extent <= 1 or (viewport_start <= 0 and viewport_end >= total_extent - 1)
+end
+
 ---@param viewport_start integer
 ---@param viewport_end integer
 ---@param total_extent integer
 ---@param height integer
 ---@return ScrollbarVerticalHandleGeometry
 M.handle_geometry = function(viewport_start, viewport_end, total_extent, height)
-    if total_extent <= 1 or (viewport_start <= 0 and viewport_end >= total_extent - 1) then
+    if M.shows_all(viewport_start, viewport_end, total_extent) then
         return { first_row = 0, last_row = math.max(0, height - 1) }
     end
 
