@@ -11,6 +11,12 @@ local function collect(winid, context)
     end
 
     local cursor = vim.api.nvim_win_get_cursor(winid)
+    -- Before VimEnter in a headless run, the cursor of the first window is on
+    -- line 0, which is not a buffer line. The first CursorMoved after the
+    -- startup publishes the mark.
+    if cursor[1] < 1 then
+        return nil, nil
+    end
     local line = cursor[1] - 1
     return { { line = line, type = "Cursor" } }, {
         {

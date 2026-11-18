@@ -229,6 +229,36 @@ T["entering a same-buffer split initializes its window cursor mark"] = function(
     expect.equality(store.get_window(second).cursor, { { line = 1, type = "Cursor" } })
 end
 
+T["a headless startup publishes no cursor mark until the cursor is on a line"] = function()
+    -- Before VimEnter in a headless run, the cursor of the first window is on line 0.
+    local check = [[
+        local before = vim.api.nvim_win_get_cursor(0)[1]
+        require("scrollbar").setup()
+        vim.api.nvim_create_autocmd("VimEnter", {
+            callback = function()
+                vim.schedule(function()
+                    local marks = require("scrollbar.shared.store").get_window(vim.api.nvim_get_current_win()).cursor
+                    io.stdout:write(vim.json.encode({ before = before, marks = marks or vim.NIL }))
+                    vim.cmd("qall!")
+                end)
+            end,
+        })
+    ]]
+    local result = vim.system({
+        vim.v.progpath,
+        "--headless",
+        "-u",
+        "NONE",
+        "--cmd",
+        "set rtp^=" .. vim.fn.fnameescape(vim.fn.getcwd()),
+        "-c",
+        "lua " .. check,
+    }, { text = true, timeout = 10000 }):wait()
+
+    expect.equality(result.stderr, "")
+    expect.equality(vim.json.decode(result.stdout), { before = 0, marks = { { line = 0, type = "Cursor" } } })
+end
+
 T["delegates exact source membership to provider context"] = function()
     local providers = require("scrollbar.providers")
     local target = new_buffer({ "one", "two" })
