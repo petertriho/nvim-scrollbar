@@ -311,6 +311,7 @@ option to get closer to the v1 behavior.
 | Drawing | Virtual text at the right edge of the window | A floating window at the north-east corner of each source window |
 | Mouse | No mouse support | `scrollbar.mouse = true`. Clicks also need `vim.o.mouse`. |
 | Cursor over the scrollbar | No effect | `scrollbar.hide_on_cursor = true` hides the scrollbar while the cursor is in its cells |
+| Text under the scrollbar | No window options changed | `scrollbar.overlap.reserve = true` sets the window-local `'sidescrolloff'`, or `'wrapcolumn'` with `'wrap'`, so the text stays out of the scrollbar columns |
 | Update interval | `throttle_ms = 100` | `scrollbar.throttle_ms = 16` |
 | Thumb highlight | `CursorColumn` | `PmenuThumb` |
 | Track | None | `scrollbar.track.highlight = "PmenuSbar"`, in the default layout |
