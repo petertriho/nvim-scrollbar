@@ -66,6 +66,12 @@ options or this table.
 
 ## Documents That Fit
 
+A document fits when the source window shows its first and its last line, in
+the `unit` of the scrollbar. A buffer with fewer lines than the window has
+rows does not always fit. Wrapped lines can push lines out of the window, and a
+scroll can move the first lines above it. The lines in a closed fold count as
+visible.
+
 - `hide_if_all_visible = true` hides the entire scrollbar when the document
   fits in the source window.
 - `thumb.hide_if_all_visible = true` hides only the thumb when the document

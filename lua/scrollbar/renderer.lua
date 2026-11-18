@@ -1244,7 +1244,10 @@ local function render_source(source_win, selection, root_config)
                 compact_search
             )
         end
-        if geometry.total_extent <= area.height and active_config.thumb.hide_if_all_visible then
+        if
+            active_config.thumb.hide_if_all_visible
+            and layout.shows_all(geometry.viewport_start, geometry.viewport_end, geometry.total_extent)
+        then
             geometry.handle = { first_row = -1, last_row = -1 }
         end
 
@@ -1281,8 +1284,10 @@ local function render_source(source_win, selection, root_config)
             return nil
         end
     end
-    local all_visible = geometry.total_extent <= area.height
-    if all_visible and active_config.hide_if_all_visible then
+    if
+        active_config.hide_if_all_visible
+        and layout.shows_all(geometry.viewport_start, geometry.viewport_end, geometry.total_extent)
+    then
         close_source(source_win)
         return nil
     end

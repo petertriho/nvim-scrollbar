@@ -1629,6 +1629,94 @@ T["applies exclusions, limits, all-visible rules, and owned-window filtering"] =
     expect.equality(result.exclusion_cleanup, true)
 end
 
+T["all-visible rules compare the viewport with the whole document"] = function()
+    local child = new_child()
+    local result = child.lua_func(function(base_config)
+        local source_win = vim.api.nvim_get_current_win()
+        local renderer = require("scrollbar.renderer")
+        local namespace = vim.api.nvim_get_namespaces().ScrollbarRenderer
+
+        -- Whether the scrollbar shows, and whether it shows the thumb.
+        local function visibility(unit)
+            local thumb_config = vim.deepcopy(base_config)
+            thumb_config.unit = unit
+            thumb_config.thumb.hide_if_all_visible = true
+            require("scrollbar.test.set_config")(thumb_config)
+            renderer.setup()
+            local state = renderer.render(source_win)
+            local thumb = false
+            if state ~= nil then
+                local extmarks =
+                    require("scrollbar.test.float").extmarks(state.float_buf, namespace, 0, -1, { details = true })
+                for _, extmark in ipairs(extmarks) do
+                    thumb = thumb or extmark[4].hl_group == "ScrollbarThumb"
+                end
+            end
+
+            local all_config = vim.deepcopy(thumb_config)
+            all_config.hide_if_all_visible = true
+            require("scrollbar.test.set_config")(all_config)
+            renderer.setup()
+            return { thumb = thumb, shown = renderer.render(source_win) ~= nil }
+        end
+
+        local function each_unit()
+            return { line = visibility("line"), screenline = visibility("screenline") }
+        end
+
+        local short = {}
+        for index = 1, 12 do
+            short[index] = "line " .. index
+        end
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, short)
+        vim.api.nvim_win_set_cursor(source_win, { 1, 0 })
+        local fits = each_unit()
+
+        -- The last line at the top of the window hides lines 1 to 11.
+        vim.api.nvim_win_set_cursor(source_win, { 12, 0 })
+        vim.cmd("normal! zt")
+        local scrolled = each_unit()
+
+        -- Wrapped lines push lines 5 to 12 out of the window.
+        local wrapped = {}
+        for index = 1, 12 do
+            wrapped[index] = string.rep("word ", 80)
+        end
+        vim.wo[source_win].wrap = true
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, wrapped)
+        vim.api.nvim_win_set_cursor(source_win, { 1, 0 })
+        vim.cmd("normal! zt")
+        local wrapped_view = vim.fn.line("w$")
+        local wrapped_result = each_unit()
+
+        -- A closed fold shows 100 lines in one row.
+        local long = {}
+        for index = 1, 100 do
+            long[index] = "line " .. index
+        end
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, long)
+        vim.wo[source_win].foldmethod = "manual"
+        vim.cmd("1,100fold")
+        local folded = visibility("line")
+
+        return {
+            fits = fits,
+            scrolled = scrolled,
+            wrapped_view = wrapped_view,
+            wrapped = wrapped_result,
+            folded = folded,
+        }
+    end, renderer_config())
+
+    local hidden = { thumb = false, shown = false }
+    local shown = { thumb = true, shown = true }
+    expect.equality(result.fits, { line = hidden, screenline = hidden })
+    expect.equality(result.scrolled, { line = shown, screenline = shown })
+    expect.equality(result.wrapped_view < 12, true)
+    expect.equality(result.wrapped, { line = shown, screenline = shown })
+    expect.equality(result.folded, hidden)
+end
+
 T["aligns short-buffer marks without shrinking the track"] = function()
     local child = new_child()
     local result = child.lua_func(function(base_config)
