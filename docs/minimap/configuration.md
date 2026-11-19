@@ -265,7 +265,8 @@ See [Configuration](../configuration.md#providers) for the rules, and the
 ## Marks
 
 The minimap shows the shared mark types from the top-level `marks` table as
-overlays. It uses their `priority` and `highlight`. It does not use `text`.
+overlays. It uses their `priority`, `highlight`, and `highlight_channel`. It
+does not use `text`.
 
 `minimap.marks` overrides the shared types for the minimap only:
 
@@ -281,8 +282,8 @@ require("scrollbar").setup({
 })
 ```
 
-- A table merges with the shared definition. It accepts only `priority` and
-  `highlight`.
+- A table merges with the shared definition. It accepts only `priority`,
+  `highlight`, and `highlight_channel`.
 - `false` hides one type. `marks = false` hides all overlays.
 - An override can name only a registered type. To add a type, add it to the
   top-level `marks` table. To show a new type only in the minimap, also set

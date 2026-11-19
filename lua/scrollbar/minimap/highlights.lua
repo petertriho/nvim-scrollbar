@@ -8,11 +8,13 @@ local RESOLVED_PREFIX = PREFIX .. "Resolved."
 local resolved_cache = {}
 local resolved_count = 0
 
-local function definition(source)
+---@param spec ScrollbarMinimapMarkSpec
+local function definition(spec)
+    local source = spec.highlight
     if type(source) == "table" then
         return vim.deepcopy(source)
     end
-    return highlights.channel_definition(source, "fg", "Normal", "#000000")
+    return highlights.mark_definition(source, spec.highlight_channel)
 end
 
 local function generated_name(public_name)
@@ -64,7 +66,7 @@ M.set = function()
     local root_final = {}
     for mark_type, spec in pairs(root.marks) do
         local private_name = generated_name(spec.group)
-        local generated = definition(spec.highlight)
+        local generated = definition(spec)
         vim.api.nvim_set_hl(0, private_name, generated)
         set_default_link(spec.group, private_name)
         root_final[mark_type] = highlights.external_definition(spec.group, private_name) or generated
@@ -73,10 +75,14 @@ M.set = function()
         if variant.id > 0 then
             for mark_type, spec in pairs(variant.config.marks) do
                 local root_spec = root.marks[mark_type]
-                if root_spec ~= nil and vim.deep_equal(spec.highlight, root_spec.highlight) then
+                if
+                    root_spec ~= nil
+                    and vim.deep_equal(spec.highlight, root_spec.highlight)
+                    and spec.highlight_channel == root_spec.highlight_channel
+                then
                     vim.api.nvim_set_hl(0, spec.group, vim.deepcopy(root_final[mark_type]))
                 else
-                    vim.api.nvim_set_hl(0, spec.group, definition(spec.highlight))
+                    vim.api.nvim_set_hl(0, spec.group, definition(spec))
                 end
             end
         end
