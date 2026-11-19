@@ -13,6 +13,7 @@ M.ORDER = {
     "vgit",
     "ale",
     "coc",
+    "qflist",
     "treesitter",
     "lsp_semantic_tokens",
 }
@@ -31,6 +32,7 @@ local SPECS = {
     vgit = { targets = BOTH, execution = "parent", default = false },
     ale = { targets = BOTH, execution = "parent", default = false },
     coc = { targets = BOTH, execution = "parent", default = false },
+    qflist = { targets = BOTH, execution = "parent", default = false },
     treesitter = { targets = MINIMAP_ONLY, execution = "worker", default = true },
     lsp_semantic_tokens = { targets = MINIMAP_ONLY, execution = "parent", default = false },
 }
@@ -40,7 +42,34 @@ local TARGET_KEYS = { scrollbar = true, minimap = true }
 local KEYS = {
     search = { incsearch = true, backend = true, scrollbar = true, minimap = true },
     marks = { letters = true, numbers = true, scrollbar = true, minimap = true },
+    qflist = { types = true, scrollbar = true, minimap = true },
 }
+
+-- The entry types that Vim documents for the entries of a quickfix list or a
+-- location list: error, warning, info, and note.
+local LIST_ENTRY_TYPES = { E = true, W = true, I = true, N = true }
+
+---@param value any
+---@param path string
+---@return table<string, string|false>
+local function normalize_list_types(value, path)
+    if value == nil then
+        return {}
+    end
+    schema.table(value, path)
+    local result = {}
+    for letter, mark_type in pairs(value) do
+        local entry_path = schema.join(path, letter)
+        if not LIST_ENTRY_TYPES[letter] then
+            schema.invalid(string.format("unknown option '%s'. The keys are E, W, I, and N", entry_path))
+        end
+        if mark_type ~= false and (type(mark_type) ~= "string" or not mark_type:match(schema.TYPE_NAME_PATTERN)) then
+            schema.invalid(entry_path .. " must be false or a mark type name")
+        end
+        result[letter] = mark_type
+    end
+    return result
+end
 
 ---@param name string
 ---@param value table Provider options without renderer keys
@@ -67,6 +96,9 @@ local function normalize_options(name, value, path)
             schema.boolean(value.numbers, path .. ".numbers")
         end
         return result
+    end
+    if name == "qflist" or name == "loclist" then
+        return { types = normalize_list_types(value.types, path .. ".types") }
     end
     return true
 end
@@ -136,6 +168,34 @@ M.normalize = function(value)
         result[name] = request
     end
     return result
+end
+
+--- Check that each mark type in the `types` map of a list provider is in the
+--- mark registry. The registry is known only after the top-level `marks`
+--- table is normalized.
+---@param requests table<string, ScrollbarProviderRequest>
+---@param registry ScrollbarMarkRegistry
+M.check_mark_types = function(requests, registry)
+    for _, name in ipairs(M.ORDER) do
+        local options = requests[name].options
+        if type(options) == "table" and type(options.types) == "table" then
+            local letters = vim.tbl_keys(options.types)
+            table.sort(letters)
+            for _, letter in ipairs(letters) do
+                local mark_type = options.types[letter]
+                if mark_type ~= false and registry.specs[mark_type] == nil then
+                    schema.invalid(
+                        string.format(
+                            "providers.%s.types.%s: unknown mark type '%s'. Define it in the top-level marks table",
+                            name,
+                            letter,
+                            mark_type
+                        )
+                    )
+                end
+            end
+        end
+    end
 end
 
 --- Combine provider requests with renderer enablement. A provider is active

@@ -65,6 +65,7 @@ require("scrollbar").setup({
         vgit = false,
         ale = false,
         coc = false,
+        qflist = false,
         treesitter = true, -- the minimap only
         lsp_semantic_tokens = false,
     },
@@ -89,6 +90,8 @@ require("scrollbar").setup({
         VGitAdd = { text = { "┃" }, priority = 7, highlight = "GitSignsAdd" },
         VGitChange = { text = { "┃" }, priority = 7, highlight = "GitSignsChange" },
         VGitDelete = { text = { "▁" }, priority = 7, highlight = "GitSignsDelete" },
+        Qflist = { text = { "-", "=" }, priority = 6, highlight = "QuickFixLine" },
+        Loclist = { text = { "-", "=" }, priority = 6, highlight = "QuickFixLine" },
     },
     scrollbar = {
         -- Global options
@@ -393,6 +396,7 @@ the output of the providers that target it.
 | --- | --- | --- |
 | `search` | `incsearch` (boolean), `backend` (`"worker"` or `"sync"`, default `"worker"`) | Both |
 | `marks` | `letters` (default `true`), `numbers` (default `false`) | Both |
+| `qflist` | `types` (default `{}`), see [Entry types](providers/qflist.md#entry-types) | Both |
 | `treesitter`, `lsp_semantic_tokens` | None | Minimap only. `scrollbar = true` is a setup error. |
 | All other built-ins | None | Both |
 

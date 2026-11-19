@@ -19,6 +19,7 @@ rendering.
 | [`vgit`](vgit.md) | off | off | Buffer `VGitAdd`, `VGitChange`, `VGitDelete` marks | vgit.nvim |
 | [`ale`](ale.md) | off | off | Buffer `Error`, `Warn` marks | ALE |
 | [`coc`](coc.md) | off | off | Buffer `Error`, `Warn`, `Info`, `Hint` marks | coc.nvim |
+| [`qflist`](qflist.md) | off | off | Buffer `Qflist` marks for the quickfix list | None |
 | [`treesitter`](treesitter.md) | unavailable | on | Buffer minimap byte spans | Installed parser |
 | [`lsp_semantic_tokens`](lsp_semantic_tokens.md) | unavailable | off | Buffer minimap byte spans | Attached LSP client |
 
@@ -38,6 +39,7 @@ require("scrollbar").setup({
         vgit = false,
         ale = false,
         coc = false,
+        qflist = false,
         treesitter = true,
         lsp_semantic_tokens = false,
     },
@@ -62,8 +64,8 @@ require("scrollbar").setup({
 })
 ```
 
-Only `search` and `marks` have options. See [Search](search.md) and
-[Marks](marks.md). `treesitter` and `lsp_semantic_tokens` support only the
+Only `search`, `marks`, and `qflist` have options. See [Search](search.md),
+[Marks](marks.md), and [Quickfix list](qflist.md#entry-types). `treesitter` and `lsp_semantic_tokens` support only the
 minimap, so `scrollbar = true` on them is a setup error. Unknown provider
 names and unknown option keys are also errors. To add a custom data source,
 register it through the [custom provider API](custom.md).

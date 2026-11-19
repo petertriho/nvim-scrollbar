@@ -11,7 +11,7 @@
 ---@alias ScrollbarText string|string[]
 ---@alias ScrollbarHighlightDefinition table<string, any> A table accepted by nvim_set_hl()
 ---@alias ScrollbarHighlight string|ScrollbarHighlightDefinition
----@alias ScrollbarProviderOption boolean|ScrollbarSearchProviderConfig|ScrollbarMarksProviderConfig
+---@alias ScrollbarProviderOption boolean|ScrollbarSearchProviderConfig|ScrollbarMarksProviderConfig|ScrollbarListProviderConfig
 ---@alias ScrollbarFloatKind "snacks_list"|"snacks_preview"|"telescope_results"|"telescope_preview"|"custom"
 ---@alias ScrollbarSourceKind "normal"|ScrollbarFloatKind A normal window, or the kind of a floating source window
 
@@ -96,6 +96,9 @@
 ---@field letters boolean
 ---@field numbers boolean
 
+---@class ScrollbarListProviderConfig
+---@field types table<string, string|false> The mark type for each entry type letter, or false to drop the entries
+
 ---@class ScrollbarUserProviderTargets
 ---@field scrollbar? boolean Defaults to true when the provider supports the scrollbar
 ---@field minimap? boolean Defaults to true
@@ -107,6 +110,9 @@
 ---@class ScrollbarUserMarksProviderConfig: ScrollbarUserProviderTargets
 ---@field letters? boolean
 ---@field numbers? boolean
+
+---@class ScrollbarUserListProviderConfig: ScrollbarUserProviderTargets
+---@field types? table<"E"|"W"|"I"|"N", string|false> The mark type for each entry type letter, or false to drop the entries
 
 ---@alias ScrollbarUserProvider boolean|ScrollbarUserProviderTargets
 
@@ -121,6 +127,7 @@
 ---@field vgit? ScrollbarUserProvider
 ---@field ale? ScrollbarUserProvider
 ---@field coc? ScrollbarUserProvider
+---@field qflist? boolean|ScrollbarUserListProviderConfig
 ---@field treesitter? ScrollbarUserProvider
 ---@field lsp_semantic_tokens? ScrollbarUserProvider
 
@@ -308,6 +315,7 @@
 ---@field vgit boolean
 ---@field ale boolean
 ---@field coc boolean
+---@field qflist false|ScrollbarListProviderConfig
 ---@field treesitter boolean
 ---@field lsp_semantic_tokens boolean
 

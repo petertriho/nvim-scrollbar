@@ -180,9 +180,9 @@ The `scrollbar.handlers` modules are removed. Delete every call to
 The v1 `diagnostic` handler also showed coc.nvim diagnostics. In v2, coc.nvim
 diagnostics need `providers.coc = true`.
 
-v2 also has providers for native marks, mini.diff, vim-signify, vgit.nvim, and
-coc.nvim. A provider entry can also select the renderers that use it, for
-example `diagnostic = { minimap = false }`. See
+v2 also has providers for native marks, mini.diff, vim-signify, vgit.nvim,
+coc.nvim, and the quickfix list. A provider entry can also select the
+renderers that use it, for example `diagnostic = { minimap = false }`. See
 [Providers](configuration.md#providers).
 
 ### Search

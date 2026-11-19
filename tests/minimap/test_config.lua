@@ -50,11 +50,13 @@ local FULL_MARKS = with_groups({
     GitDelete = { priority = 7, highlight = "GitSignsDelete" },
     Hint = { priority = 5, highlight = "DiagnosticVirtualTextHint" },
     Info = { priority = 4, highlight = "DiagnosticVirtualTextInfo" },
+    Loclist = { priority = 6, highlight = "QuickFixLine" },
     Mark = { priority = 1, highlight = "Special" },
     MiniDiffAdd = { priority = 7, highlight = "MiniDiffSignAdd" },
     MiniDiffChange = { priority = 7, highlight = "MiniDiffSignChange" },
     MiniDiffDelete = { priority = 7, highlight = "MiniDiffSignDelete" },
     Misc = { priority = 6, highlight = "Normal" },
+    Qflist = { priority = 6, highlight = "QuickFixLine" },
     Search = { priority = 1, highlight = "Search" },
     SignifyAdd = { priority = 7, highlight = "SignifySignAdd" },
     SignifyChange = { priority = 7, highlight = "SignifySignChange" },
@@ -151,6 +153,7 @@ T["defaults core minimap providers and treesitter on and integrations and LSP se
         "vgit",
         "ale",
         "coc",
+        "qflist",
         "lsp_semantic_tokens",
     }) do
         expect.equality(plan[name].consumers, { scrollbar = false, minimap = false })
