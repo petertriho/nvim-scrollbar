@@ -271,6 +271,37 @@ T["gitsigns bounds change marks to the surviving added range"] = function()
     })
 end
 
+T["gitsigns puts a top-of-file delete mark on the first line"] = function()
+    local target = new_buffer({ "2", "3", "4", "5" })
+    local hunks = {}
+    package.preload["gitsigns"] = function()
+        return {
+            get_hunks = function()
+                return hunks
+            end,
+        }
+    end
+
+    local providers = require("scrollbar.providers")
+    providers.register(require("scrollbar.providers.gitsigns"))
+    providers.setup({
+        is_buffer_eligible = function(bufnr)
+            return bufnr == target
+        end,
+    })
+
+    -- gitsigns reports a delete of the first line as `@@ -1,1 +0 @@`, so added.start is 0.
+    hunks = {
+        { type = "delete", added = { start = 0, count = 0 }, removed = { start = 1, count = 1 } },
+        { type = "change", added = { start = 4, count = 1 }, removed = { count = 1 } },
+    }
+    providers.refresh(target)
+    expect.equality(require("scrollbar.shared.store").get(target).gitsigns, {
+        { line = 0, type = "GitDelete" },
+        { line = 3, type = "GitChange" },
+    })
+end
+
 T["mini.diff maps hunks directly and updates only the event buffer"] = function()
     local first = new_buffer({ "1", "2", "3", "4", "5", "6" })
     local second = new_buffer({ "1", "2", "3", "4", "5", "6" })

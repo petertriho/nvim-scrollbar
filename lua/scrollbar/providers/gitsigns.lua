@@ -45,7 +45,7 @@ local function collect_marks(bufnr)
                 table.insert(marks, { line = line - 1, type = "GitAdd" })
             end
         elseif hunk.type == "delete" then
-            table.insert(marks, { line = hunk.added.start - 1, type = "GitDelete" })
+            table.insert(marks, { line = math.max(hunk.added.start, 1) - 1, type = "GitDelete" })
         end
     end
     return marks
