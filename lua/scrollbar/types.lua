@@ -128,6 +128,7 @@
 ---@field ale? ScrollbarUserProvider
 ---@field coc? ScrollbarUserProvider
 ---@field qflist? boolean|ScrollbarUserListProviderConfig
+---@field loclist? boolean|ScrollbarUserListProviderConfig
 ---@field treesitter? ScrollbarUserProvider
 ---@field lsp_semantic_tokens? ScrollbarUserProvider
 
@@ -316,6 +317,7 @@
 ---@field ale boolean
 ---@field coc boolean
 ---@field qflist false|ScrollbarListProviderConfig
+---@field loclist false|ScrollbarListProviderConfig
 ---@field treesitter boolean
 ---@field lsp_semantic_tokens boolean
 

@@ -14,6 +14,7 @@ M.ORDER = {
     "ale",
     "coc",
     "qflist",
+    "loclist",
     "treesitter",
     "lsp_semantic_tokens",
 }
@@ -33,6 +34,7 @@ local SPECS = {
     ale = { targets = BOTH, execution = "parent", default = false },
     coc = { targets = BOTH, execution = "parent", default = false },
     qflist = { targets = BOTH, execution = "parent", default = false },
+    loclist = { targets = BOTH, execution = "parent", default = false },
     treesitter = { targets = MINIMAP_ONLY, execution = "worker", default = true },
     lsp_semantic_tokens = { targets = MINIMAP_ONLY, execution = "parent", default = false },
 }
@@ -43,6 +45,7 @@ local KEYS = {
     search = { incsearch = true, backend = true, scrollbar = true, minimap = true },
     marks = { letters = true, numbers = true, scrollbar = true, minimap = true },
     qflist = { types = true, scrollbar = true, minimap = true },
+    loclist = { types = true, scrollbar = true, minimap = true },
 }
 
 -- The entry types that Vim documents for the entries of a quickfix list or a
