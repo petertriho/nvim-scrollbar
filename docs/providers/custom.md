@@ -147,7 +147,7 @@ values are registration errors. `refresh_minimap` and
 - `get(name)` returns the registered provider table or `nil`.
 
 > **Avoid built-in names:** `cursor`, `diagnostic`, `search`, `marks`,
-> `gitsigns`, `mini_diff`, `signify`, `vgit`, `ale`, `coc`, `qflist`,
+> `gitsigns`, `mini_diff`, `signify`, `vgit`, `ale`, `coc`, `qflist`, `loclist`,
 > `treesitter`, and `lsp_semantic_tokens`. A registration with one of these
 > names before root setup shadows that built-in. After root setup, a
 > registration fails only when the name is currently registered. A default-on

@@ -588,6 +588,25 @@ T["provider targets"]["qflist rejects unknown entry types and unregistered mark 
     expect.equality(plan().qflist.options, { types = { N = "Hint" } })
 end
 
+T["provider targets"]["loclist is off by default and takes the same types option as qflist"] = function()
+    set_top({})
+    expect.equality(plan().loclist.consumers, { scrollbar = false, minimap = false })
+    expect.equality(plan().loclist.options, false)
+
+    set_top({ providers = { loclist = { types = { E = "Error", N = false } } } })
+    expect.equality(plan().loclist.consumers, { scrollbar = true, minimap = false })
+    expect.equality(plan().loclist.options, { types = { E = "Error", N = false } })
+
+    expect_invalid_top(
+        { providers = { loclist = { types = { X = "Error" } } } },
+        "unknown option 'providers%.loclist%.types%.X'%. The keys are E, W, I, and N"
+    )
+    expect_invalid_top(
+        { providers = { loclist = { types = { E = "Missing" } } } },
+        "providers%.loclist%.types%.E: unknown mark type 'Missing'"
+    )
+end
+
 T["provider targets"]["both renderer flags false turn the provider off"] = function()
     set_top({ minimap = { enabled = true }, providers = { cursor = { scrollbar = false, minimap = false } } })
     expect.equality(plan().cursor.consumers, { scrollbar = false, minimap = false })

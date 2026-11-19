@@ -229,6 +229,7 @@ bar of the snacks list selects an item. See [Floats](docs/floats.md).
 | [`ale`](docs/providers/ale.md) | off | off | ALE location list | ALE |
 | [`coc`](docs/providers/coc.md) | off | off | Coc diagnostic list | coc.nvim |
 | [`qflist`](docs/providers/qflist.md) | off | off | Quickfix list | None |
+| [`loclist`](docs/providers/loclist.md) | off | off | Location list of each window | None |
 | [`treesitter`](docs/providers/treesitter.md) | unavailable | on | Treesitter highlight captures | Installed parser |
 | [`lsp_semantic_tokens`](docs/providers/lsp_semantic_tokens.md) | unavailable | off | LSP semantic tokens | Attached LSP client |
 
@@ -276,6 +277,7 @@ source, use the [custom provider API](docs/providers/custom.md).
 - [ALE](docs/providers/ale.md)
 - [Coc](docs/providers/coc.md)
 - [Quickfix list](docs/providers/qflist.md)
+- [Location list](docs/providers/loclist.md)
 - [Treesitter](docs/providers/treesitter.md)
 - [LSP semantic tokens](docs/providers/lsp_semantic_tokens.md)
 - [Custom providers](docs/providers/custom.md)

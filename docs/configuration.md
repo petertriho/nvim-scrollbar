@@ -66,6 +66,7 @@ require("scrollbar").setup({
         ale = false,
         coc = false,
         qflist = false,
+        loclist = false,
         treesitter = true, -- the minimap only
         lsp_semantic_tokens = false,
     },
@@ -396,7 +397,7 @@ the output of the providers that target it.
 | --- | --- | --- |
 | `search` | `incsearch` (boolean), `backend` (`"worker"` or `"sync"`, default `"worker"`) | Both |
 | `marks` | `letters` (default `true`), `numbers` (default `false`) | Both |
-| `qflist` | `types` (default `{}`), see [Entry types](providers/qflist.md#entry-types) | Both |
+| `qflist`, `loclist` | `types` (default `{}`), see [Entry types](providers/qflist.md#entry-types) | Both |
 | `treesitter`, `lsp_semantic_tokens` | None | Minimap only. `scrollbar = true` is a setup error. |
 | All other built-ins | None | Both |
 

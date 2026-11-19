@@ -127,5 +127,6 @@ Route the type to its own lane in the scrollbar `layout`. See
 ## Related
 
 - [Provider index](README.md)
+- [Location list](loclist.md)
 - [Highlights](../highlights.md)
 - [Configuration](../configuration.md)

@@ -181,8 +181,9 @@ The v1 `diagnostic` handler also showed coc.nvim diagnostics. In v2, coc.nvim
 diagnostics need `providers.coc = true`.
 
 v2 also has providers for native marks, mini.diff, vim-signify, vgit.nvim,
-coc.nvim, and the quickfix list. A provider entry can also select the
-renderers that use it, for example `diagnostic = { minimap = false }`. See
+coc.nvim, the quickfix list, and the location list. A provider entry can also
+select the renderers that use it, for example
+`diagnostic = { minimap = false }`. See
 [Providers](configuration.md#providers).
 
 ### Search

@@ -45,6 +45,10 @@ Use one of these setups:
   })
   ```
 
+When ALE also fills the location list (the ALE option `g:ale_set_loclist`),
+the [`loclist` provider](loclist.md) gives each problem a `Loclist` mark as
+well. Enable `loclist` only when you want those marks too.
+
 ## Marks
 
 | ALE `type` | Mark type |

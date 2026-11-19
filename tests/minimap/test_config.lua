@@ -154,6 +154,7 @@ T["defaults core minimap providers and treesitter on and integrations and LSP se
         "ale",
         "coc",
         "qflist",
+        "loclist",
         "lsp_semantic_tokens",
     }) do
         expect.equality(plan[name].consumers, { scrollbar = false, minimap = false })
