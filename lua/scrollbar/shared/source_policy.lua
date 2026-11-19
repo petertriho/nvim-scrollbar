@@ -45,7 +45,8 @@ local ELIGIBILITY_TTL_MS = 50
 -- (about 5 µs). Editor-relative placement makes the result depend on focus, so
 -- the active source is part of the key. The picker group rule of
 -- `visibility = "active"` depends on the current window, so it is part of the
--- key too.
+-- key too. A focused float of either renderer counts as focus on its source
+-- window.
 local SOURCE_SELECTION_TTL_MS = 50
 
 ---@class ScrollbarSourcePolicyConfigModule
@@ -61,6 +62,7 @@ local SOURCE_SELECTION_TTL_MS = 50
 ---@field config ScrollbarSourcePolicyConfigModule Read at call time, so a replaced function applies at once
 ---@field owned_var string Window and buffer variable that marks a float of this renderer, also from an earlier setup
 ---@field states_by_float table<integer, { source_win: integer }> Live floats of this renderer, keyed by float window
+---@field peer_renderer? string Module name of the other renderer, read from `package.loaded`
 ---@field owned_float_buffers table<integer, boolean> Live float buffers of this renderer
 ---@field tuning ScrollbarSourcePolicyTuning Table whose interval fields override the memo lifetimes
 ---@field collect_stale fun(selected: table<integer, true>, stale: table<integer, true>) Mark each retained source window that is not in `selected`
@@ -113,6 +115,7 @@ M.new = function(options)
     local config = options.config
     local owned_var = options.owned_var
     local states_by_float = options.states_by_float
+    local peer_renderer = options.peer_renderer
     local owned_float_buffers = options.owned_float_buffers
     local tuning = options.tuning
     local collect_stale = options.collect_stale
@@ -370,12 +373,32 @@ M.new = function(options)
         return kind
     end
 
+    ---The window that has focus for the rules of `visibility = "active"`. A
+    ---press on a float of either renderer focuses the float until the release.
+    ---During that time, the source window of the float has focus, so that a
+    ---drag on the scrollbar does not close the minimap, and the reverse.
+    ---@return integer winid
+    ---@return boolean source True when `winid` is the source window of a focused float
+    local function focus_window()
+        local current = vim.api.nvim_get_current_win()
+        ---@type { source_win: integer }?
+        local state = states_by_float[current]
+        if state == nil and peer_renderer ~= nil then
+            -- A peer renderer that is not loaded has no floats.
+            local peer = package.loaded[peer_renderer]
+            state = peer ~= nil and peer.get_state_by_float(current) or nil
+        end
+        if state ~= nil and valid_window(state.source_win) then
+            return state.source_win, true
+        end
+        return current, false
+    end
+
     ---@return integer?
     local function active_source_window()
-        local current = vim.api.nvim_get_current_win()
-        local owned_state = states_by_float[current]
-        if owned_state ~= nil and valid_window(owned_state.source_win) then
-            return owned_state.source_win
+        local current, source = focus_window()
+        if source then
+            return current
         end
         local ok, window_config = pcall(vim.api.nvim_win_get_config, current)
         if not ok then
@@ -393,7 +416,8 @@ M.new = function(options)
         end
     end
 
-    ---The windows of the picker that has focus, keyed by window.
+    ---The windows of the picker that has focus, keyed by window. A drag on a
+    ---float of a picker window keeps the group of that picker.
     ---@param root_config table
     ---@return table<integer, true>
     local function active_group(root_config)
@@ -401,7 +425,7 @@ M.new = function(options)
         if floats == nil or not floats.enabled then
             return NO_GROUP
         end
-        local current = vim.api.nvim_get_current_win()
+        local current = focus_window()
         local now = vim.uv.now()
         local cached = group_cache
         if

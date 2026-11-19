@@ -114,6 +114,7 @@ end
 local floats = float_states.new({
     renderer = "minimap",
     scheduler = "scrollbar.minimap.scheduler",
+    peer_renderer = "scrollbar.renderer",
     config = config_module,
     owned_var = OWNED_VAR,
     augroup = AUGROUP_NAME,

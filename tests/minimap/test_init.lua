@@ -475,6 +475,80 @@ T["a scroll while a float of one renderer is current reaches the other renderer"
     expect.equality(scrollbar_drag.minimap, { source_win })
 end
 
+-- Drags on the float of one renderer under `visibility = "active"` for both
+-- renderers, and reports which floats the source window has during the drag.
+---@param module_prefix string `"scrollbar"` or `"scrollbar.minimap"`
+local function drag_with_active_visibility(module_prefix)
+    local child = new_child()
+    reset_modules(child)
+    child.lua([[
+        local lines = {}
+        for index = 1, 500 do
+            lines[index] = "local x = " .. index
+        end
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        require("scrollbar").setup({
+            set_highlights = false,
+            scrollbar = { visibility = "active", throttle_ms = 0, hide_on_cursor = false, mouse = true },
+            minimap = {
+                enabled = true,
+                visibility = "active",
+                backend = "sync",
+                throttle_ms = 0,
+                hide_on_cursor = false,
+                mouse = true,
+            },
+        })
+        require("scrollbar.scheduler").flush()
+        require("scrollbar.minimap.scheduler").flush()
+    ]])
+    local source_win = child.api.nvim_get_current_win()
+    -- The press focuses the float until the release, and the drag scrolls the
+    -- source window. Both schedulers then flush while the float has focus, as
+    -- they do for the scroll of a drag.
+    return child.lua_func(function(prefix, win)
+        local state = assert(require(prefix .. ".renderer").get_state(win))
+        local mouse = require(prefix .. ".mouse")
+        local original = vim.fn.getmousepos
+        local function at_row(row, callback)
+            ---@diagnostic disable-next-line: duplicate-set-field
+            vim.fn.getmousepos = function()
+                return { winid = state.float_win, winrow = row + 1, wincol = 1, screenrow = row + 1, screencol = 1 }
+            end
+            callback()
+            vim.fn.getmousepos = original
+        end
+        at_row(0, function()
+            mouse.press(state.float_win)
+        end)
+        at_row(10, mouse.drag)
+        for _, name in ipairs({ "scrollbar.scheduler", "scrollbar.minimap.scheduler" }) do
+            require(name).invalidate_all()
+            require(name).flush()
+        end
+        return {
+            focused = vim.api.nvim_get_current_win() ~= win,
+            scrolled = vim.fn.line("w0", win) > 1,
+            scrollbar = require("scrollbar.renderer").get_state(win) ~= nil,
+            minimap = require("scrollbar.minimap.renderer").get_state(win) ~= nil,
+        }
+    end, module_prefix, source_win)
+end
+
+T["visibility active keeps the minimap during a drag on the scrollbar"] = function()
+    expect.equality(
+        drag_with_active_visibility("scrollbar"),
+        { focused = true, scrolled = true, scrollbar = true, minimap = true }
+    )
+end
+
+T["visibility active keeps the scrollbar during a drag on the minimap"] = function()
+    expect.equality(
+        drag_with_active_visibility("scrollbar.minimap"),
+        { focused = true, scrolled = true, scrollbar = true, minimap = true }
+    )
+end
+
 T["reconfigure via a second setup call disposes the previous worker and floats"] = function()
     local child = new_child()
     reset_modules(child)
