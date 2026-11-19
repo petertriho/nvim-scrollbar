@@ -147,13 +147,13 @@ values are registration errors. `refresh_minimap` and
 - `get(name)` returns the registered provider table or `nil`.
 
 > **Avoid built-in names:** `cursor`, `diagnostic`, `search`, `marks`,
-> `gitsigns`, `mini_diff`, `signify`, `vgit`, `ale`, `coc`, `treesitter`, and
-> `lsp_semantic_tokens`. A registration with one of these names before root
-> setup shadows that built-in. After root setup, a registration fails only when
-> the name is currently registered. A default-on built-in is normally
-> registered. An optional or disabled built-in is not necessarily registered.
-> The built-in enable and disable options never manage or remove a custom
-> provider with the same name.
+> `gitsigns`, `mini_diff`, `signify`, `vgit`, `ale`, `coc`, `qflist`,
+> `treesitter`, and `lsp_semantic_tokens`. A registration with one of these
+> names before root setup shadows that built-in. After root setup, a
+> registration fails only when the name is currently registered. A default-on
+> built-in is normally registered. An optional or disabled built-in is not
+> necessarily registered. The built-in enable and disable options never manage
+> or remove a custom provider with the same name.
 
 ## Provider Interface
 

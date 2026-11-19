@@ -543,6 +543,51 @@ T["provider targets"]["a table can keep a provider out of one renderer"] = funct
     expect.equality(plan().marks.options, { letters = true, numbers = true })
 end
 
+T["provider targets"]["qflist is off by default and maps entry types to mark types"] = function()
+    set_top({})
+    expect.equality(plan().qflist.consumers, { scrollbar = false, minimap = false })
+    expect.equality(plan().qflist.options, false)
+
+    set_top({ minimap = { enabled = true }, providers = { qflist = true } })
+    expect.equality(plan().qflist.consumers, { scrollbar = true, minimap = true })
+    expect.equality(plan().qflist.options, { types = {} })
+
+    set_top({
+        marks = { Todo = { text = "T", priority = 4, highlight = "Todo" } },
+        providers = { qflist = { types = { E = "Error", W = "Todo", I = false }, minimap = false } },
+    })
+    expect.equality(plan().qflist.consumers, { scrollbar = true, minimap = false })
+    expect.equality(plan().qflist.options, { types = { E = "Error", W = "Todo", I = false } })
+end
+
+T["provider targets"]["qflist rejects unknown entry types and unregistered mark types"] = function()
+    expect_invalid_top({ providers = { qflist = { types = "E" } } }, "providers%.qflist%.types must be a table")
+    expect_invalid_top(
+        { providers = { qflist = { types = { e = "Error" } } } },
+        "unknown option 'providers%.qflist%.types%.e'%. The keys are E, W, I, and N"
+    )
+    expect_invalid_top(
+        { providers = { qflist = { types = { "Error" } } } },
+        "unknown option 'providers%.qflist%.types%[1%]'"
+    )
+    expect_invalid_top(
+        { providers = { qflist = { types = { E = true } } } },
+        "providers%.qflist%.types%.E must be false or a mark type name"
+    )
+    expect_invalid_top(
+        { providers = { qflist = { types = { W = "Bad-Name" } } } },
+        "providers%.qflist%.types%.W must be false or a mark type name"
+    )
+    expect_invalid_top(
+        { providers = { qflist = { types = { N = "Todo" } } } },
+        "providers%.qflist%.types%.N: unknown mark type 'Todo'%. Define it in the top%-level marks table"
+    )
+    expect_invalid_top({ providers = { qflist = { letters = true } } }, "unknown option 'providers%.qflist%.letters'")
+    -- A hidden type stays registered, so a provider can still publish it.
+    set_top({ marks = { Hint = false }, providers = { qflist = { types = { N = "Hint" } } } })
+    expect.equality(plan().qflist.options, { types = { N = "Hint" } })
+end
+
 T["provider targets"]["both renderer flags false turn the provider off"] = function()
     set_top({ minimap = { enabled = true }, providers = { cursor = { scrollbar = false, minimap = false } } })
     expect.equality(plan().cursor.consumers, { scrollbar = false, minimap = false })

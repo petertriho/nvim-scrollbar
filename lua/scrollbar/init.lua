@@ -20,6 +20,7 @@ local BUILTINS = {
     { name = "vgit", module = "scrollbar.providers.vgit" },
     { name = "ale", module = "scrollbar.providers.ale" },
     { name = "coc", module = "scrollbar.providers.coc" },
+    { name = "qflist", module = "scrollbar.providers.qflist" },
     { name = "treesitter", module = "scrollbar.providers.treesitter" },
     { name = "lsp_semantic_tokens", module = "scrollbar.providers.lsp_semantic_tokens" },
 }

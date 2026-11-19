@@ -563,6 +563,7 @@ M.set = function(overrides)
 
     local shared = shared_config.normalize(overrides)
     local provider_requests = provider_config.normalize(overrides.providers)
+    provider_config.check_mark_types(provider_requests, shared.marks)
     local normalized, compiled = compile(overrides.scrollbar, shared)
     local normalized_minimap, compiled_minimap = minimap_config._compile(overrides.minimap, shared)
     -- A disabled minimap defines no groups, so it claims none.

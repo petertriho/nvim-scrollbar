@@ -27,6 +27,8 @@ local DEFAULT_MARKS = {
     VGitAdd = { text = { "┃" }, priority = 7, highlight = "GitSignsAdd" },
     VGitChange = { text = { "┃" }, priority = 7, highlight = "GitSignsChange" },
     VGitDelete = { text = { "▁" }, priority = 7, highlight = "GitSignsDelete" },
+    Qflist = { text = { "-", "=" }, priority = 6, highlight = "QuickFixLine" },
+    Loclist = { text = { "-", "=" }, priority = 6, highlight = "QuickFixLine" },
 }
 
 local DEFAULT_EXCLUDE = {
