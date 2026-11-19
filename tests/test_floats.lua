@@ -664,6 +664,10 @@ T["visibility active shows the picker bars while the picker has focus"] = functi
         seen.input = bars()
         vim.api.nvim_set_current_win(snacks.list.win.win)
         seen.list = bars()
+        -- A press on the bar of the list focuses the bar until the release.
+        local bar = assert(renderer.get_state(snacks.list.win.win)).float_win
+        vim.cmd("noautocmd call nvim_set_current_win(" .. bar .. ")")
+        seen.press = bars()
         vim.api.nvim_set_current_win(normal)
         seen.after = bars()
         return seen
@@ -671,7 +675,7 @@ T["visibility active shows the picker bars while the picker has focus"] = functi
 
     local outside = { normal = true, input = false, list = false, preview = false }
     local inside = { normal = false, input = false, list = true, preview = true }
-    expect.equality(result, { before = outside, input = inside, list = inside, after = outside })
+    expect.equality(result, { before = outside, input = inside, list = inside, press = inside, after = outside })
 end
 
 T["the bar of a float source is one zindex above its source"] = function()

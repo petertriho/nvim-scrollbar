@@ -24,6 +24,7 @@ local M = {}
 ---@field tuning ScrollbarSourcePolicyTuning Table whose interval fields override the memo lifetimes
 ---@field states table<integer, ScrollbarFloatState> Live floats, keyed by source window
 ---@field states_by_float table<integer, ScrollbarFloatState> Live floats, keyed by float window
+---@field peer_renderer string Module name of the other renderer. Its focused float gives focus to its source window
 ---@field owned_float_buffers table<integer, boolean> Live float buffers
 ---@field retained? table<integer, any> Window resources other than the float, keyed by source window
 ---@field release? fun(source_win: integer) Free the `retained` resources of a source window
@@ -76,6 +77,7 @@ M.new = function(options)
         config = config,
         owned_var = options.owned_var,
         states_by_float = states_by_float,
+        peer_renderer = options.peer_renderer,
         owned_float_buffers = owned_float_buffers,
         tuning = options.tuning,
         collect_stale = function(selected, stale)

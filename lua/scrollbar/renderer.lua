@@ -358,6 +358,7 @@ local clear_buffer_caches
 local floats = float_states.new({
     renderer = "scrollbar",
     scheduler = "scrollbar.scheduler",
+    peer_renderer = "scrollbar.minimap.renderer",
     config = config,
     owned_var = OWNED_VAR,
     augroup = AUGROUP_NAME,

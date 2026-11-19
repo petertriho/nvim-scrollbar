@@ -7,6 +7,9 @@ Visibility is controlled globally, per source window, and by buffer eligibility.
 - `visibility = "all"` creates an independent scrollbar for every eligible
   normal window. Two windows that show the same buffer keep different thumbs.
 - `visibility = "active"` keeps only the scrollbar of the active source window.
+  While you press or drag a scrollbar or a minimap, its float has focus. During
+  that time, the source window of the float stays the active source window for
+  both renderers.
 - `placement.relative = "editor"` also renders only the scrollbar of the active
   source window, for every `visibility` value. As a result, editor-relative
   floats cannot overlap.
@@ -15,8 +18,9 @@ With [`floats`](floats.md), floating windows can also be source windows. Under
 `visibility = "active"`, the windows of a picker follow a group rule. While a
 window of a snacks.nvim or Telescope picker has focus, the scrollbars of all
 the source windows of that picker show. For example, while the picker input
-has focus, the list and the preview keep their scrollbars. When focus leaves
-the picker, these scrollbars hide.
+has focus, the list and the preview keep their scrollbars. A press or a drag
+on the scrollbar of a picker window also keeps them. When focus leaves the
+picker, these scrollbars hide.
 
 The group rule does not apply to editor-relative placement. See
 [Floats](floats.md#visibility).
