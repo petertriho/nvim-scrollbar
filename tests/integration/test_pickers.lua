@@ -246,6 +246,71 @@ T["a snacks picker gets bars on the list and the preview"] = function()
     expect.equality(wait_for(child, FLOAT_BARS_CLOSED), true)
 end
 
+T["the windows of a focused snacks picker keep their active groups"] = function()
+    local child = new_child()
+    child.lua([[
+        local lines = {}
+        for index = 1, 100 do
+            lines[index] = "line " .. index
+        end
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        package.loaded["scrollbar.test.integration"].editor = vim.api.nvim_get_current_win()
+        require("scrollbar").setup({
+            set_highlights = true,
+            providers = { cursor = false, diagnostic = false, search = false },
+            scrollbar = {
+                floats = true,
+                throttle_ms = 0,
+                hide_on_cursor = false,
+                thumb = { hide_if_all_visible = false, inactive_highlight = "Normal" },
+            },
+        })
+        require("snacks").setup({ picker = { enabled = true } })
+        Snacks.picker.files({ cwd = require("scrollbar.test.integration").fixture })
+    ]])
+    expect.equality(wait_for(child, SNACKS_READY), true)
+
+    local windows = child.lua_get([[(function()
+        local picker = Snacks.picker.get()[1]
+        return { list = picker.list.win.win, preview = picker.preview.win.win, input = picker.input.win.win }
+    end)()]])
+    local result = child.lua_func(function(picker)
+        local integration = require("scrollbar.test.integration")
+        require("scrollbar.scheduler").flush()
+        local function thumb(winid)
+            local state = require("scrollbar.renderer").get_state(winid)
+            if state == nil then
+                return false
+            end
+            local namespace = vim.api.nvim_get_namespaces().ScrollbarRenderer
+            local marks =
+                require("scrollbar.test.float").extmarks(state.float_buf, namespace, 0, -1, { details = true })
+            for _, mark in ipairs(marks) do
+                local group = mark[4].hl_group
+                if group == "ScrollbarThumb" or group == "ScrollbarThumbInactive" then
+                    return group
+                end
+            end
+            return false
+        end
+        return {
+            input_focused = vim.api.nvim_get_current_win() == picker.input,
+            list = thumb(picker.list),
+            preview = thumb(picker.preview),
+            editor = thumb(integration.editor),
+        }
+    end, windows)
+    expect.equality(result, {
+        input_focused = true,
+        list = "ScrollbarThumb",
+        preview = "ScrollbarThumb",
+        editor = "ScrollbarThumbInactive",
+    })
+
+    child.lua("Snacks.picker.get()[1]:close()")
+    expect.equality(wait_for(child, FLOAT_BARS_CLOSED), true)
+end
+
 local TELESCOPE_PICKER = [[(function()
     local state = require("telescope.state")
     local prompt = state.get_existing_prompt_bufnrs()[1]

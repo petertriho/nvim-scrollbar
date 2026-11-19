@@ -1,6 +1,7 @@
 local config = require("scrollbar.config")
 local float = require("scrollbar.shared.float")
 local float_states = require("scrollbar.shared.float_states")
+local highlights_module = require("scrollbar.highlights")
 local layout = require("scrollbar.layout")
 local overlap = require("scrollbar.overlap")
 local providers = require("scrollbar.providers")
@@ -626,6 +627,7 @@ local function create_state(
         hitmap = {},
         handle = false,
         handle_pressed = false,
+        inactive = false,
         hidden_by_cursor = active_float_config.hide == true,
         geometry = { unit = "line", total_extent = 0, viewport_start = 0, viewport_end = 0 },
         sides = window.sides,
@@ -975,21 +977,29 @@ local function screen_mark_layer(
     return layer
 end
 
+---The spans with the pressed groups, or with the inactive groups of a source
+---window without focus. A pressed thumb always belongs to the active source,
+---so the pressed groups win.
 ---@param highlights ScrollbarHighlightSpan[][]
 ---@param pressed boolean
+---@param inactive boolean
 ---@param active_config ScrollbarConfig
 ---@return ScrollbarHighlightSpan[][]
-local function rendered_highlights(highlights, pressed, active_config)
-    if not pressed then
-        return highlights
+local function rendered_highlights(highlights, pressed, inactive, active_config)
+    local replacements
+    if pressed then
+        local groups = active_config.highlights
+        replacements = {
+            [groups.thumb] = groups.thumb_pressed,
+        }
+        for _, mark_groups in pairs(groups.marks) do
+            replacements[mark_groups.thumb] = mark_groups.thumb_pressed
+        end
+    elseif inactive then
+        replacements = highlights_module.inactive_map(active_config)
     end
-
-    local groups = active_config.highlights
-    local replacements = {
-        [groups.thumb] = groups.thumb_pressed,
-    }
-    for _, mark_groups in pairs(groups.marks) do
-        replacements[mark_groups.thumb] = mark_groups.thumb_pressed
+    if replacements == nil then
+        return highlights
     end
 
     local result = {}
@@ -1040,7 +1050,7 @@ end
 ---@param cleared_row? integer
 ---@return ScrollbarHighlightSpan[][]
 local function update_buffer(state, output, width, height, cleared_row)
-    local highlights = rendered_highlights(output.highlights, state.handle_pressed, state.config)
+    local highlights = rendered_highlights(output.highlights, state.handle_pressed, state.inactive, state.config)
     local rows, written_highlights = with_cleared_row(output.rows, highlights, cleared_row, width)
     float.write_rows(
         state.float_buf,
@@ -1363,6 +1373,7 @@ local function render_source(source_win, selection, root_config)
     state.config = active_config
     state.variant_id = selection.variant_id
     state.source_kind = kind
+    state.inactive = selection.inactive == true
     local active_highlights = update_buffer(state, output, output.width, content_height, cleared_row)
     state.cleared_row = cleared_row
     state.width = output.width
@@ -1401,6 +1412,11 @@ M.render = function(source_win)
     local root_config = config.get()
     local active_source = active_source_window()
     local selection = source_selection(source_win, root_config, active_source)
+    -- Without an inactive color, the variant has no map, and the lookup of
+    -- the active windows does not run.
+    if selection ~= nil and highlights_module.inactive_map(selection.config) ~= nil then
+        selection.inactive = not policy.active_windows(active_source)[source_win]
+    end
     if root_config.visibility == "active" then
         if selection == nil then
             close_source(source_win)
@@ -1476,7 +1492,7 @@ M.set_handle_pressed = function(float_win, pressed)
 
     local rows, highlights = with_cleared_row(
         state.rows,
-        rendered_highlights(state.highlights, pressed, state.config),
+        rendered_highlights(state.highlights, pressed, state.inactive, state.config),
         state.cleared_row,
         state.width
     )

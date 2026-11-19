@@ -717,6 +717,20 @@ local function render_source(source_win, selection, root_config)
     local band_first, band_last = projection_module.band(projection)
     overlay_layers(highlights, band_first, band_last, points, target_width, active_config.viewport)
 
+    if selection.inactive then
+        -- The spans are new tables on each render, so the swap can change
+        -- them in place. It runs before `rendered_highlights`, so a blended
+        -- copy of `background_blend` takes the inactive color.
+        local replacements = highlight_module.inactive_map(active_config)
+        if replacements ~= nil then
+            for row = 1, #highlights do
+                for _, span in ipairs(highlights[row]) do
+                    span.highlight = replacements[span.highlight] or span.highlight
+                end
+            end
+        end
+    end
+
     local active_winblend, active_winhighlight = window_presentation(active_config)
     local rendered = rendered_highlights(cells, highlights, active_config)
     local cursor_screen_row, cursor_screen_col = float.cursor_screen_position(source_win, active_config)
@@ -855,7 +869,13 @@ M.render = function(source_win)
     end
 
     local root_config = config_module.get()
-    local selection = source_selection(source_win, root_config, active_source_window())
+    local active_source = active_source_window()
+    local selection = source_selection(source_win, root_config, active_source)
+    -- Without an inactive group, the variant has no map, and the lookup of the
+    -- active windows does not run.
+    if selection ~= nil and highlight_module.inactive_map(selection.config) ~= nil then
+        selection.inactive = not policy.active_windows(active_source)[source_win]
+    end
     return render_selection(source_win, selection, root_config, render_source)
 end
 

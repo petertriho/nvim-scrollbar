@@ -25,6 +25,10 @@ picker, these scrollbars hide.
 The group rule does not apply to editor-relative placement. See
 [Floats](floats.md#visibility).
 
+With `visibility = "all"`, the scrollbars and the minimaps of inactive source
+windows can use other colors. The same rule selects the active windows. See
+[Inactive Windows](highlights.md#inactive-windows).
+
 `visibility` is a global option, so a profile cannot set it. With contextual
 profiles and `visibility = "all"`, each source window gets the placement of its
 own profile. Window-relative profiles can stay visible together. A scrollbar

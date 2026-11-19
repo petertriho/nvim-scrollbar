@@ -265,8 +265,9 @@ See [Configuration](../configuration.md#providers) for the rules, and the
 ## Marks
 
 The minimap shows the shared mark types from the top-level `marks` table as
-overlays. It uses their `priority`, `highlight`, and `highlight_channel`. It
-does not use `text`.
+overlays. It uses their `priority`, `highlight`, `highlight_channel`,
+`inactive_highlight`, and `inactive_highlight_channel`. It does not use
+`text`.
 
 `minimap.marks` overrides the shared types for the minimap only:
 
@@ -283,7 +284,8 @@ require("scrollbar").setup({
 ```
 
 - A table merges with the shared definition. It accepts only `priority`,
-  `highlight`, and `highlight_channel`.
+  `highlight`, `highlight_channel`, `inactive_highlight`, and
+  `inactive_highlight_channel`.
 - `false` hides one type. `marks = false` hides all overlays.
 - An override can name only a registered type. To add a type, add it to the
   top-level `marks` table. To show a new type only in the minimap, also set
@@ -403,6 +405,13 @@ groups, so that profiles that show at the same time can use different
 definitions. A profile with the same `highlight` for a mark type as the root
 copies the final root group, also when a user or a colorscheme defines it. See
 [Highlights](../highlights.md#minimap-groups).
+
+An inactive source window can use other minimap colors. A mark with
+`inactive_highlight` uses `ScrollbarMinimap<Type>Inactive`. The plain content,
+the viewport, and the cursor use `ScrollbarMinimapContentInactive`,
+`ScrollbarMinimapViewportInactive`, and `ScrollbarMinimapCursorInactive` when
+you or a colorscheme define these groups. The plugin does not create them. See
+[Inactive Windows](../highlights.md#inactive-windows).
 
 With `set_highlights = false`, setup and `ColorScheme` write no minimap groups.
 Every profile renders through the canonical `ScrollbarMinimap<Type>` names. In

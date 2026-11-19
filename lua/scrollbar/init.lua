@@ -187,6 +187,7 @@ local controls = require("scrollbar.shared.controls").new({
     autohide = function()
         return config.get().autohide ~= false
     end,
+    refresh_highlights = highlights.refresh_inactive,
 })
 
 M.show = controls.show

@@ -89,7 +89,15 @@ local APPEARANCE_KEYS = {
     hide_on_cursor = true,
     mouse = true,
     viewport = true,
-    marks = { ["*"] = { priority = true, highlight = true, highlight_channel = true } },
+    marks = {
+        ["*"] = {
+            priority = true,
+            highlight = true,
+            highlight_channel = true,
+            inactive_highlight = true,
+            inactive_highlight_channel = true,
+        },
+    },
     -- `scrollbar.config.window` validates the keys of `window`.
     window = { ["*"] = true },
 }
@@ -213,7 +221,13 @@ local function normalize(value, shared, path, variant_id)
         mouse = schema.boolean(value.mouse, at("mouse")),
         viewport = schema.boolean(value.viewport, at("viewport")),
         marks = shared_config.resolve_marks(shared.marks, value.marks, at("marks"), {
-            fields = { "priority", "highlight", "highlight_channel" },
+            fields = {
+                "priority",
+                "highlight",
+                "highlight_channel",
+                "inactive_highlight",
+                "inactive_highlight_channel",
+            },
             reject = REJECTED_MARK_TYPES,
         }),
         window = window_config.normalize(value.window, at("window"), WINDOW_SPEC),

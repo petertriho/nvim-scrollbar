@@ -133,11 +133,15 @@ require("scrollbar").setup({
                 { "track", "thumb", "marks" },
             },
         },
-        track = { highlight = "PmenuSbar" },
+        track = {
+            highlight = "PmenuSbar",
+            inactive_highlight = nil, -- see Inactive Windows
+        },
         thumb = {
             text = " ",
             blend = 30,
             highlight = "PmenuThumb",
+            inactive_highlight = nil,
             hide_if_all_visible = true,
         },
         overlap = { -- see Overlap
@@ -185,9 +189,11 @@ require("scrollbar").setup({
 | `mouse` | `true` | Makes the float take mouse input and adds the mouse mappings. See [Mouse](mouse.md). |
 | `layout` | see Defaults | Columns and layers. See [Layout](#layout). |
 | `track.highlight` | `"PmenuSbar"` | Track highlight: a group name or an `nvim_set_hl()` table. |
+| `track.inactive_highlight` | `nil` | Track highlight of an inactive source window. See [Inactive Windows](highlights.md#inactive-windows). |
 | `thumb.text` | `" "` | One string with a positive display width and no control characters. |
 | `thumb.blend` | `30` | Integer from `0` to `100`. The text below the thumb shows through it with this blend. |
 | `thumb.highlight` | `"PmenuThumb"` | A group name or an `nvim_set_hl()` table. |
+| `thumb.inactive_highlight` | `nil` | Thumb highlight of an inactive source window. See [Inactive Windows](highlights.md#inactive-windows). |
 | `thumb.hide_if_all_visible` | `true` | Hides only the thumb when the window shows the whole buffer. |
 | `overlap.reserve` | `true` | `true`, `false`, or `"virtual_text"` (experimental). Keeps the text away from an east scrollbar. See [Overlap](#overlap). |
 | `overlap.show_through` | `false` | `false`, or a blend from `1` to `100`. The text below the scrollbar shows through the track, the thumb, and the empty cells. |
@@ -530,6 +536,13 @@ marks = {
       Search = { highlight_channel = "bg" }, -- the background of Search
   }
   ```
+
+- `inactive_highlight` is the highlight of the mark in an inactive source
+  window. It takes the same values as `highlight`. It has no default, so the
+  mark keeps `highlight`.
+- `inactive_highlight_channel` is `"fg"` or `"bg"`. It selects the channel of
+  an `inactive_highlight` group name. Without it, the mark uses the channel
+  of `highlight_channel`. See [Inactive Windows](highlights.md#inactive-windows).
 
 Each renderer block has its own `marks` table with overrides for that
 renderer:
