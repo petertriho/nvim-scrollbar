@@ -194,7 +194,8 @@ built-in mark types are:
 | `VGitAdd`, `VGitChange`, `VGitDelete` | vgit.nvim |
 
 The minimap shows every type in the top-level `marks` registry, except
-`Cursor`, with the `priority` and `highlight` of the registry. The minimap
+`Cursor`, with the `priority`, `highlight`, and `highlight_channel` of the
+registry. The minimap
 does not use `text`. Use `minimap.marks` to override fields or to hide types.
 The types that you do not specify stay visible:
 

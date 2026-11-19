@@ -79,7 +79,8 @@ end
 M.EVENTS = EVENTS
 M.HANDLED_EVENTS = HANDLED_EVENTS
 
-local MARK_KEYS = { text = true, priority = true, highlight = true }
+local MARK_KEYS = { text = true, priority = true, highlight = true, highlight_channel = true }
+local HIGHLIGHT_CHANNELS = { "fg", "bg" }
 local V1_MARK_COLOR = "v1 option: put an nvim_set_hl() table in 'highlight'. " .. const.V1_MIGRATION
 local describe_mark_key = schema.hinter({
     color = V1_MARK_COLOR,
@@ -111,6 +112,11 @@ local function validate_mark_spec(spec, path, mark_type)
         text = schema.text_variants(spec.text, path .. ".text", mark_type == "Mark"),
         priority = schema.integer(spec.priority, path .. ".priority", 0),
         highlight = schema.highlight(spec.highlight, path .. ".highlight"),
+        -- nil means "fg". The field stays out of the spec until a user sets
+        -- it, so the specs of the default types keep their three fields.
+        highlight_channel = spec.highlight_channel ~= nil
+                and schema.enum(spec.highlight_channel, path .. ".highlight_channel", HIGHLIGHT_CHANNELS)
+            or nil,
     }
 end
 

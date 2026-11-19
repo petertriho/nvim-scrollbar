@@ -515,6 +515,16 @@ marks = {
 - `priority` is a non-negative integer. In one mark lane, the lower number wins
   a collision. Separate mark layers use their declared stack order instead.
 - `highlight` is a non-empty group name or an `nvim_set_hl()` definition table.
+- `highlight_channel` is `"fg"` (the default) or `"bg"`. It selects the color
+  of a `highlight` group name that the mark shows. If the group has no color
+  for that channel, the mark uses the other channel. A table `highlight`
+  ignores it. See [Highlights](highlights.md#sources).
+
+  ```lua
+  marks = {
+      Search = { highlight_channel = "bg" }, -- the background of Search
+  }
+  ```
 
 Each renderer block has its own `marks` table with overrides for that
 renderer:

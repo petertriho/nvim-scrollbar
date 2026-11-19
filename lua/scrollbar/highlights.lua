@@ -175,6 +175,44 @@ M.channel_definition = function(name, property, fallback_hl, fallback_hex)
     return { bg = hex, ctermbg = cterm }
 end
 
+--- The definition of a mark group from a group name. The mark takes the color
+--- of `channel`. When the group has no color for that channel, the mark takes
+--- the color of the other channel. Thus a group that sets only `bg`, such as
+--- `QuickFixLine` in many colorschemes, does not give a black mark. The GUI
+--- color and the cterm number fall back separately, because a group can set
+--- one channel for the GUI and the other channel for a terminal without
+--- 'termguicolors'. A missing group gives the foreground of `Normal`, and an
+--- empty group gives black.
+---@param name string
+---@param channel? ScrollbarHighlightChannel Nil means "fg"
+---@return vim.api.keyset.highlight
+M.mark_definition = function(name, channel)
+    local highlight = get_highlight(name)
+    if highlight == nil then
+        -- The background of Normal is the editor background, so a missing
+        -- group always takes the foreground of Normal.
+        highlight = get_highlight("Normal")
+        local hex = hex_color(highlight, "fg", "#000000")
+        local cterm = highlight and cterm_color(highlight, "fg") or M.palette_color(hex)
+        return { fg = hex, ctermfg = cterm }
+    end
+
+    local selected = channel or "fg"
+    local other = selected == "fg" and "bg" or "fg"
+    local gui = selected
+    if highlight[selected] == nil and highlight[other] ~= nil then
+        gui = other
+    end
+    local hex = hex_color(highlight, gui, "#000000")
+    local cterm = cterm_color(highlight, selected)
+    -- A GUI color of the selected channel without a number gives the nearest
+    -- palette color. The number of the other channel would not match it.
+    if cterm == nil and highlight[selected] == nil then
+        cterm = cterm_color(highlight, other)
+    end
+    return { fg = hex, ctermfg = cterm or M.palette_color(hex) }
+end
+
 local function background_highlight(source, blend, fallback_hl, fallback_hex)
     if type(source) == "table" then
         local highlight = vim.deepcopy(source)
@@ -222,7 +260,7 @@ local function mark_highlight(properties)
         return vim.deepcopy(properties.highlight)
     end
 
-    return M.channel_definition(properties.highlight, "fg", "Normal", "#000000")
+    return M.mark_definition(properties.highlight, properties.highlight_channel)
 end
 
 local function generated_name(public_name)
@@ -326,7 +364,7 @@ local function variant_entries(active_config)
         entries[#entries + 1] = {
             key = key,
             name = mark_groups.mark,
-            source = properties.highlight,
+            source = { properties.highlight, properties.highlight_channel },
             generate = function()
                 return mark_highlight(properties)
             end,
@@ -334,7 +372,7 @@ local function variant_entries(active_config)
         entries[#entries + 1] = {
             key = key .. ".thumb",
             name = mark_groups.thumb,
-            source = { thumb.highlight, thumb_blend, properties.highlight },
+            source = { thumb.highlight, thumb_blend, properties.highlight, properties.highlight_channel },
             generate = function(final)
                 return vim.tbl_deep_extend("force", {}, final.thumb, final[key])
             end,
@@ -342,7 +380,7 @@ local function variant_entries(active_config)
         entries[#entries + 1] = {
             key = key .. ".thumb_pressed",
             name = mark_groups.thumb_pressed,
-            source = { thumb_blend, properties.highlight },
+            source = { thumb_blend, properties.highlight, properties.highlight_channel },
             generate = function(final)
                 return vim.tbl_deep_extend("force", {}, final.thumb_pressed, final[key])
             end,
@@ -351,7 +389,7 @@ local function variant_entries(active_config)
             entries[#entries + 1] = {
                 key = key .. ".tint",
                 name = mark_groups.tint,
-                source = { surface_blend, properties.highlight },
+                source = { surface_blend, properties.highlight, properties.highlight_channel },
                 generate = function(final)
                     return tint_highlight(final[key], surface_blend)
                 end,

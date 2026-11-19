@@ -84,7 +84,7 @@ local APPEARANCE_KEYS = {
     track = { highlight = true },
     thumb = { text = true, blend = true, highlight = true, hide_if_all_visible = true },
     overlap = { reserve = true, show_through = true, marks = true },
-    marks = { ["*"] = { text = true, priority = true, highlight = true } },
+    marks = { ["*"] = { text = true, priority = true, highlight = true, highlight_channel = true } },
     -- `scrollbar.config.window` validates the keys of `window`.
     window = { ["*"] = true },
 }
@@ -459,7 +459,7 @@ local function normalize(value, shared, path, variant_id)
             hide_if_all_visible = schema.boolean(thumb.hide_if_all_visible, at("thumb.hide_if_all_visible")),
         },
         marks = shared_config.resolve_marks(shared.marks, value.marks, at("marks"), {
-            fields = { "text", "priority", "highlight" },
+            fields = { "text", "priority", "highlight", "highlight_channel" },
         }),
         window = window_config.normalize(value.window, at("window"), WINDOW_SPEC),
     })

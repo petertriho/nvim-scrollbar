@@ -232,6 +232,154 @@ T["resolves string sources through links and falls back for missing groups"] = f
     expect.equality(result.missing_mark_exists, 0)
 end
 
+T["takes the mark color from the channel that highlight_channel selects"] = function()
+    local child = new_child()
+    local result = child.lua_func(
+        function(config)
+            vim.api.nvim_set_hl(0, "Normal", { fg = "#0a0b0c", bg = "#f0f0f0" })
+            vim.api.nvim_set_hl(0, "PmenuThumb", { bg = "#445566" })
+            vim.api.nvim_set_hl(0, "BothSource", { fg = "#111111", bg = "#222222" })
+            vim.api.nvim_set_hl(0, "BgOnlySource", { bg = "#333333" })
+            vim.api.nvim_set_hl(0, "FgOnlySource", { fg = "#444444" })
+            vim.api.nvim_set_hl(0, "EmptySource", {})
+            require("scrollbar").setup(config)
+            local get = function(name)
+                return vim.api.nvim_get_hl(0, { name = name, link = false })
+            end
+            return {
+                fg_default = get("ScrollbarError"),
+                bg_selected = get("ScrollbarWarn"),
+                bg_selected_thumb = get("ScrollbarWarnThumb"),
+                bg_selected_tint = get("ScrollbarWarnTint"),
+                bg_selected_minimap = get("ScrollbarMinimapWarn"),
+                bg_fallback = get("ScrollbarInfo"),
+                bg_fallback_minimap = get("ScrollbarMinimapInfo"),
+                fg_fallback = get("ScrollbarHint"),
+                empty = get("ScrollbarMisc"),
+                missing = get("ScrollbarSearch"),
+                table_source = get("ScrollbarMark"),
+            }
+        end,
+        base_config({ overlap = { marks = "tint" } }, {
+            marks = {
+                Error = { highlight = "BothSource" },
+                Warn = { highlight = "BothSource", highlight_channel = "bg" },
+                Info = { highlight = "BgOnlySource" },
+                Hint = { highlight = "FgOnlySource", highlight_channel = "bg" },
+                Misc = { highlight = "EmptySource", highlight_channel = "bg" },
+                Search = { highlight = "MissingSource", highlight_channel = "bg" },
+                Mark = { highlight = { fg = "#555555" }, highlight_channel = "bg" },
+            },
+            minimap = { enabled = true, show = false },
+        })
+    )
+
+    expect.equality(result.fg_default, { fg = 0x111111, ctermfg = 233 })
+    expect.equality(result.bg_selected, { fg = 0x222222, ctermfg = 235 })
+    expect.equality(
+        result.bg_selected_thumb,
+        { fg = 0x222222, ctermfg = 235, bg = 0x445566, ctermbg = 240, blend = 30 }
+    )
+    expect.equality(result.bg_selected_tint, { bg = 0x222222, ctermbg = 235, blend = 0 })
+    expect.equality(result.bg_selected_minimap, { fg = 0x222222, ctermfg = 235 })
+    -- A group without a color for the selected channel gives the other channel.
+    expect.equality(result.bg_fallback, { fg = 0x333333, ctermfg = 236 })
+    expect.equality(result.bg_fallback_minimap, { fg = 0x333333, ctermfg = 236 })
+    expect.equality(result.fg_fallback, { fg = 0x444444, ctermfg = 238 })
+    -- An empty group and a missing group keep the fallbacks of the fg channel.
+    expect.equality(result.empty, { fg = 0x000000, ctermfg = 16 })
+    expect.equality(result.missing, { fg = 0x0A0B0C, ctermfg = 232 })
+    -- A table is a direct definition, so the channel does not apply.
+    expect.equality(result.table_source, { fg = 0x555555 })
+end
+
+T["takes the cterm number of the mark from the selected channel"] = function()
+    local child = new_child()
+    local result = child.lua_func(
+        function(config)
+            vim.o.termguicolors = false
+            vim.api.nvim_set_hl(0, "NumberedSource", { fg = "#ff0000", bg = "#0000ff", ctermfg = 9, ctermbg = 4 })
+            vim.api.nvim_set_hl(0, "CtermBgOnlySource", { ctermbg = 5 })
+            vim.api.nvim_set_hl(0, "ReversedSource", { ctermfg = 2, ctermbg = 3, cterm = { reverse = true } })
+            -- `:hi QuickFixLine guifg=NONE guibg=...` keeps the ctermfg of the default group.
+            vim.api.nvim_set_hl(0, "SplitSource", { bg = "#445566", ctermfg = 14 })
+            vim.api.nvim_set_hl(0, "GuiFgCtermBgSource", { fg = "#ff0000", ctermbg = 4 })
+            require("scrollbar").setup(config)
+            local get = function(name)
+                return vim.api.nvim_get_hl(0, { name = name, link = false })
+            end
+            return {
+                numbered = get("ScrollbarError"),
+                cterm_fallback = get("ScrollbarWarn"),
+                reversed = get("ScrollbarInfo"),
+                split = get("ScrollbarHint"),
+                gui_fg = get("ScrollbarMisc"),
+            }
+        end,
+        base_config(nil, {
+            marks = {
+                Error = { highlight = "NumberedSource", highlight_channel = "bg" },
+                Warn = { highlight = "CtermBgOnlySource" },
+                Info = { highlight = "ReversedSource", highlight_channel = "bg" },
+                Hint = { highlight = "SplitSource" },
+                Misc = { highlight = "GuiFgCtermBgSource" },
+            },
+        })
+    )
+
+    expect.equality(result.numbered, { fg = 0x0000FF, ctermfg = 4 })
+    -- The cterm number falls back to the other channel like the GUI color.
+    expect.equality(result.cterm_fallback, { fg = 0x000000, ctermfg = 5 })
+    -- With cterm.reverse, the terminal shows ctermfg as the background.
+    expect.equality(result.reversed, { fg = 0x000000, ctermfg = 2 })
+    -- The GUI color and the cterm number fall back separately.
+    expect.equality(result.split, { fg = 0x445566, ctermfg = 14 })
+    -- A GUI color of the selected channel gives its nearest palette color.
+    expect.equality(result.gui_fg, { fg = 0xFF0000, ctermfg = 196 })
+end
+
+T["sets highlight_channel for one renderer and for one profile"] = function()
+    local child = new_child()
+    local result = child.lua_func(
+        function(config)
+            vim.api.nvim_set_hl(0, "BothSource", { fg = "#111111", bg = "#222222" })
+            config.scrollbar.profiles = {
+                { match = { filetypes = { "text" } }, marks = { Error = { highlight_channel = "bg" } } },
+            }
+            config.minimap.profiles = {
+                { match = { filetypes = { "text" } }, marks = { Error = { highlight_channel = "bg" } } },
+            }
+            require("scrollbar").setup(config)
+            local get = function(name)
+                return vim.api.nvim_get_hl(0, { name = name, link = false })
+            end
+            return {
+                scrollbar_warn = get("ScrollbarWarn"),
+                minimap_warn = get("ScrollbarMinimapWarn"),
+                root_error = get("ScrollbarError"),
+                profile_error = get("ScrollbarProfile1.Error"),
+                minimap_root_error = get("ScrollbarMinimapError"),
+                minimap_profile_error = get("ScrollbarMinimapProfile1.Error"),
+            }
+        end,
+        base_config({ marks = { Warn = { highlight_channel = "bg" } } }, {
+            marks = {
+                Error = { highlight = "BothSource" },
+                Warn = { highlight = "BothSource" },
+            },
+            minimap = { enabled = true, show = false },
+        })
+    )
+
+    expect.equality(result.scrollbar_warn, { fg = 0x222222, ctermfg = 235 })
+    expect.equality(result.minimap_warn, { fg = 0x111111, ctermfg = 233 })
+    -- A profile that changes only the channel does not copy the root group.
+    expect.equality(result.root_error, { fg = 0x111111, ctermfg = 233 })
+    expect.equality(result.profile_error, { fg = 0x222222, ctermfg = 235 })
+    expect.equality(result.minimap_root_error, { fg = 0x111111, ctermfg = 233 })
+    expect.equality(result.minimap_profile_error, { fg = 0x222222, ctermfg = 235 })
+end
+
 T["preserves public canonical and legacy groups defined before setup"] = function()
     local child = new_child()
     local result = child.lua_func(function(config)

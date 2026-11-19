@@ -31,6 +31,7 @@
 ---@class ScrollbarMinimapUserMarkTypeConfig
 ---@field priority? integer Lower values win overlay collisions
 ---@field highlight? ScrollbarHighlight A source highlight group or a direct definition
+---@field highlight_channel? ScrollbarHighlightChannel Defaults to "fg". A table `highlight` ignores it
 
 ---@class ScrollbarMinimapUserAppearance
 ---@field preset? string The name of a built-in minimap preset
@@ -74,6 +75,7 @@
 ---@class ScrollbarMinimapMarkSpec
 ---@field priority integer Lower values win overlay collisions
 ---@field highlight ScrollbarHighlight The highlight source that automatic generation uses
+---@field highlight_channel? ScrollbarHighlightChannel Nil means "fg"
 ---@field group string The compiled minimap highlight group that the renderer uses
 
 ---@class ScrollbarMinimapConfig

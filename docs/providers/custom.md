@@ -11,8 +11,8 @@ custom provider can own one or more of these channels:
 
 Define every ordinary `mark.type` that a provider emits in the top-level
 `marks` table. Both renderers show the types in that table. The scrollbar uses
-`text`, `priority`, and `highlight`. The minimap uses only `priority` and
-`highlight`:
+`text`, `priority`, `highlight`, and `highlight_channel`. The minimap uses only
+`priority`, `highlight`, and `highlight_channel`:
 
 ```lua
 require("scrollbar").setup({

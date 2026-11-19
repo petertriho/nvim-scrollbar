@@ -11,21 +11,32 @@ colorscheme definitions.
 
 - A string `track.highlight` or `thumb.highlight` contributes its resolved
   background.
-- A string `highlight` of a mark type contributes its resolved foreground. The
-  top-level `marks.<Type>.highlight` applies to both renderers.
+- A string `highlight` of a mark type contributes the resolved color of the
+  channel that `highlight_channel` selects: `"fg"` (the default) or `"bg"`. The
+  mark shows that color as its foreground. The top-level
+  `marks.<Type>.highlight` applies to both renderers.
   `scrollbar.marks.<Type>.highlight` and `minimap.marks.<Type>.highlight`
-  override it for one renderer.
-- The plugin uses a table as a direct `nvim_set_hl()` definition.
+  override it for one renderer. The same rules apply to `highlight_channel`.
+- If the group of a mark has no color for the selected channel, the mark uses
+  the other channel. Thus a group that sets only `bg`, such as `QuickFixLine` in
+  some colorschemes, still gives a visible mark. The GUI color and the color
+  number fall back separately. A group with neither color gives black, and a
+  missing group gives the foreground of `Normal`.
+- The plugin uses a table as a direct `nvim_set_hl()` definition. A table
+  ignores `highlight_channel`.
 
 A resolved color has a GUI color and a color number for a terminal without
 `'termguicolors'`:
 
-- The number is the `ctermbg` or the `ctermfg` of the group. When the group
-  sets `cterm.reverse`, the terminal swaps the two, so the background comes
-  from `ctermfg` and the foreground comes from `ctermbg`.
+- The number is the `ctermbg` or the `ctermfg` of the group. A mark takes the
+  number of the channel that `highlight_channel` selects. When the group sets
+  `cterm.reverse`, the terminal swaps the two, so the background comes from
+  `ctermfg` and the foreground comes from `ctermbg`.
 - When the group has no number for the channel, the plugin uses the nearest
   color of the 256-color palette to the GUI color. Thus the default track and
-  thumb show also when `PmenuSbar` and `PmenuThumb` have no cterm colors.
+  thumb show also when `PmenuSbar` and `PmenuThumb` have no cterm colors. A
+  mark whose selected channel has no number and no GUI color takes the number
+  of the other channel.
 - The plugin does not copy `cterm.reverse`. A generated group combines with
   the groups below it, and Neovim drops the attribute in a cell that blends.
 

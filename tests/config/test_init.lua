@@ -882,6 +882,35 @@ T["mark registry"]["a new type needs text priority and highlight"] = function()
     expect_invalid_top({ marks = { Unknown = false } }, "marks.Unknown: cannot hide unknown mark type 'Unknown'")
 end
 
+T["mark registry"]["highlight_channel is fg or bg and stays out of the spec until set"] = function()
+    local config = require("scrollbar.config")
+    local result = set_top({
+        minimap = { enabled = true, marks = { Info = { highlight_channel = "fg" } } },
+        marks = { Warn = { highlight_channel = "bg" }, Info = { highlight_channel = "bg" } },
+        scrollbar = { marks = { Hint = { highlight_channel = "bg" } } },
+    })
+    expect.equality(result.marks.Error.highlight_channel, nil)
+    expect.equality(result.marks.Warn.highlight_channel, "bg")
+    expect.equality(result.marks.Hint.highlight_channel, "bg")
+    local minimap = config.get_minimap()
+    expect.equality(minimap.marks.Warn.highlight_channel, "bg")
+    expect.equality(minimap.marks.Info.highlight_channel, "fg")
+    expect.equality(minimap.marks.Hint.highlight_channel, nil)
+
+    expect_invalid_top(
+        { marks = { Warn = { highlight_channel = "sp" } } },
+        "marks%.Warn%.highlight_channel must be one of: bg, fg"
+    )
+    expect_invalid_top(
+        { scrollbar = { marks = { Warn = { highlight_channel = true } } } },
+        "scrollbar%.marks%.Warn%.highlight_channel must be one of: bg, fg"
+    )
+    expect_invalid_top(
+        { minimap = { enabled = true, marks = { Warn = { highlight_channel = "background" } } } },
+        "minimap%.marks%.Warn%.highlight_channel must be one of: bg, fg"
+    )
+end
+
 T["mark registry"]["top-level false hides a type in both renderers but keeps it registered"] = function()
     local config = require("scrollbar.config")
     local result = set_top({ minimap = { enabled = true }, marks = { Hint = false } })

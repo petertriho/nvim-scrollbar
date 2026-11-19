@@ -80,10 +80,13 @@
 ---@field show_through? false|integer Blend from 1 to 100 that shows the text below the scrollbar
 ---@field marks? ScrollbarMarkStyle
 
+---@alias ScrollbarHighlightChannel "fg"|"bg" The color of a highlight group that a mark takes
+
 ---@class ScrollbarUserMarkTypeConfig
 ---@field text? ScrollbarText
 ---@field priority? integer
 ---@field highlight? ScrollbarHighlight
+---@field highlight_channel? ScrollbarHighlightChannel Defaults to "fg". A table `highlight` ignores it
 
 ---@class ScrollbarSearchProviderConfig
 ---@field incsearch? boolean
@@ -263,6 +266,7 @@
 ---@field text string[] Density variants from least to most dense. An empty list for `Mark` uses the provider text
 ---@field priority integer
 ---@field highlight ScrollbarHighlight Source highlight group or direct definition
+---@field highlight_channel? ScrollbarHighlightChannel Nil means "fg"
 
 ---@class ScrollbarMarkRegistry
 ---@field specs table<string, ScrollbarMarkTypeConfig> Every registered mark type
