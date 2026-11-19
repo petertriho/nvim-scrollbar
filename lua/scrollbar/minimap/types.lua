@@ -32,6 +32,8 @@
 ---@field priority? integer Lower values win overlay collisions
 ---@field highlight? ScrollbarHighlight A source highlight group or a direct definition
 ---@field highlight_channel? ScrollbarHighlightChannel Defaults to "fg". A table `highlight` ignores it
+---@field inactive_highlight? ScrollbarHighlight The mark in a source window without focus
+---@field inactive_highlight_channel? ScrollbarHighlightChannel Defaults to `highlight_channel`. A table `inactive_highlight` ignores it
 
 ---@class ScrollbarMinimapUserAppearance
 ---@field preset? string The name of a built-in minimap preset
@@ -76,6 +78,8 @@
 ---@field priority integer Lower values win overlay collisions
 ---@field highlight ScrollbarHighlight The highlight source that automatic generation uses
 ---@field highlight_channel? ScrollbarHighlightChannel Nil means "fg"
+---@field inactive_highlight? ScrollbarHighlight The highlight source of a source window without focus
+---@field inactive_highlight_channel? ScrollbarHighlightChannel Nil means `highlight_channel`
 ---@field group string The compiled minimap highlight group that the renderer uses
 
 ---@class ScrollbarMinimapConfig
@@ -113,6 +117,7 @@
 ---@field config ScrollbarMinimapConfig
 ---@field variant_id integer
 ---@field kind? ScrollbarSourceKind Set by the source policy
+---@field inactive? boolean Set by the renderer when the variant has inactive groups and the source window is not active
 
 ---@class ScrollbarMinimapSquashHighlight
 ---@field hl_group string

@@ -121,6 +121,10 @@ local controls = controls_module.new({
     autohide = function()
         return active_config ~= nil and active_config.autohide ~= false
     end,
+    refresh_highlights = function()
+        -- A disabled minimap writes no groups.
+        return active_config ~= nil and highlights.refresh_inactive()
+    end,
 })
 
 M.show = controls.show

@@ -81,7 +81,14 @@ end
 M.EVENTS = EVENTS
 M.HANDLED_EVENTS = HANDLED_EVENTS
 
-local MARK_KEYS = { text = true, priority = true, highlight = true, highlight_channel = true }
+local MARK_KEYS = {
+    text = true,
+    priority = true,
+    highlight = true,
+    highlight_channel = true,
+    inactive_highlight = true,
+    inactive_highlight_channel = true,
+}
 local HIGHLIGHT_CHANNELS = { "fg", "bg" }
 local V1_MARK_COLOR = "v1 option: put an nvim_set_hl() table in 'highlight'. " .. const.V1_MIGRATION
 local describe_mark_key = schema.hinter({
@@ -119,6 +126,16 @@ local function validate_mark_spec(spec, path, mark_type)
         highlight_channel = spec.highlight_channel ~= nil
                 and schema.enum(spec.highlight_channel, path .. ".highlight_channel", HIGHLIGHT_CHANNELS)
             or nil,
+        -- The inactive fields also stay out of the spec until a user sets
+        -- them. A nil channel takes `highlight_channel` when the highlight
+        -- step reads it, so a renderer override of `highlight_channel` also
+        -- applies to the inactive color.
+        inactive_highlight = schema.optional_highlight(spec.inactive_highlight, path .. ".inactive_highlight"),
+        inactive_highlight_channel = spec.inactive_highlight_channel ~= nil and schema.enum(
+            spec.inactive_highlight_channel,
+            path .. ".inactive_highlight_channel",
+            HIGHLIGHT_CHANNELS
+        ) or nil,
     }
 end
 

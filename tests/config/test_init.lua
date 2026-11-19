@@ -975,6 +975,80 @@ T["mark registry"]["highlight_channel is fg or bg and stays out of the spec unti
     )
 end
 
+T["mark registry"]["inactive highlights follow the precedence of highlight and stay out of the spec until set"] = function()
+    local config = require("scrollbar.config")
+    local result = set_top({
+        minimap = { enabled = true, marks = { Info = { inactive_highlight = "Comment" } } },
+        marks = {
+            Warn = { inactive_highlight = "NonText", inactive_highlight_channel = "bg" },
+            Info = { inactive_highlight = { fg = "#123456" } },
+        },
+        scrollbar = {
+            track = { inactive_highlight = "Normal" },
+            thumb = { inactive_highlight = { bg = "#222222" } },
+            marks = { Hint = { inactive_highlight = "Comment" } },
+        },
+    })
+    expect.equality(result.track.inactive_highlight, "Normal")
+    expect.equality(result.thumb.inactive_highlight, { bg = "#222222" })
+    expect.equality(result.marks.Error.inactive_highlight, nil)
+    expect.equality(result.marks.Error.inactive_highlight_channel, nil)
+    expect.equality(result.marks.Warn.inactive_highlight, "NonText")
+    expect.equality(result.marks.Warn.inactive_highlight_channel, "bg")
+    expect.equality(result.marks.Info.inactive_highlight, { fg = "#123456" })
+    expect.equality(result.marks.Hint.inactive_highlight, "Comment")
+    local minimap = config.get_minimap()
+    expect.equality(minimap.marks.Warn.inactive_highlight, "NonText")
+    expect.equality(minimap.marks.Warn.inactive_highlight_channel, "bg")
+    expect.equality(minimap.marks.Info.inactive_highlight, "Comment")
+    expect.equality(minimap.marks.Hint.inactive_highlight, nil)
+
+    local defaults = set_top({})
+    expect.equality(defaults.track.inactive_highlight, nil)
+    expect.equality(defaults.thumb.inactive_highlight, nil)
+    expect.equality(defaults.marks.Error.inactive_highlight, nil)
+
+    expect_invalid_top(
+        { marks = { Warn = { inactive_highlight = "" } } },
+        "marks%.Warn%.inactive_highlight must be a non%-empty string or table"
+    )
+    expect_invalid_top(
+        { marks = { Warn = { inactive_highlight_channel = "sp" } } },
+        "marks%.Warn%.inactive_highlight_channel must be one of: bg, fg"
+    )
+    expect_invalid_top(
+        { minimap = { enabled = true, marks = { Warn = { inactive_highlight = 1 } } } },
+        "minimap%.marks%.Warn%.inactive_highlight must be a non%-empty string or table"
+    )
+    expect_invalid({ track = { inactive_highlight = false } }, "scrollbar%.track%.inactive_highlight must be")
+    expect_invalid(
+        { profiles = { { match = { filetypes = { "lua" } }, thumb = { inactive_highlight = 1 } } } },
+        "scrollbar%.profiles%[1%]%.thumb%.inactive_highlight must be a non%-empty string or table"
+    )
+end
+
+T["mark registry"]["setup reserves the inactive group names"] = function()
+    expect_invalid_top(
+        { marks = { ErrorInactive = { text = "x", priority = 1, highlight = "Normal" } } },
+        "highlight group 'ScrollbarErrorInactive' is claimed by"
+    )
+    expect_invalid_top(
+        { marks = { ThumbInactive = { text = "x", priority = 1, highlight = "Normal" } } },
+        "highlight group 'ScrollbarThumbInactive' is claimed by the inactive scrollbar thumb"
+    )
+    expect_invalid_top({
+        marks = { MarkTintInactive = { text = "x", priority = 1, highlight = "Normal" } },
+        scrollbar = { overlap = { marks = "tint" } },
+    }, "highlight group 'ScrollbarMarkTintInactive' is claimed by")
+    expect_invalid_top({
+        marks = { ViewportInactive = { text = "x", priority = 1, highlight = "Normal" } },
+        minimap = { enabled = true },
+        scrollbar = { marks = { ViewportInactive = false } },
+    }, "highlight group 'ScrollbarMinimapViewportInactive' is claimed by the static inactive minimap viewport")
+    -- Without tint, the tint names stay free.
+    set_top({ marks = { MarkTintInactive = { text = "x", priority = 1, highlight = "Normal" } } })
+end
+
 T["mark registry"]["top-level false hides a type in both renderers but keeps it registered"] = function()
     local config = require("scrollbar.config")
     local result = set_top({ minimap = { enabled = true }, marks = { Hint = false } })

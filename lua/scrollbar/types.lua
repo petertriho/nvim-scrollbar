@@ -61,6 +61,7 @@
 
 ---@class ScrollbarUserTrackConfig
 ---@field highlight? ScrollbarHighlight
+---@field inactive_highlight? ScrollbarHighlight The track of a source window without focus
 
 ---@class ScrollbarUserAutohideConfig
 ---@field delay_ms? integer
@@ -69,6 +70,7 @@
 ---@field text? string
 ---@field blend? integer
 ---@field highlight? ScrollbarHighlight
+---@field inactive_highlight? ScrollbarHighlight The thumb of a source window without focus
 ---@field hide_if_all_visible? boolean
 
 ---@alias ScrollbarMarkStyle "glyph"|"tint" How a mark draws: its text, or a background in the color of the mark
@@ -87,6 +89,8 @@
 ---@field priority? integer
 ---@field highlight? ScrollbarHighlight
 ---@field highlight_channel? ScrollbarHighlightChannel Defaults to "fg". A table `highlight` ignores it
+---@field inactive_highlight? ScrollbarHighlight The mark in a source window without focus
+---@field inactive_highlight_channel? ScrollbarHighlightChannel Defaults to `highlight_channel`. A table `inactive_highlight` ignores it
 
 ---@class ScrollbarSearchProviderConfig
 ---@field incsearch? boolean
@@ -255,6 +259,7 @@
 
 ---@class ScrollbarTrackConfig
 ---@field highlight ScrollbarHighlight
+---@field inactive_highlight? ScrollbarHighlight
 
 ---@class ScrollbarAutohideConfig
 ---@field delay_ms integer
@@ -263,6 +268,7 @@
 ---@field text string
 ---@field blend integer
 ---@field highlight ScrollbarHighlight
+---@field inactive_highlight? ScrollbarHighlight
 ---@field hide_if_all_visible boolean
 
 ---@class ScrollbarOverlapConfig
@@ -275,6 +281,8 @@
 ---@field priority integer
 ---@field highlight ScrollbarHighlight Source highlight group or direct definition
 ---@field highlight_channel? ScrollbarHighlightChannel Nil means "fg"
+---@field inactive_highlight? ScrollbarHighlight Source group or direct definition for a source window without focus
+---@field inactive_highlight_channel? ScrollbarHighlightChannel Nil means `highlight_channel`
 
 ---@class ScrollbarMarkRegistry
 ---@field specs table<string, ScrollbarMarkTypeConfig> Every registered mark type
@@ -405,6 +413,7 @@
 ---@field config ScrollbarConfig
 ---@field variant_id integer
 ---@field kind? ScrollbarSourceKind Set by the source policy
+---@field inactive? boolean Set by the renderer when the variant has inactive groups and the source window is not active
 
 ---@class ScrollbarMark
 ---@field line integer Zero-based source buffer line
@@ -630,6 +639,7 @@
 ---@field hitmap ScrollbarHitCell[][]
 ---@field handle false|ScrollbarHandleGeometry
 ---@field handle_pressed boolean
+---@field inactive boolean Whether the source window is not active, so the float uses the inactive groups
 ---@field hidden_by_cursor boolean
 ---@field cleared_row? integer One-based content row that `hide_on_cursor = "row"` clears
 ---@field written_rows string[] Rows of the last write, with the cleared row

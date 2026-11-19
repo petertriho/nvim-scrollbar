@@ -78,6 +78,8 @@ reads these definitions at setup and after each `ColorScheme` event.
 - `Scrollbar<MarkType>Tint`: the background of a tint mark. The plugin creates
   it only with `overlap.marks = "tint"`. Its background is the foreground of
   the mark group, or else the background of the mark group.
+- The `Inactive` groups of the elements that have an inactive color, for
+  example `ScrollbarThumbInactive`. See [Inactive Windows](#inactive-windows).
 
 Examples include `ScrollbarSearch`, `ScrollbarSearchThumb`,
 `ScrollbarSearchThumbPressed`, `ScrollbarMark`, and `ScrollbarErrorThumb`.
@@ -112,6 +114,130 @@ These options select each group:
 For example, a profile that sets only `placement` uses the `ScrollbarSearch`
 definition of a colorscheme. A profile that sets `thumb.blend` generates its own
 thumb groups and overlap groups.
+
+## Inactive Windows
+
+The scrollbar and the minimap of an inactive source window can use other
+colors. These source windows are active:
+
+- The current window. When a scrollbar float or a minimap float has focus,
+  for example during a drag, its source window is active.
+- The source windows of a snacks.nvim or Telescope picker that has focus. For
+  example, while the picker input has focus, the list and the preview are
+  active.
+
+All other source windows are inactive. While a float that is not a source
+window has focus, such as an LSP hover window, all source windows are
+inactive. This is the same rule as for `visibility = "active"`. See
+[Source Windows](visibility.md#source-windows).
+
+Set `inactive_highlight` beside the `highlight` of an element:
+
+```lua
+require("scrollbar").setup({
+    marks = {
+        Error = { inactive_highlight = "Comment" },
+        Warn = { inactive_highlight = "Comment" },
+    },
+    scrollbar = {
+        thumb = { inactive_highlight = "CursorLine" },
+    },
+})
+```
+
+| Option | Inactive group |
+| --- | --- |
+| `scrollbar.track.inactive_highlight` | `ScrollbarTrackInactive` |
+| `scrollbar.thumb.inactive_highlight` | `ScrollbarThumbInactive` |
+| `marks.<Type>.inactive_highlight` | `Scrollbar<Type>Inactive` and `ScrollbarMinimap<Type>Inactive` |
+
+`inactive_highlight` follows the rules of `highlight`:
+
+- The value is a group name or an `nvim_set_hl()` table.
+- The track and the thumb take the background of a group name.
+- A mark takes the channel that `inactive_highlight_channel` selects. Without
+  it, the mark takes the channel of `highlight_channel`. The fallback to the
+  other channel is the same as in [Sources](#sources).
+- `scrollbar.marks.<Type>` and `minimap.marks.<Type>` override the top-level
+  `marks.<Type>` for one renderer. Presets and profiles can set the keys.
+
+### When an Element Uses Its Inactive Group
+
+An element uses its inactive group in an inactive window when one of these
+conditions is true:
+
+- The configuration sets its `inactive_highlight`.
+- A user or a colorscheme defines its public inactive group, for example
+  `ScrollbarThumbInactive`.
+
+Otherwise, the plugin creates no inactive group for the element, and the
+element keeps its normal group. A configuration without inactive colors and
+without public inactive groups thus renders the same as before. The only extra
+work is the check for the public groups, which takes microseconds.
+
+The plugin looks for the public inactive groups at setup, after each
+`ColorScheme` event, and on `:ScrollbarRefresh` and `:MinimapRefresh`. It does
+not look for them during a render. To define the groups in your own
+`ColorScheme` autocommand, create the autocommand before you call `setup()`.
+If you define a group at another time, run `:ScrollbarRefresh` or
+`:MinimapRefresh`.
+
+The plugin sets the colors again when it renders a window. `WinEnter`, which
+is in the default `events`, renders all windows. If you remove `WinEnter` from
+`events`, a window changes its colors only at its next render.
+
+`visibility = "active"` and editor-relative placement show only the
+scrollbars of active windows, so the inactive colors do not show there.
+
+### Inactive Groups
+
+In automatic mode, the plugin generates an inactive group in the same way as
+the normal group. An element without its own `inactive_highlight` copies the
+final normal definition. Such an element uses its inactive group because a
+user or a colorscheme defines the public group, or because it merges a part
+that has an inactive color.
+
+- `ScrollbarTrackInactive` and `ScrollbarThumbInactive` take the blend of the
+  track and of the thumb.
+- `Scrollbar<Type>Inactive` takes no blend, as the normal mark group.
+- `Scrollbar<Type>ThumbInactive` merges two parts: the inactive thumb, or else
+  the normal thumb, and the inactive mark, or else the normal mark. It is used
+  when the thumb or the mark has an inactive color. Thus a dim thumb stays dim
+  behind each mark.
+- `Scrollbar<Type>TintInactive` takes its background from the inactive mark,
+  or else the normal mark. The plugin creates it only with
+  `overlap.marks = "tint"`.
+- `ScrollbarMinimap<Type>Inactive` is the inactive group of a minimap mark.
+
+The pressed thumb has no inactive groups. A press on a scrollbar makes its
+source window active.
+
+Each profile gets its own inactive groups, for example
+`ScrollbarProfile1.ThumbInactive`. A profile with the same options for a group
+as the root copies the final root group, as for the normal groups. A profile
+can set its own `inactive_highlight`. It cannot remove an `inactive_highlight`
+of the root.
+
+The minimap also has three static inactive groups:
+`ScrollbarMinimapContentInactive`, `ScrollbarMinimapViewportInactive`, and
+`ScrollbarMinimapCursorInactive`. The plugin never creates them. Define them
+to change the plain content, the viewport, and the cursor of an inactive
+minimap:
+
+```lua
+vim.api.nvim_set_hl(0, "ScrollbarMinimapViewportInactive", { bg = "#20232d" })
+vim.api.nvim_set_hl(0, "ScrollbarMinimapCursorInactive", { link = "NonText" })
+```
+
+The base and the syntax colors of the minimap do not change.
+
+With `set_highlights = false`, the plugin creates no inactive group. Define
+the inactive groups yourself. A defined group is enough. You do not need the
+option.
+
+Setup reserves the names of the inactive groups. For example, a mark type
+`ErrorInactive` beside the mark type `Error` is a setup error, because both
+claim `ScrollbarErrorInactive`.
 
 ## Blend
 
@@ -211,6 +337,9 @@ Static minimap groups keep these default links:
 | `ScrollbarMinimapContent` | `Comment` |
 | `ScrollbarMinimapViewport` | `Visual` |
 | `ScrollbarMinimapCursor` | `Cursor` |
+
+For the inactive versions of these groups, see
+[Inactive Windows](#inactive-windows).
 
 Every mark type that the minimap shows uses a distinct public group named
 `ScrollbarMinimap<Type>`, for example `ScrollbarMinimapSearch`. In automatic

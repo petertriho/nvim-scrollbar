@@ -81,10 +81,19 @@ local APPEARANCE_KEYS = {
     hide_if_all_visible = true,
     mouse = true,
     layout = { direction = true, columns = true },
-    track = { highlight = true },
-    thumb = { text = true, blend = true, highlight = true, hide_if_all_visible = true },
+    track = { highlight = true, inactive_highlight = true },
+    thumb = { text = true, blend = true, highlight = true, inactive_highlight = true, hide_if_all_visible = true },
     overlap = { reserve = true, show_through = true, marks = true },
-    marks = { ["*"] = { text = true, priority = true, highlight = true, highlight_channel = true } },
+    marks = {
+        ["*"] = {
+            text = true,
+            priority = true,
+            highlight = true,
+            highlight_channel = true,
+            inactive_highlight = true,
+            inactive_highlight_channel = true,
+        },
+    },
     -- `scrollbar.config.window` validates the keys of `window`.
     window = { ["*"] = true },
 }
@@ -451,15 +460,26 @@ local function normalize(value, shared, path, variant_id)
         mouse = schema.boolean(value.mouse, at("mouse")),
         overlap = overlap_config(value.overlap, at("overlap")),
         layout = compile_layout(value.layout, normalized_placement.anchor, at("layout")),
-        track = { highlight = schema.highlight(track.highlight, at("track.highlight")) },
+        track = {
+            highlight = schema.highlight(track.highlight, at("track.highlight")),
+            inactive_highlight = schema.optional_highlight(track.inactive_highlight, at("track.inactive_highlight")),
+        },
         thumb = {
             text = schema.text(thumb.text, at("thumb.text")),
             blend = schema.integer(thumb.blend, at("thumb.blend"), 0, 100),
             highlight = schema.highlight(thumb.highlight, at("thumb.highlight")),
+            inactive_highlight = schema.optional_highlight(thumb.inactive_highlight, at("thumb.inactive_highlight")),
             hide_if_all_visible = schema.boolean(thumb.hide_if_all_visible, at("thumb.hide_if_all_visible")),
         },
         marks = shared_config.resolve_marks(shared.marks, value.marks, at("marks"), {
-            fields = { "text", "priority", "highlight", "highlight_channel" },
+            fields = {
+                "text",
+                "priority",
+                "highlight",
+                "highlight_channel",
+                "inactive_highlight",
+                "inactive_highlight_channel",
+            },
         }),
         window = window_config.normalize(value.window, at("window"), WINDOW_SPEC),
     })
@@ -497,6 +517,8 @@ local function validate_public_highlight_groups(scrollbar_variants, minimap_vari
         ScrollbarTrack = "the scrollbar track",
         ScrollbarThumb = "the scrollbar thumb",
         ScrollbarThumbPressed = "the pressed scrollbar thumb",
+        ScrollbarTrackInactive = "the inactive scrollbar track",
+        ScrollbarThumbInactive = "the inactive scrollbar thumb",
         ScrollbarHandle = "the legacy scrollbar handle",
         ScrollbarHandlePressed = "the pressed legacy scrollbar handle",
         ScrollbarFloatBorder = "the scrollbar border",
@@ -506,6 +528,9 @@ local function validate_public_highlight_groups(scrollbar_variants, minimap_vari
         ScrollbarMinimapContent = "the static minimap content",
         ScrollbarMinimapViewport = "the static minimap viewport",
         ScrollbarMinimapCursor = "the static minimap cursor",
+        ScrollbarMinimapContentInactive = "the static inactive minimap content",
+        ScrollbarMinimapViewportInactive = "the static inactive minimap viewport",
+        ScrollbarMinimapCursorInactive = "the static inactive minimap cursor",
         ScrollbarMinimapFloatBorder = "the minimap border",
         ScrollbarMinimapFloatTitle = "the minimap title",
         ScrollbarMinimapFloatFooter = "the minimap footer",
@@ -526,14 +551,22 @@ local function validate_public_highlight_groups(scrollbar_variants, minimap_vari
             claim("Scrollbar" .. mark_type .. "ThumbPressed", owner .. " pressed thumb overlap")
             claim("Scrollbar" .. mark_type .. "Handle", owner .. " legacy handle overlap")
             claim("Scrollbar" .. mark_type .. "HandlePressed", owner .. " pressed legacy handle overlap")
+            -- The inactive names are always reserved. A defined group turns
+            -- on its swap, so a group of another owner must not have the
+            -- name.
+            claim("Scrollbar" .. mark_type .. "Inactive", owner .. " inactive")
+            claim("Scrollbar" .. mark_type .. "ThumbInactive", owner .. " inactive thumb overlap")
             if variant.config.overlap.marks == "tint" then
                 claim("Scrollbar" .. mark_type .. "Tint", owner .. " tint")
+                claim("Scrollbar" .. mark_type .. "TintInactive", owner .. " inactive tint")
             end
         end
     end
     for _, variant in ipairs(minimap_variants) do
         for mark_type in pairs(variant.config.marks) do
-            claim("ScrollbarMinimap" .. mark_type, "minimap mark type '" .. mark_type .. "'")
+            local owner = "minimap mark type '" .. mark_type .. "'"
+            claim("ScrollbarMinimap" .. mark_type, owner)
+            claim("ScrollbarMinimap" .. mark_type .. "Inactive", owner .. " inactive")
         end
     end
 end

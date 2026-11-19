@@ -21,6 +21,7 @@ local M = {}
 ---@field scheduler ScrollbarControlsScheduler
 ---@field consumer "scrollbar"|"minimap" Consumer whose provider demand a refresh collects
 ---@field autohide fun(): boolean Whether the active configuration conceals the floats after a delay
+---@field refresh_highlights? fun(): boolean Checks the inactive groups again before a refresh. Returns whether the groups changed
 
 ---@class ScrollbarControls
 ---@field show fun()
@@ -64,6 +65,9 @@ M.new = function(options)
     end
 
     controls.refresh = function()
+        if options.refresh_highlights ~= nil then
+            options.refresh_highlights()
+        end
         local buffers = {}
         local windows = renderer.source_windows()
         for _, winid in ipairs(windows) do

@@ -237,6 +237,16 @@ end
 
 ---@param value any
 ---@param path string
+---@return ScrollbarHighlight?
+M.optional_highlight = function(value, path)
+    if value == nil then
+        return nil
+    end
+    return M.highlight(value, path)
+end
+
+---@param value any
+---@param path string
 ---@return table
 M.table = function(value, path)
     if type(value) ~= "table" then

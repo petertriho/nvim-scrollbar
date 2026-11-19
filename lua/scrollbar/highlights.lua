@@ -3,6 +3,16 @@ local overlap = require("scrollbar.overlap")
 
 local M = {}
 local GENERATED_PREFIX = const.NAME_PREFIX .. "Generated."
+local INACTIVE_SUFFIX = const.NAME_INACTIVE_SUFFIX
+
+-- The replacement map of each variant: active group name to inactive group
+-- name. A variant without an element that is on has no entry. The keys are
+-- the variant configurations, so a map never applies to the variant of an
+-- earlier setup.
+local inactive_maps = setmetatable({}, { __mode = "k" })
+-- The public inactive groups that had a user or colorscheme definition at the
+-- last call of `M.set_highlights`.
+local last_defined = {}
 
 M.get_highlight_name = function(mark_type, thumb, pressed, prefix)
     return string.format(
@@ -39,6 +49,21 @@ M.get_highlight_groups = function(active_config, variant_id, automatic)
         thumb_pressed = M.get_highlight_name("", true, true, prefix),
         marks = marks,
     }
+end
+
+---The group that a source window without focus uses in place of `name`.
+---@param name string
+---@return string
+M.inactive_name = function(name)
+    return name .. INACTIVE_SUFFIX
+end
+
+---The replacement map of a variant for a source window without focus, or nil
+---when no element of the variant has an inactive color.
+---@param active_config ScrollbarConfig
+---@return table<string, string>?
+M.inactive_map = function(active_config)
+    return inactive_maps[active_config]
 end
 
 ---The blend-only group under a mark that has no track or thumb below it.
@@ -263,6 +288,18 @@ local function mark_highlight(properties)
     return M.mark_definition(properties.highlight, properties.highlight_channel)
 end
 
+---@param properties ScrollbarMarkTypeConfig
+---@return vim.api.keyset.highlight
+local function inactive_mark_highlight(properties)
+    local source = properties.inactive_highlight
+    if type(source) == "table" then
+        return vim.deepcopy(source)
+    end
+    -- The caller checks that the mark sets `inactive_highlight`.
+    ---@cast source string
+    return M.mark_definition(source, properties.inactive_highlight_channel or properties.highlight_channel)
+end
+
 local function generated_name(public_name)
     return GENERATED_PREFIX .. public_name:sub(#const.NAME_PREFIX + 1)
 end
@@ -309,10 +346,13 @@ end
 ---@field final table<string, vim.api.keyset.highlight>
 
 --- The groups of one variant. An overlap entry comes after the thumb entry and
---- the mark entry that it merges.
+--- the mark entry that it merges. An inactive entry comes after the entries
+--- that it copies or merges. Only the inactive elements that are on get an
+--- entry.
 ---@param active_config ScrollbarConfig
+---@param inactive ScrollbarInactiveElements
 ---@return ScrollbarHighlightEntry[]
-local function variant_entries(active_config)
+local function variant_entries(active_config, inactive)
     local groups = active_config.highlights
     local track = active_config.track
     local thumb = active_config.thumb
@@ -356,6 +396,35 @@ local function variant_entries(active_config)
             end,
         },
     }
+    -- An inactive element without its own option copies the final active
+    -- definition. It is on because a user or a colorscheme defines its public
+    -- group, or because it merges a part that is on.
+    if inactive.track then
+        entries[#entries + 1] = {
+            key = "track_inactive",
+            name = M.inactive_name(groups.track),
+            source = { track.highlight, track.inactive_highlight, surface_blend },
+            generate = function(final)
+                if track.inactive_highlight == nil then
+                    return vim.deepcopy(final.track)
+                end
+                return background_highlight(track.inactive_highlight, surface_blend, "PmenuSbar", "#000000")
+            end,
+        }
+    end
+    if inactive.thumb then
+        entries[#entries + 1] = {
+            key = "thumb_inactive",
+            name = M.inactive_name(groups.thumb),
+            source = { thumb.highlight, thumb.inactive_highlight, thumb_blend },
+            generate = function(final)
+                if thumb.inactive_highlight == nil then
+                    return vim.deepcopy(final.thumb)
+                end
+                return thumb_highlight(thumb.inactive_highlight, thumb_blend)
+            end,
+        }
+    end
     local tint = active_config.overlap.marks == "tint"
     for mark_type, properties in pairs(active_config.marks) do
         local mark_groups = groups.marks[mark_type]
@@ -395,6 +464,56 @@ local function variant_entries(active_config)
                 end,
             }
         end
+        local mark_inactive = inactive.marks[mark_type]
+        if mark_inactive ~= nil then
+            local inactive_key = key .. ".inactive"
+            local mark_source = {
+                properties.highlight,
+                properties.highlight_channel,
+                properties.inactive_highlight,
+                properties.inactive_highlight_channel,
+            }
+            if mark_inactive.mark then
+                entries[#entries + 1] = {
+                    key = inactive_key,
+                    name = M.inactive_name(mark_groups.mark),
+                    source = mark_source,
+                    generate = function(final)
+                        if properties.inactive_highlight == nil then
+                            return vim.deepcopy(final[key])
+                        end
+                        return inactive_mark_highlight(properties)
+                    end,
+                }
+            end
+            -- Each part of an overlap takes its inactive definition when the
+            -- part is on, and else its active definition.
+            if mark_inactive.thumb then
+                entries[#entries + 1] = {
+                    key = key .. ".thumb_inactive",
+                    name = M.inactive_name(mark_groups.thumb),
+                    source = { thumb.highlight, thumb.inactive_highlight, thumb_blend, mark_source },
+                    generate = function(final)
+                        return vim.tbl_deep_extend(
+                            "force",
+                            {},
+                            final.thumb_inactive or final.thumb,
+                            final[inactive_key] or final[key]
+                        )
+                    end,
+                }
+            end
+            if mark_inactive.tint then
+                entries[#entries + 1] = {
+                    key = key .. ".tint_inactive",
+                    name = M.inactive_name(mark_groups.tint),
+                    source = { surface_blend, mark_source },
+                    generate = function(final)
+                        return tint_highlight(final[inactive_key] or final[key], surface_blend)
+                    end,
+                }
+            end
+        end
     end
     return entries
 end
@@ -407,11 +526,12 @@ end
 --- in the profile wins.
 ---@param active_config ScrollbarConfig
 ---@param root? ScrollbarVariantHighlights Nil for the root itself
+---@param inactive ScrollbarInactiveElements
 ---@return ScrollbarVariantHighlights
-local function set_variant_highlights(active_config, root)
+local function set_variant_highlights(active_config, root, inactive)
     local sources = {}
     local final = {}
-    for _, entry in ipairs(variant_entries(active_config)) do
+    for _, entry in ipairs(variant_entries(active_config, inactive)) do
         sources[entry.key] = entry.source
         if root == nil then
             -- The private group keeps the generated definition. The public group links to it again when the external
@@ -457,10 +577,130 @@ local function set_blend_groups(config_module)
     end
 end
 
+---@class ScrollbarInactiveMarkElements
+---@field mark boolean
+---@field thumb boolean The overlap of the mark on the thumb
+---@field tint boolean
+
+---@class ScrollbarInactiveElements
+---@field track boolean
+---@field thumb boolean
+---@field marks table<string, ScrollbarInactiveMarkElements> Only the mark types with an element that is on
+
+--- The public inactive groups that a user or a colorscheme defines. The
+--- default link of the plugin and an empty group do not count. A missing
+--- group costs one `hlexists()` call.
+---@param variants ScrollbarCompiledVariant[]
+---@return table<string, true>
+local function defined_inactive_groups(variants)
+    local defined = {}
+    local checked = {}
+    local function check(name)
+        local public_name = M.inactive_name(name)
+        if checked[public_name] then
+            return
+        end
+        checked[public_name] = true
+        if M.external_definition(public_name, generated_name(public_name)) ~= nil then
+            defined[public_name] = true
+        end
+    end
+    check(M.get_highlight_name("Track", false, false))
+    check(M.get_highlight_name("", true, false))
+    for _, variant in ipairs(variants) do
+        local tint = variant.config.overlap.marks == "tint"
+        for mark_type in pairs(variant.config.marks) do
+            check(M.get_highlight_name(mark_type, false, false))
+            check(M.get_highlight_name(mark_type, true, false))
+            if tint then
+                check(M.get_highlight_name(mark_type .. "Tint", false, false))
+            end
+        end
+    end
+    return defined
+end
+
+--- The elements of a variant that are on. An element is on when the variant
+--- sets its `inactive_highlight`, or when its public inactive group is
+--- defined. An overlap is also on when its thumb or its mark is on, and a tint
+--- is also on when its mark is on.
+---@param active_config ScrollbarConfig
+---@param defined table<string, true>
+---@return ScrollbarInactiveElements
+local function inactive_elements(active_config, defined)
+    local any_defined = next(defined) ~= nil
+    local function public_defined(name)
+        return any_defined and defined[M.inactive_name(name)] == true
+    end
+    local thumb = active_config.thumb.inactive_highlight ~= nil or public_defined(M.get_highlight_name("", true, false))
+    ---@type ScrollbarInactiveElements
+    local elements = {
+        track = active_config.track.inactive_highlight ~= nil
+            or public_defined(M.get_highlight_name("Track", false, false)),
+        thumb = thumb,
+        marks = {},
+    }
+    local tint = active_config.overlap.marks == "tint"
+    for mark_type, properties in pairs(active_config.marks) do
+        local mark = properties.inactive_highlight ~= nil
+            or public_defined(M.get_highlight_name(mark_type, false, false))
+        local mark_thumb = thumb or mark or public_defined(M.get_highlight_name(mark_type, true, false))
+        local mark_tint = tint and (mark or public_defined(M.get_highlight_name(mark_type .. "Tint", false, false)))
+        if mark or mark_thumb or mark_tint then
+            elements.marks[mark_type] = { mark = mark, thumb = mark_thumb, tint = mark_tint }
+        end
+    end
+    return elements
+end
+
+--- The replacement map of a variant, or nil when no element is on.
+---@param groups ScrollbarHighlightGroups
+---@param elements ScrollbarInactiveElements
+---@return table<string, string>?
+local function inactive_replacements(groups, elements)
+    local map = {}
+    local function add(name)
+        map[name] = M.inactive_name(name)
+    end
+    if elements.track then
+        add(groups.track)
+    end
+    if elements.thumb then
+        add(groups.thumb)
+    end
+    for mark_type, flags in pairs(elements.marks) do
+        local mark_groups = groups.marks[mark_type]
+        if flags.mark then
+            add(mark_groups.mark)
+        end
+        if flags.thumb then
+            add(mark_groups.thumb)
+        end
+        if flags.tint then
+            add(mark_groups.tint)
+        end
+    end
+    if next(map) == nil then
+        return nil
+    end
+    return map
+end
+
 M.set_highlights = function()
     local config = require("scrollbar.config")
     local active_config = config.get()
+    local variants = config.get_variants()
     set_blend_groups(config)
+
+    local defined = defined_inactive_groups(variants)
+    last_defined = defined
+    inactive_maps = setmetatable({}, { __mode = "k" })
+    local elements = {}
+    for _, variant in ipairs(variants) do
+        local variant_elements = inactive_elements(variant.config, defined)
+        elements[variant.id] = variant_elements
+        inactive_maps[variant.config] = inactive_replacements(variant.config.highlights, variant_elements)
+    end
     if not active_config.set_highlights then
         return
     end
@@ -468,12 +708,26 @@ M.set_highlights = function()
     set_default_link("ScrollbarFloatBorder", "FloatBorder")
     set_default_link("ScrollbarFloatTitle", "FloatTitle")
     set_default_link("ScrollbarFloatFooter", "FloatFooter")
-    local root = set_variant_highlights(active_config, nil)
-    for _, variant in ipairs(config.get_variants()) do
+    local root = set_variant_highlights(active_config, nil, elements[0])
+    for _, variant in ipairs(variants) do
         if variant.id > 0 then
-            set_variant_highlights(variant.config, root)
+            set_variant_highlights(variant.config, root, elements[variant.id])
         end
     end
+end
+
+--- Check the public inactive groups again, and set the groups again when the
+--- set of defined groups changed. `:ScrollbarRefresh` calls it, so a group
+--- that a user defines after setup takes effect without a `ColorScheme`
+--- event.
+---@return boolean changed
+M.refresh_inactive = function()
+    local config = require("scrollbar.config")
+    if not vim.deep_equal(defined_inactive_groups(config.get_variants()), last_defined) then
+        M.set_highlights()
+        return true
+    end
+    return false
 end
 
 return M
