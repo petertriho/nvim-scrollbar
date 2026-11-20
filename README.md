@@ -19,7 +19,9 @@ Label mode puts a label on each mark of the scrollbar. Type a label to move to
 the mark, or type the uppercase label to see the lines of the mark in a peek
 float first. The glance window shows a list of the marks with a preview pane.
 With `scrollbar.hover`, the peek float also opens when the mouse pointer stays
-on a mark.
+on a mark. Label mode is inspired by
+[flash.nvim](https://github.com/folke/flash.nvim), and the glance window by
+[glance.nvim](https://github.com/dnlhc/glance.nvim).
 
 ![Label mode: labels on the scrollbar marks, a peek float from an uppercase label, and a jump](https://github.com/user-attachments/assets/e0980b14-b9e9-4a03-9da5-bae29f0a2f07)
 
