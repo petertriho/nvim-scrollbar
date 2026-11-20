@@ -8,7 +8,9 @@
 ---@alias ScrollbarGutterPosition "inner"|"outer" Side of an avoided west gutter that the reservation takes
 ---@alias ScrollbarLayoutDirection "auto"|"ltr"|"rtl"
 ---@alias ScrollbarSearchBackend "sync"|"worker"
----@alias ScrollbarText string|string[]
+---@alias ScrollbarMarkTextFunction fun(context: ScrollbarMarkTextContext): string? Nil or "" hides the marks of the group
+---@alias ScrollbarThumbTextFunction fun(context: ScrollbarThumbTextContext): string? Nil or "" leaves the thumb row blank
+---@alias ScrollbarText string|string[]|ScrollbarMarkTextFunction
 ---@alias ScrollbarHighlightDefinition table<string, any> A table accepted by nvim_set_hl()
 ---@alias ScrollbarHighlight string|ScrollbarHighlightDefinition
 ---@alias ScrollbarProviderOption boolean|ScrollbarSearchProviderConfig|ScrollbarMarksProviderConfig|ScrollbarListProviderConfig
@@ -67,7 +69,7 @@
 ---@field delay_ms? integer
 
 ---@class ScrollbarUserThumbConfig
----@field text? string
+---@field text? string|ScrollbarThumbTextFunction
 ---@field blend? integer
 ---@field highlight? ScrollbarHighlight
 ---@field inactive_highlight? ScrollbarHighlight The thumb of a source window without focus
@@ -265,7 +267,7 @@
 ---@field delay_ms integer
 
 ---@class ScrollbarThumbConfig
----@field text string
+---@field text string|ScrollbarThumbTextFunction A string repeats across the thumb. A function result shows once on its row
 ---@field blend integer
 ---@field highlight ScrollbarHighlight
 ---@field inactive_highlight? ScrollbarHighlight
@@ -277,7 +279,7 @@
 ---@field marks ScrollbarMarkStyle
 
 ---@class ScrollbarMarkTypeConfig
----@field text string[] Density variants from least to most dense. An empty list for `Mark` uses the provider text
+---@field text string[]|ScrollbarMarkTextFunction Density variants from least to most dense, or a function. An empty list for `Mark` uses the provider text
 ---@field priority integer
 ---@field highlight ScrollbarHighlight Source highlight group or direct definition
 ---@field highlight_channel? ScrollbarHighlightChannel Nil means "fg"
@@ -382,6 +384,31 @@
 ---@field highlights ScrollbarHighlightGroups Compiled canonical or profile-internal group names
 ---@field layout_cache table Precompiled static inputs for the line-layer cache
 ---@field providers? ScrollbarProvidersConfig Present only in provider context snapshots
+
+---@class ScrollbarMarkTextContext
+---@field winid integer Source window
+---@field bufnr integer Source buffer
+---@field type string Mark type
+---@field line integer Zero-based line that a click on the mark goes to
+---@field lines integer[] Zero-based lines of the marks of the group, ascending. A copy
+---@field count integer Number of marks of the group
+---@field text? string Text of the mark from its provider
+---@field row integer Zero-based scrollbar row
+---@field line_count integer Lines of the source buffer. Read on demand
+---@field cursor_line integer Zero-based cursor line of the source window. Read on demand
+
+---@class ScrollbarThumbTextContext
+---@field winid integer Source window
+---@field bufnr integer Source buffer
+---@field index integer Zero-based row in the thumb
+---@field row integer Zero-based scrollbar row
+---@field first_row integer Zero-based first thumb row
+---@field last_row integer Zero-based last thumb row
+---@field height integer Scrollbar rows
+---@field top_line integer Zero-based first visible line
+---@field bottom_line integer Zero-based last visible line
+---@field line_count integer Lines of the source buffer
+---@field cursor_line? integer Zero-based cursor line of the source window. Nil on a snacks list
 
 ---@class ScrollbarProfileContext
 ---@field winid integer
@@ -577,6 +604,17 @@
 ---@field marks ScrollbarLayoutMark[] Marks aligned with geometry.mark_rows
 ---@field mark_layer? ScrollbarResolvedMarkLayer Precomputed static placed mark cells and resolved width
 ---@field compact_search? ScrollbarCompactSearch Private built-in search matches
+---@field source_win? integer Source window for the context of the text functions
+---@field source_buf? integer Source buffer for the context of the text functions
+---@field thumb_context? ScrollbarThumbTextSource Window values for the context of a thumb text function
+
+---@class ScrollbarThumbTextSource
+---@field winid integer
+---@field bufnr integer
+---@field top_line integer
+---@field bottom_line integer
+---@field line_count integer
+---@field cursor_line? integer Nil on a snacks list
 
 ---@class ScrollbarMarkLayerInput
 ---@field config ScrollbarConfig
@@ -588,6 +626,8 @@
 ---@field marks_sorted? boolean Marks already ordered per provider by (line, text). Skips the grouping sorts
 ---@field compact_search? ScrollbarCompactSearch Private built-in search matches
 ---@field previous? { layer: table, changed: table[] } Previous layer plus the {index, old_row} shift list for incremental row rebuilds
+---@field source_win? integer Source window for the context of the text functions
+---@field source_buf? integer Source buffer for the context of the text functions
 
 ---@class ScrollbarPlacedMark
 ---@field text string
@@ -609,6 +649,7 @@
 ---@field segments? integer[][] Provider segments as [first, last] index ranges over line-sorted marks. Nil when unavailable
 ---@field height integer Track height that the layer was built for
 ---@field mark_rows integer[] Track rows aligned with marks_identity
+---@field text_reads? table<string, integer> Lazy context fields that the text functions read, with their values. Nil without text functions
 
 ---@class ScrollbarLayoutOutput
 ---@field rows string[]

@@ -3967,6 +3967,154 @@ T["accepts marks of a hidden type from a custom provider without drawing them"] 
     expect.equality(result.normalized, true)
 end
 
+T["mark text functions"] = MiniTest.new_set()
+
+-- Sets a text function for `Misc` in the child, publishes one Misc mark on
+-- line 51, and defines `render_text()`, which renders the window and returns
+-- the text of the mark and the number of layer builds so far.
+local function text_function_child(text_function, scrollbar_overrides, line_count)
+    local child = new_child()
+    child.lua(
+        [[
+        local text_function, overrides, line_count = ...
+        local lines = {}
+        for index = 1, line_count do
+            lines[index] = "line " .. index
+        end
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        vim.api.nvim_win_set_height(0, 10)
+        _G.source_win = vim.api.nvim_get_current_win()
+        _G.source_buf = vim.api.nvim_get_current_buf()
+
+        local config = vim.tbl_deep_extend("force", overrides.base, overrides.scrollbar)
+        config.marks.Misc.text = loadstring(text_function)()
+        require("scrollbar.test.set_config")(config)
+
+        local layout = require("scrollbar.layout")
+        local original_mark_layer = layout.mark_layer
+        _G.builds = 0
+        rawset(layout, "mark_layer", function(input)
+            _G.builds = _G.builds + 1
+            return original_mark_layer(input)
+        end)
+
+        local renderer = require("scrollbar.renderer")
+        renderer.setup()
+        assert(require("scrollbar.shared.store").set("test", _G.source_buf, { { line = 50, type = "Misc" } }))
+
+        _G.render_text = function()
+            local state = assert(renderer.render(_G.source_win))
+            local rows = require("scrollbar.test.float").lines(state.float_buf, 0, -1, false)
+            for row, cells in ipairs(state.hitmap) do
+                for column, cell in ipairs(cells) do
+                    if cell.type == "Misc" then
+                        return { text = rows[row]:sub(column, column), builds = _G.builds }
+                    end
+                end
+            end
+            return { text = nil, builds = _G.builds }
+        end
+    ]],
+        { text_function, { base = renderer_config(), scrollbar = scrollbar_overrides or {} }, line_count or 100 }
+    )
+    return child
+end
+
+local function move_cursor(child, line)
+    child.lua("vim.api.nvim_win_set_cursor(_G.source_win, { ... })", { line, 0 })
+end
+
+T["mark text functions"]["follow the cursor line without the cursor provider"] = function()
+    local child = text_function_child([[
+        return function(context)
+            return tostring(math.abs(context.line - context.cursor_line) % 10)
+        end
+    ]])
+
+    move_cursor(child, 1)
+    local first = child.lua_get("_G.render_text()")
+    move_cursor(child, 48)
+    local moved = child.lua_get("_G.render_text()")
+    local again = child.lua_get("_G.render_text()")
+
+    -- Line 51 is 50 lines from line 1, and 3 lines from line 48.
+    expect.equality(first.text, "0")
+    expect.equality(moved.text, "3")
+    expect.equality(moved.builds, first.builds + 1)
+    expect.equality(again.builds, moved.builds)
+end
+
+T["mark text functions"]["do not rebuild on a cursor move when they ignore the cursor"] = function()
+    local child = text_function_child([[
+        return function(context)
+            return tostring((context.line + 1) % 10)
+        end
+    ]])
+
+    move_cursor(child, 1)
+    local first = child.lua_get("_G.render_text()")
+    move_cursor(child, 48)
+    local moved = child.lua_get("_G.render_text()")
+
+    expect.equality(first.text, "1")
+    expect.equality(moved.text, "1")
+    expect.equality(moved.builds, first.builds)
+end
+
+T["mark text functions"]["follow the line count in the screenline unit"] = function()
+    local child = text_function_child(
+        [[
+        return function(context)
+            return tostring(context.line_count % 10)
+        end
+    ]],
+        { unit = "screenline" }
+    )
+
+    local first = child.lua_get("_G.render_text()")
+    child.lua("vim.api.nvim_buf_set_lines(_G.source_buf, -1, -1, false, { 'extra' })")
+    local grown = child.lua_get("_G.render_text()")
+
+    expect.equality(first.text, "0")
+    expect.equality(grown.text, "1")
+end
+
+T["thumb text functions follow a scroll that keeps the thumb rows"] = function()
+    local child = new_child()
+    local result = child.lua_func(function(config)
+        local lines = {}
+        for index = 1, 1000 do
+            lines[index] = "line " .. index
+        end
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        vim.api.nvim_win_set_height(0, 10)
+        local source_win = vim.api.nvim_get_current_win()
+        config.thumb.text = function(context)
+            return tostring((context.top_line + 1) % 10)
+        end
+        require("scrollbar.test.set_config")(config)
+        local renderer = require("scrollbar.renderer")
+        renderer.setup()
+
+        local function render()
+            local state = assert(renderer.render(source_win))
+            local rows = require("scrollbar.test.float").lines(state.float_buf, 0, -1, false)
+            local handle = state.handle --[[@as ScrollbarHandleGeometry]]
+            return { first_row = handle.first_row, text = rows[handle.first_row + 1]:sub(2, 2) }
+        end
+
+        local first = render()
+        vim.api.nvim_win_call(source_win, function()
+            vim.cmd("normal! \5")
+        end)
+        local scrolled = render()
+        return { first = first, scrolled = scrolled }
+    end, renderer_config())
+
+    expect.equality(result.first, { first_row = 0, text = "1" })
+    expect.equality(result.scrolled, { first_row = 0, text = "2" })
+end
+
 T["window"] = MiniTest.new_set()
 
 ---@param child table

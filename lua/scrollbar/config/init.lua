@@ -465,7 +465,7 @@ local function normalize(value, shared, path, variant_id)
             inactive_highlight = schema.optional_highlight(track.inactive_highlight, at("track.inactive_highlight")),
         },
         thumb = {
-            text = schema.text(thumb.text, at("thumb.text")),
+            text = schema.text_or_function(thumb.text, at("thumb.text")),
             blend = schema.integer(thumb.blend, at("thumb.blend"), 0, 100),
             highlight = schema.highlight(thumb.highlight, at("thumb.highlight")),
             inactive_highlight = schema.optional_highlight(thumb.inactive_highlight, at("thumb.inactive_highlight")),

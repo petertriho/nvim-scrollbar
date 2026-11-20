@@ -202,13 +202,29 @@ end
 
 ---@param value any
 ---@param path string
+---@return string|function
+M.text_or_function = function(value, path)
+    if type(value) == "function" then
+        return value
+    end
+    if type(value) ~= "string" then
+        invalid(path .. " must be a string or a function")
+    end
+    return M.text(value, path)
+end
+
+---@param value any
+---@param path string
 ---@param allow_empty boolean
----@return string[]
+---@return string[]|function
 M.text_variants = function(value, path, allow_empty)
+    if type(value) == "function" then
+        return value
+    end
     if type(value) == "string" then
         value = { value }
     elseif type(value) ~= "table" then
-        invalid(path .. " must be a string or dense list of strings")
+        invalid(path .. " must be a string, a dense list of strings, or a function")
     end
 
     local count = dense_count(value, path)

@@ -26,6 +26,10 @@ local function compose(options)
         line_count = options.line_count,
         container_width = options.container_width,
         compact_search = options.compact_search,
+        source_win = options.source_win,
+        source_buf = options.source_buf,
+        thumb_context = options.thumb_context,
+        mark_layer = options.mark_layer,
         geometry = {
             total_extent = 100,
             viewport_start = 0,
@@ -616,6 +620,594 @@ T["composes precomputed mark layers identically and caches glyph parsing"] = fun
 
     expect.equality(second, first)
     expect.equality(first.strchars > 0, true)
+end
+
+T["mark text functions"] = MiniTest.new_set()
+
+local function capture_notifications()
+    local messages = {}
+    local original = vim.notify
+    vim.notify = function(message)
+        messages[#messages + 1] = message
+    end
+    MiniTest.finally(function()
+        vim.notify = original
+    end)
+    return messages
+end
+
+-- A catch-all lane of three columns, wide enough for line numbers.
+local WIDE_LANE = { columns = { { "track", "thumb", "marks" }, { "marks" }, { "marks" } } }
+
+T["mark text functions"]["get the context of their group"] = function()
+    local seen = {}
+    local active_config = config({
+        marks = {
+            Search = {
+                text = function(context)
+                    seen[#seen + 1] = {
+                        winid = context.winid,
+                        bufnr = context.bufnr,
+                        type = context.type,
+                        line = context.line,
+                        lines = context.lines,
+                        count = context.count,
+                        text = context.text,
+                        row = context.row,
+                        line_count = context.line_count,
+                        cursor_line = context.cursor_line,
+                    }
+                    return "x"
+                end,
+            },
+        },
+    })
+    local winid = vim.api.nvim_get_current_win()
+    local bufnr = vim.api.nvim_get_current_buf()
+    vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "a", "b", "c" })
+    vim.api.nvim_win_set_cursor(winid, { 3, 0 })
+    MiniTest.finally(function()
+        vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, {})
+    end)
+
+    local result = compose({
+        config = active_config,
+        height = 3,
+        line_count = 120,
+        source_win = winid,
+        source_buf = bufnr,
+        marks = {
+            { provider = "search", line = 40, type = "Search", text = "P" },
+            { provider = "search", line = 10, type = "Search" },
+        },
+        mark_rows = { 2, 2 },
+    })
+
+    expect.equality(result.rows[3], "x")
+    expect.equality(seen, {
+        {
+            winid = winid,
+            bufnr = bufnr,
+            type = "Search",
+            line = 10,
+            lines = { 10, 40 },
+            count = 2,
+            text = nil,
+            row = 2,
+            line_count = 120,
+            cursor_line = 2,
+        },
+    })
+end
+
+T["mark text functions"]["win over provider text and see it"] = function()
+    local active_config = config({
+        marks = {
+            Search = {
+                text = function(context)
+                    return (context.text or "?") .. context.count
+                end,
+            },
+        },
+        layout = WIDE_LANE,
+    })
+    local result = compose({
+        config = active_config,
+        height = 2,
+        marks = {
+            { provider = "search", line = 10, type = "Search", text = "P" },
+            { provider = "search", line = 20, type = "Search" },
+            { provider = "search", line = 21, type = "Search" },
+        },
+        mark_rows = { 0, 1, 1 },
+    })
+
+    expect.equality(result.rows, { "P1 ", "?2 " })
+end
+
+T["mark text functions"]["show line numbers in a wide lane and cut them at the lane edge"] = function()
+    local function line_number(context)
+        return tostring(context.line + 1)
+    end
+    local marks = {
+        { provider = "gitsigns", line = 6, type = "GitAdd" },
+        { provider = "gitsigns", line = 152, type = "GitAdd" },
+    }
+    local wide = compose({
+        config = config({ marks = { GitAdd = { text = line_number } }, layout = WIDE_LANE }),
+        height = 2,
+        marks = marks,
+        mark_rows = { 0, 1 },
+    })
+    local narrow = compose({
+        config = config({ marks = { GitAdd = { text = line_number } } }),
+        height = 2,
+        marks = marks,
+        mark_rows = { 0, 1 },
+    })
+
+    expect.equality(wide.rows, { "7  ", "153" })
+    expect.equality(wide.hitmap[2][1].line, 152)
+    expect.equality(wide.hitmap[2][3].line, 152)
+    expect.equality(narrow.rows, { "7", "1" })
+end
+
+T["mark text functions"]["draw a tint as wide as the text"] = function()
+    local result = compose({
+        config = config({
+            marks = {
+                GitAdd = {
+                    text = function()
+                        return "42"
+                    end,
+                },
+            },
+            layout = WIDE_LANE,
+            overlap = { marks = "tint" },
+        }),
+        marks = { { provider = "gitsigns", line = 41, type = "GitAdd" } },
+        mark_rows = { 0 },
+    })
+
+    local tinted = {}
+    for _, span in ipairs(result.highlights[1]) do
+        if span.highlight == "ScrollbarGitAddTint" then
+            tinted[#tinted + 1] = { span.start_col, span.end_col }
+        end
+    end
+    expect.equality(result.rows, { "   " })
+    expect.equality(tinted, { { 0, 1 }, { 1, 2 } })
+end
+
+T["mark text functions"]["hide a group and let a lower mark show"] = function()
+    local active_config = config({
+        marks = {
+            Error = {
+                text = function(context)
+                    if context.line == 10 then
+                        return nil
+                    end
+                    return ""
+                end,
+            },
+            Search = { text = "S" },
+        },
+    })
+    local result = compose({
+        config = active_config,
+        height = 1,
+        marks = {
+            { provider = "diagnostic", line = 10, type = "Error" },
+            { provider = "search", line = 10, type = "Search" },
+        },
+        mark_rows = { 0, 0 },
+    })
+
+    expect.equality(result.rows, { "S" })
+    expect.equality(result.hitmap[1][1].type, "Search")
+end
+
+T["mark text functions"]["hide a group on an error and notify once"] = function()
+    local messages = capture_notifications()
+    layout.clear_cache()
+    local active_config = config({
+        marks = {
+            Error = {
+                text = function()
+                    error("boom", 0)
+                end,
+            },
+        },
+    })
+    local input = {
+        config = active_config,
+        height = 2,
+        marks = {
+            { provider = "diagnostic", line = 10, type = "Error" },
+            { provider = "diagnostic", line = 90, type = "Error" },
+        },
+        mark_rows = { 0, 1 },
+    }
+
+    expect.equality(compose(input).rows, { " ", " " })
+    expect.equality(messages, { "[nvim-scrollbar] the text function of mark type Error failed: boom" })
+end
+
+T["mark text functions"]["cannot change the lines of mouse navigation"] = function()
+    local result = compose({
+        config = config({
+            marks = {
+                Search = {
+                    text = function(context)
+                        context.lines[1] = 999
+                        return "s"
+                    end,
+                },
+            },
+        }),
+        marks = {
+            { provider = "search", line = 10, type = "Search" },
+            { provider = "search", line = 20, type = "Search" },
+        },
+        mark_rows = { 0, 0 },
+    })
+
+    expect.equality(result.hitmap[1][1].lines, { 10, 20 })
+end
+
+T["mark text functions"]["record the lazy fields that they read"] = function()
+    local winid = vim.api.nvim_get_current_win()
+    local bufnr = vim.api.nvim_get_current_buf()
+    local function layer(text)
+        return layout.mark_layer({
+            config = config({ marks = { Search = { text = text } } }),
+            height = 1,
+            line_count = 50,
+            source_win = winid,
+            source_buf = bufnr,
+            geometry = { mark_rows = { 0 } },
+            marks = { { provider = "search", line = 10, type = "Search" } },
+        })
+    end
+
+    expect.equality(layer("s").text_reads, nil)
+    expect.equality(
+        layer(function()
+            return "s"
+        end).text_reads,
+        {}
+    )
+    expect.equality(
+        layer(function(context)
+            return tostring(context.line_count + context.cursor_line)
+        end).text_reads,
+        { line_count = 50, cursor_line = vim.api.nvim_win_get_cursor(winid)[1] - 1 }
+    )
+    expect.equality(layout.text_reads_current({ line_count = 50 }, winid, bufnr, 50), true)
+    expect.equality(layout.text_reads_current({ line_count = 50 }, winid, bufnr, 51), false)
+    expect.equality(layout.text_reads_current(nil, winid, bufnr, 51), true)
+end
+
+T["mark text functions"]["call only the rebuilt rows of an incremental layer"] = function()
+    local calls = {}
+    local active_config = config({
+        marks = {
+            Search = {
+                text = function(context)
+                    calls[#calls + 1] = context.row
+                    return "s"
+                end,
+            },
+        },
+    })
+    local marks = {
+        { provider = "search", line = 10, type = "Search" },
+        { provider = "search", line = 50, type = "Search" },
+    }
+    local first = layout.mark_layer({
+        config = active_config,
+        height = 4,
+        geometry = { mark_rows = { 0, 2 } },
+        marks = marks,
+        marks_sorted = true,
+    })
+    calls = {}
+    local second = layout.mark_layer({
+        config = active_config,
+        height = 4,
+        geometry = { mark_rows = { 0, 3 } },
+        marks = marks,
+        marks_sorted = true,
+        previous = { layer = first, changed = { { 2, 2 } } },
+    })
+
+    table.sort(calls)
+    expect.equality(calls, { 3 })
+    expect.equality(second.rows[0], first.rows[0])
+    expect.equality(second.text_reads, {})
+end
+
+T["named-mark lane packs texts by width"] = MiniTest.new_set()
+
+local function named_marks()
+    return {
+        { provider = "marks", line = 9, type = "Mark", text = "a" },
+        { provider = "marks", line = 19, type = "Mark", text = "b" },
+        { provider = "marks", line = 29, type = "Mark", text = "c" },
+    }
+end
+
+local function with_line(context)
+    return context.text .. (context.line + 1)
+end
+
+T["named-mark lane packs texts by width"]["places each text after the previous one"] = function()
+    local result = compose({
+        config = config({
+            layout = { columns = { { { types = { "Mark" }, max_width = 12 } }, { "thumb" } } },
+            thumb = { text = "H" },
+            marks = { Mark = { text = with_line } },
+        }),
+        container_width = 20,
+        handle = { first_row = 0, last_row = 0 },
+        marks = named_marks(),
+        mark_rows = { 0, 0, 0 },
+    })
+
+    expect.equality(result.width, 10)
+    expect.equality(result.rows, { "a10b20c30H" })
+    expect.equality(result.hitmap[1][4].line, 19)
+    expect.equality(result.hitmap[1][6].line, 19)
+    expect.equality(result.hitmap[1][7].line, 29)
+end
+
+T["named-mark lane packs texts by width"]["keeps the prefix of the texts that fit"] = function()
+    local result = compose({
+        config = config({
+            layout = { columns = { { { types = { "Mark" }, max_width = 8 } }, { "thumb" } } },
+            thumb = { text = "H" },
+            marks = { Mark = { text = with_line } },
+        }),
+        container_width = 20,
+        handle = { first_row = 0, last_row = 0 },
+        marks = named_marks(),
+        mark_rows = { 0, 0, 0 },
+    })
+
+    expect.equality(result.width, 9)
+    expect.equality(result.rows, { "a10b20  H" })
+end
+
+T["named-mark lane packs texts by width"]["does not put a text across a column of another lane"] = function()
+    local result = compose({
+        config = config({
+            layout = {
+                columns = {
+                    { { types = { "Search" } } },
+                    { { types = { "Mark" }, max_width = 8 } },
+                    { "thumb" },
+                },
+            },
+            thumb = { text = "H" },
+            marks = { Search = { text = "S" }, Mark = { text = with_line } },
+        }),
+        container_width = 20,
+        handle = { first_row = 0, last_row = 0 },
+        marks = {
+            { provider = "search", line = 5, type = "Search" },
+            { provider = "marks", line = 9, type = "Mark", text = "a" },
+            { provider = "marks", line = 19, type = "Mark", text = "b" },
+        },
+        mark_rows = { 0, 0, 0 },
+    })
+
+    -- The lane grows by five cells on the inward side, so its columns are
+    -- 1 to 5 and 7. "b20" fits only in columns 4 to 6, which holds Search.
+    expect.equality(result.width, 8)
+    expect.equality(result.rows, { "a10  S H" })
+end
+
+T["named-mark lane packs texts by width"]["hides a named mark whose function returns nil"] = function()
+    local result = compose({
+        config = config({
+            layout = { columns = { { { types = { "Mark" }, max_width = 4 } }, { "thumb" } } },
+            thumb = { text = "H" },
+            marks = {
+                Mark = {
+                    text = function(context)
+                        if context.text == "b" then
+                            return nil
+                        end
+                        return context.text
+                    end,
+                },
+            },
+        }),
+        container_width = 20,
+        handle = { first_row = 0, last_row = 0 },
+        marks = named_marks(),
+        mark_rows = { 0, 0, 0 },
+    })
+
+    expect.equality(result.rows, { "acH" })
+end
+
+T["thumb text functions"] = MiniTest.new_set()
+
+-- A thumb of three columns over the track.
+local WIDE_THUMB = { columns = { { "track", "thumb" }, { "track", "thumb" }, { "track", "thumb" } } }
+
+local THUMB_SOURCE = { winid = 1000, bufnr = 1, top_line = 152, bottom_line = 161, line_count = 400, cursor_line = 155 }
+
+T["thumb text functions"]["get the context of each thumb row"] = function()
+    local seen = {}
+    local result = compose({
+        config = config({
+            thumb = {
+                text = function(context)
+                    seen[#seen + 1] = context
+                    return "x"
+                end,
+            },
+        }),
+        height = 5,
+        handle = { first_row = 1, last_row = 3 },
+        thumb_context = THUMB_SOURCE,
+    })
+
+    local base = {
+        winid = 1000,
+        bufnr = 1,
+        first_row = 1,
+        last_row = 3,
+        height = 5,
+        top_line = 152,
+        bottom_line = 161,
+        line_count = 400,
+        cursor_line = 155,
+    }
+    expect.equality(result.rows, { " ", "x", "x", "x", " " })
+    expect.equality(seen, {
+        vim.tbl_extend("force", base, { index = 0, row = 1 }),
+        vim.tbl_extend("force", base, { index = 1, row = 2 }),
+        vim.tbl_extend("force", base, { index = 2, row = 3 }),
+    })
+end
+
+T["thumb text functions"]["show the result once and leave the other cells blank"] = function()
+    local function top_line(context)
+        if context.index == 0 then
+            return tostring(context.top_line + 1)
+        end
+        return nil
+    end
+    local from_function = compose({
+        config = config({ layout = WIDE_THUMB, thumb = { text = top_line } }),
+        height = 3,
+        handle = { first_row = 0, last_row = 2 },
+        thumb_context = THUMB_SOURCE,
+    })
+    local from_string = compose({
+        config = config({ layout = WIDE_THUMB, thumb = { text = "ab" } }),
+        height = 1,
+        handle = { first_row = 0, last_row = 0 },
+    })
+    local cut = compose({
+        config = config({
+            thumb = {
+                text = function()
+                    return "153"
+                end,
+            },
+        }),
+        handle = { first_row = 0, last_row = 0 },
+    })
+
+    expect.equality(from_function.rows, { "153", "   ", "   " })
+    local thumb_cells = {}
+    for _, span in ipairs(from_function.highlights[2]) do
+        if span.highlight == "ScrollbarThumb" then
+            thumb_cells[#thumb_cells + 1] = { span.start_col, span.end_col }
+        end
+    end
+    expect.equality(thumb_cells, { { 0, 1 }, { 1, 2 }, { 2, 3 } })
+    expect.equality(from_string.rows, { "aba" })
+    expect.equality(cut.rows, { "1" })
+end
+
+T["thumb text functions"]["are not called while the thumb is hidden"] = function()
+    local calls = 0
+    local result = compose({
+        config = config({
+            thumb = {
+                text = function()
+                    calls = calls + 1
+                    return "x"
+                end,
+            },
+        }),
+        height = 2,
+        handle = { first_row = -1, last_row = -1 },
+    })
+
+    expect.equality(result.rows, { " ", " " })
+    expect.equality(calls, 0)
+end
+
+T["thumb text functions"]["run on every compose and render again only on a new result"] = function()
+    local calls = 0
+    local active_config = config({
+        thumb = {
+            text = function(context)
+                calls = calls + 1
+                return tostring((context.top_line + 1) % 10)
+            end,
+        },
+    })
+    local input = {
+        config = active_config,
+        height = 3,
+        geometry = {
+            total_extent = 1000,
+            viewport_start = 0,
+            viewport_end = 10,
+            mark_rows = {},
+            handle = { first_row = 0, last_row = 0 },
+        },
+        marks = {},
+        thumb_context = { top_line = 0, bottom_line = 9, line_count = 1000 },
+    }
+    input.mark_layer = layout.mark_layer(input)
+
+    local first = layout.compose(input)
+    local same = layout.compose(input)
+    input.thumb_context = { top_line = 1, bottom_line = 10, line_count = 1000 }
+    local scrolled = layout.compose(input)
+
+    expect.equality(first.rows, { "1", " ", " " })
+    expect.equality(rawequal(same, first), true)
+    expect.equality(scrolled.rows, { "2", " ", " " })
+    expect.equality(calls, 3)
+end
+
+T["thumb text functions"]["hide a row on an error and notify once"] = function()
+    local messages = capture_notifications()
+    layout.clear_cache()
+    local result = compose({
+        config = config({
+            thumb = {
+                text = function()
+                    error("boom", 0)
+                end,
+            },
+        }),
+        height = 2,
+        handle = { first_row = 0, last_row = 1 },
+    })
+
+    expect.equality(result.rows, { " ", " " })
+    expect.equality(messages, { "[nvim-scrollbar] the thumb text function failed: boom" })
+end
+
+T["thumb text functions"]["a thumb text change does not reuse the output of another text"] = function()
+    -- A profile that changes only the thumb text keeps the mark layer of the
+    -- window, because the layout cache has no thumb text.
+    local mark_layer = layout.mark_layer({
+        config = config({ thumb = { text = "A" } }),
+        height = 1,
+        geometry = { mark_rows = {} },
+        marks = {},
+    })
+    local function compose_with(text)
+        return compose({
+            config = config({ thumb = { text = text } }),
+            handle = { first_row = 0, last_row = 0 },
+            mark_layer = mark_layer,
+        })
+    end
+
+    expect.equality(compose_with("A").rows, { "A" })
+    expect.equality(compose_with("B").rows, { "B" })
 end
 
 return T

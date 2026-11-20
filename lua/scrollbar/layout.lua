@@ -2,6 +2,7 @@ local M = {}
 
 local store = require("scrollbar.shared.store")
 local search_compact = require("scrollbar.providers.search.compact")
+local text_function = require("scrollbar.text_function")
 
 local function clamp(value, minimum, maximum)
     return math.max(minimum, math.min(value, maximum))
@@ -1422,14 +1423,7 @@ M.track_row_to_line = function(source_win, row, height, unit, total_extent)
     return result
 end
 
-local glyph_cache = {}
-
-local function display_glyphs(text)
-    local cached = glyph_cache[text]
-    if cached ~= nil then
-        return cached
-    end
-
+local function split_glyphs(text)
     local glyphs = {}
     local join_next = false
     local character_count = vim.fn.strchars(text)
@@ -1446,9 +1440,57 @@ local function display_glyphs(text)
         end
         join_next = codepoint == 0x200D
     end
-
-    glyph_cache[text] = glyphs
     return glyphs
+end
+
+local glyph_cache = {}
+
+local function display_glyphs(text)
+    local cached = glyph_cache[text]
+    if cached == nil then
+        cached = split_glyphs(text)
+        glyph_cache[text] = cached
+    end
+    return cached
+end
+
+-- The results of text functions, such as line numbers, have many distinct
+-- values. They use their own cache with a size limit, so that they cannot
+-- grow the cache of the configured texts without bound.
+local DYNAMIC_GLYPH_LIMIT = 1024
+local dynamic_glyph_cache = {}
+local dynamic_glyph_count = 0
+
+local function dynamic_glyphs(text)
+    local cached = dynamic_glyph_cache[text] or glyph_cache[text]
+    if cached ~= nil then
+        return cached
+    end
+    local glyphs
+    if not text:find("[\128-\255]") then
+        -- A checked result has no control characters, so each ASCII byte is
+        -- one glyph of one cell.
+        glyphs = {}
+        for index = 1, #text do
+            glyphs[index] = { text = text:sub(index, index), width = 1 }
+        end
+    else
+        glyphs = split_glyphs(text)
+    end
+    if dynamic_glyph_count >= DYNAMIC_GLYPH_LIMIT then
+        dynamic_glyph_cache = {}
+        dynamic_glyph_count = 0
+    end
+    dynamic_glyph_cache[text] = glyphs
+    dynamic_glyph_count = dynamic_glyph_count + 1
+    return glyphs
+end
+
+local function group_glyphs(group)
+    if group.dynamic then
+        return dynamic_glyphs(group.text)
+    end
+    return display_glyphs(group.text)
 end
 
 -- Sort numerically only when the collected order is not already ascending.
@@ -1503,6 +1545,147 @@ local function resolved_text(mark_type, variants, source_text, count)
     return source_text or variants[math.min(count, #variants)]
 end
 
+---The current value of a context field that can change while the marks and
+---their rows stay the same. A text function reads these fields on demand.
+---@param key string `"line_count"` or `"cursor_line"`
+---@param source_win? integer
+---@param source_buf? integer
+---@param line_count? integer The line count, when the caller already has it
+---@return integer?
+local function text_read(key, source_win, source_buf, line_count)
+    if key == "line_count" then
+        if line_count ~= nil then
+            return line_count
+        end
+        if source_buf ~= nil and vim.api.nvim_buf_is_valid(source_buf) then
+            return vim.api.nvim_buf_line_count(source_buf)
+        end
+    elseif key == "cursor_line" then
+        if source_win ~= nil and vim.api.nvim_win_is_valid(source_win) then
+            return vim.api.nvim_win_get_cursor(source_win)[1] - 1
+        end
+    end
+    return nil
+end
+
+---Whether the values that the text functions of a layer read are still
+---current. A layer without text functions has no records.
+---@param reads? table<string, integer>
+---@param source_win? integer
+---@param source_buf? integer
+---@param line_count? integer
+---@return boolean
+M.text_reads_current = function(reads, source_win, source_buf, line_count)
+    if reads == nil then
+        return true
+    end
+    for key, value in pairs(reads) do
+        if text_read(key, source_win, source_buf, line_count) ~= value then
+            return false
+        end
+    end
+    return true
+end
+
+local LAZY_TEXT_FIELDS = { line_count = true, cursor_line = true }
+
+-- The lines of the group of each mark text context. The context copies them on
+-- the first read of `lines`, so that a function cannot change the lines of
+-- mouse navigation, and a function that does not read them pays no copy.
+local context_lines = setmetatable({}, { __mode = "k" })
+
+-- The reader of one layer build. The first read of a lazy field gets its value
+-- once for the build, and `reads` records it for the cache checks.
+local function text_reader(build)
+    local reader = build.reader
+    if reader == nil then
+        local input = build.input
+        local reads = {}
+        reader = {
+            reads = reads,
+            meta = {
+                __index = function(context, key)
+                    if key == "lines" then
+                        local source = context_lines[context]
+                        if source == nil then
+                            return nil
+                        end
+                        local lines = {}
+                        for index = 1, #source do
+                            lines[index] = source[index]
+                        end
+                        rawset(context, "lines", lines)
+                        return lines
+                    end
+                    if not LAZY_TEXT_FIELDS[key] then
+                        return nil
+                    end
+                    local value = reads[key]
+                    if value == nil then
+                        value = text_read(key, input.source_win, input.source_buf, input.line_count)
+                        reads[key] = value
+                    end
+                    return value
+                end,
+            },
+        }
+        build.reader = reader
+    end
+    return reader
+end
+
+local mark_text_labels = setmetatable({}, {
+    __index = function(labels, mark_type)
+        local label = string.format("the text function of mark type %s", mark_type)
+        labels[mark_type] = label
+        return label
+    end,
+})
+
+---Sets the text of a group: a variant, the provider text, or the result of a
+---text function. A text function wins over the provider text.
+---@return boolean shown False when a text function hides the group
+local function resolve_group_text(build, group, variants, provider_text)
+    if type(variants) ~= "function" then
+        group.text = resolved_text(group.type, variants, provider_text, group.count)
+        return true
+    end
+    local input = build.input
+    local context = setmetatable({
+        winid = input.source_win,
+        bufnr = input.source_buf,
+        type = group.type,
+        line = group.line,
+        count = group.count,
+        text = provider_text,
+        row = group.row,
+    }, text_reader(build).meta)
+    context_lines[context] = group.lines
+    local text = text_function.call(variants, context, mark_text_labels[group.type])
+    if text == nil then
+        return false
+    end
+    group.text = text
+    group.dynamic = true
+    return true
+end
+
+---@param groups table[]
+---@param hidden table<table, true>? Groups that a text function hid
+---@return table[]
+local function shown_groups(groups, hidden)
+    if hidden == nil then
+        return groups
+    end
+    local result = {}
+    for _, group in ipairs(groups) do
+        if hidden[group] == nil then
+            result[#result + 1] = group
+        end
+    end
+    return result
+end
+
 local function lane_for_type(config, mark_type)
     local lane_id = config.layout.routes[mark_type] or config.layout.catchall_lane
     if lane_id == false or lane_id == nil then
@@ -1515,7 +1698,7 @@ local function translated_column(config, column, column_offset)
     return config.layout.inward == "left" and column + column_offset or column
 end
 
-local function group_candidates(input, column_offset, expanded_lane_id)
+local function group_candidates(input, column_offset, expanded_lane_id, build)
     local groups = {}
     local by_row = {}
     -- When the caller guarantees `input.marks_sorted` (marks flattened by the
@@ -1714,6 +1897,7 @@ local function group_candidates(input, column_offset, expanded_lane_id)
         end
     end
 
+    local hidden = nil
     for _, group in ipairs(groups) do
         local representative
         if group.compact_source ~= nil then
@@ -1738,13 +1922,19 @@ local function group_candidates(input, column_offset, expanded_lane_id)
         local variants = input.config.marks[group.type].text
         group.provider = representative.provider or ""
         group.line = representative.line
-        group.text = resolved_text(group.type, variants, representative.text, group.count)
+        if not resolve_group_text(build, group, variants, representative.text) then
+            hidden = hidden or {}
+            hidden[group] = true
+        end
     end
+    groups = shown_groups(groups, hidden)
     table.sort(groups, candidate_less)
     return groups, segments
 end
 
-local function expanded_buckets(input)
+-- The named marks of each row in an expanded lane. Each named mark is its own
+-- group of one mark, with its text and the width of that text.
+local function expanded_buckets(input, build)
     local lane = lane_for_type(input.config, "Mark")
     if lane == nil or type(lane.max_width) ~= "number" then
         return {}, nil
@@ -1758,7 +1948,8 @@ local function expanded_buckets(input)
             table.insert(buckets[row], mark)
         end
     end
-    for _, sources in pairs(buckets) do
+    local variants = input.config.marks.Mark.text
+    for row, sources in pairs(buckets) do
         if input.marks_sorted ~= true then
             table.sort(sources, function(left, right)
                 if left.line ~= right.line then
@@ -1767,6 +1958,26 @@ local function expanded_buckets(input)
                 return (left.text or "") < (right.text or "")
             end)
         end
+        local entries = {}
+        for _, source in ipairs(sources) do
+            local entry = {
+                row = row,
+                type = "Mark",
+                provider = source.provider,
+                line = source.line,
+                lines = { source.line },
+                count = 1,
+            }
+            if resolve_group_text(build, entry, variants, source.text) then
+                local width = 0
+                for _, glyph in ipairs(group_glyphs(entry)) do
+                    width = width + glyph.width
+                end
+                entry.width = width
+                entries[#entries + 1] = entry
+            end
+        end
+        buckets[row] = entries
     end
     return buckets, lane
 end
@@ -1778,8 +1989,12 @@ local function layer_dimensions(input, buckets, lane)
     end
 
     local demand = #lane.columns
-    for _, sources in pairs(buckets) do
-        demand = math.max(demand, #sources)
+    for _, entries in pairs(buckets) do
+        local row_width = 0
+        for _, entry in ipairs(entries) do
+            row_width = row_width + entry.width
+        end
+        demand = math.max(demand, row_width)
     end
     local lane_growth = math.min(demand, lane.max_width) - #lane.columns
     local container_width = math.max(base_width, input.container_width or base_width)
@@ -1811,23 +2026,44 @@ local function add_expanded_candidates(input, candidates, buckets, lane, width, 
     end
     table.sort(available)
 
-    local mark_config = input.config.marks.Mark
-    for row, sources in pairs(buckets) do
-        local visible_count = math.min(#sources, #available)
-        for index = 1, visible_count do
-            local source = sources[index]
-            candidates[#candidates + 1] = {
-                row = row,
-                lane_id = lane.id,
-                type = "Mark",
-                column = available[index],
-                max_column = width,
-                priority = mark_config.priority,
-                provider = source.provider,
-                line = source.line,
-                lines = { source.line },
-                text = resolved_text("Mark", mark_config.text, source.text, 1),
-            }
+    -- Each named mark takes a run of adjacent available columns as wide as
+    -- its text. The lane keeps the ordered prefix of the marks that fit, so a
+    -- mark that does not fit ends the row. A one-cell text takes the next
+    -- available column, also across a column of another lane.
+    local priority = input.config.marks.Mark.priority
+    local slot_count = #available
+    for row, entries in pairs(buckets) do
+        local slot = 1
+        for _, entry in ipairs(entries) do
+            local text_width = entry.width
+            if text_width > 0 then
+                local column = nil
+                while slot + text_width - 1 <= slot_count do
+                    local start = available[slot]
+                    if available[slot + text_width - 1] == start + text_width - 1 then
+                        column = start
+                        break
+                    end
+                    slot = slot + 1
+                end
+                if column == nil then
+                    break
+                end
+                candidates[#candidates + 1] = {
+                    row = row,
+                    lane_id = lane.id,
+                    type = "Mark",
+                    column = column,
+                    max_column = column + text_width - 1,
+                    priority = priority,
+                    provider = entry.provider,
+                    line = entry.line,
+                    lines = entry.lines,
+                    text = entry.text,
+                    dynamic = entry.dynamic,
+                }
+                slot = slot + text_width
+            end
         end
     end
 end
@@ -1842,7 +2078,7 @@ local function place_marks(input, groups)
         rows[group.row][group.lane_id] = rows[group.row][group.lane_id] or {}
         local cells = rows[group.row][group.lane_id]
         local column = group.column
-        for _, glyph in ipairs(display_glyphs(group.text)) do
+        for _, glyph in ipairs(group_glyphs(group)) do
             local last_column = column + glyph.width - 1
             if glyph.width > 0 and last_column <= group.max_column then
                 local available = true
@@ -1885,7 +2121,7 @@ end
 -- and no ambiguity.
 local INCREMENTAL_CHANGE_LIMIT = 256
 
-local function rebuild_row_groups(input, row, mark_rows, segments)
+local function rebuild_row_groups(input, row, mark_rows, segments, build)
     local config = input.config
     local marks = input.marks
     local groups = {}
@@ -1946,13 +2182,18 @@ local function rebuild_row_groups(input, row, mark_rows, segments)
             end
         end
     end
+    local hidden = nil
     for _, group in ipairs(groups) do
         ensure_ascending(group.lines)
         local variants = config.marks[group.type].text
         group.provider = group.source.provider or ""
         group.line = group.source.line
-        group.text = resolved_text(group.type, variants, group.source.text, group.count)
+        if not resolve_group_text(build, group, variants, group.source.text) then
+            hidden = hidden or {}
+            hidden[group] = true
+        end
     end
+    groups = shown_groups(groups, hidden)
     table.sort(groups, candidate_less)
     return groups
 end
@@ -1966,7 +2207,7 @@ local function place_row(groups)
             row_cells[group.lane_id] = cells
         end
         local column = group.column
-        for _, glyph in ipairs(display_glyphs(group.text)) do
+        for _, glyph in ipairs(group_glyphs(group)) do
             local last_column = column + glyph.width - 1
             if glyph.width > 0 and last_column <= group.max_column then
                 local available = true
@@ -2001,7 +2242,28 @@ local function place_row(groups)
     return row_cells
 end
 
+-- Merges the records of the reused rows with the records of the rebuilt
+-- rows. The renderer reuses a layer only while its records are current, so
+-- two records of one field have the same value.
+local function merged_text_reads(previous_reads, reader)
+    if reader == nil then
+        return previous_reads
+    end
+    if previous_reads == nil then
+        return reader.reads
+    end
+    local reads = {}
+    for key, value in pairs(previous_reads) do
+        reads[key] = value
+    end
+    for key, value in pairs(reader.reads) do
+        reads[key] = value
+    end
+    return reads
+end
+
 local function resolve_mark_layer(input)
+    local build = { input = input }
     local previous = input.previous
     if
         previous ~= nil
@@ -2030,7 +2292,7 @@ local function resolve_mark_layer(input)
         end
         for row in pairs(changed_rows) do
             if row >= 0 and row < input.height then
-                rows[row] = place_row(rebuild_row_groups(input, row, mark_rows, prev.segments))
+                rows[row] = place_row(rebuild_row_groups(input, row, mark_rows, prev.segments, build))
             end
         end
         return {
@@ -2042,11 +2304,13 @@ local function resolve_mark_layer(input)
             segments = prev.segments,
             height = input.height,
             mark_rows = mark_rows,
+            text_reads = merged_text_reads(prev.text_reads, build.reader),
         }
     end
-    local buckets, expanded_lane = expanded_buckets(input)
+    local buckets, expanded_lane = expanded_buckets(input, build)
     local width, column_offset = layer_dimensions(input, buckets, expanded_lane)
-    local candidates, segments = group_candidates(input, column_offset, expanded_lane and expanded_lane.id or nil)
+    local candidates, segments =
+        group_candidates(input, column_offset, expanded_lane and expanded_lane.id or nil, build)
     add_expanded_candidates(input, candidates, buckets, expanded_lane, width, column_offset)
     table.sort(candidates, candidate_less)
     return {
@@ -2058,6 +2322,7 @@ local function resolve_mark_layer(input)
         segments = segments,
         height = input.height,
         mark_rows = input.geometry.mark_rows,
+        text_reads = build.reader and build.reader.reads or nil,
     }
 end
 
@@ -2172,13 +2437,17 @@ local function collect_row_marks(config, marks, width, column_offset, expanded_l
     return winners
 end
 
-local function thumb_glyphs(config, column_offset, winners, in_thumb_row)
+---@param row_text? string|false The result of a thumb text function for this row. False leaves the row blank
+local function thumb_glyphs(config, column_offset, winners, in_thumb_row, row_text)
     local span = config.layout.thumb
-    if not in_thumb_row or span == false then
+    if not in_thumb_row or span == false or row_text == false then
         return {}
     end
 
-    local glyphs = display_glyphs(config.thumb.text)
+    -- A configured string repeats across the thumb. The result of a text
+    -- function shows once, and the other thumb cells stay blank.
+    local repeated = row_text == nil
+    local glyphs = repeated and display_glyphs(config.thumb.text) or dynamic_glyphs(row_text)
     local first_column = translated_column(config, span.first_column, column_offset)
     local last_column = translated_column(config, span.last_column, column_offset)
     local placed = {}
@@ -2186,6 +2455,9 @@ local function thumb_glyphs(config, column_offset, winners, in_thumb_row)
     local index = 1
     while column <= last_column do
         local glyph = glyphs[index]
+        if glyph == nil then
+            break
+        end
         local glyph_last_column = column + glyph.width - 1
         if glyph.width <= 0 or glyph_last_column > last_column then
             break
@@ -2206,9 +2478,66 @@ local function thumb_glyphs(config, column_offset, winners, in_thumb_row)
             }
         end
         column = glyph_last_column + 1
-        index = index % #glyphs + 1
+        index = repeated and index % #glyphs + 1 or index + 1
     end
     return placed
+end
+
+local THUMB_TEXT_LABEL = "the thumb text function"
+
+---The results of a thumb text function for each thumb row: a string, or false
+---for a blank row. Nil when the thumb text is a string or the thumb is hidden.
+---@param input ScrollbarLayoutInput
+---@return table<integer, string|false>?
+local function thumb_row_texts(input)
+    local text = input.config.thumb.text
+    local handle = input.geometry.handle
+    if type(text) ~= "function" or input.config.layout.thumb == false or handle.first_row < 0 then
+        return nil
+    end
+    local source = input.thumb_context or {}
+    local first_row = handle.first_row
+    local last_row = handle.last_row
+    local texts = {}
+    for row = first_row, last_row do
+        texts[row] = text_function.call(text, {
+            winid = source.winid,
+            bufnr = source.bufnr,
+            index = row - first_row,
+            row = row,
+            first_row = first_row,
+            last_row = last_row,
+            height = input.height,
+            top_line = source.top_line,
+            bottom_line = source.bottom_line,
+            line_count = source.line_count,
+            cursor_line = source.cursor_line,
+        }, THUMB_TEXT_LABEL) or false
+    end
+    return texts
+end
+
+---@param left? table<integer, string|false>
+---@param right? table<integer, string|false>
+---@return boolean
+local function same_thumb_texts(left, right)
+    if left == right then
+        return true
+    end
+    if left == nil or right == nil then
+        return false
+    end
+    for row, text in pairs(left) do
+        if right[row] ~= text then
+            return false
+        end
+    end
+    for row in pairs(right) do
+        if left[row] == nil then
+            return false
+        end
+    end
+    return true
 end
 
 local function add_span(spans, start_col, end_col, highlight, priority)
@@ -2253,12 +2582,13 @@ local function mark_highlight(config, column, column_offset, expanded_lane_id, m
     return background_kind == "thumb" and groups.thumb or groups.mark
 end
 
-local function render_row(input, row, marks, width, column_offset, expanded_lane_id)
+local function render_row(input, row, marks, width, column_offset, expanded_lane_id, thumb_texts)
     local in_thumb_row = input.config.layout.thumb ~= false
         and row >= input.geometry.handle.first_row
         and row <= input.geometry.handle.last_row
     local winners = collect_row_marks(input.config, marks, width, column_offset, expanded_lane_id, in_thumb_row)
-    local thumb_starts = thumb_glyphs(input.config, column_offset, winners, in_thumb_row)
+    local thumb_starts =
+        thumb_glyphs(input.config, column_offset, winners, in_thumb_row, thumb_texts and thumb_texts[row])
     -- A tint mark is a background, so its cells are spaces.
     local tint = input.config.overlap.marks == "tint"
     -- With `show_through`, the base does not cover the text. A glyph mark
@@ -2429,12 +2759,19 @@ M.compose = function(input)
     local handle_geometry = input.geometry.handle
     local layout_cache = input.config.layout_cache
     local groups = input.config.highlights
+    -- The layout cache has no thumb text. A thumb text function runs on every
+    -- compose, because its result can change while the thumb rows stay the
+    -- same, for example after a scroll in a long buffer.
+    local thumb_text = input.config.thumb.text
+    local thumb_texts = thumb_row_texts(input)
     local cached = compose_cache[mark_layer]
     if
         cached ~= nil
         and cached.handle_first == handle_geometry.first_row
         and cached.handle_last == handle_geometry.last_row
         and cached.height == input.height
+        and cached.thumb_text == thumb_text
+        and same_thumb_texts(cached.thumb_texts, thumb_texts)
         and (cached.layout_cache == layout_cache or vim.deep_equal(cached.layout_cache, layout_cache))
         and (cached.groups == groups or vim.deep_equal(cached.groups, groups))
     then
@@ -2457,6 +2794,7 @@ M.compose = function(input)
             and reference.handle_first == handle_geometry.first_row
             and reference.handle_last == handle_geometry.last_row
             and reference.height == input.height
+            and reference.thumb_text == thumb_text
             and (reference.layout_cache == layout_cache or vim.deep_equal(reference.layout_cache, layout_cache))
             and (reference.groups == groups or vim.deep_equal(reference.groups, groups))
             and reference.width == mark_layer.width
@@ -2468,14 +2806,25 @@ M.compose = function(input)
     end
     for row = 0, input.height - 1 do
         local content = mark_layer.rows[row]
-        if reuse ~= nil and row_equivalent(reuse.rows[row], content) then
+        if
+            reuse ~= nil
+            and (thumb_texts == nil or (reuse.thumb_texts ~= nil and reuse.thumb_texts[row] == thumb_texts[row]))
+            and row_equivalent(reuse.rows[row], content)
+        then
             local reused = reuse.output
             rows[row + 1] = reused.rows[row + 1]
             highlights[row + 1] = reused.highlights[row + 1]
             hitmap[row + 1] = reused.hitmap[row + 1]
         else
-            rows[row + 1], highlights[row + 1], hitmap[row + 1] =
-                render_row(input, row, content, mark_layer.width, mark_layer.column_offset, mark_layer.expanded_lane_id)
+            rows[row + 1], highlights[row + 1], hitmap[row + 1] = render_row(
+                input,
+                row,
+                content,
+                mark_layer.width,
+                mark_layer.column_offset,
+                mark_layer.expanded_lane_id,
+                thumb_texts
+            )
         end
     end
 
@@ -2500,6 +2849,8 @@ M.compose = function(input)
         handle_first = handle_geometry.first_row,
         handle_last = handle_geometry.last_row,
         height = input.height,
+        thumb_text = thumb_text,
+        thumb_texts = thumb_texts,
         layout_cache = layout_cache,
         groups = groups,
         output = output,
@@ -2511,6 +2862,8 @@ M.compose = function(input)
             handle_first = handle_geometry.first_row,
             handle_last = handle_geometry.last_row,
             height = input.height,
+            thumb_text = thumb_text,
+            thumb_texts = thumb_texts,
             layout_cache = layout_cache,
             groups = groups,
             width = mark_layer.width,
@@ -2523,6 +2876,9 @@ end
 
 M.clear_cache = function()
     glyph_cache = {}
+    dynamic_glyph_cache = {}
+    dynamic_glyph_count = 0
+    text_function.reset()
     compose_cache = setmetatable({}, { __mode = "k" })
     compose_reuse = setmetatable({}, { __mode = "k" })
 end
