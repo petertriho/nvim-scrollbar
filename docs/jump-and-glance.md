@@ -184,24 +184,69 @@ line:
 
 ### Keys
 
-The list buffer has these buffer-local keys. `glance.keys` changes them.
+`glance.keys.list` sets the keys of the list, and `glance.keys.preview` sets
+the keys of the preview pane. An action without a default key has no key
+until you set one. "No" means that the pane does not have the action.
 
-| Key | Action |
-| --- | --- |
-| `<CR>` | Moves the cursor to the line of the entry and closes the glance window. The move is the same as a label mode move, so `<C-o>` goes back. |
-| `<Tab>` | Puts the focus in the preview pane. |
-| `q`, `<Esc>` | Closes the glance window. The focus goes back to the source window. |
+| Action | List | Preview pane | Result |
+| --- | --- | --- | --- |
+| `jump` | `<CR>` | No | Moves the cursor to the line of the selected entry and closes the glance window. The move is the same as a label mode move, so `<C-o>` goes back. |
+| `jump_split` | No default | No default | Opens a split of the source window, and then does the same move in the new window. |
+| `jump_vsplit` | No default | No default | The same as `jump_split`, with a vertical split. |
+| `next` | No default | No default | Selects the next entry and shows it in the preview. Headers are skipped. After the last entry, the first entry is next. The focus stays in the pane. |
+| `previous` | No default | No default | Selects the previous entry, in the same way as `next`. |
+| `focus_preview` | `<Tab>` | No | Puts the focus in the preview pane. |
+| `focus_list` | No | No default | Puts the focus in the list. |
+| `quickfix` | No default | No | Puts each line of the list in a new quickfix list with the title "Scrollbar glance", closes the glance window, and opens the quickfix window. The text of an item is the mark types of the line and the text of the line. |
+| `close` | `q`, `<Esc>` | No default | Closes the glance window. The focus goes back to the source window. |
 
+Each action uses the selected entry of the list, also from the preview pane.
 The usual motions, for example `j`, `k`, `G`, and `/`, move the selection.
 The preview shows the line of the selected entry.
+
+These keys are close to the keys of glance.nvim:
+
+```lua
+require("scrollbar").setup({
+    glance = {
+        keys = {
+            list = {
+                jump = { "<CR>", "o" },
+                jump_split = "<leader>-",
+                jump_vsplit = "<leader>\\",
+                next = { "<C-j>", "<Tab>" },
+                previous = { "<C-k>", "<S-Tab>" },
+                focus_preview = "<C-h>",
+                quickfix = "Q",
+                close = { "q", "<Esc>", "<C-q>" },
+            },
+            preview = {
+                jump_split = "<leader>-",
+                jump_vsplit = "<leader>\\",
+                next = { "<C-j>", "<Tab>" },
+                previous = { "<C-k>", "<S-Tab>" },
+                focus_list = "<C-l>",
+                close = { "Q", "<C-q>" },
+            },
+        },
+    },
+})
+```
 
 ### Preview Pane
 
 The preview pane is a window on the source buffer, so an edit in it changes
 the buffer.
 
-- The preview pane has no keys of the plugin. To go back to the list, use
-  `<C-w>p` or `<C-w>w`.
+- By default, the preview pane has no keys of the plugin. To go back to the
+  list, use `<C-w>p` or `<C-w>w`, or set a `focus_list` key.
+- Neovim has no keys for one window, so the keys of `glance.keys.preview` are
+  buffer-local keys of the source buffer while the preview pane has the focus.
+  They hide your buffer-local keys with the same lhs. Your keys come back when
+  the preview pane loses the focus or the glance window closes.
+- From a pane, `<C-w>h`, `<C-w>j`, `<C-w>k`, and `<C-w>l` go to the source
+  window, so the glance window closes. A global map to one of them, such as
+  `<C-l>` to `<C-w>l`, does the same, unless a key of the pane replaces it.
 - When the focus goes back to the list from the preview pane, the list reads
   the marks again. It selects the entry at the line that the preview showed,
   also when your edits moved the line.
@@ -271,9 +316,24 @@ require("scrollbar").setup({
         list = "line", -- "line", "mark", or "type"
         height = 18,
         keys = {
-            jump = "<CR>",
-            close = { "q", "<Esc>" },
-            preview = "<Tab>",
+            list = {
+                jump = "<CR>",
+                jump_split = false,
+                jump_vsplit = false,
+                next = false,
+                previous = false,
+                focus_preview = "<Tab>",
+                quickfix = false,
+                close = { "q", "<Esc>" },
+            },
+            preview = {
+                jump_split = false,
+                jump_vsplit = false,
+                next = false,
+                previous = false,
+                focus_list = false,
+                close = false,
+            },
         },
         window = {},
     },
@@ -295,13 +355,14 @@ options.
 | `peek.window` | `{}` | Border, title, footer, and window options of the peek float. See [Window](#window). |
 | `glance.list` | `"line"` | Entries of the list. See [List](#list). |
 | `glance.height` | `18` | Rows of the panes. The frame uses fewer rows when the window is smaller. |
-| `glance.keys.jump` | `"<CR>"` | Keys that jump to the selected entry. |
-| `glance.keys.close` | `{ "q", "<Esc>" }` | Keys that close the glance window. |
-| `glance.keys.preview` | `"<Tab>"` | Keys that put the focus in the preview pane. |
+| `glance.keys.list` | See [Keys](#keys) | Keys of the actions in the list. |
+| `glance.keys.preview` | See [Keys](#keys) | Keys of the actions in the preview pane. |
 | `glance.window` | `{}` | Border, title, footer, and window options of both panes. See [Window](#window). |
 
-Each `glance.keys` value is a key, a list of keys, or `false`. `false` removes
-the keys of the action. Setup rejects a key that two actions use.
+Each value in `glance.keys.list` and `glance.keys.preview` is a key, a list of
+keys, or `false`. `false` removes the keys of the action. Setup rejects a key
+that two actions of one pane use. The list and the preview pane can use the
+same key.
 
 ### Window
 

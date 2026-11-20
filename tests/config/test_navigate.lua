@@ -44,7 +44,19 @@ T["defaults"] = function()
     local glance = config.get_glance()
     expect.equality(glance.list, "line")
     expect.equality(glance.height, 18)
-    expect.equality(glance.keys, { jump = { "<CR>" }, close = { "q", "<Esc>" }, preview = { "<Tab>" } })
+    expect.equality(glance.keys, {
+        list = {
+            jump = { "<CR>" },
+            jump_split = {},
+            jump_vsplit = {},
+            next = {},
+            previous = {},
+            focus_preview = { "<Tab>" },
+            quickfix = {},
+            close = { "q", "<Esc>" },
+        },
+        preview = { jump_split = {}, jump_vsplit = {}, next = {}, previous = {}, focus_list = {}, close = {} },
+    })
     expect.equality(glance.window.open, {})
 end
 
@@ -187,24 +199,60 @@ end
 
 T["glance"]["keys take a string, a list, or false"] = function()
     local config = require("scrollbar.config")
-    set_top({ glance = { keys = { jump = { "<CR>", "o" }, close = "q", preview = false } } })
-    expect.equality(config.get_glance().keys, { jump = { "<CR>", "o" }, close = { "q" }, preview = {} })
+    set_top({ glance = { keys = { list = { jump = { "<CR>", "o" }, close = "q", focus_preview = false } } } })
+    local list = config.get_glance().keys.list
+    expect.equality({ list.jump, list.close, list.focus_preview }, { { "<CR>", "o" }, { "q" }, {} })
 
-    set_top({ glance = { keys = { close = false } } })
-    expect.equality(config.get_glance().keys, { jump = { "<CR>" }, close = {}, preview = { "<Tab>" } })
+    set_top({ glance = { keys = { list = { close = false }, preview = { next = "<C-j>", close = { "Q", "<C-q>" } } } } })
+    local keys = config.get_glance().keys
+    expect.equality({ keys.list.jump, keys.list.close, keys.list.focus_preview }, { { "<CR>" }, {}, { "<Tab>" } })
+    expect.equality({ keys.preview.next, keys.preview.close }, { { "<C-j>" }, { "Q", "<C-q>" } })
 
     expect_invalid(
-        { glance = { keys = { jump = 1 } } },
-        "glance.keys.jump must be false, a string, or a dense list of strings"
+        { glance = { keys = { list = { jump = 1 } } } },
+        "glance.keys.list.jump must be false, a string, or a dense list of strings"
     )
-    expect_invalid({ glance = { keys = { jump = { "" } } } }, "glance.keys.jump%[1%] must be a non%-empty string")
-    expect_invalid({ glance = { keys = { open = "o" } } }, "unknown option 'glance.keys.open'")
+    expect_invalid(
+        { glance = { keys = { preview = { next = { "" } } } } },
+        "glance.keys.preview.next%[1%] must be a non%-empty string"
+    )
     expect_invalid({ glance = { keys = "q" } }, "glance.keys must be a table")
-    -- Two actions cannot share one key, also in another spelling.
+    expect_invalid({ glance = { keys = { list = "q" } } }, "glance.keys.list must be a table")
+    expect_invalid({ glance = { keys = { preview = false } } }, "glance.keys.preview must be a table")
+end
+
+T["glance"]["each pane has its own actions"] = function()
+    expect_invalid({ glance = { keys = { list = { open = "o" } } } }, "unknown option 'glance.keys.list.open'")
     expect_invalid(
-        { glance = { keys = { close = { "q", "<cr>" } } } },
-        "glance.keys.close: '<cr>' is also a key of glance.keys.jump"
+        { glance = { keys = { list = { focus_list = "x" } } } },
+        "unknown option 'glance.keys.list.focus_list'"
     )
+    expect_invalid({ glance = { keys = { preview = { jump = "x" } } } }, "unknown option 'glance.keys.preview.jump'")
+    expect_invalid(
+        { glance = { keys = { preview = { quickfix = "x" } } } },
+        "unknown option 'glance.keys.preview.quickfix'"
+    )
+    expect_invalid(
+        { glance = { keys = { preview = { focus_preview = "x" } } } },
+        "unknown option 'glance.keys.preview.focus_preview'"
+    )
+    -- The keys are in the panes, not directly in `glance.keys`.
+    expect_invalid({ glance = { keys = { jump = "<CR>" } } }, "unknown option 'glance.keys.jump'")
+end
+
+T["glance"]["two actions of one pane cannot share a key, and two panes can"] = function()
+    -- Also in another spelling.
+    expect_invalid(
+        { glance = { keys = { list = { close = { "q", "<cr>" } } } } },
+        "glance.keys.list.close: '<cr>' is also a key of glance.keys.list.jump"
+    )
+    expect_invalid(
+        { glance = { keys = { preview = { next = "<C-j>", close = "<c-j>" } } } },
+        "glance.keys.preview.close: '<c%-j>' is also a key of glance.keys.preview.next"
+    )
+    local config = require("scrollbar.config")
+    set_top({ glance = { keys = { list = { next = "<C-j>" }, preview = { next = "<C-j>" } } } })
+    expect.equality(config.get_glance().keys.preview.next, { "<C-j>" })
 end
 
 T["the new highlight groups are reserved"] = function()

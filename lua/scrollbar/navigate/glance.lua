@@ -5,11 +5,16 @@
 ---   It spans the text area of the source window. The list pane takes the
 ---   right 40% and the preview pane the left 60%.
 --- - The list has focus. Native motions move the selection, and the preview
----   follows. The buffer-local keys of `glance.keys` jump, close, and focus
----   the preview.
+---   follows. The keys of `glance.keys.list` are buffer-local keys of the list.
 --- - The preview pane is a window on the source buffer, so an edit in it
 ---   changes the buffer. `<C-w>p` returns to the list, and the list then
 ---   builds again from the current marks. The list has no other update.
+--- - Neovim has no window-local keys, so the keys of `glance.keys.preview` are
+---   buffer-local keys of the source buffer while the preview pane has focus.
+---   A buffer-local key of the source buffer with the same lhs comes back when
+---   the pane loses focus.
+--- - Each action uses the selected entry of the list, also from the preview
+---   pane.
 --- - The frame closes on a close key, on `:q` in either pane, when focus goes
 ---   to a window outside the frame, when the source window closes, and on
 ---   setup.
@@ -51,6 +56,14 @@ local PREVIEW_SHARE = 0.6
 ---@field focused integer The frame window that had focus last
 ---@field augroup integer
 ---@field closing boolean
+---@field keys ScrollbarGlanceKeys
+---@field actions table<string, fun()>
+---@field preview_maps? ScrollbarGlancePreviewMap[] The preview keys on the source buffer while the pane has focus
+
+---@class ScrollbarGlancePreviewMap
+---@field lhs string
+---@field desc string
+---@field replaced? table The buffer-local map of the source buffer that the key hides, from `maparg()`
 
 ---@type ScrollbarGlanceSession?
 local session
@@ -306,6 +319,65 @@ local function rebuild(current)
     end
 end
 
+---@param action string
+---@return string
+local function key_desc(action)
+    return "Scrollbar glance: " .. action
+end
+
+--- Map the keys of the preview pane on the source buffer, and keep the
+--- buffer-local maps that they hide.
+---@param current ScrollbarGlanceSession
+local function set_preview_keys(current)
+    if current.preview_maps ~= nil or not vim.api.nvim_buf_is_valid(current.source_buf) then
+        return
+    end
+    local maps = {}
+    vim.api.nvim_buf_call(current.source_buf, function()
+        for action, lhs_list in pairs(current.keys.preview) do
+            local desc = key_desc(action)
+            for _, lhs in ipairs(lhs_list) do
+                local existing = vim.fn.maparg(lhs, "n", false, true)
+                maps[#maps + 1] = {
+                    lhs = lhs,
+                    desc = desc,
+                    replaced = existing.buffer == 1 and existing or nil,
+                }
+                vim.keymap.set("n", lhs, current.actions[action], {
+                    buffer = current.source_buf,
+                    nowait = true,
+                    silent = true,
+                    desc = desc,
+                })
+            end
+        end
+    end)
+    current.preview_maps = maps
+end
+
+--- Remove the keys of the preview pane from the source buffer, and map the
+--- hidden buffer-local maps again.
+---@param current ScrollbarGlanceSession
+local function clear_preview_keys(current)
+    local maps = current.preview_maps
+    current.preview_maps = nil
+    if maps == nil or not vim.api.nvim_buf_is_valid(current.source_buf) then
+        return
+    end
+    vim.api.nvim_buf_call(current.source_buf, function()
+        for _, map in ipairs(maps) do
+            local present = vim.fn.maparg(map.lhs, "n", false, true)
+            -- A map that another plugin set while the pane had focus stays.
+            if present.buffer == 1 and present.desc == map.desc then
+                pcall(vim.keymap.del, "n", map.lhs, { buffer = current.source_buf })
+                if map.replaced ~= nil then
+                    vim.fn.mapset("n", false, map.replaced)
+                end
+            end
+        end
+    end)
+end
+
 --- Close the frame. With `focus_source`, focus goes back to the source window.
 ---@param focus_source? boolean
 M.close = function(focus_source)
@@ -316,6 +388,7 @@ M.close = function(focus_source)
     session = nil
     current.closing = true
     pcall(vim.api.nvim_del_augroup_by_id, current.augroup)
+    clear_preview_keys(current)
     if vim.api.nvim_buf_is_valid(current.source_buf) then
         vim.api.nvim_buf_clear_namespace(current.source_buf, SELECTION_NAMESPACE, 0, -1)
     end
@@ -332,45 +405,136 @@ M.close = function(focus_source)
     end
 end
 
+--- Close the frame and move to the line of the selected entry.
 ---@param current ScrollbarGlanceSession
-local function jump(current)
+---@param command? "split"|"vsplit" Ex command that opens a new window from the source window first
+local function jump(current, command)
     local entry = selected_entry(current)
     if entry == nil or entry.kind ~= "entry" then
         return
     end
-    local source_win = current.source_win
+    local target_win = current.source_win
+    local source_buf = current.source_buf
     M.close(true)
-    if move.line(source_win, current.source_buf, entry.line, true) then
+    if command ~= nil then
+        if vim.api.nvim_get_current_win() ~= target_win then
+            return
+        end
+        vim.cmd(command)
+        target_win = vim.api.nvim_get_current_win()
+    end
+    if move.line(target_win, source_buf, entry.line, true) then
         local scheduler = package.loaded["scrollbar.scheduler"]
         if scheduler ~= nil then
-            scheduler.invalidate_window(source_win)
+            scheduler.invalidate_window(target_win)
         end
     end
 end
 
+--- Select the next entry in the direction of `step`, and show it in the
+--- preview. The selection skips headers and wraps around.
 ---@param current ScrollbarGlanceSession
----@param keys ScrollbarGlanceKeys
-local function set_keys(current, keys)
-    local actions = {
+---@param step 1|-1
+local function select_entry(current, step)
+    local count = #current.entries
+    if count == 0 or not valid_window(current.list_win) then
+        return
+    end
+    local row = vim.api.nvim_win_get_cursor(current.list_win)[1]
+    for _ = 1, count do
+        row = (row - 1 + step) % count + 1
+        if current.entries[row].kind == "entry" then
+            vim.api.nvim_win_set_cursor(current.list_win, { row, 0 })
+            update_preview(current)
+            return
+        end
+    end
+end
+
+--- Put one quickfix item for each listed line in a new quickfix list, close
+--- the frame, and open the quickfix window.
+---@param current ScrollbarGlanceSession
+local function quickfix(current)
+    local by_line = {}
+    local lines = {}
+    for _, entry in ipairs(current.entries) do
+        if entry.kind == "entry" then
+            local item = by_line[entry.line]
+            if item == nil then
+                item = { types = {}, seen = {} }
+                by_line[entry.line] = item
+                lines[#lines + 1] = entry.line
+            end
+            for _, mark in ipairs(entry.marks) do
+                if not item.seen[mark.type] then
+                    item.seen[mark.type] = true
+                    item.types[#item.types + 1] = mark.type
+                end
+            end
+        end
+    end
+    table.sort(lines)
+    local items = {}
+    for index, line in ipairs(lines) do
+        local text = vim.api.nvim_buf_get_lines(current.source_buf, line, line + 1, false)[1] or ""
+        items[index] = {
+            bufnr = current.source_buf,
+            lnum = line + 1,
+            col = 1,
+            text = table.concat(by_line[line].types, ", ") .. ": " .. vim.trim(text),
+        }
+    end
+    vim.fn.setqflist({}, " ", { title = "Scrollbar glance", items = items })
+    M.close(true)
+    vim.cmd("copen")
+end
+
+---@param current ScrollbarGlanceSession
+---@return table<string, fun()>
+local function actions(current)
+    local function focus(win)
+        return function()
+            if valid_window(win) then
+                vim.api.nvim_set_current_win(win)
+            end
+        end
+    end
+    return {
         jump = function()
             jump(current)
+        end,
+        jump_split = function()
+            jump(current, "split")
+        end,
+        jump_vsplit = function()
+            jump(current, "vsplit")
+        end,
+        next = function()
+            select_entry(current, 1)
+        end,
+        previous = function()
+            select_entry(current, -1)
+        end,
+        focus_preview = focus(current.preview_win),
+        focus_list = focus(current.list_win),
+        quickfix = function()
+            quickfix(current)
         end,
         close = function()
             M.close(true)
         end,
-        preview = function()
-            if valid_window(current.preview_win) then
-                vim.api.nvim_set_current_win(current.preview_win)
-            end
-        end,
     }
-    for action, lhs_list in pairs(keys) do
+end
+
+---@param current ScrollbarGlanceSession
+local function set_list_keys(current)
+    for action, lhs_list in pairs(current.keys.list) do
         for _, lhs in ipairs(lhs_list) do
-            vim.keymap.set("n", lhs, actions[action], {
+            vim.keymap.set("n", lhs, current.actions[action], {
                 buffer = current.list_buf,
                 nowait = true,
                 silent = true,
-                desc = "Scrollbar glance: " .. action,
+                desc = key_desc(action),
             })
         end
     end
@@ -401,6 +565,7 @@ local function watch(current)
                 end
             elseif win == current.preview_win then
                 current.focused = win
+                set_preview_keys(current)
             else
                 -- Focus went outside the frame. It stays where it went.
                 vim.schedule(function()
@@ -408,6 +573,14 @@ local function watch(current)
                         M.close(false)
                     end
                 end)
+            end
+        end,
+    })
+    vim.api.nvim_create_autocmd("WinLeave", {
+        group = group,
+        callback = function()
+            if vim.api.nvim_get_current_win() == current.preview_win then
+                clear_preview_keys(current)
             end
         end,
     })
@@ -517,10 +690,13 @@ M.open = function(options)
         focused = list_win,
         augroup = vim.api.nvim_create_augroup(AUGROUP, { clear = true }),
         closing = false,
+        keys = glance_config.keys,
+        actions = {},
     }
+    current.actions = actions(current)
     session = current
     rebuild(current)
-    set_keys(current, glance_config.keys)
+    set_list_keys(current)
     watch(current)
 end
 

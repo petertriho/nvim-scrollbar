@@ -226,15 +226,32 @@
 ---@field width? number Share of the width of the source window, greater than 0 and at most 1
 ---@field window? ScrollbarUserWindowConfig Without `border`, the float uses 'winborder'
 
+---@class ScrollbarUserGlanceListKeys
+---@field jump? ScrollbarUserKeys Jump to the selected entry
+---@field jump_split? ScrollbarUserKeys Jump to the selected entry in a new split
+---@field jump_vsplit? ScrollbarUserKeys Jump to the selected entry in a new vertical split
+---@field next? ScrollbarUserKeys Select the next entry. Skips headers and wraps around
+---@field previous? ScrollbarUserKeys Select the previous entry. Skips headers and wraps around
+---@field focus_preview? ScrollbarUserKeys Put the focus in the preview pane
+---@field quickfix? ScrollbarUserKeys Put the entries in the quickfix list, close the frame, and open the quickfix window
+---@field close? ScrollbarUserKeys Close the frame
+
+---@class ScrollbarUserGlancePreviewKeys
+---@field jump_split? ScrollbarUserKeys Jump to the selected entry in a new split
+---@field jump_vsplit? ScrollbarUserKeys Jump to the selected entry in a new vertical split
+---@field next? ScrollbarUserKeys Select and show the next entry. Skips headers and wraps around
+---@field previous? ScrollbarUserKeys Select and show the previous entry. Skips headers and wraps around
+---@field focus_list? ScrollbarUserKeys Put the focus in the list
+---@field close? ScrollbarUserKeys Close the frame
+
 ---@class ScrollbarUserGlanceKeys
----@field jump? ScrollbarUserKeys
----@field close? ScrollbarUserKeys
----@field preview? ScrollbarUserKeys
+---@field list? ScrollbarUserGlanceListKeys Buffer-local keys of the list
+---@field preview? ScrollbarUserGlancePreviewKeys Keys of the preview pane. They are buffer-local on the source buffer while the pane has focus
 
 ---@class ScrollbarUserGlanceConfig
 ---@field list? ScrollbarGlanceList
 ---@field height? integer Content rows of the frame
----@field keys? ScrollbarUserGlanceKeys Buffer-local keys of the list
+---@field keys? ScrollbarUserGlanceKeys Keys of the list and of the preview pane
 ---@field window? ScrollbarUserWindowConfig Applies to both panes. Without `border`, the panes use 'winborder'
 
 ---@class ScrollbarUserConfig
@@ -260,10 +277,27 @@
 ---@field width number
 ---@field window ScrollbarWindowConfig `open.border` is nil when the float uses 'winborder'
 
----@class ScrollbarGlanceKeys
+---@class ScrollbarGlanceListKeys
 ---@field jump string[]
+---@field jump_split string[]
+---@field jump_vsplit string[]
+---@field next string[]
+---@field previous string[]
+---@field focus_preview string[]
+---@field quickfix string[]
 ---@field close string[]
----@field preview string[]
+
+---@class ScrollbarGlancePreviewKeys
+---@field jump_split string[]
+---@field jump_vsplit string[]
+---@field next string[]
+---@field previous string[]
+---@field focus_list string[]
+---@field close string[]
+
+---@class ScrollbarGlanceKeys
+---@field list ScrollbarGlanceListKeys
+---@field preview ScrollbarGlancePreviewKeys
 
 ---@class ScrollbarGlanceConfig
 ---@field list ScrollbarGlanceList

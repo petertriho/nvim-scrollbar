@@ -273,9 +273,11 @@ T["keys"]["q and <Esc> close the frame"] = function()
     end
 end
 
-T["keys"]["glance.keys changes and removes the keys"] = function()
+T["keys"]["glance.keys.list changes and removes the keys"] = function()
     local child = navigate.new_child()
-    setup(child, { config = navigate.config({ glance = { keys = { close = "x", preview = false, jump = "o" } } }) })
+    setup(child, {
+        config = navigate.config({ glance = { keys = { list = { close = "x", focus_preview = false, jump = "o" } } } }),
+    })
     open(child)
     local list_buf = state(child).list_buf
     local mapped = child.lua_func(function(buf)
@@ -289,6 +291,75 @@ T["keys"]["glance.keys changes and removes the keys"] = function()
     expect.equality(mapped, { "o", "x" })
     child.type_keys("j", "o")
     expect.equality(child.api.nvim_win_get_cursor(0), { 61, 0 })
+end
+
+local function keys_config(keys, top)
+    return navigate.config(vim.tbl_deep_extend("force", { glance = { keys = keys } }, top or {}))
+end
+
+T["keys"]["next and previous skip the headers and wrap around"] = function()
+    local child = navigate.new_child()
+    setup(child, {
+        config = keys_config({ list = { next = "<C-j>", previous = "<C-k>" } }, { glance = { list = "type" } }),
+    })
+    child.api.nvim_win_set_cursor(0, { 100, 0 })
+    open(child)
+    expect.equality(list_row(child), 3)
+    child.type_keys("<C-j>")
+    expect.equality({ list_row(child), preview_line(child) }, { 5, 60 })
+    child.type_keys("<C-j>", "<C-j>")
+    expect.equality({ list_row(child), preview_line(child) }, { 9, 20 })
+    -- Past the last entry, the selection goes to the first entry, after the
+    -- first header.
+    child.type_keys("<C-j>")
+    expect.equality({ list_row(child), preview_line(child) }, { 2, 20 })
+    child.type_keys("<C-k>")
+    expect.equality(list_row(child), 9)
+end
+
+T["keys"]["jump_split and jump_vsplit open the line in a new window"] = function()
+    local child = navigate.new_child()
+    local setup_result = setup(child, { config = keys_config({ list = { jump_split = "s", jump_vsplit = "v" } }) })
+    for _, case in ipairs({ { key = "s", layout = "col" }, { key = "v", layout = "row" } }) do
+        open(child)
+        child.type_keys("j", case.key)
+        expect.equality(state(child), nil)
+        local win = child.api.nvim_get_current_win()
+        expect.no_equality(win, setup_result.source_win)
+        expect.equality(child.api.nvim_win_get_buf(win), setup_result.source_buf)
+        expect.equality(child.api.nvim_win_get_cursor(win), { 61, 0 })
+        expect.equality(child.fn.winlayout()[1], case.layout)
+        -- The source window keeps its cursor.
+        expect.equality(child.api.nvim_win_get_cursor(setup_result.source_win), { 1, 0 })
+        child.cmd("close")
+    end
+end
+
+T["keys"]["quickfix puts each listed line in a new quickfix list and closes the frame"] = function()
+    local child = navigate.new_child()
+    local setup_result = setup(child, { config = keys_config({ list = { quickfix = "Q" } }) })
+    open(child)
+    child.type_keys("Q")
+    expect.equality(state(child), nil)
+    expect.equality(child.bo.buftype, "quickfix")
+    local quickfix = child.lua([[
+        local list = vim.fn.getqflist({ title = 1, items = 1 })
+        local items = {}
+        for index, item in ipairs(list.items) do
+            items[index] = { item.bufnr, item.lnum, item.text }
+        end
+        return { title = list.title, items = items }
+    ]])
+    local buf = setup_result.source_buf
+    expect.equality(quickfix, {
+        title = "Scrollbar glance",
+        items = {
+            { buf, 21, "Error, GitChange: text 21" },
+            { buf, 61, "Warn: text 61" },
+            { buf, 101, "Hint: text 101" },
+            { buf, 151, "Error: text 151" },
+        },
+    })
 end
 
 T["preview"] = MiniTest.new_set()
@@ -340,6 +411,104 @@ T["preview"]["a mark that arrives while the list has focus shows only after a re
     child.type_keys("<Tab>", "<C-w>p")
     expect.equality(#list_lines(child), 5)
     expect.equality(list_lines(child)[3], " -  81  text 81")
+end
+
+--- The buffer-local normal map of `buf` for `lhs`: its description, or its
+--- rhs for a map without one, or nil.
+local function buffer_map(child, buf, lhs)
+    local result = child.lua(
+        [[
+        local buf, lhs = ...
+        return vim.api.nvim_buf_call(buf, function()
+            local map = vim.fn.maparg(lhs, "n", false, true)
+            if map.buffer ~= 1 then
+                return nil
+            end
+            return map.desc or map.rhs
+        end)
+    ]],
+        { buf, lhs }
+    )
+    return result ~= vim.NIL and result or nil
+end
+
+local PREVIEW_KEYS = {
+    preview = { next = "<C-j>", previous = "<C-k>", focus_list = "<C-l>", close = "Q", jump_vsplit = "<C-v>" },
+}
+
+T["preview"]["the preview keys exist only while the preview pane has focus"] = function()
+    local child = navigate.new_child()
+    local setup_result = setup(child, { config = keys_config(PREVIEW_KEYS) })
+    local buf = setup_result.source_buf
+    -- The buffer-local maps of the user: one with an rhs and one with a
+    -- callback.
+    child.lua([[
+        vim.keymap.set("n", "Q", "<Cmd>let g:user_q = 1<CR>", { buffer = 0 })
+        vim.keymap.set("n", "<C-j>", function()
+            vim.g.user_cj = 1
+        end, { buffer = 0, desc = "user <C-j>" })
+    ]])
+    open(child)
+    expect.equality(buffer_map(child, buf, "Q"), "<Cmd>let g:user_q = 1<CR>")
+
+    child.type_keys("<Tab>")
+    expect.equality(child.api.nvim_get_current_win(), state(child).preview_win)
+    expect.equality(buffer_map(child, buf, "Q"), "Scrollbar glance: close")
+    expect.equality(buffer_map(child, buf, "<C-l>"), "Scrollbar glance: focus_list")
+    -- The next entry shows in the preview, and the focus stays in it.
+    child.type_keys("<C-j>")
+    expect.equality({ list_row(child), preview_line(child) }, { 2, 60 })
+    expect.equality(child.api.nvim_get_current_win(), state(child).preview_win)
+    child.type_keys("<C-k>", "<C-k>")
+    expect.equality({ list_row(child), preview_line(child) }, { 4, 150 })
+
+    -- The user maps come back when the pane loses focus.
+    child.type_keys("<C-l>")
+    expect.equality(child.api.nvim_get_current_win(), state(child).list_win)
+    expect.equality(buffer_map(child, buf, "Q"), "<Cmd>let g:user_q = 1<CR>")
+    expect.equality(buffer_map(child, buf, "<C-j>"), "user <C-j>")
+    expect.equality(buffer_map(child, buf, "<C-l>"), nil)
+
+    -- A close key in the preview closes the frame, and the maps come back.
+    child.type_keys("<Tab>", "Q")
+    expect.equality(state(child), nil)
+    expect.equality(child.api.nvim_get_current_win(), setup_result.source_win)
+    expect.equality(child.g.user_q, vim.NIL)
+    child.type_keys("Q", "<C-j>")
+    expect.equality({ child.g.user_q, child.g.user_cj }, { 1, 1 })
+end
+
+T["preview"]["a split jump from the preview pane uses the selected entry"] = function()
+    local child = navigate.new_child()
+    local setup_result = setup(child, { config = keys_config(PREVIEW_KEYS) })
+    open(child)
+    child.type_keys("jj", "<Tab>", "gg", "<C-v>")
+    expect.equality(state(child), nil)
+    expect.equality(child.fn.winlayout()[1], "row")
+    expect.no_equality(child.api.nvim_get_current_win(), setup_result.source_win)
+    expect.equality(child.api.nvim_win_get_cursor(0), { 101, 0 })
+    -- No preview key stays on the source buffer.
+    expect.equality(buffer_map(child, setup_result.source_buf, "<C-v>"), nil)
+end
+
+T["preview"]["without preview keys, the source buffer gets no maps"] = function()
+    local child = navigate.new_child()
+    local setup_result = setup(child)
+    open(child)
+    child.type_keys("<Tab>")
+    expect.equality(child.api.nvim_get_current_win(), state(child).preview_win)
+    expect.equality(child.api.nvim_buf_get_keymap(setup_result.source_buf, "n"), {})
+end
+
+T["preview"]["a map that another plugin sets while the pane has focus stays"] = function()
+    local child = navigate.new_child()
+    local setup_result = setup(child, { config = keys_config(PREVIEW_KEYS) })
+    open(child)
+    child.type_keys("<Tab>")
+    child.lua([[vim.keymap.set("n", "Q", "<Nop>", { buffer = 0, desc = "other plugin" })]])
+    child.type_keys("<C-l>")
+    expect.equality(buffer_map(child, setup_result.source_buf, "Q"), "other plugin")
+    expect.equality(buffer_map(child, setup_result.source_buf, "<C-j>"), nil)
 end
 
 T["close"] = MiniTest.new_set()

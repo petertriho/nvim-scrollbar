@@ -175,10 +175,16 @@ require("scrollbar").setup({
     glance = { -- see Jump and Glance
         list = "line", -- "line", "mark", or "type"
         height = 18,
-        keys = {
-            jump = "<CR>",
-            close = { "q", "<Esc>" },
-            preview = "<Tab>",
+        keys = { -- see Jump and Glance
+            list = {
+                jump = "<CR>",
+                focus_preview = "<Tab>",
+                close = { "q", "<Esc>" },
+                -- jump_split, jump_vsplit, next, previous, and quickfix: false
+            },
+            -- jump_split, jump_vsplit, next, previous, focus_list, and close:
+            -- false
+            preview = {},
         },
         window = {},
     },
@@ -1079,7 +1085,7 @@ require("scrollbar").setup({
     },
     glance = {
         list = "type",
-        keys = { close = "q" },
+        keys = { list = { close = "q" } },
     },
 })
 ```
