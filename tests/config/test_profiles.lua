@@ -249,6 +249,7 @@ T["builds exact callback context and reevaluates predicates on every call"] = fu
         filetype = "lua",
         buftype = "nofile",
         bufname = "/tmp/context.lua",
+        renderer = "scrollbar",
     })
 end
 

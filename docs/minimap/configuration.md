@@ -346,7 +346,10 @@ of the `search` provider, which `providers.search.backend` sets.
 
 Minimap profiles work like [scrollbar profiles](../configuration.md#profiles).
 They match on `filetypes`, `buftypes`, `when`, and `floats`, and the first
-match wins. The minimap rejects `"snacks_list"` in `match.floats`.
+match wins. The minimap rejects `"snacks_list"` in `match.floats`. The
+[predicate recipes](../configuration.md#predicate-recipes) also work here.
+In a minimap profile, the `when` context has `renderer = "minimap"`, and
+`when.active()` follows the active rule of the minimap.
 Each profile has a required `match` and any appearance options:
 
 ```lua

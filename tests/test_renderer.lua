@@ -4061,6 +4061,29 @@ T["mark text functions"]["do not rebuild on a cursor move when they ignore the c
     expect.equality(moved.builds, first.builds)
 end
 
+T["mark text functions"]["recipes rebuild on a cursor move only when they read the cursor"] = function()
+    local relative = text_function_child([[return require("scrollbar.recipes").marks.relative_number()]])
+    move_cursor(relative, 1)
+    local relative_first = relative.lua_get("_G.render_text()")
+    move_cursor(relative, 48)
+    local relative_moved = relative.lua_get("_G.render_text()")
+
+    local absolute = text_function_child([[return require("scrollbar.recipes").marks.line_number()]])
+    move_cursor(absolute, 1)
+    local absolute_first = absolute.lua_get("_G.render_text()")
+    move_cursor(absolute, 48)
+    local absolute_moved = absolute.lua_get("_G.render_text()")
+
+    -- The lane has one column, so it shows the first digit. Line 51 is 50
+    -- lines from line 1, and 3 lines from line 48.
+    expect.equality(relative_first.text, "5")
+    expect.equality(relative_moved.text, "3")
+    expect.equality(relative_moved.builds, relative_first.builds + 1)
+    expect.equality(absolute_first.text, "5")
+    expect.equality(absolute_moved.text, "5")
+    expect.equality(absolute_moved.builds, absolute_first.builds)
+end
+
 T["mark text functions"]["follow the line count in the screenline unit"] = function()
     local child = text_function_child(
         [[
@@ -4113,6 +4136,45 @@ T["thumb text functions follow a scroll that keeps the thumb rows"] = function()
 
     expect.equality(result.first, { first_row = 0, text = "1" })
     expect.equality(result.scrolled, { first_row = 0, text = "2" })
+end
+
+T["the percent recipe follows a scroll"] = function()
+    local child = new_child()
+    local result = child.lua_func(function(config)
+        local lines = {}
+        for index = 1, 1000 do
+            lines[index] = "line " .. index
+        end
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        vim.api.nvim_win_set_height(0, 10)
+        local source_win = vim.api.nvim_get_current_win()
+        config.layout = { columns = { { "track", "marks" }, { "track", "thumb" }, { "track", "thumb" } } }
+        config.thumb.text = require("scrollbar.recipes").thumb.percent()
+        require("scrollbar.test.set_config")(config)
+        local renderer = require("scrollbar.renderer")
+        renderer.setup()
+
+        local function render()
+            local state = assert(renderer.render(source_win))
+            local rows = require("scrollbar.test.float").lines(state.float_buf, 0, -1, false)
+            local handle = state.handle --[[@as ScrollbarHandleGeometry]]
+            return rows[handle.first_row + 1]:sub(2, 3)
+        end
+
+        local texts = { render() }
+        vim.api.nvim_win_call(source_win, function()
+            vim.cmd("normal! 500\5")
+        end)
+        texts[#texts + 1] = render()
+        vim.api.nvim_win_call(source_win, function()
+            vim.cmd("normal! G")
+        end)
+        texts[#texts + 1] = render()
+        return texts
+    end, renderer_config())
+
+    -- The thumb has two columns, so it shows the first two cells.
+    expect.equality(result, { "To", "50", "Bo" })
 end
 
 T["window"] = MiniTest.new_set()

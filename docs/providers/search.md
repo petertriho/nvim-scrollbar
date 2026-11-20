@@ -221,24 +221,17 @@ rules, see [Highlights](../highlights.md) and
 ## Search-Only Layout
 
 A [profile](../configuration.md#profiles) can show only the search marks while
-a search is active. This `when` predicate uses the same visibility rules as the
-provider. It also matches while a `/` or `?` command line is open, so
+a search is active. The `searching` [predicate
+recipe](../configuration.md#predicate-recipes) uses the same visibility rules
+as the provider. It also matches while a `/` or `?` command line is open, so
 incremental previews use the same layout:
 
 ```lua
-local function searching()
-    local cmdtype = vim.fn.getcmdtype()
-    if cmdtype == "/" or cmdtype == "?" then
-        return true
-    end
-    return vim.o.hlsearch and vim.v.hlsearch == 1 and vim.fn.getreg("/") ~= ""
-end
-
 require("scrollbar").setup({
     scrollbar = {
         profiles = {
             {
-                match = { when = searching },
+                match = { when = require("scrollbar.recipes").when.searching() },
                 layout = {
                     columns = {
                         { "track", "thumb", { types = { "Search" } } },
@@ -254,10 +247,13 @@ When the predicate stops matching, for example after `:nohlsearch`, the window
 uses the root layout again. To keep the cursor mark, use
 `types = { "Cursor", "Search" }`, as the [`search` preset](../presets.md) does.
 
+To ignore the command line, use `searching({ cmdline = false })`.
+
 The plugin selects the profile again before each render. The predicate reads
 only options, a register, and the command-line type, and it does not start a
-scan. The first profile that matches wins, so put this profile before other
-profiles that can match the same windows.
+scan. Each update of the search marks renders the window, also after
+`:nohlsearch`. The first profile that matches wins, so put this profile before
+other profiles that can match the same windows.
 
 ## Troubleshooting
 

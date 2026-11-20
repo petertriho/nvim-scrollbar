@@ -863,4 +863,8 @@ function M.dispose(context)
     text_change_attached = false
 end
 
+---The visibility rule of the accepted search. `recipes.when.searching()` has
+---its own copy, and a test checks that the two agree.
+M._search_is_visible = search_is_visible
+
 return M

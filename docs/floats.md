@@ -34,9 +34,7 @@ scrollbar = {
     floats = {
         snacks = { list = true, preview = true }, -- or true, or false
         telescope = { results = true, preview = true }, -- or true, or false
-        when = function(context)
-            return context.filetype == "lazy"
-        end,
+        when = require("scrollbar.recipes").when.filetypes({ "lazy" }),
     },
 }
 ```
@@ -86,6 +84,7 @@ minimap.floats.snacks.list is not supported. The minimap cannot draw the snacks 
     filetype = vim.bo[source_buf].filetype,
     buftype = vim.bo[source_buf].buftype,
     bufname = vim.api.nvim_buf_get_name(source_buf),
+    renderer = "scrollbar", -- or "minimap"
     config = vim.api.nvim_win_get_config(source_win),
 }
 ```
@@ -103,16 +102,23 @@ If `when` returns a truthy value, the float is a source window with the kind
   appears once for each distinct error message until the next setup, for
   example `[nvim-scrollbar] scrollbar floats.when matcher failed: <message>`.
 
-This example shows the bars on the lazy.nvim and mason.nvim windows:
+This example shows the bars on the lazy.nvim and mason.nvim windows, with the
+`filetypes` [predicate recipe](configuration.md#predicate-recipes):
 
 ```lua
 scrollbar = {
     floats = {
-        when = function(context)
-            return context.filetype == "lazy" or context.filetype == "mason"
-        end,
+        when = require("scrollbar.recipes").when.filetypes({ "lazy", "mason" }),
     },
 }
+```
+
+The recipe does the same as this function:
+
+```lua
+function(context)
+    return context.filetype == "lazy" or context.filetype == "mason"
+end
 ```
 
 ## Eligibility
