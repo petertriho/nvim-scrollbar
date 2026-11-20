@@ -74,6 +74,7 @@ end
 
 M.sections = {
     { id = "defaults", title = "Defaults" },
+    { id = "jump", title = "Jump and glance" },
     { id = "scrollbar", title = "Scrollbar presets" },
     { id = "minimap", title = "Minimap presets" },
     { id = "recipes", title = "Config recipes" },
@@ -96,6 +97,32 @@ local function center(winid, position)
         vim.cmd("normal! zz")
     end)
 end
+
+--- Zero-based screen position of the first mark cell of `mark_type` on the
+--- scrollbar of `winid`.
+---@param winid integer
+---@param mark_type string
+---@return integer[]?
+local function mark_cell(winid, mark_type)
+    local state = require("scrollbar.renderer").get_state(winid)
+    if state == nil then
+        return nil
+    end
+    local position = vim.fn.win_screenpos(state.float_win)
+    for _, cell in ipairs(require("scrollbar.navigate.targets").cells(winid, { [mark_type] = true })) do
+        return { position[1] - 1 + state.sides.top + cell.row, position[2] - 1 + state.sides.left + cell.col - 1 }
+    end
+    return nil
+end
+
+-- The times of the pointer moves of the hover demo, in milliseconds after the
+-- start. The tape cannot move the pointer, so timers move it.
+local HOVER_STEPS = {
+    { at = 2500, mark = "Error", text = "The pointer rests on an Error mark" },
+    { at = 5000, mark = "MiniDiffChange", text = "The pointer rests on a hunk mark" },
+    { at = 7500, mark = "Mark", text = "The pointer rests on a named mark" },
+    { at = 10000, text = "The pointer is on the text, so the peek closes" },
+}
 
 ---@type DemoEntry[]
 local entries = {
@@ -163,6 +190,82 @@ require("scrollbar").setup({
     scrollbar = { autohide = true },
 })
 ]],
+    },
+    {
+        id = "jump",
+        kind = "gif",
+        title = "Label mode",
+        label = "jump()",
+        description = "Label mode puts a label on each mark. An uppercase label opens the peek float at the mark, `<CR>` jumps to the peeked mark, and a lowercase label jumps at once.",
+        position = 0.3,
+        docs = "README.md",
+        section = "jump",
+        setup = [[
+vim.g.mapleader = " "
+
+require("scrollbar").setup({
+    providers = { mini_diff = true },
+    peek = { window = { border = "rounded" } },
+})
+
+vim.keymap.set("n", "<leader>j", function()
+    require("scrollbar").jump()
+end, { desc = "Jump to a scrollbar mark" })
+]],
+    },
+    {
+        id = "glance",
+        kind = "gif",
+        title = "Glance window",
+        label = "glance()",
+        description = "The glance window lists the marks. The preview follows the selection, `<Tab>` focuses the preview for an edit, and the list shows the moved lines on return. `<CR>` jumps.",
+        position = 0,
+        search = false,
+        docs = "README.md",
+        section = "jump",
+        setup = [[
+vim.g.mapleader = " "
+
+require("scrollbar").setup({
+    providers = { mini_diff = true },
+    glance = { window = { border = "rounded" } },
+})
+
+vim.keymap.set("n", "<leader>g", function()
+    require("scrollbar").glance()
+end, { desc = "Glance at the marks" })
+]],
+    },
+    {
+        id = "hover",
+        kind = "gif",
+        title = "Hover",
+        label = "hover = true",
+        description = "With the pointer at rest on a mark, the peek float shows the lines of the mark. A timer moves the pointer, so the GIF shows no pointer.",
+        search = false,
+        docs = "README.md",
+        section = "jump",
+        setup = [[
+require("scrollbar").setup({
+    providers = { mini_diff = true },
+    scrollbar = { hover = true },
+    peek = { window = { border = "rounded" } },
+})
+]],
+        prepare = function(demo)
+            local winid = vim.api.nvim_get_current_win()
+            demo.label(winid, "The pointer moves to a mark")
+            for _, step in ipairs(HOVER_STEPS) do
+                vim.defer_fn(function()
+                    local cell = step.mark and mark_cell(winid, step.mark) or { 5, 10 }
+                    if cell == nil then
+                        return
+                    end
+                    demo.label(winid, step.text)
+                    vim.api.nvim_input_mouse("move", "", "", 0, cell[1], cell[2])
+                end, step.at)
+            end
+        end,
     },
     {
         id = "diagnostics",

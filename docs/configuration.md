@@ -19,6 +19,10 @@ require("scrollbar").setup({
     -- Renderer blocks
     scrollbar = {},
     minimap = {},   -- disabled by default, see the minimap documentation
+
+    -- Floats of label mode, hover, and the glance window
+    peek = {},
+    glance = {},
 })
 ```
 
@@ -102,6 +106,10 @@ require("scrollbar").setup({
         autohide = false, -- true, or { delay_ms = 1000 }
         max_lines = false,
         floats = false, -- true, or a table, see Floats
+        jump = { -- see Jump and Glance
+            labels = "asdfghjklqwertyuiopzxcvbnm",
+        },
+        hover = false, -- true, or { delay_ms = 300 }
         throttle_ms = 16,
         events = { -- see Events
             "BufEnter", "BufWinEnter",
@@ -157,6 +165,22 @@ require("scrollbar").setup({
 
         profiles = nil,
     },
+    peek = { -- see Jump and Glance
+        position = "scrollbar", -- "scrollbar", "cursor", or "center"
+        context = 5,
+        width = 0.6,
+        window = {},
+    },
+    glance = { -- see Jump and Glance
+        list = "line", -- "line", "mark", or "type"
+        height = 18,
+        keys = {
+            jump = "<CR>",
+            close = { "q", "<Esc>" },
+            preview = "<Tab>",
+        },
+        window = {},
+    },
 })
 ```
 
@@ -166,12 +190,14 @@ require("scrollbar").setup({
 
 | Option | Default | Meaning |
 | --- | --- | --- |
-| `enabled` | `true` | When `false`, the scrollbar requests no providers, shows no floats, and creates no `:Scrollbar*` commands. Use this for a minimap-only setup. |
+| `enabled` | `true` | When `false`, the scrollbar requests no providers, shows no floats, and creates no `:Scrollbar*` commands except `:ScrollbarGlance`. Use this for a minimap-only setup. |
 | `show` | `true` | Initial master visibility. `false` starts hidden. `:ScrollbarShow` shows the scrollbar. |
 | `visibility` | `"all"` | `"all"` shows a scrollbar in every eligible window. `"active"` shows only the scrollbar of the active window. |
 | `autohide` | `false` | `true` conceals each scrollbar after 1000 ms without activity in its window. `{ delay_ms = n }` sets the delay. |
 | `max_lines` | `false` | A buffer with more lines than this number gets no scrollbar. |
 | `floats` | `false` | Floats that get a scrollbar. The built-in kinds are the list and the preview of the snacks.nvim picker, and the results and the preview of the Telescope picker. A `when` function selects other floats. See [Floats](floats.md). |
+| `jump.labels` | `"asdfghjklqwertyuiopzxcvbnm"` | Labels of label mode. See [Jump and Glance](jump-and-glance.md#labels). |
+| `hover` | `false` | `true` opens the peek float when the pointer stays on a mark cell for 300 ms. `{ delay_ms = n }` sets the delay. See [Hover](jump-and-glance.md#hover). |
 | `throttle_ms` | `16` | Renders that are queued within this interval combine into one frame. `0` renders as fast as possible. |
 | `events` | see Defaults | Autocommand events that update the scrollbar. See [Events](#events). |
 
@@ -1033,6 +1059,29 @@ second profile shows no marks in the windows without focus.
   `when = when.diff`, matches nothing and shows an error message that names
   the missing call.
 
+## Peek and Glance
+
+The top-level `peek` block configures the peek float of label mode and hover.
+The top-level `glance` block configures the glance window. Both blocks are
+global, so profiles do not change them. See
+[Jump and Glance](jump-and-glance.md#options) for each option.
+
+```lua
+require("scrollbar").setup({
+    scrollbar = {
+        hover = true,
+    },
+    peek = {
+        position = "cursor",
+        window = { border = "rounded" },
+    },
+    glance = {
+        list = "type",
+        keys = { close = "q" },
+    },
+})
+```
+
 ## Precedence
 
 Setup resolves the root and each profile once. Later layers win:
@@ -1079,6 +1128,8 @@ overrides apply on top of the shared `marks` definitions.
 - `window`: Neovim validates the keys and the window options during setup.
   For this check, setup opens a hidden float and closes it at once. The default
   `window` opens no float. See [Window](#window).
+- `scrollbar.jump`, `scrollbar.hover`, `peek`, and `glance`: see
+  [Jump and Glance](jump-and-glance.md#options).
 - Unknown keys at every level are errors.
 
 Error messages give the full path of the option, for example
@@ -1093,6 +1144,7 @@ removed v1 option also names its replacement, for example
 - [Layout and geometry](layout-and-geometry.md)
 - [Visibility](visibility.md)
 - [Floats](floats.md)
+- [Jump and Glance](jump-and-glance.md)
 - [Providers](providers/README.md)
 - [Highlights](highlights.md)
 - [Migration](migration.md)

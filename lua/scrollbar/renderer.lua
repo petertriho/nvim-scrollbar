@@ -668,22 +668,7 @@ local function flattened_marks(source_win, source_buf)
         return cached.marks, buffer_snapshot.revision, window_snapshot.revision, cached.compact_search
     end
 
-    local provider_names = {}
-    local seen = {}
-    for provider in pairs(buffer_snapshot.marks) do
-        if providers._consumer_enabled(provider, "scrollbar") then
-            seen[provider] = true
-        end
-    end
-    for provider in pairs(window_snapshot.marks) do
-        if providers._consumer_enabled(provider, "scrollbar") then
-            seen[provider] = true
-        end
-    end
-    for provider in pairs(seen) do
-        provider_names[#provider_names + 1] = provider
-    end
-    table.sort(provider_names)
+    local provider_names, compact_search = providers._consumed_marks(buffer_snapshot, window_snapshot, "scrollbar")
 
     -- This loop emits the providers in name order and sorts the marks of each
     -- provider by (line, text), so the flattened array is in `source_less`
@@ -714,7 +699,6 @@ local function flattened_marks(source_win, source_buf)
             end
         end
     end
-    local compact_search = providers._consumer_enabled("search", "scrollbar") and buffer_snapshot.compact_search or nil
     flattened_cache[source_win] = {
         source_buf = source_buf,
         buffer_revision = buffer_snapshot.revision,
@@ -1587,6 +1571,11 @@ end
 
 ---@type fun(callback?: fun(state: ScrollbarWindowState))
 M.set_state_callback = floats.set_state_callback
+
+---Call `listener` with each float after its render. Returns the function that
+---removes the listener.
+---@type fun(listener: fun(state: ScrollbarWindowState)): fun()
+M.on_render = floats.on_render
 
 ---@type fun(winid: integer): boolean
 M.is_owned_window = policy.owned_window

@@ -68,6 +68,11 @@ M.new = function(options)
     ---@type fun(state: ScrollbarFloatState)?
     local state_callback
 
+    -- Callbacks that get each float after its render, in addition to the
+    -- state callback of the mouse. Label mode draws its labels again here.
+    ---@type table<table, fun(state: ScrollbarFloatState)>
+    local render_listeners = {}
+
     -- The lifecycle code below defines this function. The source policy
     -- releases stale source windows through it.
     local close_source
@@ -281,7 +286,27 @@ M.new = function(options)
         if state ~= nil and state_callback ~= nil then
             pcall(state_callback, state)
         end
+        if state ~= nil and next(render_listeners) ~= nil then
+            local listeners = {}
+            for _, listener in pairs(render_listeners) do
+                listeners[#listeners + 1] = listener
+            end
+            for _, listener in ipairs(listeners) do
+                pcall(listener, state)
+            end
+        end
         return state
+    end
+
+    ---Call `listener` with each float after its render.
+    ---@param listener fun(state: ScrollbarFloatState)
+    ---@return fun() remove
+    local function on_render(listener)
+        local token = {}
+        render_listeners[token] = listener
+        return function()
+            render_listeners[token] = nil
+        end
     end
 
     ---@param callback? fun(state: ScrollbarFloatState)
@@ -486,6 +511,7 @@ M.new = function(options)
         render_selection = render_selection,
         watch_buffer = watch_buffer,
         set_state_callback = set_state_callback,
+        on_render = on_render,
         get_state = get_state,
         get_state_by_float = get_state_by_float,
         reveal = reveal,

@@ -7,6 +7,7 @@ local block_config = require("scrollbar.config.block")
 local const = require("scrollbar.config.const")
 local highlights = require("scrollbar.highlights")
 local minimap_config = require("scrollbar.minimap.config")
+local navigate_config = require("scrollbar.config.navigate")
 local provider_config = require("scrollbar.config.providers")
 local schema = require("scrollbar.config.schema")
 local shared_config = require("scrollbar.config.shared")
@@ -59,6 +60,8 @@ local DEFAULTS = {
         border = "none",
         wo = {},
     },
+    jump = navigate_config.JUMP_DEFAULTS,
+    hover = false,
 }
 
 -- The scrollbar listens to every supported event by default. If the list is in
@@ -97,6 +100,8 @@ local APPEARANCE_KEYS = {
     -- `scrollbar.config.window` validates the keys of `window`.
     window = { ["*"] = true },
 }
+
+local GLOBAL_KEYS = vim.tbl_extend("error", block_config.GLOBAL_KEYS, navigate_config.SCROLLBAR_KEYS)
 
 local WINDOW_SPEC = {
     owned_keys = {
@@ -145,6 +150,8 @@ local TOP_LEVEL_KEYS = {
     marks = true,
     scrollbar = true,
     minimap = true,
+    peek = true,
+    glance = true,
 }
 
 ---@type ScrollbarConfig?
@@ -155,6 +162,10 @@ local variants
 local provider_plan
 ---@type table<string, true>?
 local mark_types
+---@type ScrollbarPeekConfig?
+local peek
+---@type ScrollbarGlanceConfig?
+local glance
 local selector = schema.selector("scrollbar")
 
 ---@param value any
@@ -482,6 +493,8 @@ local function normalize(value, shared, path, variant_id)
             },
         }),
         window = window_config.normalize(value.window, at("window"), WINDOW_SPEC),
+        jump = navigate_config.jump(value.jump, at("jump")),
+        hover = navigate_config.hover(value.hover, at("hover")),
     })
     result.highlights = highlights.get_highlight_groups(result, variant_id, shared.set_highlights)
     result.layout_cache = layout_config(result)
@@ -492,7 +505,7 @@ end
 local BLOCK = block_config.block({
     name = "scrollbar",
     defaults = DEFAULTS,
-    global_keys = block_config.GLOBAL_KEYS,
+    global_keys = GLOBAL_KEYS,
     appearance_keys = APPEARANCE_KEYS,
     removed_keys = REMOVED_KEYS,
     profile_hints = { config = "set the options directly in the profile" },
@@ -534,6 +547,9 @@ local function validate_public_highlight_groups(scrollbar_variants, minimap_vari
         ScrollbarMinimapFloatBorder = "the minimap border",
         ScrollbarMinimapFloatTitle = "the minimap title",
         ScrollbarMinimapFloatFooter = "the minimap footer",
+        ScrollbarJumpLabel = "the jump labels",
+        ScrollbarGlanceHeader = "the glance group headers",
+        ScrollbarGlanceLineNr = "the glance line numbers",
     }
     local function claim(group, owner)
         local existing = owners[group]
@@ -599,6 +615,8 @@ M.set = function(overrides)
     provider_config.check_mark_types(provider_requests, shared.marks)
     local normalized, compiled = compile(overrides.scrollbar, shared)
     local normalized_minimap, compiled_minimap = minimap_config._compile(overrides.minimap, shared)
+    local normalized_peek = navigate_config.peek(overrides.peek)
+    local normalized_glance = navigate_config.glance(overrides.glance)
     -- A disabled minimap defines no groups, so it claims none.
     validate_public_highlight_groups(compiled, normalized_minimap.enabled and compiled_minimap or {})
     local compiled_provider_plan =
@@ -613,6 +631,8 @@ M.set = function(overrides)
     variants = compiled
     provider_plan = compiled_provider_plan
     mark_types = registered
+    peek = normalized_peek
+    glance = normalized_glance
     minimap_config._commit(normalized_minimap, compiled_minimap)
     selector = schema.selector("scrollbar")
     return active
@@ -649,6 +669,18 @@ end
 M.get_mark_types = function()
     M.get()
     return assert(mark_types, "registered mark types unavailable")
+end
+
+---@return ScrollbarPeekConfig
+M.get_peek = function()
+    M.get()
+    return assert(peek, "peek config unavailable")
+end
+
+---@return ScrollbarGlanceConfig
+M.get_glance = function()
+    M.get()
+    return assert(glance, "glance config unavailable")
 end
 
 ---@param source_win integer

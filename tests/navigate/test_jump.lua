@@ -1,0 +1,349 @@
+local MiniTest = MiniTest
+local navigate = require("tests.navigate.helpers")
+local expect = MiniTest.expect
+
+local T = MiniTest.new_set()
+
+-- Line 0 holds the cursor, so the labels go in this order: a, s, d, f, g.
+local MARKS = {
+    { line = 20, type = "Error" },
+    { line = 60, type = "Warn" },
+    { line = 100, type = "Hint" },
+    { line = 150, type = "Info" },
+    { line = 190, type = "Misc" },
+}
+
+local function setup(child, options)
+    options = options or {}
+    options.marks = options.marks or MARKS
+    local result = navigate.setup(child, options)
+    child.lua([[
+        _G.notes = {}
+        vim.notify = function(message)
+            table.insert(_G.notes, message)
+        end
+    ]])
+    return result
+end
+
+--- Run label mode with keys in the typeahead. The call returns when label mode
+--- ends.
+local function run_with(child, keys, types)
+    child.lua_func(function(typed, names)
+        vim.api.nvim_feedkeys(vim.keycode(typed), "t", false)
+        require("scrollbar.navigate.jump").run({ types = names })
+    end, keys, types)
+end
+
+--- Start label mode and return while it waits for a key.
+local function start(child, types)
+    child.lua(
+        [[
+        local names = ...
+        _G.jump_done = false
+        vim.schedule(function()
+            require("scrollbar.navigate.jump").run({ types = names })
+            _G.jump_done = true
+        end)
+    ]],
+        { types }
+    )
+    vim.uv.sleep(50)
+end
+
+local function input(child, keys)
+    child.api.nvim_input(keys)
+    vim.uv.sleep(50)
+end
+
+--- The labels as `{ row, col, text }`, sorted by row.
+local function labels(child)
+    return child.lua([[
+        local state = require("scrollbar.renderer").get_state(vim.api.nvim_get_current_win())
+        if state == nil then
+            return {}
+        end
+        local namespace = require("scrollbar.navigate.jump").NAMESPACE
+        local result = {}
+        for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(state.float_buf, namespace, 0, -1, { details = true })) do
+            result[#result + 1] = { mark[2], mark[4].virt_text_win_col, mark[4].virt_text[1][1] }
+        end
+        table.sort(result, function(left, right)
+            return left[1] < right[1]
+        end)
+        return result
+    ]])
+end
+
+local function label_texts(child)
+    local result = {}
+    for _, label in ipairs(labels(child)) do
+        result[#result + 1] = label[3]
+    end
+    return result
+end
+
+local function peek_line(child)
+    local state = child.lua_get("require('scrollbar.navigate.peek').get()")
+    return state ~= vim.NIL and state.line or nil
+end
+
+local function cursor_line(child)
+    return child.api.nvim_win_get_cursor(0)[1] - 1
+end
+
+T["labels go to the mark cells nearest to the cursor first"] = function()
+    local child = navigate.new_child()
+    setup(child)
+    start(child)
+    expect.equality(label_texts(child), { "a", "s", "d", "f", "g" })
+    local hitmap = child.lua_get("require('scrollbar.renderer').get_hitmap(vim.api.nvim_get_current_win())")
+    for _, label in ipairs(labels(child)) do
+        -- Each label is on the first column of a mark cell.
+        expect.no_equality(hitmap[label[1] + 1][label[2] + 1].line, nil)
+    end
+    input(child, "<Esc>")
+
+    child.api.nvim_win_set_cursor(0, { 150, 0 })
+    start(child)
+    -- From line 149, the order is 150, 190, 100, 60, 20. The list is in row
+    -- order.
+    expect.equality(label_texts(child), { "g", "f", "d", "a", "s" })
+    input(child, "<Esc>")
+end
+
+T["a lowercase label jumps, and <C-o> returns"] = function()
+    local child = navigate.new_child()
+    setup(child)
+    child.api.nvim_win_set_cursor(0, { 5, 0 })
+    run_with(child, "d")
+    expect.equality(child.api.nvim_win_get_cursor(0), { 101, 0 })
+    expect.equality(labels(child), {})
+    child.type_keys("<C-o>")
+    expect.equality(child.api.nvim_win_get_cursor(0), { 5, 0 })
+end
+
+T["an uppercase label opens the peek, and label mode stays"] = function()
+    local child = navigate.new_child()
+    setup(child)
+    start(child)
+    input(child, "S")
+    expect.equality(peek_line(child), 60)
+    expect.equality(label_texts(child), { "a", "S", "d", "f", "g" })
+    expect.equality(child.lua_get("_G.jump_done"), false)
+
+    -- A second uppercase label moves the peek.
+    input(child, "F")
+    expect.equality(peek_line(child), 150)
+    expect.equality(label_texts(child), { "a", "s", "d", "F", "g" })
+
+    -- <CR> jumps to the peeked mark.
+    input(child, "<CR>")
+    expect.equality(child.lua_get("_G.jump_done"), true)
+    expect.equality(cursor_line(child), 150)
+    expect.equality(peek_line(child), nil)
+    expect.equality(labels(child), {})
+end
+
+T["the screen shows the uppercase label while label mode waits"] = function()
+    local child = navigate.new_child()
+    setup(child)
+    start(child)
+    input(child, "S")
+    -- The screen grid changes only on a redraw, and this call does not redraw.
+    local label = child.lua([[
+        local namespace = require("scrollbar.navigate.jump").NAMESPACE
+        local state = require("scrollbar.renderer").get_state(vim.api.nvim_get_current_win())
+        local float = vim.api.nvim_win_get_position(state.float_win)
+        for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(state.float_buf, namespace, 0, -1, { details = true })) do
+            if mark[4].virt_text[1][1] == "S" then
+                return vim.fn.screenstring(float[1] + 1 + mark[2], float[2] + 1 + mark[4].virt_text_win_col)
+            end
+        end
+    ]])
+    expect.equality(label, "S")
+    input(child, "<Esc>")
+end
+
+T["a lowercase label jumps also while the peek is open"] = function()
+    local child = navigate.new_child()
+    setup(child)
+    run_with(child, "Sa")
+    expect.equality(cursor_line(child), 20)
+    expect.equality(peek_line(child), nil)
+end
+
+T["<Esc> closes the peek and ends label mode"] = function()
+    local child = navigate.new_child()
+    setup(child)
+    run_with(child, "D<Esc>")
+    expect.equality(cursor_line(child), 0)
+    expect.equality(peek_line(child), nil)
+    expect.equality(labels(child), {})
+end
+
+T["another key ends label mode and is dropped"] = function()
+    local child = navigate.new_child()
+    setup(child)
+    local before = child.api.nvim_buf_get_lines(0, 0, -1, false)
+    -- `x` is not a label, so it does not delete a character.
+    run_with(child, "x")
+    expect.equality(child.api.nvim_buf_get_lines(0, 0, -1, false), before)
+    expect.equality(cursor_line(child), 0)
+    -- <CR> without a peek also ends label mode.
+    run_with(child, "<CR>")
+    expect.equality(cursor_line(child), 0)
+    expect.equality(labels(child), {})
+end
+
+T["cells past the last label have no label"] = function()
+    local child = navigate.new_child()
+    setup(child, { config = navigate.config({ scrollbar = { jump = { labels = "qw" } } }) })
+    child.api.nvim_win_set_cursor(0, { 101, 0 })
+    start(child)
+    -- Line 100 has label q, and the nearer of 60 and 150 has label w.
+    expect.equality(label_texts(child), { "w", "q" })
+    input(child, "w")
+    expect.equality(cursor_line(child), 60)
+end
+
+T["Cursor marks get labels only when types names them"] = function()
+    local child = navigate.new_child()
+    setup(child, { marks = { { line = 120, type = "Cursor" }, { line = 20, type = "Error" } } })
+    start(child)
+    expect.equality(label_texts(child), { "a" })
+    input(child, "<Esc>")
+    run_with(child, "a", { Cursor = true })
+    expect.equality(cursor_line(child), 120)
+end
+
+T["notifies and does nothing without marks or without a scrollbar"] = function()
+    local child = navigate.new_child()
+    setup(child, { marks = {} })
+    run_with(child, "")
+    expect.equality(child.lua_get("_G.notes"), { "[nvim-scrollbar] jump: the scrollbar has no marks to jump to" })
+
+    local hidden = navigate.new_child()
+    setup(hidden, { config = navigate.config({ scrollbar = { show = false } }) })
+    run_with(hidden, "")
+    expect.equality(hidden.lua_get("_G.notes"), { "[nvim-scrollbar] jump: the current window has no scrollbar" })
+    expect.equality(hidden.lua_get("require('scrollbar.navigate.jump').active()"), false)
+end
+
+T["notifies and does nothing on a float"] = function()
+    local child = navigate.new_child()
+    setup(child)
+    child.lua([[
+        local buf = vim.api.nvim_get_current_buf()
+        vim.api.nvim_open_win(buf, true, { relative = "editor", row = 1, col = 1, width = 30, height = 10 })
+    ]])
+    run_with(child, "a")
+    expect.equality(child.lua_get("_G.notes"), { "[nvim-scrollbar] jump works only in a normal window" })
+end
+
+T["draws the labels again after a render during label mode"] = function()
+    local child = navigate.new_child()
+    setup(child)
+    start(child)
+    local before = labels(child)
+    -- A provider update writes the rows of the float again.
+    child.lua([[
+        local store = require("scrollbar.shared.store")
+        store.set("test", vim.api.nvim_get_current_buf(), {
+            { line = 20, type = "Error" },
+            { line = 60, type = "Error" },
+            { line = 100, type = "Hint" },
+            { line = 150, type = "Info" },
+            { line = 190, type = "Misc" },
+            { line = 130, type = "Warn" },
+        })
+        require("scrollbar.scheduler").flush()
+    ]])
+    vim.uv.sleep(50)
+    -- The targets froze when label mode started.
+    expect.equality(labels(child), before)
+    -- Each label shows on top of the row that the render wrote again, and the
+    -- new mark shows. Label mode redraws the screen after the render.
+    local shown = child.lua_func(function(placed)
+        local win = vim.api.nvim_get_current_win()
+        local state = assert(require("scrollbar.renderer").get_state(win))
+        local position = vim.api.nvim_win_get_position(state.float_win)
+        local function screen(row, col)
+            return vim.fn.screenstring(position[1] + 1 + row, position[2] + col)
+        end
+        local result = { labels = {} }
+        for index, label in ipairs(placed) do
+            result.labels[index] = screen(label[1], label[2] + 1)
+        end
+        for _, cell in ipairs(require("scrollbar.navigate.targets").cells(win)) do
+            if cell.line == 130 then
+                result.new_mark = screen(cell.row, cell.col)
+            end
+        end
+        return result
+    end, before)
+    expect.equality(shown, { labels = { "a", "s", "d", "f", "g" }, new_mark = "-" })
+    input(child, "s")
+    expect.equality(cursor_line(child), 60)
+end
+
+T["a size change of the float ends label mode"] = function()
+    local child = navigate.new_child()
+    setup(child)
+    child.lua([[vim.keymap.set("n", "<F35>", function() _G.stray = true end)]])
+    start(child)
+    child.cmd("resize 12")
+    child.lua("require('scrollbar.scheduler').invalidate_all(); require('scrollbar.scheduler').flush()")
+    vim.uv.sleep(50)
+    expect.equality(child.lua_get("_G.jump_done"), true)
+    expect.equality(labels(child), {})
+    -- Label mode reads the wake-up key, so it does not reach Normal mode.
+    expect.equality(child.lua_get("_G.stray"), vim.NIL)
+    expect.equality(cursor_line(child), 0)
+end
+
+T["a closed float ends label mode"] = function()
+    local child = navigate.new_child()
+    setup(child)
+    start(child)
+    child.lua("require('scrollbar').hide()")
+    vim.uv.sleep(50)
+    expect.equality(child.lua_get("_G.jump_done"), true)
+    expect.equality(child.lua_get("require('scrollbar.navigate.jump').active()"), false)
+end
+
+T["reveals an autohidden scrollbar and holds it until the end"] = function()
+    local child = navigate.new_child()
+    setup(child, { config = navigate.config({ scrollbar = { autohide = { delay_ms = 50 } } }) })
+    -- Setup renders once without a reveal, so the scrollbar is hidden.
+    child.lua("require('scrollbar.renderer').conceal(vim.api.nvim_get_current_win())")
+    expect.equality(child.lua_get("require('scrollbar.renderer').get_state(vim.api.nvim_get_current_win())"), vim.NIL)
+    start(child)
+    vim.uv.sleep(150)
+    expect.equality(#labels(child), 5)
+    input(child, "<Esc>")
+    vim.uv.sleep(150)
+    expect.equality(child.lua_get("require('scrollbar.renderer').get_state(vim.api.nvim_get_current_win())"), vim.NIL)
+end
+
+T["shows a scrollbar that hide_on_cursor hid until the end"] = function()
+    local child = navigate.new_child()
+    setup(child)
+    child.lua([[
+        vim.api.nvim_buf_set_lines(0, 0, 1, false, { string.rep("x", 100) })
+        vim.api.nvim_win_set_cursor(0, { 1, 79 })
+        require("scrollbar.renderer").render(vim.api.nvim_get_current_win())
+    ]])
+    local function hidden()
+        return child.lua_get("require('scrollbar.renderer').get_state(vim.api.nvim_get_current_win()).hidden_by_cursor")
+    end
+    expect.equality(hidden(), true)
+    start(child)
+    expect.equality(hidden(), false)
+    expect.equality(#labels(child), 5)
+    input(child, "<Esc>")
+    child.lua("require('scrollbar.scheduler').flush()")
+    expect.equality(hidden(), true)
+end
+
+return T

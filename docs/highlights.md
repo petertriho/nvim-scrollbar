@@ -313,6 +313,22 @@ are not valid mark types. A scrollbar mark type with one of these names claims
 the same group as the frame, and setup fails. The minimap rejects the names as
 minimap mark types.
 
+## Navigation Groups
+
+Label mode and the glance window use static groups. The plugin creates them as
+default links:
+
+| Group | Default link | Use |
+| --- | --- | --- |
+| `ScrollbarJumpLabel` | `Substitute` | The labels of label mode |
+| `ScrollbarGlanceHeader` | `Title` | The group headers of the glance list |
+| `ScrollbarGlanceLineNr` | `LineNr` | The line numbers of the glance list |
+
+The glyphs of the glance list use the `Scrollbar<Type>` group of each mark
+type. The groups own these names, so `JumpLabel`, `GlanceHeader`, and
+`GlanceLineNr` are not valid mark types. See
+[Jump and Glance](jump-and-glance.md).
+
 ## Search Highlights
 
 The scrollbar and the minimap do not show search highlights. `'hlsearch'` is a
@@ -381,9 +397,12 @@ groups manually.
 
 The floats still map their frames to the [frame groups](#frame-groups). When
 you use a border, a title, or a footer in manual mode, define those groups too.
+To use label mode or the glance window in manual mode, define the
+[navigation groups](#navigation-groups).
 
 ## Related
 
 - [Configuration](configuration.md)
+- [Jump and Glance](jump-and-glance.md)
 - [Layout and geometry](layout-and-geometry.md)
 - [Migration](migration.md)
