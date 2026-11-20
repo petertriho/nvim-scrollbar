@@ -11,13 +11,14 @@ local M = {}
 
 M.JUMP_DEFAULTS = {
     labels = "asdfghjklqwertyuiopzxcvbnm",
+    offset = 0,
 }
 
 local HOVER_DEFAULTS = { delay_ms = 300 }
 
 --- Keys of the scrollbar block that only its root accepts.
 M.SCROLLBAR_KEYS = {
-    jump = { labels = true },
+    jump = { labels = true, offset = true },
     hover = { delay_ms = true },
 }
 
@@ -126,7 +127,7 @@ M.jump = function(value, path)
         end
         seen[label] = true
     end
-    return { labels = labels }
+    return { labels = labels, offset = schema.integer(jump.offset, path .. ".offset") }
 end
 
 ---@param value any

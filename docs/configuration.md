@@ -108,6 +108,7 @@ require("scrollbar").setup({
         floats = false, -- true, or a table, see Floats
         jump = { -- see Jump and Glance
             labels = "asdfghjklqwertyuiopzxcvbnm",
+            offset = 0,
         },
         hover = false, -- true, or { delay_ms = 300 }
         throttle_ms = 16,
@@ -197,6 +198,7 @@ require("scrollbar").setup({
 | `max_lines` | `false` | A buffer with more lines than this number gets no scrollbar. |
 | `floats` | `false` | Floats that get a scrollbar. The built-in kinds are the list and the preview of the snacks.nvim picker, and the results and the preview of the Telescope picker. A `when` function selects other floats. See [Floats](floats.md). |
 | `jump.labels` | `"asdfghjklqwertyuiopzxcvbnm"` | Labels of label mode. See [Jump and Glance](jump-and-glance.md#labels). |
+| `jump.offset` | `0` | Columns from each mark cell to its label. `0` puts the label on the mark cell. See [Jump and Glance](jump-and-glance.md#labels). |
 | `hover` | `false` | `true` opens the peek float when the pointer stays on a mark cell for 300 ms. `{ delay_ms = n }` sets the delay. See [Hover](jump-and-glance.md#hover). |
 | `throttle_ms` | `16` | Renders that are queued within this interval combine into one frame. `0` renders as fast as possible. |
 | `events` | see Defaults | Autocommand events that update the scrollbar. See [Events](#events). |

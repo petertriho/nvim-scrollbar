@@ -44,6 +44,7 @@ local current
 ---@field position? ScrollbarPeekPosition Default: `peek.position`
 ---@field anchor_row? integer Zero-based text row of the source window that a `"scrollbar"` float centers on. Default: the cursor row
 ---@field types? table<string, true> Mark types that the title names. Nil names every type except `Cursor`
+---@field free_col? integer Zero-based column of the source window that a `"scrollbar"` float does not cover, for the labels beside the scrollbar
 
 ---@class ScrollbarPeekGeometry
 ---@field row integer Zero-based row of the frame, relative to the text area of the source window
@@ -128,8 +129,9 @@ end
 ---@param anchor_row? integer
 ---@param sides ScrollbarWindowSides
 ---@param peek_config ScrollbarPeekConfig
+---@param free_col? integer
 ---@return ScrollbarPeekGeometry?
-M._geometry = function(source_win, position, anchor_row, sides, peek_config)
+M._geometry = function(source_win, position, anchor_row, sides, peek_config, free_col)
     local area = text_area(source_win)
     local frame_rows = sides.top + sides.bottom
     local frame_cols = sides.left + sides.right
@@ -146,6 +148,14 @@ M._geometry = function(source_win, position, anchor_row, sides, peek_config)
             last_col = edge
         else
             first_col = math.max(first_col, edge)
+        end
+        -- A free column on the side of the text moves the frame past it.
+        if free_col ~= nil then
+            if side == "E" and free_col < last_col then
+                last_col = math.max(first_col, free_col)
+            elseif side == "W" and free_col >= first_col then
+                first_col = math.min(last_col, free_col + 1)
+            end
         end
     end
     width = math.min(width, last_col - first_col - frame_cols)
@@ -301,7 +311,7 @@ M.open = function(source_win, line, options)
     ---@cast win integer
 
     local sides = window_config.sides(win)
-    local geometry = M._geometry(source_win, position, options.anchor_row, sides, peek_config)
+    local geometry = M._geometry(source_win, position, options.anchor_row, sides, peek_config, options.free_col)
     if geometry == nil then
         pcall(vim.api.nvim_win_close, win, true)
         current = nil
