@@ -1,0 +1,346 @@
+# Jump and Glance
+
+These features move to the marks of the scrollbar and show the lines of the
+marks:
+
+- **Label mode** (`jump()`) shows a label on each mark cell of the scrollbar
+  of the current window. A lowercase label moves the cursor to the mark. An
+  uppercase label opens the peek float at the mark.
+- The **peek float** shows the source buffer around one mark.
+- The **glance window** (`glance()`) shows a list of the marks and a preview
+  pane. You can move in the list, edit the buffer in the preview, and jump to
+  a mark.
+- **Hover** opens the peek float when the mouse pointer stays on a mark cell
+  of the scrollbar.
+
+The plugin sets no keymaps for these features. See
+[Recommended Keymaps](#recommended-keymaps).
+
+## Recommended Keymaps
+
+```lua
+local scrollbar = require("scrollbar")
+
+vim.keymap.set("n", "<leader>j", function()
+    scrollbar.jump()
+end, { desc = "Jump to a scrollbar mark" })
+
+vim.keymap.set("n", "<leader>J", function()
+    scrollbar.jump({ types = { "Error", "Warn" } })
+end, { desc = "Jump to an error or a warning" })
+
+vim.keymap.set("n", "<leader>g", function()
+    scrollbar.glance()
+end, { desc = "Glance at the marks" })
+```
+
+## Label Mode
+
+![Label mode: labels on the scrollbar marks, a peek float from an uppercase label, and a jump](https://github.com/user-attachments/assets/e0980b14-b9e9-4a03-9da5-bae29f0a2f07)
+
+`require("scrollbar").jump()` and `:ScrollbarJump` start label mode in the
+current window. Label mode reads the keys that you type until it ends:
+
+| Key | Result |
+| --- | --- |
+| A lowercase label | Moves the cursor to the line of the mark and ends label mode. |
+| An uppercase label | Opens the peek float at the line of the mark. Label mode continues, and the label shows in uppercase. Another uppercase label moves the peek float. |
+| `<CR>` | When the peek float is open, moves the cursor to the line of the peek float and ends label mode. |
+| `<Esc>` | Closes the peek float and ends label mode. |
+| Any other key | Ends label mode. Neovim does not run the key. |
+
+A move goes to the line that a click on the same cell goes to. The move adds
+an entry to the jumplist first, so `<C-o>` goes back. Then it moves to the
+start of the line, opens the folds that contain the line (`zv`), and centers
+the line (`zz`). See [Mouse](mouse.md#click-and-drag).
+
+### Labels
+
+- The labels come from `scrollbar.jump.labels`. The cells with the lines
+  nearest to the cursor line get the labels first.
+- When the scrollbar has more mark cells than labels, the far cells get no
+  label.
+- A mark that the thumb covers gets no label, because a click cannot reach it
+  either.
+- `Cursor` marks get a label only when `types` names `Cursor`.
+- The labels stay when the scrollbar renders again. A mark that arrives after
+  label mode starts gets no label.
+
+### Scrollbar State
+
+- Label mode needs the scrollbar. With `scrollbar.enabled = false`, `jump()`
+  shows a notification, and `:ScrollbarJump` does not exist.
+- Label mode works only in a normal window. In a float, such as the list of a
+  picker, it shows a notification.
+- When the window has no scrollbar or no marks, label mode shows a
+  notification and does not start.
+- With [autohide](visibility.md#autohide), label mode shows the scrollbar and
+  stops the hide delay until it ends.
+- When `hide_on_cursor` hides the scrollbar, label mode shows it until it ends.
+- Label mode ends when the scrollbar float closes, when the float changes
+  size, or when the window shows another buffer.
+
+## Peek Float
+
+The peek float is a float on the source buffer. It shows the line of a mark at
+its center, with `peek.context` lines above and below. It shows the source
+buffer itself, so it also shows the diagnostics, the signs, and the other
+extmarks of the buffer.
+
+- One peek float shows at a time. Label mode and hover open it.
+- The float does not take focus, and the autocmds of other plugins do not see
+  it.
+- The scrollbar and the minimap never show on the peek float, also when
+  `floats.when` selects every float.
+- The float has line numbers, the cursor line, `signcolumn = "auto"`, no
+  wrap, and no closed folds. `peek.window.wo` changes these options.
+- When the float has a top border and `peek.window` has no `title`, the title
+  shows the mark types of the line and the line number, for example
+  ` Error, Warn · 61 `.
+
+`peek.position` sets the position of the float:
+
+| Position | Float |
+| --- | --- |
+| `"scrollbar"` | Beside the scrollbar, centered on the row of the mark. When the minimap is on the same side, the float is beside the minimap. |
+| `"cursor"` | Below the cursor line, or above it when there is no space below. |
+| `"center"` | At the center of the window. |
+
+The float stays inside the text area of the source window.
+
+## Glance Window
+
+![The glance window: a list of the marks, a preview that follows the selection, an edit in the preview, and a jump](https://github.com/user-attachments/assets/65d29073-e2c5-4fb3-9f43-310737593faa)
+
+`require("scrollbar").glance()` and `:ScrollbarGlance` open the glance window
+of the current window. The glance window has two panes in one frame. The list
+of the marks is on the right, and the preview pane is on the left.
+
+- The frame opens below the cursor line, or above it when there is no space
+  below. When neither side has space for `glance.height` rows, the frame uses
+  the larger side.
+- The frame has the width of the text area of the window. The preview pane
+  takes 60% of the width, and the list takes 40%.
+- The list gets the focus. It selects the first entry at or after the cursor
+  line.
+- The glance window works only in a normal window. In a float, such as the
+  list of a picker, it shows a notification. When the window has no marks, it
+  shows a notification.
+
+### List
+
+The list reads the mark store, so it also works when the window shows no
+scrollbar. It reads the providers that the scrollbar uses. With
+`scrollbar.enabled = false`, it reads the providers that the minimap uses. It
+holds only the mark types that the renderer shows in the window. The search
+matches are `Search` entries.
+
+`glance.list` sets the entries of the list:
+
+| Value | Entries |
+| --- | --- |
+| `"line"` | One entry for each line with a mark. The entry shows the mark with the highest priority. |
+| `"mark"` | One entry for each mark. A line with two marks has two entries. |
+| `"type"` | One group for each mark type, with one entry for each line. A header shows the type name and the number of lines. The groups are in mark priority order, then in name order. |
+
+Each entry shows the glyph of its mark, the line number, and the text of the
+line:
+
+```text
+ -  21  local function setup()
+ ┃  61  return M
+```
+
+- The glyph is the first item of the `text` list of the mark type. A `Mark`
+  entry shows the letter of the mark. A type without a fixed glyph, for
+  example a type with a text function, shows `•`.
+- The glyph uses the `Scrollbar<Type>` group of its mark type. The line
+  number uses `ScrollbarGlanceLineNr`, and a header uses
+  `ScrollbarGlanceHeader`.
+- A header is not a jump target. On a header, the preview shows the first
+  entry of the group, and the jump key does nothing.
+- The list buffer has the filetype `scrollbar_glance`.
+
+### Keys
+
+The list buffer has these buffer-local keys. `glance.keys` changes them.
+
+| Key | Action |
+| --- | --- |
+| `<CR>` | Moves the cursor to the line of the entry and closes the glance window. The move is the same as a label mode move, so `<C-o>` goes back. |
+| `<Tab>` | Puts the focus in the preview pane. |
+| `q`, `<Esc>` | Closes the glance window. The focus goes back to the source window. |
+
+The usual motions, for example `j`, `k`, `G`, and `/`, move the selection.
+The preview shows the line of the selected entry.
+
+### Preview Pane
+
+The preview pane is a window on the source buffer, so an edit in it changes
+the buffer.
+
+- The preview pane has no keys of the plugin. To go back to the list, use
+  `<C-w>p` or `<C-w>w`.
+- When the focus goes back to the list from the preview pane, the list reads
+  the marks again. It selects the entry at the line that the preview showed,
+  also when your edits moved the line.
+- The list does not change at other times. A mark that arrives while the list
+  has the focus shows after the next return from the preview pane, or in the
+  next glance window.
+
+### Closing
+
+The glance window closes when one of these occurs:
+
+- You type a close key in the list.
+- You use `:q` in the list or in the preview pane.
+- The focus goes to a window outside the frame. The focus stays in that
+  window.
+- The source window closes.
+- `setup()` runs.
+
+## Hover
+
+![Hover: the peek float opens while the pointer rests on a mark of the scrollbar](https://github.com/user-attachments/assets/02a49328-44e8-4c3a-b2c8-e20ec6bdb71e)
+
+With `scrollbar.hover`, the peek float opens when the mouse pointer stays on a
+mark cell of the scrollbar for `delay_ms`:
+
+```lua
+require("scrollbar").setup({
+    scrollbar = {
+        hover = { delay_ms = 300 }, -- or true
+    },
+})
+```
+
+- Hover works only on scrollbars with `mouse = true` in normal windows. It
+  does not work on the minimap or on the scrollbars of floats.
+- The peek float uses `peek.position`. With `"scrollbar"`, it is centered on
+  the row of the mark.
+- Hover shows no labels, and it does nothing during label mode.
+- The peek float closes when the pointer leaves the cell, when you type a key,
+  or when the source window scrolls. A pointer move to another mark cell
+  opens the peek float of that mark after the delay.
+- Hover needs mouse support in Neovim, for example `vim.o.mouse = "a"`.
+
+Neovim reports pointer moves only with `'mousemoveevent'`. When hover is on,
+`setup()` sets `'mousemoveevent'`. A later `setup()` without hover restores
+the option only when the plugin set it. `'mousemoveevent'` is a global
+option, so other plugins also see the pointer moves.
+
+## Options
+
+```lua
+require("scrollbar").setup({
+    scrollbar = {
+        jump = {
+            labels = "asdfghjklqwertyuiopzxcvbnm",
+        },
+        hover = false, -- true, or { delay_ms = 300 }
+    },
+    peek = {
+        position = "scrollbar", -- "scrollbar", "cursor", or "center"
+        context = 5,
+        width = 0.6,
+        window = {},
+    },
+    glance = {
+        list = "line", -- "line", "mark", or "type"
+        height = 18,
+        keys = {
+            jump = "<CR>",
+            close = { "q", "<Esc>" },
+            preview = "<Tab>",
+        },
+        window = {},
+    },
+})
+```
+
+`scrollbar.jump` and `scrollbar.hover` are global options of the scrollbar
+block. `peek` and `glance` are top-level blocks. Profiles do not change these
+options.
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `scrollbar.jump.labels` | `"asdfghjklqwertyuiopzxcvbnm"` | The labels, in order. Only lowercase ASCII letters, each one time. The uppercase letter of a label opens the peek float. |
+| `scrollbar.hover` | `false` | `true` opens the peek float after 300 ms. `{ delay_ms = n }` sets the delay. |
+| `peek.position` | `"scrollbar"` | Position of the peek float. See [Peek Float](#peek-float). |
+| `peek.context` | `5` | Lines above and below the line of the mark. The float has `2 * context + 1` rows, or fewer when the window is smaller. |
+| `peek.width` | `0.6` | Width of the float as a part of the width of the text area. A number more than `0` and not more than `1`. |
+| `peek.window` | `{}` | Border, title, footer, and window options of the peek float. See [Window](#window). |
+| `glance.list` | `"line"` | Entries of the list. See [List](#list). |
+| `glance.height` | `18` | Rows of the panes. The frame uses fewer rows when the window is smaller. |
+| `glance.keys.jump` | `"<CR>"` | Keys that jump to the selected entry. |
+| `glance.keys.close` | `{ "q", "<Esc>" }` | Keys that close the glance window. |
+| `glance.keys.preview` | `"<Tab>"` | Keys that put the focus in the preview pane. |
+| `glance.window` | `{}` | Border, title, footer, and window options of both panes. See [Window](#window). |
+
+Each `glance.keys` value is a key, a list of keys, or `false`. `false` removes
+the keys of the action. Setup rejects a key that two actions use.
+
+### Window
+
+`peek.window` and `glance.window` configure the floats. They accept the same
+keys as [`scrollbar.window`](configuration.md#window), with these differences:
+
+- Without a `border` key, the floats use `'winborder'` as it is when they
+  open. With the default empty `'winborder'`, the floats have no border.
+  `window.border` sets a border for the floats only.
+- `window.wo` also accepts `number`, `relativenumber`, `signcolumn`,
+  `foldcolumn`, `statuscolumn`, and `wrap`. These options apply after the
+  defaults of the float.
+- Setup rejects the keys that the plugin sets: `relative`, `win`, `bufpos`,
+  `anchor`, `row`, `col`, `width`, `height`, `focusable`, `hide`, `style`,
+  `external`, `split`, `vertical`, `noautocmd`, and `fixed`. The error names
+  the option to use, for example `peek.context` for `height`.
+- The keys of `glance.window` apply to both panes.
+
+```lua
+require("scrollbar").setup({
+    peek = {
+        window = {
+            border = "rounded",
+            wo = { relativenumber = true },
+        },
+    },
+    glance = {
+        window = { border = "single" },
+    },
+})
+```
+
+## Lua API and Commands
+
+| Lua | Command | Result |
+| --- | --- | --- |
+| `require("scrollbar").jump(opts)` | `:ScrollbarJump [types]` | Starts label mode. The command exists only when the scrollbar is enabled. |
+| `require("scrollbar").glance(opts)` | `:ScrollbarGlance [types]` | Opens the glance window. The command always exists after `setup()`. |
+
+`opts.types` is a list of mark type names, for example
+`{ "Error", "Warn" }`. Without `types`, every mark type except `Cursor` is
+used. The commands take the names as arguments, and they complete the names
+of the registered mark types.
+
+- An unknown mark type name gives an error notification, and nothing opens.
+- Before `setup()`, `jump()` and `glance()` show a notification and do
+  nothing.
+
+## Highlights
+
+| Group | Default link | Use |
+| --- | --- | --- |
+| `ScrollbarJumpLabel` | `Substitute` | The labels of label mode |
+| `ScrollbarGlanceHeader` | `Title` | The group headers of the glance list |
+| `ScrollbarGlanceLineNr` | `LineNr` | The line numbers of the glance list |
+
+With `set_highlights = false`, the plugin does not create these groups. See
+[Highlights](highlights.md#navigation-groups).
+
+## Related
+
+- [Configuration](configuration.md)
+- [Mouse](mouse.md)
+- [Visibility](visibility.md)
+- [Highlights](highlights.md)

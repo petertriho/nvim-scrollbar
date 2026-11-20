@@ -224,12 +224,25 @@ M.has_config = function(float_win, expected)
     return true
 end
 
+-- Source windows whose floats show also under the cursor. Label mode shows
+-- the scrollbar that `hide_on_cursor` hides.
+---@type table<integer, true>
+local over_cursor = {}
+
+---Show the floats of `source_win` also under the cursor, or stop that. The
+---next render applies the change.
+---@param source_win integer
+---@param show boolean
+M.show_over_cursor = function(source_win, show)
+    over_cursor[source_win] = show or nil
+end
+
 ---@param source_win integer
 ---@param active_config ScrollbarConfig|ScrollbarMinimapConfig
 ---@return integer? row Zero-based screen row of the cursor
 ---@return integer? col Zero-based screen column of the cursor
 M.cursor_screen_position = function(source_win, active_config)
-    if not active_config.hide_on_cursor or vim.api.nvim_get_current_win() ~= source_win then
+    if not active_config.hide_on_cursor or over_cursor[source_win] or vim.api.nvim_get_current_win() ~= source_win then
         return nil, nil
     end
 

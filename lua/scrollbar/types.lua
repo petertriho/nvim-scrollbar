@@ -17,6 +17,9 @@
 ---@alias ScrollbarProviderOption boolean|ScrollbarSearchProviderConfig|ScrollbarMarksProviderConfig|ScrollbarListProviderConfig
 ---@alias ScrollbarFloatKind "snacks_list"|"snacks_preview"|"telescope_results"|"telescope_preview"|"custom"
 ---@alias ScrollbarSourceKind "normal"|ScrollbarFloatKind A normal window, or the kind of a floating source window
+---@alias ScrollbarPeekPosition "scrollbar"|"cursor"|"center"
+---@alias ScrollbarGlanceList "line"|"mark"|"type"
+---@alias ScrollbarUserKeys false|string|string[] `false` removes the keys
 
 ---@class ScrollbarUserWindowConfig
 ---@field border? string|(string|string[])[] `nvim_open_win` border. The default `"none"` keeps 'winborder' out
@@ -38,7 +41,7 @@
 ---@field groups table<string, true> Groups that the value maps
 
 ---@class ScrollbarWindowConfig
----@field open table<string, any> `nvim_open_win` keys. `border` is always set
+---@field open table<string, any> `nvim_open_win` keys. `border` is set, except in a block that keeps 'winborder'
 ---@field wo table<string, any> Window options by full name, without `winhighlight`
 ---@field winhighlight false|ScrollbarWindowHighlights
 ---@field sides ScrollbarWindowSides
@@ -207,6 +210,31 @@
 ---@field throttle_ms? integer
 ---@field events? ScrollbarUserEventList Autocmd events that update the scrollbar. A list replaces the defaults. A table keyed by event name merges with them
 ---@field profiles? ScrollbarUserProfile[] Ordered contextual variants. The first match wins
+---@field jump? ScrollbarUserJumpConfig Label mode of `require("scrollbar").jump()`
+---@field hover? boolean|ScrollbarUserHoverConfig Peek at the mark under the mouse pointer. Off by default
+
+---@class ScrollbarUserJumpConfig
+---@field labels? string Unique lowercase ASCII letters. The uppercase letter of a label opens the peek
+
+---@class ScrollbarUserHoverConfig
+---@field delay_ms? integer Rest time of the pointer on a mark before the peek opens
+
+---@class ScrollbarUserPeekConfig
+---@field position? ScrollbarPeekPosition
+---@field context? integer Lines above and below the mark line
+---@field width? number Share of the width of the source window, greater than 0 and at most 1
+---@field window? ScrollbarUserWindowConfig Without `border`, the float uses 'winborder'
+
+---@class ScrollbarUserGlanceKeys
+---@field jump? ScrollbarUserKeys
+---@field close? ScrollbarUserKeys
+---@field preview? ScrollbarUserKeys
+
+---@class ScrollbarUserGlanceConfig
+---@field list? ScrollbarGlanceList
+---@field height? integer Content rows of the frame
+---@field keys? ScrollbarUserGlanceKeys Buffer-local keys of the list
+---@field window? ScrollbarUserWindowConfig Applies to both panes. Without `border`, the panes use 'winborder'
 
 ---@class ScrollbarUserConfig
 ---@field set_highlights? boolean
@@ -215,6 +243,31 @@
 ---@field marks? table<string, false|ScrollbarUserMarkTypeConfig> Mark-type registry shared by both renderers
 ---@field scrollbar? ScrollbarUserScrollbarConfig
 ---@field minimap? ScrollbarMinimapUserConfig
+---@field peek? ScrollbarUserPeekConfig
+---@field glance? ScrollbarUserGlanceConfig
+
+---@class ScrollbarJumpConfig
+---@field labels string
+
+---@class ScrollbarHoverConfig
+---@field delay_ms integer
+
+---@class ScrollbarPeekConfig
+---@field position ScrollbarPeekPosition
+---@field context integer
+---@field width number
+---@field window ScrollbarWindowConfig `open.border` is nil when the float uses 'winborder'
+
+---@class ScrollbarGlanceKeys
+---@field jump string[]
+---@field close string[]
+---@field preview string[]
+
+---@class ScrollbarGlanceConfig
+---@field list ScrollbarGlanceList
+---@field height integer
+---@field keys ScrollbarGlanceKeys
+---@field window ScrollbarWindowConfig `open.border` is nil when the panes use 'winborder'
 
 ---@class ScrollbarPlacement
 ---@field relative ScrollbarPlacementRelative
@@ -382,6 +435,8 @@
 ---@field overlap ScrollbarOverlapConfig
 ---@field marks table<string, ScrollbarMarkTypeConfig> Shown mark types
 ---@field window ScrollbarWindowConfig
+---@field jump ScrollbarJumpConfig Global. Every variant has the value of the root
+---@field hover false|ScrollbarHoverConfig Global. Every variant has the value of the root
 ---@field highlights ScrollbarHighlightGroups Compiled canonical or profile-internal group names
 ---@field layout_cache table Precompiled static inputs for the line-layer cache
 ---@field providers? ScrollbarProvidersConfig Present only in provider context snapshots

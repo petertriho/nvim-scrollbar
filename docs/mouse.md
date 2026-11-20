@@ -27,8 +27,8 @@ vim.o.mouse = "a"
   outside the float does. See [Window](configuration.md#window).
 
 Navigation uses `zv` to open only the folds that contain the target. Then it
-centers the target with `zz`. After release or cancellation, focus returns to
-the source window.
+centers the target with `zz`. A click adds no jumplist entry. After release or
+cancellation, focus returns to the source window.
 The pressed thumb highlight stays active during the full drag.
 
 Each window uses the mouse options of its own profile, so windows that are open
@@ -53,6 +53,12 @@ The cursor stays in a float only during a click or a drag.
 
 The minimap float uses the same focus rules.
 
+## Hover
+
+With `scrollbar.hover`, the peek float opens when the pointer stays on a mark
+cell. The float shows the source buffer around the line of the mark. Hover
+sets `'mousemoveevent'`. See [Hover](jump-and-glance.md#hover).
+
 ## Disabling
 
 `scrollbar.mouse = false` makes mouse input pass through the floats and
@@ -61,6 +67,7 @@ matches. A float that `hide_on_cursor` hides does not capture mouse input.
 
 ## Related
 
+- [Jump and Glance](jump-and-glance.md)
 - [Layout and geometry](layout-and-geometry.md)
 - [Highlights](highlights.md)
 - [Marks provider](providers/marks.md)

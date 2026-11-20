@@ -17,6 +17,7 @@
 --- and a release do.
 
 local float_focus = require("scrollbar.shared.float_focus")
+local move = require("scrollbar.navigate.move")
 local snacks_list = require("scrollbar.floats.snacks")
 
 local M = {}
@@ -234,13 +235,7 @@ M.new = function(spec)
             end
             return moved
         end
-        local line_count = vim.api.nvim_buf_line_count(current.source_buf)
-        line = M.clamp(line, 0, math.max(0, line_count - 1))
-        local ok = pcall(vim.api.nvim_win_call, current.source_win, function()
-            vim.api.nvim_win_set_cursor(current.source_win, { line + 1, 0 })
-            vim.cmd("normal! zv")
-            vim.cmd("normal! zz")
-        end)
+        local ok = move.line(current.source_win, current.source_buf, line)
         if ok then
             core.invalidate(current)
         end

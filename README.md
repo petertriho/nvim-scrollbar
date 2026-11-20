@@ -9,7 +9,36 @@
 split window gets its own thumb. The scrollbar has typed mark lanes, optional
 screen-line positions that follow wraps and folds, and mouse navigation. An
 optional floating minimap shows a compressed view of the buffer, with a
-viewport tint, a cursor accent, provider marks, and mouse navigation.
+viewport tint, a cursor accent, provider marks, and mouse navigation. Label
+mode, a peek float, and a glance window take you to the marks and show their
+lines.
+
+## Jump and Glance
+
+Label mode puts a label on each mark of the scrollbar. Type a label to move to
+the mark, or type the uppercase label to see the lines of the mark in a peek
+float first. The glance window shows a list of the marks with a preview pane.
+With `scrollbar.hover`, the peek float also opens when the mouse pointer stays
+on a mark.
+
+![Label mode: labels on the scrollbar marks, a peek float from an uppercase label, and a jump](https://github.com/user-attachments/assets/e0980b14-b9e9-4a03-9da5-bae29f0a2f07)
+
+![The glance window: a list of the marks, a preview that follows the selection, an edit in the preview, and a jump](https://github.com/user-attachments/assets/65d29073-e2c5-4fb3-9f43-310737593faa)
+
+![Hover: the peek float opens while the pointer rests on a mark of the scrollbar](https://github.com/user-attachments/assets/02a49328-44e8-4c3a-b2c8-e20ec6bdb71e)
+
+```lua
+vim.keymap.set("n", "<leader>j", function()
+    require("scrollbar").jump()
+end, { desc = "Jump to a scrollbar mark" })
+
+vim.keymap.set("n", "<leader>g", function()
+    require("scrollbar").glance()
+end, { desc = "Glance at the marks" })
+```
+
+The commands are `:ScrollbarJump [types]` and `:ScrollbarGlance [types]`. See
+[Jump and Glance](docs/jump-and-glance.md).
 
 ## Requirements
 
@@ -257,6 +286,8 @@ source, use the [custom provider API](docs/providers/custom.md).
   line and screen-line units, and wide scrollbars
 - [Mouse](docs/mouse.md): clicks, mark navigation, thumb dragging, and focus
   behavior
+- [Jump and Glance](docs/jump-and-glance.md): label mode, the peek float, the
+  glance window, and hover
 - [Highlights](docs/highlights.md): generated groups, direct definitions,
   blending, and manual highlights
 - [Migration](docs/migration.md): changes required from earlier releases

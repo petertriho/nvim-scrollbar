@@ -23,6 +23,10 @@
     "sha256": "182626f64a7880d55b9271f8abf027c31b6889eba8c7b66fdee384fe3b26e031",
     "url": "https://github.com/user-attachments/assets/30a73c31-cc98-4e66-83df-358b89255ad0"
   },
+  "glance.gif": {
+    "sha256": "704229a1c84ac86e6203d72132b47abc4430f44290a976b199a838167ff12403",
+    "url": "https://github.com/user-attachments/assets/65d29073-e2c5-4fb3-9f43-310737593faa"
+  },
   "gutter-modes.png": {
     "sha256": "aae6ca25c5baa5f1fac7c08f785982530943128a5a26e397961cdaaded0a8cc3",
     "url": "https://github.com/user-attachments/assets/bacd87ed-1a0b-4116-8296-c74f1c6099b2"
@@ -30,6 +34,14 @@
   "hero.gif": {
     "sha256": "15f4fb6333b4e105362f4da3dafd6b6a5a201f566e6ef4df4aa7e53f935abd13",
     "url": "https://github.com/user-attachments/assets/b3d11b3b-6112-459b-b0f8-a7d77cca3470"
+  },
+  "hover.gif": {
+    "sha256": "bd570892b1da0faf8952fc3e8801851ed4c305e9eb713fba171d3a209858fd5a",
+    "url": "https://github.com/user-attachments/assets/02a49328-44e8-4c3a-b2c8-e20ec6bdb71e"
+  },
+  "jump.gif": {
+    "sha256": "aa868ed641f9ec91cff74b4ae3fc1aecaeec2b41cffed9011b423d9ba02cbac1",
+    "url": "https://github.com/user-attachments/assets/e0980b14-b9e9-4a03-9da5-bae29f0a2f07"
   },
   "marks.png": {
     "sha256": "a602a6e6e565906d86d921a906d9300e0efd4d741fde7a6938c8c3a90e25085d",

@@ -62,8 +62,12 @@ local PROBE_CONFIG = {
 local probed = {}
 
 ---@class ScrollbarWindowSpec
----@field owned_keys table<string, string> Hints for the `nvim_open_win` keys that only this block owns
+---@field owned_keys table<string, string|true> Hints for the `nvim_open_win` keys that only this block owns. `true` gives no hint
+---@field owner? string What sets the owned keys, in the errors. Default "the renderer"
 ---@field owned_options? table<string, string> Window options that this block sets on each render, with their hints
+---@field renderer_keys? boolean Whether the keys that both renderers set are also owned. Default true
+---@field keep_winborder? boolean Without a `border` key, leave the key out, so that each float applies 'winborder' when it opens. Its sides then come from the open float
+---@field text_area_options? boolean Accept the window options that change the text area, for a float that shows a source buffer
 
 ---@param value table
 ---@param path string
@@ -195,15 +199,22 @@ M.normalize = function(value, path, spec)
     local open = {}
     for _, key in ipairs(sorted_keys(value, path)) do
         if key ~= "wo" then
-            local hint = OWNED_KEYS[key] or spec.owned_keys[key]
+            local hint = spec.owned_keys[key]
+            if hint == nil and spec.renderer_keys ~= false then
+                hint = OWNED_KEYS[key]
+            end
             if hint ~= nil then
-                invalid(string.format("%s.%s: the renderer sets this key (%s)", path, key, hint))
+                local owner = spec.owner or "the renderer"
+                if hint == true then
+                    invalid(string.format("%s.%s: %s sets this key", path, key, owner))
+                end
+                invalid(string.format("%s.%s: %s sets this key (%s)", path, key, owner, hint))
             end
             open[key] = value[key]
         end
     end
     -- Without a `border` key, `nvim_open_win` applies 'winborder'.
-    if open.border == nil then
+    if open.border == nil and not spec.keep_winborder then
         open.border = "none"
     end
 
@@ -226,7 +237,7 @@ M.normalize = function(value, path, spec)
         if owned ~= nil then
             invalid(string.format("%s: the renderer sets this option (%s)", option_path, owned))
         end
-        if GEOMETRY_OPTIONS[name] then
+        if GEOMETRY_OPTIONS[name] and not spec.text_area_options then
             invalid(option_path .. ": the renderer sets this option, because it changes the text area of the float")
         end
         if seen[name] then
@@ -242,15 +253,26 @@ M.normalize = function(value, path, spec)
     end
 
     local signature = vim.inspect({ open = open, wo = probed_options }, { newline = "", indent = "" })
+    -- The sides of a float that applies 'winborder' depend on the option when
+    -- the float opens. For such a float, the probe only validates the values,
+    -- and the float reads its sides when it opens.
+    local follows_winborder = open.border == nil
     local sides = probed[signature]
     if sides == nil then
-        if open.border == "none" and vim.tbl_count(open) == 1 and next(probed_options) == nil then
+        local key_count = vim.tbl_count(open)
+        local plain = next(probed_options) == nil and (key_count == 0 or (key_count == 1 and open.border == "none"))
+        if plain then
             -- The default window needs no probe, so a default setup opens no float.
             sides = NO_SIDES
         else
             sides = border_sides(probe(open, probed_options, path))
         end
-        probed[signature] = sides
+        if not follows_winborder then
+            probed[signature] = sides
+        end
+    end
+    if follows_winborder then
+        sides = NO_SIDES
     end
 
     return {
@@ -260,6 +282,14 @@ M.normalize = function(value, path, spec)
         sides = sides,
         signature = signature,
     }
+end
+
+--- The size of each side of the border of an open float.
+---@param winid integer
+---@return ScrollbarWindowSides
+M.sides = function(winid)
+    local ok, current = pcall(vim.api.nvim_win_get_config, winid)
+    return ok and border_sides(current.border) or NO_SIDES
 end
 
 --- The `winhighlight` value of a float: the base entries of the renderer, then

@@ -67,12 +67,33 @@ local function remove_orphaned_renderer_resources()
     end
 end
 
+--- Close the label mode, the glance window, and the peek float.
+local function dispose_navigate()
+    local jump = package.loaded["scrollbar.navigate.jump"]
+    if jump ~= nil then
+        jump.cancel()
+    end
+    local glance = package.loaded["scrollbar.navigate.glance"]
+    if glance ~= nil then
+        glance.close(true)
+    end
+    local peek = package.loaded["scrollbar.navigate.peek"]
+    if peek ~= nil then
+        peek.close()
+    end
+end
+
 local function dispose_runtime()
+    dispose_navigate()
     -- Both renderers close every float, so nothing needs to move first.
     stack.reset()
     local minimap = package.loaded["scrollbar.minimap"]
     if minimap ~= nil then
         minimap.dispose()
+    end
+    local hover = package.loaded["scrollbar.navigate.hover"]
+    if hover ~= nil then
+        hover.dispose()
     end
     mouse.dispose()
     scheduler.dispose()
@@ -112,6 +133,106 @@ local COMMANDS = {
     ScrollbarRefresh = "refresh",
 }
 
+-- Whether `setup()` ran. `jump()` and `glance()` need it.
+local configured = false
+
+---@param message string
+---@param level integer
+local function notify(message, level)
+    vim.notify("[nvim-scrollbar] " .. message, level)
+end
+
+---@class ScrollbarNavigateUserOptions
+---@field types? string[] Names of registered mark types. Nil means every type except `Cursor`
+
+--- The mark type filter of `jump()` and `glance()`, or nothing when the
+--- options are not valid.
+---@param name "jump"|"glance"
+---@param opts any
+---@return boolean ok
+---@return table<string, true>? types
+local function navigate_types(name, opts)
+    if not configured then
+        notify(name .. "() needs setup() first", vim.log.levels.WARN)
+        return false
+    end
+    if opts == nil then
+        return true
+    end
+    if type(opts) ~= "table" then
+        notify(name .. "(): opts must be a table", vim.log.levels.ERROR)
+        return false
+    end
+    for key in pairs(opts) do
+        if key ~= "types" then
+            notify(string.format("%s(): unknown option '%s'", name, tostring(key)), vim.log.levels.ERROR)
+            return false
+        end
+    end
+    if opts.types == nil then
+        return true
+    end
+    if type(opts.types) ~= "table" or not vim.islist(opts.types) then
+        notify(name .. "(): opts.types must be a list of mark type names", vim.log.levels.ERROR)
+        return false
+    end
+    local registered = config.get_mark_types()
+    local types = {}
+    for _, mark_type in ipairs(opts.types) do
+        if type(mark_type) ~= "string" or registered[mark_type] == nil then
+            notify(string.format("%s(): unknown mark type '%s'", name, tostring(mark_type)), vim.log.levels.ERROR)
+            return false
+        end
+        types[mark_type] = true
+    end
+    return true, types
+end
+
+--- Label mode on the mark cells of the scrollbar of the current window.
+---@param opts? ScrollbarNavigateUserOptions
+M.jump = function(opts)
+    local ok, types = navigate_types("jump", opts)
+    if not ok then
+        return
+    end
+    if not config.get().enabled then
+        notify("jump() needs the scrollbar, and scrollbar.enabled is false", vim.log.levels.WARN)
+        return
+    end
+    require("scrollbar.navigate.jump").run({ types = types })
+end
+
+--- The glance window with the marks of the current window.
+---@param opts? ScrollbarNavigateUserOptions
+M.glance = function(opts)
+    local ok, types = navigate_types("glance", opts)
+    if not ok then
+        return
+    end
+    require("scrollbar.navigate.glance").open({ types = types })
+end
+
+---@param arg_lead string
+---@return string[]
+local function complete_mark_types(arg_lead)
+    local names = {}
+    for mark_type in pairs(config.get_mark_types()) do
+        if vim.startswith(mark_type, arg_lead) then
+            names[#names + 1] = mark_type
+        end
+    end
+    table.sort(names)
+    return names
+end
+
+---@param method "jump"|"glance"
+---@return fun(args: { fargs: string[] })
+local function navigate_command(method)
+    return function(args)
+        M[method]({ types = #args.fargs > 0 and args.fargs or nil })
+    end
+end
+
 ---@param enabled boolean
 local function update_commands(enabled)
     for name, method in pairs(COMMANDS) do
@@ -121,6 +242,22 @@ local function update_commands(enabled)
             pcall(vim.api.nvim_del_user_command, name)
         end
     end
+    if enabled then
+        vim.api.nvim_create_user_command("ScrollbarJump", navigate_command("jump"), {
+            force = true,
+            nargs = "*",
+            complete = complete_mark_types,
+            desc = "Show labels on the marks of the scrollbar",
+        })
+    else
+        pcall(vim.api.nvim_del_user_command, "ScrollbarJump")
+    end
+    vim.api.nvim_create_user_command("ScrollbarGlance", navigate_command("glance"), {
+        force = true,
+        nargs = "*",
+        complete = complete_mark_types,
+        desc = "Open the glance window with the marks of the current window",
+    })
 end
 
 ---@param overrides? ScrollbarUserConfig
@@ -129,6 +266,7 @@ M.setup = function(overrides)
     local active_minimap_config = config.get_minimap()
     local provider_plan = config.get_provider_plan()
     dispose_runtime()
+    configured = true
     text_tick.setup()
     reconcile_builtins(provider_plan)
 
@@ -148,6 +286,9 @@ M.setup = function(overrides)
         end
     end)
     mouse.setup({ config = active_config, renderer = renderer, scheduler = scheduler })
+    if active_config.enabled and active_config.hover ~= false then
+        require("scrollbar.navigate.hover").setup(active_config.hover)
+    end
 
     -- Both store consumers must be subscribed before provider setup publishes.
     if active_minimap_config.enabled then

@@ -998,6 +998,38 @@ M._consumer_enabled = function(name, consumer)
     return planned ~= nil and planned.options ~= false and planned.consumers[consumer] == true
 end
 
+--- The providers whose marks one consumer reads from the snapshots of a
+--- buffer and a window, in name order. The renderer of the consumer and the
+--- glance list use this rule.
+---@param buffer_snapshot ScrollbarStoreTrustedSnapshot
+---@param window_snapshot ScrollbarWindowStoreTrustedSnapshot
+---@param consumer "scrollbar"|"minimap"
+---@return string[] provider_names
+---@return ScrollbarCompactSearch? compact_search The compact search matches, when the consumer reads the search provider
+M._consumed_marks = function(buffer_snapshot, window_snapshot, consumer)
+    local seen = {}
+    for provider in pairs(buffer_snapshot.marks) do
+        if M._consumer_enabled(provider, consumer) then
+            seen[provider] = true
+        end
+    end
+    for provider in pairs(window_snapshot.marks) do
+        if M._consumer_enabled(provider, consumer) then
+            seen[provider] = true
+        end
+    end
+    local provider_names = {}
+    for provider in pairs(seen) do
+        provider_names[#provider_names + 1] = provider
+    end
+    table.sort(provider_names)
+    local compact_search = buffer_snapshot.compact_search
+    if compact_search ~= nil and not M._consumer_enabled("search", consumer) then
+        compact_search = nil
+    end
+    return provider_names, compact_search
+end
+
 ---@param name string
 ---@return ScrollbarProviderExecutionMode
 M._execution_mode = function(name)

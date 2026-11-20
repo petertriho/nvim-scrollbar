@@ -23,9 +23,9 @@ local snacks_list = require("scrollbar.floats.snacks")
 
 local M = {}
 
--- Window variables that mark the floats of both renderers, also from an
--- earlier setup. A float of the other renderer is never a source.
-local RENDERER_VARS = { "scrollbar_owned", "scrollbar_minimap_owned" }
+-- Window variables that mark the floats of both renderers and the peek and
+-- glance floats, also from an earlier setup. Such a float is never a source.
+local RENDERER_VARS = { "scrollbar_owned", "scrollbar_minimap_owned", "scrollbar_navigate_owned" }
 
 -- The picker group when floats are off. It is shared, so callers never change
 -- it.
