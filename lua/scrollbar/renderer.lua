@@ -782,6 +782,36 @@ local function geometry_for(
     })
 end
 
+---The window values for the context of a thumb text function. On a snacks
+---list, the lines count list items, and the context has no cursor line.
+---@param source_win integer
+---@param source_buf integer
+---@param line_count? integer
+---@param view? ScrollbarSnacksListView
+---@return ScrollbarThumbTextSource
+local function thumb_text_source(source_win, source_buf, line_count, view)
+    if view ~= nil then
+        return {
+            winid = source_win,
+            bufnr = source_buf,
+            top_line = view.top,
+            bottom_line = view.bottom,
+            line_count = view.count,
+        }
+    end
+    local lines = vim.api.nvim_win_call(source_win, function()
+        return { vim.fn.line("w0") - 1, vim.fn.line("w$") - 1, vim.fn.line(".") - 1 }
+    end)
+    return {
+        winid = source_win,
+        bufnr = source_buf,
+        top_line = lines[1],
+        bottom_line = lines[2],
+        line_count = line_count or vim.api.nvim_buf_line_count(source_buf),
+        cursor_line = lines[3],
+    }
+end
+
 ---@param source_win integer
 ---@param source_buf integer
 ---@param buffer_revision integer
@@ -806,7 +836,19 @@ local function line_mark_layer(
     compact_search
 )
     local layout_cache = active_config.layout_cache
+    ---@type ScrollbarLineMarkLayerCache?
     local cached = line_layer_cache[source_win]
+    -- A layer whose text functions read the cursor line or the line count
+    -- stays valid only while those values stay the same. A layer without
+    -- text functions has no records, and this check costs nothing.
+    if
+        cached ~= nil
+        and cached.layer ~= nil
+        and cached.layer.text_reads ~= nil
+        and not layout.text_reads_current(cached.layer.text_reads, source_win, source_buf, line_count)
+    then
+        cached = nil
+    end
     if
         cached ~= nil
         and cached.source_buf == source_buf
@@ -903,6 +945,8 @@ local function line_mark_layer(
             marks_sorted = true,
             compact_search = compact_search,
             previous = previous_layer_input,
+            source_win = source_win,
+            source_buf = source_buf,
         }),
     }
     line_layer_cache[source_win] = cached
@@ -946,6 +990,12 @@ local function screen_mark_layer(
         and cached.mark_rows == geometry.mark_rows
         and cached.compact_mark_rows == geometry.compact_mark_rows
         and (cached.config == layout_cache or vim.deep_equal(cached.config, layout_cache))
+        -- This cache has no line count in its key, so a text function that
+        -- read the line count also needs this check.
+        and (
+            cached.layer.text_reads == nil
+            or layout.text_reads_current(cached.layer.text_reads, source_win, source_buf, nil)
+        )
     then
         cached.config = layout_cache
         return cached.layer
@@ -960,6 +1010,8 @@ local function screen_mark_layer(
         marks = marks,
         marks_sorted = true,
         compact_search = compact_search,
+        source_win = source_win,
+        source_buf = source_buf,
     })
     screen_layer_cache[source_win] = {
         source_buf = source_buf,
@@ -1165,6 +1217,10 @@ local function render_source(source_win, selection, root_config)
     if unit == "line" then
         line_count = view ~= nil and view.count or vim.api.nvim_buf_line_count(source_buf)
     end
+    local thumb_context = nil
+    if type(active_config.thumb.text) == "function" then
+        thumb_context = thumb_text_source(source_win, source_buf, line_count, view)
+    end
     local west = west_anchor(active_config)
     local stack_origin, stack_zindex =
         stack.resolve("scrollbar", source_win, stack_placement(active_config, float_zindex))
@@ -1262,7 +1318,7 @@ local function render_source(source_win, selection, root_config)
             geometry.handle = { first_row = -1, last_row = -1 }
         end
 
-        output = layout.compose({
+        local compose_input = {
             config = active_config,
             height = content_height,
             line_count = line_count,
@@ -1271,7 +1327,13 @@ local function render_source(source_win, selection, root_config)
             marks = marks,
             mark_layer = mark_layer,
             compact_search = compact_search,
-        })
+        }
+        -- A ninth field in the constructor doubles the hash part of the table
+        -- on every render, so the field is set only with a thumb function.
+        if thumb_context ~= nil then
+            compose_input.thumb_context = thumb_context
+        end
+        output = layout.compose(compose_input)
         if not reserved then
             break
         end

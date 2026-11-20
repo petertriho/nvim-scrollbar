@@ -447,6 +447,96 @@ T["rejects invalid scalar provider mark and text options"] = function()
     expect_invalid_top({ providers = { unknown = true } }, "unknown option 'providers.unknown'")
 end
 
+T["text functions"] = MiniTest.new_set()
+
+T["text functions"]["are valid for marks at each level and for the thumb"] = function()
+    local shared_text = function()
+        return "s"
+    end
+    local scrollbar_text = function()
+        return "b"
+    end
+    local new_type_text = function()
+        return "n"
+    end
+    local thumb_text = function()
+        return "t"
+    end
+    local result = set_top({
+        marks = {
+            GitAdd = { text = shared_text },
+            Todo = { text = new_type_text, priority = 4, highlight = "Todo" },
+        },
+        scrollbar = {
+            thumb = { text = thumb_text },
+            marks = { Error = { text = scrollbar_text } },
+        },
+    })
+
+    expect.equality(result.marks.GitAdd.text, shared_text)
+    expect.equality(result.marks.Todo.text, new_type_text)
+    expect.equality(result.marks.Error.text, scrollbar_text)
+    expect.equality(result.thumb.text, thumb_text)
+    expect.equality(result.layout_cache.marks.GitAdd.text, shared_text)
+    local minimap = require("scrollbar.config").get_minimap()
+    ---@diagnostic disable-next-line: undefined-field
+    expect.equality(minimap.marks.GitAdd.text, nil)
+end
+
+T["text functions"]["are valid in a profile, which replaces a list"] = function()
+    local profile_text = function()
+        return "p"
+    end
+    local thumb_text = function()
+        return "t"
+    end
+    set({
+        profiles = {
+            {
+                match = { filetypes = { "lua" } },
+                thumb = { text = thumb_text },
+                marks = { Search = { text = profile_text } },
+            },
+        },
+    })
+    local variants = require("scrollbar.config").get_variants()
+
+    expect.equality(variants[1].config.marks.Search.text, { "-", "=" })
+    expect.equality(variants[2].config.marks.Search.text, profile_text)
+    expect.equality(variants[2].config.thumb.text, thumb_text)
+end
+
+T["text functions"]["a list replaces a shared function"] = function()
+    local result = set_top({
+        marks = {
+            Search = {
+                text = function()
+                    return "x"
+                end,
+            },
+        },
+        scrollbar = { marks = { Search = { text = { "a", "b" } } } },
+    })
+
+    expect.equality(result.marks.Search.text, { "a", "b" })
+end
+
+T["text functions"]["are not valid in a list or with another type"] = function()
+    expect_invalid_top(
+        { marks = { Search = { text = { "-", function() end } } } },
+        "marks.Search.text%[2%] must be a string"
+    )
+    expect_invalid_top(
+        { marks = { Search = { text = 1 } } },
+        "marks.Search.text must be a string, a dense list of strings, or a function"
+    )
+    expect_invalid({ thumb = { text = { "x" } } }, "scrollbar.thumb.text must be a string or a function")
+    expect_invalid_top(
+        { minimap = { marks = { Error = { text = function() end } } } },
+        "unknown option 'minimap.marks.Error.text'"
+    )
+end
+
 T["rejects an empty text override"] = function()
     expect_invalid_top({ marks = { Search = { text = {} } } }, "marks.Search.text must contain at least one variant")
     expect_invalid(

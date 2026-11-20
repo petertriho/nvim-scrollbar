@@ -57,7 +57,9 @@ Names must also give each public highlight group one clear owner:
 
 An emitted mark can supply its own non-empty `text` override. `Mark` is an
 exception. Provider text applies only while the `Mark` type has `text = {}`. A
-non-empty configured `Mark` list replaces the provider text.
+non-empty configured `Mark` list replaces the provider text. A text function
+replaces the provider text for every type, and it gets that text in `ctx.text`.
+See [Text Functions](../configuration.md#text-functions).
 
 ## Registration
 

@@ -6,8 +6,9 @@ local MARK_COUNT = 2000
 local PROVIDER = "benchmark_render"
 
 ---@param unit "line" | "screenline"
----@param reserve? boolean | "virtual_text" The `overlap.reserve` value (default true)
-local function configure(unit, reserve)
+---@param opts bench.RenderOptions
+local function configure(unit, opts)
+    local reserve = opts.reserve
     require("scrollbar.config").set({
         set_highlights = false,
         exclude = { buftypes = {}, filetypes = {} },
@@ -17,10 +18,11 @@ local function configure(unit, reserve)
             search = false,
             marks = false,
         },
+        marks = opts.mark_text and { Misc = { text = opts.mark_text } } or nil,
         scrollbar = {
             unit = unit,
             throttle_ms = 0,
-            thumb = { text = "H", hide_if_all_visible = false },
+            thumb = { text = opts.thumb_text or "H", hide_if_all_visible = false },
             overlap = { reserve = reserve == nil and true or reserve },
         },
     })
@@ -53,6 +55,8 @@ end
 ---@field windows? integer The number of windows that show the buffer (default 1).
 ---@field reserve? boolean | "virtual_text" The `overlap.reserve` value (default true).
 ---@field change? fun(state: bench.RenderState)
+---@field mark_text? ScrollbarMarkTextFunction The text of the Misc marks
+---@field thumb_text? ScrollbarThumbTextFunction
 
 ---@param unit "line" | "screenline"
 ---@param name string
@@ -86,7 +90,7 @@ local function render_case(unit, name, opts)
                 ),
                 "the store rejected the marks"
             )
-            configure(unit, opts.reserve)
+            configure(unit, opts)
             ---@type bench.RenderState
             local state = { bufnr = bufnr, windows = windows, toggle = false, topline = 1 }
             render(state)
@@ -140,6 +144,29 @@ local function toggle_number(state)
     vim.wo[winid].number = not vim.wo[winid].number
 end
 
+---Moves the cursor between two lines in the view.
+---@param state bench.RenderState
+local function move_cursor(state)
+    state.toggle = not state.toggle
+    vim.api.nvim_win_set_cursor(state.windows[1], { state.toggle and 2 or 3, 0 })
+end
+
+---A mark text that reads the cursor line, so each cursor line change builds the mark layer again.
+---@param context ScrollbarMarkTextContext
+---@return string
+local function relative_line(context)
+    return tostring(math.abs(context.line - context.cursor_line) % 10)
+end
+
+---@param context ScrollbarThumbTextContext
+---@return string?
+local function thumb_top_line(context)
+    if context.index == 0 then
+        return tostring(context.top_line + 1)
+    end
+    return nil
+end
+
 ---@type bench.Case[]
 return {
     render_case("line", "steady"),
@@ -158,4 +185,9 @@ return {
     render_case("line", "virtual_text_steady", { wrapped = true, reserve = "virtual_text" }),
     render_case("line", "virtual_text_scroll", { wrapped = true, reserve = "virtual_text", change = scroll }),
     render_case("screenline", "virtual_text_scroll", { wrapped = true, reserve = "virtual_text", change = scroll }),
+    -- The text functions. Each run of the mark case builds the layer again and
+    -- calls the function for each group. The thumb case calls the function on
+    -- each scroll.
+    render_case("line", "mark_text_cursor", { mark_text = relative_line, change = move_cursor }),
+    render_case("line", "thumb_text_scroll", { thumb_text = thumb_top_line, change = scroll }),
 }

@@ -190,7 +190,7 @@ require("scrollbar").setup({
 | `layout` | see Defaults | Columns and layers. See [Layout](#layout). |
 | `track.highlight` | `"PmenuSbar"` | Track highlight: a group name or an `nvim_set_hl()` table. |
 | `track.inactive_highlight` | `nil` | Track highlight of an inactive source window. See [Inactive Windows](highlights.md#inactive-windows). |
-| `thumb.text` | `" "` | One string with a positive display width and no control characters. |
+| `thumb.text` | `" "` | One string with a positive display width and no control characters, or a function. See [Text Functions](#text-functions). |
 | `thumb.blend` | `30` | Integer from `0` to `100`. The text below the thumb shows through it with this blend. |
 | `thumb.highlight` | `"PmenuThumb"` | A group name or an `nvim_set_hl()` table. |
 | `thumb.inactive_highlight` | `nil` | Thumb highlight of an inactive source window. See [Inactive Windows](highlights.md#inactive-windows). |
@@ -515,14 +515,15 @@ marks = {
   `FloatFooter`. See [Frame Groups](highlights.md#frame-groups).
 - `false` hides the type in both renderers. The type stays registered, so
   providers can still publish it. A renderer override table can show it again.
-- `text` is a string or a dense list of strings. Each string must have a
-  positive display width and no control characters. A list gives density
-  variants. A scrollbar row with n marks of one type, from all providers, uses
-  entry n. A row with more marks than entries uses the last entry. For
-  example, `{ "-", "=", "≡" }` shows `-` for one mark, `=` for two marks, and
-  `≡` for three or more marks. Only `Mark.text` can be an empty list. An empty
-  list keeps the literal mark names from the built-in marks provider. The
-  minimap does not use `text`.
+- `text` is a string, a dense list of strings, or a function. Each string
+  must have a positive display width and no control characters. A list gives
+  density variants. A scrollbar row with n marks of one type, from all
+  providers, uses entry n. A row with more marks than entries uses the last
+  entry. For example, `{ "-", "=", "≡" }` shows `-` for one mark, `=` for two
+  marks, and `≡` for three or more marks. Only `Mark.text` can be an empty
+  list. An empty list keeps the literal mark names from the built-in marks
+  provider. A function returns the text, for example a line number. See
+  [Text Functions](#text-functions). The minimap does not use `text`.
 - `priority` is a non-negative integer. In one mark lane, the lower number wins
   a collision. Separate mark layers use their declared stack order instead.
 - `highlight` is a non-empty group name or an `nvim_set_hl()` definition table.
@@ -568,6 +569,153 @@ scrollbar = {
 Ordinary text is clipped to its lane, and multi-cell glyphs are not split. If a
 collision leaves room for only part of a multi-cell glyph, the whole glyph is
 omitted.
+
+## Text Functions
+
+The `text` of a mark type and `scrollbar.thumb.text` can be a function. The
+function gets a context table and returns the text as a string. Use it, for
+example, to show line numbers beside the marks or in the thumb.
+
+### Line Numbers Beside the Marks
+
+This configuration shows the line number of each Git mark in a lane of four
+columns, inward of the track:
+
+```lua
+local function line_number(ctx)
+    return tostring(ctx.line + 1)
+end
+
+require("scrollbar").setup({
+    providers = { gitsigns = true },
+    marks = {
+        GitAdd = { text = line_number },
+        GitChange = { text = line_number },
+        GitDelete = { text = line_number },
+    },
+    scrollbar = {
+        layout = {
+            columns = {
+                { { types = { "GitAdd", "GitChange", "GitDelete" } } },
+                { { types = { "GitAdd", "GitChange", "GitDelete" } } },
+                { { types = { "GitAdd", "GitChange", "GitDelete" } } },
+                { { types = { "GitAdd", "GitChange", "GitDelete" } } },
+                { "track", "thumb", "marks" },
+            },
+        },
+    },
+})
+```
+
+A click on a number moves the cursor to that line. See [Mouse](mouse.md).
+
+For relative line numbers, read the cursor line:
+
+```lua
+local function relative_number(ctx)
+    return tostring(math.abs(ctx.line - ctx.cursor_line))
+end
+```
+
+To right-align the numbers, pad them, for example with
+`string.format("%4d", ctx.line + 1)`. The spaces are a part of the mark.
+
+### Mark Text Functions
+
+The scrollbar calls a mark text function once for each group of marks of one
+type in one row. The function replaces the density variants. Use `ctx.count`
+to change the text for dense rows. The context has these fields. Lines and
+rows are zero-based.
+
+| Field | Meaning |
+| --- | --- |
+| `winid` | The source window. |
+| `bufnr` | The source buffer. |
+| `type` | The mark type. |
+| `line` | The line that a click on the mark goes to. |
+| `lines` | The lines of all marks of the group, in ascending order. A copy. |
+| `count` | The number of marks of the group. |
+| `text` | The text of the mark from its provider, for example the name of a named mark, or `nil`. |
+| `row` | The scrollbar row. |
+| `line_count` | The number of lines of the source buffer. |
+| `cursor_line` | The cursor line of the source window. |
+
+- The scrollbar calls the function only when it builds the marks again: when
+  the marks, their rows, the layout, or the window size change. A function
+  that reads `ctx.cursor_line` or `ctx.line_count` makes the scrollbar build
+  the marks again when that value changes. Make the result depend only on the
+  context. A function that reads other state, for example `vim.fn.line(".")`,
+  shows old text.
+- `lines`, `line_count`, and `cursor_line` are read on demand. Thus
+  `vim.inspect(ctx)` shows them only after the function reads them.
+- The function wins over the text from the provider. To keep a provider text,
+  return `ctx.text`. For example, `ctx.text .. ":" .. (ctx.line + 1)` shows
+  `a:42` for a named mark.
+- In an expanded named-mark lane, each named mark is its own group:
+  `count` is `1`, and `lines` holds only `line`. The lane grows by the width of
+  the texts. A named mark that does not fit, and the marks after it, are
+  omitted. See [Named-Mark Lanes](layout-and-geometry.md#named-mark-lanes).
+
+### Thumb Text Functions
+
+The scrollbar calls a thumb text function on every render, once for each thumb
+row. The result shows once, from the first thumb column. The other thumb cells
+stay blank. A string `thumb.text` repeats across the thumb as before. This
+example shows the top line in the first thumb row of a thumb of four columns.
+The marks are in their own column, so that no mark covers the number:
+
+```lua
+require("scrollbar").setup({
+    scrollbar = {
+        layout = {
+            columns = {
+                { "track", "thumb" },
+                { "track", "thumb" },
+                { "track", "thumb" },
+                { "track", "thumb" },
+                { "track", "marks" },
+            },
+        },
+        thumb = {
+            text = function(ctx)
+                if ctx.index == 0 then
+                    return tostring(ctx.top_line + 1)
+                end
+            end,
+        },
+    },
+})
+```
+
+The context has these fields. Lines and rows are zero-based.
+
+| Field | Meaning |
+| --- | --- |
+| `winid` | The source window. |
+| `bufnr` | The source buffer. |
+| `index` | The row in the thumb. The first thumb row is `0`. |
+| `row` | The scrollbar row. |
+| `first_row` and `last_row` | The first and the last thumb row. |
+| `height` | The number of scrollbar rows. |
+| `top_line` and `bottom_line` | The first and the last line that the window shows. |
+| `line_count` | The number of lines of the source buffer. |
+| `cursor_line` | The cursor line of the source window. |
+
+On the list of a snacks.nvim picker, `top_line`, `bottom_line`, and
+`line_count` count list items, and `cursor_line` is `nil`.
+
+Keep a thumb text function fast, because it runs on every render.
+
+### Results and Errors
+
+- A result must be a string with no control characters. `nil` and `""` show
+  no text: a mark group is hidden, and a thumb row stays blank.
+- A function that raises an error, or returns another value, shows no text.
+  The plugin shows one error message for each function and message.
+- The text fills the cells of its lane, or of the thumb, from the first
+  column. The edge of the lane cuts a longer text. The default layout has one
+  column, so a line number needs a wider lane. See [Layout](#layout).
+- With `overlap.marks = "tint"`, the tint covers the cells of the whole text.
 
 ## Events
 
@@ -798,7 +946,9 @@ overrides apply on top of the shared `marks` definitions.
   [Events](#events).
 - `thumb.blend`: an integer from `0` to `100`.
 - `thumb.text`: one string with a positive display width and no control
-  characters.
+  characters, or a function.
+- Mark `text`: a string, a dense list of strings, or a function. A list
+  cannot hold a function.
 - `window`: Neovim validates the keys and the window options during setup.
   For this check, setup opens a hidden float and closes it at once. The default
   `window` opens no float. See [Window](#window).

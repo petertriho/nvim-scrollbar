@@ -69,20 +69,24 @@ layout = {
 ```
 
 When built-in named marks collide on a row, their lane grows only as much as
-necessary. `max_width` caps the total width of that lane, including its
-declared base span. It does not cap the whole float. The active placement
-container limits the growth. When the scrollbar is beside a minimap and nearer
-the text, the container ends at the opposite edge of the window: the left edge
-for an east anchor, and the right edge for a west anchor. With an
-editor-relative placement, it ends at the opposite edge of the editor. Dynamic
-cells contain only named marks. The renderer inserts them on the inward side,
-toward the text: the left side of an east float, and the right side of a west
-float. The screen cells of the declared track, thumb, and ordinary marks stay
-pinned as the float grows or shrinks.
+necessary. Each named mark takes as many cells as its text, for example the
+result of a [text function](configuration.md#text-functions). `max_width` caps
+the total width of that lane, including its declared base span. It does not cap
+the whole float. The active placement container limits the growth. When the
+scrollbar is beside a minimap and nearer the text, the container ends at the
+opposite edge of the window: the left edge for an east anchor, and the right
+edge for a west anchor. With an editor-relative placement, it ends at the
+opposite edge of the editor. Dynamic cells contain only named marks. The
+renderer inserts them on the inward side, toward the text: the left side of an
+east float, and the right side of a west float. The screen cells of the declared
+track, thumb, and ordinary marks stay pinned as the float grows or shrinks.
 
 Built-in names keep the source-line/name order. If the capacity is not
-sufficient, the lane keeps the ordered prefix and omits the tail. Marks with
-`type = "Mark"` from custom providers stay collapsed in the declared base lane.
+sufficient, the lane keeps the ordered prefix and omits the tail. A text of more
+than one cell needs adjacent cells of the lane. When the next free cells are not
+adjacent, for example around a declared column of another lane, the text takes
+the next run of adjacent cells. Marks with `type = "Mark"` from custom providers
+stay collapsed in the declared base lane.
 
 ## Placement
 
