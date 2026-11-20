@@ -203,9 +203,7 @@ require("scrollbar").setup({
         floats = {
             snacks = true,
             telescope = true,
-            when = function(context)
-                return context.filetype == "lazy"
-            end,
+            when = require("scrollbar.recipes").when.filetypes({ "lazy" }),
         },
     },
 })
@@ -247,7 +245,8 @@ source, use the [custom provider API](docs/providers/custom.md).
 ### Guides
 
 - [Configuration](docs/configuration.md): defaults, providers, exclusions, mark
-  types, layout lanes, profiles, precedence, and validation
+  types, layout lanes, text functions and recipes, profiles, precedence, and
+  validation
 - [Presets](docs/presets.md): the twelve scrollbar presets, the eight minimap
   presets, and their precedence
 - [Visibility](docs/visibility.md): source-window visibility, autohide,

@@ -1518,6 +1518,15 @@ M.get_state = floats.get_state
 ---@type fun(float_win: integer): ScrollbarWindowState?
 M.get_state_by_float = floats.get_state_by_float
 
+---Whether the policy of this renderer counts `winid` as an active source
+---window, by the rule of `visibility = "active"`. For
+---`recipes.when.active()`.
+---@param winid integer
+---@return boolean
+M._is_active = function(winid)
+    return policy.active_windows(active_source_window())[winid] == true
+end
+
 ---@param source_win integer
 ---@return ScrollbarHitCell[][]?
 M.get_hitmap = function(source_win)

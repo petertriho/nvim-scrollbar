@@ -1210,4 +1210,68 @@ T["thumb text functions"]["a thumb text change does not reuse the output of anot
     expect.equality(compose_with("B").rows, { "B" })
 end
 
+T["recipes"] = MiniTest.new_set()
+
+local GIT_LANE = { types = { "GitAdd" } }
+
+T["recipes"]["line_number right-aligns the numbers in a lane of four columns"] = function()
+    local recipes = require("scrollbar.recipes")
+    local result = compose({
+        config = config({
+            marks = { GitAdd = { text = recipes.marks.line_number({ width = 4 }) } },
+            layout = {
+                columns = { { GIT_LANE }, { GIT_LANE }, { GIT_LANE }, { GIT_LANE }, { "track", "thumb", "marks" } },
+            },
+        }),
+        height = 2,
+        handle = { first_row = -1, last_row = -1 },
+        marks = {
+            { provider = "gitsigns", line = 6, type = "GitAdd" },
+            { provider = "gitsigns", line = 152, type = "GitAdd" },
+        },
+        mark_rows = { 0, 1 },
+    })
+
+    expect.equality({ result.rows[1]:sub(1, 4), result.rows[2]:sub(1, 4) }, { "   7", " 153" })
+    expect.equality(result.hitmap[1][4].line, 6)
+end
+
+T["recipes"]["count shows + for ten marks in a row"] = function()
+    local marks, rows = {}, {}
+    for index = 1, 10 do
+        marks[index] = { provider = "diagnostic", line = index, type = "Error" }
+        rows[index] = 0
+    end
+    for index = 11, 13 do
+        marks[index] = { provider = "diagnostic", line = 40 + index, type = "Error" }
+        rows[index] = 1
+    end
+    local result = compose({
+        config = config({ marks = { Error = { text = require("scrollbar.recipes").marks.count() } } }),
+        height = 2,
+        handle = { first_row = -1, last_row = -1 },
+        marks = marks,
+        mark_rows = rows,
+    })
+
+    expect.equality(result.rows, { "+", "3" })
+end
+
+T["recipes"]["thumb recipes show the view in the thumb"] = function()
+    local recipes = require("scrollbar.recipes")
+    local function thumb_rows(text)
+        return compose({
+            config = config({ layout = WIDE_THUMB, thumb = { text = text } }),
+            height = 4,
+            handle = { first_row = 0, last_row = 2 },
+            thumb_context = THUMB_SOURCE,
+        }).rows
+    end
+
+    expect.equality(thumb_rows(recipes.thumb.top_line()), { "153", "   ", "   ", "   " })
+    expect.equality(thumb_rows(recipes.thumb.range()), { "153", "   ", "162", "   " })
+    -- 152 lines above the view and 238 lines below it.
+    expect.equality(thumb_rows(recipes.thumb.percent()), { "38%", "   ", "   ", "   " })
+end
+
 return T

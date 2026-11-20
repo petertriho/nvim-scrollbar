@@ -574,17 +574,72 @@ omitted.
 
 The `text` of a mark type and `scrollbar.thumb.text` can be a function. The
 function gets a context table and returns the text as a string. Use it, for
-example, to show line numbers beside the marks or in the thumb.
+example, to show line numbers beside the marks or in the thumb. The
+[recipes](#recipes) are ready-made functions for the common cases.
+
+### Recipes
+
+`require("scrollbar.recipes")` has ready-made text functions. Each recipe
+makes a text function. Call it, with an optional options table:
+
+```lua
+local recipes = require("scrollbar.recipes")
+
+require("scrollbar").setup({
+    marks = {
+        GitAdd = { text = recipes.marks.line_number() },
+    },
+})
+```
+
+The recipes for the marks:
+
+| Recipe | Shows | Example |
+| --- | --- | --- |
+| `recipes.marks.line_number()` | The line of the mark. A click on the mark goes to this line. | `153` |
+| `recipes.marks.relative_number()` | The number of lines between the cursor line and the line of the mark. | `12` |
+| `recipes.marks.count()` | The number of marks of the type in the row. A number with more digits than `width` shows `+`. | `3`, `+` |
+| `recipes.marks.label()` | The text of the mark from its provider and the line, for example the name of a named mark. Without provider text, only the line. | `a:42`, `42` |
+
+The recipes for the thumb:
+
+| Recipe | Shows | Example |
+| --- | --- | --- |
+| `recipes.thumb.top_line()` | The first line that the window shows, on the first thumb row. | `41` |
+| `recipes.thumb.range()` | The first visible line on the first thumb row, and the last visible line on the last thumb row. | `41`, `78` |
+| `recipes.thumb.percent()` | The position of the view as Vim's `'ruler'` shows it, on the first thumb row: `Top`, `Bot`, `All`, or the percentage of the lines above the view. | `45%` |
+
+Each recipe takes these options:
+
+- `width`: pads the text with spaces to this many cells. A wider text does not
+  change. For `count`, `width` is also the limit, and its default is `1`.
+- `align`: `"right"` (the default) or `"left"`. It sets the side of the text
+  when `width` pads it.
+
+For example, `recipes.marks.line_number({ width = 4 })` puts three spaces
+before `7` and one space before `153`. The spaces are a part of the mark, so a
+click on them also goes to the line.
+
+Call each recipe with `()`. `text = recipes.marks.line_number`, without the
+call, shows no text, and an error message names the missing call.
+
+`relative_number` is the only mark recipe that reads the cursor line. The
+scrollbar builds its marks again on each change of the cursor line. The other
+recipes add no work when the cursor moves.
+
+`relative_number` counts each line, also the lines of a closed fold. Vim's
+`j` with a count and `'relativenumber'` count a closed fold as one line. Thus
+`12j` can stop before the mark when a closed fold is between the cursor and
+the mark. A click on the mark always goes to its line.
 
 ### Line Numbers Beside the Marks
 
 This configuration shows the line number of each Git mark in a lane of four
-columns, inward of the track:
+columns, inward of the track. The numbers are right-aligned, so that they are
+beside the track:
 
 ```lua
-local function line_number(ctx)
-    return tostring(ctx.line + 1)
-end
+local line_number = require("scrollbar.recipes").marks.line_number({ width = 4 })
 
 require("scrollbar").setup({
     providers = { gitsigns = true },
@@ -609,23 +664,30 @@ require("scrollbar").setup({
 
 A click on a number moves the cursor to that line. See [Mouse](mouse.md).
 
-For relative line numbers, read the cursor line:
+For relative line numbers, use `relative_number`:
 
 ```lua
-local function relative_number(ctx)
-    return tostring(math.abs(ctx.line - ctx.cursor_line))
-end
+local recipes = require("scrollbar.recipes")
+local relative_number = recipes.marks.relative_number({ width = 4 })
 ```
 
-To right-align the numbers, pad them, for example with
-`string.format("%4d", ctx.line + 1)`. The spaces are a part of the mark.
+With a west anchor, the lane is on the right side of the track. Use
+`align = "left"` there to keep the numbers beside the track.
 
 ### Mark Text Functions
 
 The scrollbar calls a mark text function once for each group of marks of one
 type in one row. The function replaces the density variants. Use `ctx.count`
-to change the text for dense rows. The context has these fields. Lines and
-rows are zero-based.
+to change the text for dense rows. For example, this function shows the same
+text as `recipes.marks.line_number({ width = 4 })`:
+
+```lua
+local function line_number(ctx)
+    return string.format("%4d", ctx.line + 1)
+end
+```
+
+The context has these fields. Lines and rows are zero-based.
 
 | Field | Meaning |
 | --- | --- |
@@ -661,8 +723,9 @@ rows are zero-based.
 The scrollbar calls a thumb text function on every render, once for each thumb
 row. The result shows once, from the first thumb column. The other thumb cells
 stay blank. A string `thumb.text` repeats across the thumb as before. This
-example shows the top line in the first thumb row of a thumb of four columns.
-The marks are in their own column, so that no mark covers the number:
+example shows the top line in the first thumb row of a thumb of four columns,
+with the `top_line` recipe. The marks are in their own column, so that no mark
+covers the number:
 
 ```lua
 require("scrollbar").setup({
@@ -677,14 +740,20 @@ require("scrollbar").setup({
             },
         },
         thumb = {
-            text = function(ctx)
-                if ctx.index == 0 then
-                    return tostring(ctx.top_line + 1)
-                end
-            end,
+            text = require("scrollbar.recipes").thumb.top_line(),
         },
     },
 })
+```
+
+The recipe does the same as this function:
+
+```lua
+local function top_line(ctx)
+    if ctx.index == 0 then
+        return tostring(ctx.top_line + 1)
+    end
+end
 ```
 
 The context has these fields. Lines and rows are zero-based.
@@ -877,13 +946,14 @@ the root options apply.
     filetype = vim.bo[source_buf].filetype,
     buftype = vim.bo[source_buf].buftype,
     bufname = vim.api.nvim_buf_get_name(source_buf),
+    renderer = "scrollbar", -- "minimap" in a minimap profile
 }
 ```
 
 Profile selection is not cached. The predicates run again each time a
 selection is necessary, including before every render. Keep them fast, free of
-side effects, and non-blocking. For a predicate that follows the search state,
-see [Search-only layout](providers/search.md#search-only-layout).
+side effects, and non-blocking. The [predicate recipes](#predicate-recipes)
+are ready-made predicates, for example for the search state.
 
 If a callback raises an error, that render uses the root options. A
 notification appears once for each distinct pair of profile index and error
@@ -905,6 +975,63 @@ scrollbar = {
     },
 }
 ```
+
+### Predicate Recipes
+
+`require("scrollbar.recipes").when` has ready-made predicates for
+`match.when`. They also work in `floats.when` and `exclude.when`, and in the
+minimap profiles. As with the [text recipes](#recipes), call each recipe to
+get its predicate:
+
+```lua
+local when = require("scrollbar.recipes").when
+
+require("scrollbar").setup({
+    scrollbar = {
+        profiles = {
+            {
+                match = { when = when.searching() },
+                layout = {
+                    columns = { { "track", "thumb", { types = { "Search" } } } },
+                },
+            },
+            {
+                match = { when = when.negate(when.active()) },
+                layout = { columns = { { "track", "thumb" } } },
+            },
+        },
+    },
+})
+```
+
+The first profile shows only the search marks while a search is visible. The
+second profile shows no marks in the windows without focus.
+
+| Recipe | Matches | The window renders again on |
+| --- | --- | --- |
+| `when.searching()` | A visible accepted search, or an open `/` or `?` command line. `when.searching({ cmdline = false })` ignores the command line. | An update of the `search` provider. See [Search-Only Layout](providers/search.md#search-only-layout). |
+| `when.diff()` | A window with `'diff'` set. | The `OptionSet` event of `diff`, for example after `:diffthis` or `:diffoff`. |
+| `when.line_count({ min = 1000, max = 50000 })` | A buffer with at least `min` lines and at most `max` lines. Set one bound or both. | A text change. |
+| `when.active()` | The active windows of the renderer, by the rule of `visibility = "active"`: the current window, the source window of a focused scrollbar or minimap, and the windows of a focused picker. | `WinEnter` and `TabEnter`. |
+| `when.filetypes({ "lazy", "mason" })` | A buffer with one of the filetypes. Use it in `floats.when`, which has no `filetypes` key. | The next render of the window. |
+| `when.any(a, b, ...)` | The windows that one of the predicates matches. | The events of its predicates. |
+| `when.all(a, b, ...)` | The windows that each predicate matches. | The events of its predicates. |
+| `when.negate(a)` | The windows that the predicate does not match. | The events of its predicate. |
+
+- A predicate reads its state when a window renders. The last column says
+  which event renders the window when that state changes. Another render, for
+  example after a cursor move, also applies the change.
+- `when.active()` uses `renderer` of the context. In a minimap profile, it
+  follows the active rule of the minimap. Do not use it in `floats.when`. The
+  active rule checks the floats, so `when.active()` returns `false` there.
+- `when.searching()` uses the visibility rule of the
+  [search provider](providers/search.md#visibility-requirements). Without the
+  `search` provider, a layout change after `:nohlsearch` waits for the next
+  render.
+- A predicate factory rejects invalid arguments when you call it, for example
+  `when.line_count({})`. A factory without its call, such as
+  `when = when.diff`, matches nothing and shows an error message that names
+  the missing call.
 
 ## Precedence
 

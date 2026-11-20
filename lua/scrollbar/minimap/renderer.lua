@@ -900,6 +900,15 @@ M.get_state = floats.get_state
 ---@type fun(float_win: integer): ScrollbarMinimapRendererState?
 M.get_state_by_float = floats.get_state_by_float
 
+---Whether the policy of this renderer counts `winid` as an active source
+---window, by the rule of `visibility = "active"`. For
+---`recipes.when.active()`.
+---@param winid integer
+---@return boolean
+M._is_active = function(winid)
+    return policy.active_windows(active_source_window())[winid] == true
+end
+
 ---@type fun(source_win: integer): boolean
 M.reveal = floats.reveal
 

@@ -121,6 +121,7 @@ T["builds callback context with the source window's metadata"] = function()
         filetype = "lua",
         buftype = "nofile",
         bufname = "/tmp/minimap_context.lua",
+        renderer = "minimap",
     })
 end
 

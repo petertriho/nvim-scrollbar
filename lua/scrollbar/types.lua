@@ -11,6 +11,7 @@
 ---@alias ScrollbarMarkTextFunction fun(context: ScrollbarMarkTextContext): string? Nil or "" hides the marks of the group
 ---@alias ScrollbarThumbTextFunction fun(context: ScrollbarThumbTextContext): string? Nil or "" leaves the thumb row blank
 ---@alias ScrollbarText string|string[]|ScrollbarMarkTextFunction
+---@alias ScrollbarWhenFunction fun(context: ScrollbarProfileContext): boolean A predicate for a `when` option
 ---@alias ScrollbarHighlightDefinition table<string, any> A table accepted by nvim_set_hl()
 ---@alias ScrollbarHighlight string|ScrollbarHighlightDefinition
 ---@alias ScrollbarProviderOption boolean|ScrollbarSearchProviderConfig|ScrollbarMarksProviderConfig|ScrollbarListProviderConfig
@@ -397,6 +398,10 @@
 ---@field line_count integer Lines of the source buffer. Read on demand
 ---@field cursor_line integer Zero-based cursor line of the source window. Read on demand
 
+---@class ScrollbarRecipeOptions
+---@field width? integer Pads the text with spaces to this many cells. A wider text does not change
+---@field align? "left"|"right" Side of the text when `width` pads it (default "right")
+
 ---@class ScrollbarThumbTextContext
 ---@field winid integer Source window
 ---@field bufnr integer Source buffer
@@ -416,12 +421,12 @@
 ---@field filetype string
 ---@field buftype string
 ---@field bufname string
+---@field renderer "scrollbar"|"minimap" The renderer that asks
 
 ---@class ScrollbarFloatContext: ScrollbarProfileContext
 ---@field config vim.api.keyset.win_config The `nvim_win_get_config` result of the float
 
 ---@class ScrollbarExcludeContext: ScrollbarProfileContext
----@field renderer "scrollbar"|"minimap" The renderer that asks
 
 ---@class ScrollbarCompiledMatcher
 ---@field filetypes false|string[]

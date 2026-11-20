@@ -509,6 +509,7 @@ M.select = function(selector, compiled, source_win, kind)
                     filetype = filetype,
                     buftype = buftype,
                     bufname = vim.api.nvim_buf_get_name(source_buf),
+                    renderer = selector.label,
                 }
             local ok, matched = pcall(when, context)
             if not ok then

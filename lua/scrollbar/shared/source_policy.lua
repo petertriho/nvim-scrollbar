@@ -179,6 +179,7 @@ M.new = function(options)
             filetype = vim.bo[bufnr].filetype,
             buftype = vim.bo[bufnr].buftype,
             bufname = vim.api.nvim_buf_get_name(bufnr),
+            renderer = label,
         }
     end
 
@@ -319,7 +320,6 @@ M.new = function(options)
         local when = root_config.exclude.when
         if when then
             local context = window_context(source_win) --[[@as ScrollbarExcludeContext]]
-            context.renderer = label
             -- An error keeps the window eligible, as if the option were unset.
             if when_matches("exclude.when", when, context, root_config) then
                 return nil
