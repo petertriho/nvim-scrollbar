@@ -41,22 +41,56 @@ local GLANCE_DEFAULTS = {
     list = "line",
     height = 18,
     keys = {
-        jump = "<CR>",
-        close = { "q", "<Esc>" },
-        preview = "<Tab>",
+        list = {
+            jump = "<CR>",
+            jump_split = false,
+            jump_vsplit = false,
+            next = false,
+            previous = false,
+            focus_preview = "<Tab>",
+            quickfix = false,
+            close = { "q", "<Esc>" },
+        },
+        preview = {
+            jump_split = false,
+            jump_vsplit = false,
+            next = false,
+            previous = false,
+            focus_list = false,
+            close = false,
+        },
     },
     window = {},
 }
 
+local GLANCE_PANES = { "list", "preview" }
+
+-- The actions of each pane, in the order of the errors about a key that two
+-- actions of a pane share.
+local GLANCE_ACTIONS = {
+    list = { "jump", "jump_split", "jump_vsplit", "next", "previous", "focus_preview", "quickfix", "close" },
+    preview = { "jump_split", "jump_vsplit", "next", "previous", "focus_list", "close" },
+}
+
+---@param actions string[]
+---@return table<string, true>
+local function action_spec(actions)
+    local result = {}
+    for _, action in ipairs(actions) do
+        result[action] = true
+    end
+    return result
+end
+
 local GLANCE_KEYS = {
     list = true,
     height = true,
-    keys = { jump = true, close = true, preview = true },
+    keys = {
+        list = action_spec(GLANCE_ACTIONS.list),
+        preview = action_spec(GLANCE_ACTIONS.preview),
+    },
     window = { ["*"] = true },
 }
-
--- The order of the actions in errors about a key that two actions share.
-local GLANCE_ACTIONS = { "jump", "preview", "close" }
 
 -- `nvim_open_win` keys that the peek float and the glance panes set.
 local FLOAT_KEYS = {
@@ -199,22 +233,29 @@ local function key_list(value, path)
     return result
 end
 
+--- The keys of each pane. Two actions of one pane cannot share a key. Two
+--- panes can, because only one pane has focus.
 ---@param value table Merged `glance.keys`
 ---@return ScrollbarGlanceKeys
 local function glance_keys(value)
     local result = {}
-    local owners = {}
-    for _, action in ipairs(GLANCE_ACTIONS) do
-        local path = "glance.keys." .. action
-        result[action] = key_list(value[action], path)
-        for _, lhs in ipairs(result[action]) do
-            local code = vim.keycode(lhs)
-            local owner = owners[code]
-            if owner ~= nil then
-                invalid(string.format("%s: '%s' is also a key of glance.keys.%s", path, lhs, owner))
+    for _, pane in ipairs(GLANCE_PANES) do
+        local pane_path = "glance.keys." .. pane
+        local keys = {}
+        local owners = {}
+        for _, action in ipairs(GLANCE_ACTIONS[pane]) do
+            local path = pane_path .. "." .. action
+            keys[action] = key_list(value[pane][action], path)
+            for _, lhs in ipairs(keys[action]) do
+                local code = vim.keycode(lhs)
+                local owner = owners[code]
+                if owner ~= nil then
+                    invalid(string.format("%s: '%s' is also a key of %s.%s", path, lhs, pane_path, owner))
+                end
+                owners[code] = action
             end
-            owners[code] = action
         end
+        result[pane] = keys
     end
     return result
 end
@@ -226,6 +267,11 @@ M.glance = function(value)
     schema.check_keys(value, GLANCE_KEYS, "glance")
     if value.keys ~= nil then
         schema.table(value.keys, "glance.keys")
+        for _, pane in ipairs(GLANCE_PANES) do
+            if value.keys[pane] ~= nil then
+                schema.table(value.keys[pane], "glance.keys." .. pane)
+            end
+        end
     end
     local merged = schema.merge(GLANCE_DEFAULTS, value)
     return {
