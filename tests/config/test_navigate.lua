@@ -28,7 +28,7 @@ end
 T["defaults"] = function()
     local config = require("scrollbar.config")
     local scrollbar = set_top({})
-    expect.equality(scrollbar.jump, { labels = "asdfghjklqwertyuiopzxcvbnm" })
+    expect.equality(scrollbar.jump, { labels = "asdfghjklqwertyuiopzxcvbnm", offset = 0 })
     expect.equality(scrollbar.hover, false)
 
     local peek = config.get_peek()
@@ -51,7 +51,7 @@ end
 T["jump"] = MiniTest.new_set()
 
 T["jump"]["takes unique lowercase ASCII letters"] = function()
-    expect.equality(set_top({ scrollbar = { jump = { labels = "fjdk" } } }).jump, { labels = "fjdk" })
+    expect.equality(set_top({ scrollbar = { jump = { labels = "fjdk" } } }).jump, { labels = "fjdk", offset = 0 })
     expect_invalid({ scrollbar = { jump = { labels = "" } } }, "scrollbar.jump.labels must be a non%-empty string")
     expect_invalid({ scrollbar = { jump = { labels = 12 } } }, "scrollbar.jump.labels must be a non%-empty string")
     expect_invalid(
@@ -69,6 +69,13 @@ T["jump"]["takes unique lowercase ASCII letters"] = function()
     expect_invalid({ scrollbar = { jump = { labels = "aba" } } }, "scrollbar.jump.labels contains duplicate label 'a'")
     expect_invalid({ scrollbar = { jump = { keys = "ab" } } }, "unknown option 'scrollbar.jump.keys'")
     expect_invalid({ scrollbar = { jump = false } }, "scrollbar.jump must be a table")
+end
+
+T["jump"]["takes an integer offset of either sign"] = function()
+    expect.equality(set_top({ scrollbar = { jump = { offset = 1 } } }).jump.offset, 1)
+    expect.equality(set_top({ scrollbar = { jump = { offset = -2 } } }).jump.offset, -2)
+    expect_invalid({ scrollbar = { jump = { offset = 1.5 } } }, "scrollbar.jump.offset must be an integer")
+    expect_invalid({ scrollbar = { jump = { offset = "right" } } }, "scrollbar.jump.offset must be an integer")
 end
 
 T["hover"] = MiniTest.new_set()

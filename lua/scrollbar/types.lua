@@ -215,6 +215,7 @@
 
 ---@class ScrollbarUserJumpConfig
 ---@field labels? string Unique lowercase ASCII letters. The uppercase letter of a label opens the peek
+---@field offset? integer Columns from the mark cell to its label. A negative offset is to the left. 0 puts the label on the mark cell
 
 ---@class ScrollbarUserHoverConfig
 ---@field delay_ms? integer Rest time of the pointer on a mark before the peek opens
@@ -248,6 +249,7 @@
 
 ---@class ScrollbarJumpConfig
 ---@field labels string
+---@field offset integer
 
 ---@class ScrollbarHoverConfig
 ---@field delay_ms integer

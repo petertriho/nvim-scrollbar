@@ -346,4 +346,177 @@ T["shows a scrollbar that hide_on_cursor hid until the end"] = function()
     expect.equality(hidden(), true)
 end
 
+T["offset"] = MiniTest.new_set()
+
+local function offset_config(offset, scrollbar)
+    return navigate.config({
+        scrollbar = vim.tbl_deep_extend("force", { jump = { offset = offset } }, scrollbar or {}),
+    })
+end
+
+--- For each mark cell of the current window, in line order: the screen text at
+--- the cell and `offset` columns from it, and that column relative to the
+--- source window.
+local function cell_screen(child, offset)
+    -- In a headless child, a new float shows at the top-left corner of the
+    -- screen until its second redraw.
+    child.cmd("redraw")
+    return child.lua(
+        [[
+        local offset = ...
+        local win = vim.api.nvim_get_current_win()
+        local state = assert(require("scrollbar.renderer").get_state(win))
+        local float = vim.fn.win_screenpos(state.float_win)
+        local source_col = vim.fn.win_screenpos(win)[2]
+        local result = {}
+        for _, cell in ipairs(require("scrollbar.navigate.targets").cells(win)) do
+            local row = float[1] + state.sides.top + cell.row
+            local col = float[2] + state.sides.left + cell.col - 1
+            result[#result + 1] = {
+                line = cell.line,
+                mark = vim.fn.screenstring(row, col),
+                label = vim.fn.screenstring(row, col + offset),
+                label_col = col + offset - source_col,
+            }
+        end
+        table.sort(result, function(left, right)
+            return left.line < right.line
+        end)
+        return result
+    ]],
+        { offset }
+    )
+end
+
+local function shown_labels(cells)
+    local result = {}
+    for index, cell in ipairs(cells) do
+        result[index] = cell.label
+    end
+    return result
+end
+
+local function peek_columns(child)
+    return child.lua([[
+        local config = vim.api.nvim_win_get_config(require("scrollbar.navigate.peek").get().win)
+        return { first = config.col, after = config.col + config.width }
+    ]])
+end
+
+T["offset"]["puts each label in a float beside its mark cell, so the marks stay visible"] = function()
+    local child = navigate.new_child()
+    setup(child, { config = offset_config(-1) })
+    local before = cell_screen(child, -1)
+    start(child)
+    local during = cell_screen(child, -1)
+    expect.equality(shown_labels(during), { "a", "s", "d", "f", "g" })
+    for index, cell in ipairs(during) do
+        expect.equality(cell.mark, before[index].mark)
+    end
+    -- No label is on the float buffer.
+    expect.equality(labels(child), {})
+    expect.equality(vim.tbl_count(child.lua_get("require('scrollbar.navigate.jump')._label_floats()")), 5)
+
+    input(child, "<Esc>")
+    expect.equality(child.lua_get("_G.jump_done"), true)
+    expect.equality(#child.api.nvim_list_wins(), 2)
+    expect.equality(cell_screen(child, -1), before)
+end
+
+T["offset"]["an uppercase label shows in its float, beside the peek float"] = function()
+    local child = navigate.new_child()
+    setup(child, { config = offset_config(-1) })
+    start(child)
+    input(child, "S")
+    expect.equality(peek_line(child), 60)
+    local during = cell_screen(child, -1)
+    expect.equality(shown_labels(during), { "a", "S", "d", "f", "g" })
+    -- On the east side, the peek float ends at the label column.
+    expect.equality(peek_columns(child).after, during[2].label_col)
+
+    input(child, "<CR>")
+    expect.equality(cursor_line(child), 60)
+    expect.equality(#child.api.nvim_list_wins(), 2)
+end
+
+T["offset"]["goes to the right of a west scrollbar"] = function()
+    local child = navigate.new_child()
+    -- The marks are in the first of the two columns.
+    setup(child, { config = offset_config(2, { placement = { anchor = "NW" } }) })
+    local before = cell_screen(child, 2)
+    start(child)
+    local during = cell_screen(child, 2)
+    expect.equality(shown_labels(during), { "a", "s", "d", "f", "g" })
+    for index, cell in ipairs(during) do
+        expect.equality(cell.mark, before[index].mark)
+    end
+    input(child, "D")
+    -- On the west side, the peek float starts after the label column.
+    expect.equality(peek_columns(child).first, cell_screen(child, 2)[3].label_col + 1)
+    input(child, "<Esc>")
+end
+
+T["offset"]["the label floats follow the scrollbar float"] = function()
+    local child = navigate.new_child()
+    child.cmd("vsplit")
+    setup(child, { config = offset_config(-1) })
+    start(child)
+    local first = cell_screen(child, -1)
+
+    -- A layout change moves the east scrollbar float with the right edge of
+    -- the window. Its size stays, so label mode continues.
+    child.lua([[
+        vim.api.nvim_win_set_width(0, vim.api.nvim_win_get_width(0) - 10)
+        require("scrollbar.scheduler").invalidate_all()
+        require("scrollbar.scheduler").flush()
+    ]])
+    vim.uv.sleep(50)
+    expect.equality(child.lua_get("_G.jump_done"), false)
+    local resized = cell_screen(child, -1)
+    expect.equality(shown_labels(resized), { "a", "s", "d", "f", "g" })
+    expect.equality(resized[1].label_col, first[1].label_col - 10)
+
+    input(child, "a")
+    expect.equality(cursor_line(child), 20)
+end
+
+T["offset"]["the label floats follow the scrollbar float when the minimap beside it shows or hides"] = function()
+    local child = navigate.new_child()
+    -- With `stack = "outer"`, the minimap is at the edge of the window and the
+    -- scrollbar is beside it.
+    local config = offset_config(-1)
+    config.minimap = { enabled = true, placement = { stack = "outer" } }
+    setup(child, { config = config, full = true })
+    local function toggle_minimap(method)
+        child.lua(
+            [[
+            require("scrollbar.minimap")[...]()
+            require("scrollbar.scheduler").invalidate_all()
+            require("scrollbar.scheduler").flush()
+        ]],
+            { method }
+        )
+        vim.uv.sleep(50)
+        expect.no_equality(child.lua_get("_G.jump_done"), true)
+    end
+    toggle_minimap("hide")
+    start(child)
+    local first = cell_screen(child, -1)
+
+    -- The renderer moves the scrollbar float inward with
+    -- `nvim_win_set_config`, and the layout does not change. A float relative
+    -- to the scrollbar float does not follow such a move.
+    toggle_minimap("show")
+    local inward = cell_screen(child, -1)
+    expect.equality(inward[1].label_col < first[1].label_col, true)
+    expect.equality(shown_labels(inward), { "a", "s", "d", "f", "g" })
+
+    toggle_minimap("hide")
+    local outward = cell_screen(child, -1)
+    expect.equality(outward[1].label_col, first[1].label_col)
+    expect.equality(shown_labels(outward), { "a", "s", "d", "f", "g" })
+    input(child, "a")
+    expect.equality(cursor_line(child), 20)
+end
+
 return T

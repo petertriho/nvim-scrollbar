@@ -16,9 +16,15 @@
 --- each render of its window. It ends when the float closes, when the float
 --- changes size, or when the source buffer of the window changes.
 ---
---- The labels are overlay extmarks in their own namespace on the float buffer,
---- with a priority above the rows of the renderer, so a render that writes a
---- row again keeps them on top.
+--- With `scrollbar.jump.offset = 0`, the labels are overlay extmarks in their
+--- own namespace on the float buffer, with a priority above the rows of the
+--- renderer, so a render that writes a row again keeps them on top. With
+--- another offset, each label is a float of one cell, relative to the
+--- scrollbar float, so the mark cells stay visible. Neovim places a float
+--- relative to a float again when a window opens or closes or the layout
+--- changes, but not when only the parent float moves with
+--- `nvim_win_set_config`. Label mode places the label floats again after each
+--- render, so they follow the scrollbar float in both cases.
 
 local config = require("scrollbar.config")
 local float = require("scrollbar.shared.float")
@@ -44,6 +50,10 @@ local WAKEUP = vim.keycode("<F35>")
 ---@class ScrollbarJumpTarget: ScrollbarNavigateCell
 ---@field label? string
 
+---@class ScrollbarJumpLabelFloat
+---@field win integer
+---@field buf integer
+
 ---@class ScrollbarJumpSession
 ---@field source_win integer
 ---@field source_buf integer
@@ -52,6 +62,10 @@ local WAKEUP = vim.keycode("<F35>")
 ---@field width integer
 ---@field height integer
 ---@field anchor_offset integer Text row of the source window of the first content row of the float
+---@field left_side integer Border columns on the left side of the float
+---@field offset integer Columns from each mark cell to its label
+---@field zindex integer z-index of the label floats, above the scrollbar float
+---@field label_floats table<string, ScrollbarJumpLabelFloat> Floats of the labels by label, for a nonzero offset
 ---@field targets ScrollbarJumpTarget[]
 ---@field by_label table<string, ScrollbarJumpTarget>
 ---@field types? table<string, true>
@@ -69,7 +83,77 @@ local function notify(message)
 end
 
 ---@param session_state ScrollbarJumpSession
+---@param target ScrollbarJumpTarget
+---@return string text The label, in uppercase while the peek float shows its line
+local function label_text(session_state, target)
+    local label = target.label or ""
+    if session_state.peeked == target then
+        return label:upper()
+    end
+    return label
+end
+
+--- Show the label of `target` in its float, and open the float first if
+--- necessary. The position counts from the first content cell of the
+--- scrollbar float, so the border columns of the float count in the offset.
+---@param session_state ScrollbarJumpSession
+---@param target ScrollbarJumpTarget
+local function draw_float(session_state, target)
+    local placement = {
+        relative = "win",
+        win = session_state.float_win,
+        row = target.row,
+        col = target.col - 1 + session_state.offset,
+        width = 1,
+        height = 1,
+        zindex = session_state.zindex,
+    }
+    local label_float = session_state.label_floats[target.label]
+    if label_float == nil or not vim.api.nvim_win_is_valid(label_float.win) then
+        local buf = vim.api.nvim_create_buf(false, true)
+        vim.api.nvim_set_option_value("bufhidden", "wipe", { buf = buf })
+        placement.style = "minimal"
+        placement.border = "none"
+        placement.focusable = false
+        placement.mouse = false
+        placement.noautocmd = true
+        local ok, win = pcall(vim.api.nvim_open_win, buf, false, placement)
+        if not ok then
+            pcall(vim.api.nvim_buf_delete, buf, { force = true })
+            return
+        end
+        -- `winblend = 0` keeps the label opaque under a global 'winblend'.
+        float.configure_window(win, peek.OWNED_VAR, "NormalFloat:" .. LABEL_GROUP, 0)
+        label_float = { win = win, buf = buf }
+        session_state.label_floats[target.label] = label_float
+    else
+        vim.api.nvim_win_set_config(label_float.win, placement)
+    end
+    vim.api.nvim_buf_set_lines(label_float.buf, 0, -1, false, { label_text(session_state, target) })
+end
+
+---@param session_state ScrollbarJumpSession
+local function close_floats(session_state)
+    for _, label_float in pairs(session_state.label_floats) do
+        if vim.api.nvim_win_is_valid(label_float.win) then
+            pcall(vim.api.nvim_win_close, label_float.win, true)
+        end
+    end
+    session_state.label_floats = {}
+end
+
+---@param session_state ScrollbarJumpSession
 local function draw(session_state)
+    if session_state.offset ~= 0 then
+        if vim.api.nvim_win_is_valid(session_state.float_win) then
+            for _, target in ipairs(session_state.targets) do
+                if target.label ~= nil then
+                    draw_float(session_state, target)
+                end
+            end
+        end
+        return
+    end
     local float_buf = session_state.float_buf
     if not vim.api.nvim_buf_is_valid(float_buf) then
         return
@@ -78,9 +162,8 @@ local function draw(session_state)
     local line_count = vim.api.nvim_buf_line_count(float_buf)
     for _, target in ipairs(session_state.targets) do
         if target.label ~= nil and target.row < line_count then
-            local text = session_state.peeked == target and target.label:upper() or target.label
             vim.api.nvim_buf_set_extmark(float_buf, NAMESPACE, target.row, 0, {
-                virt_text = { { text, LABEL_GROUP } },
+                virt_text = { { label_text(session_state, target), LABEL_GROUP } },
                 virt_text_win_col = target.col - 1,
                 hl_mode = "replace",
                 priority = LABEL_PRIORITY,
@@ -172,9 +255,18 @@ end
 ---@param target ScrollbarJumpTarget
 local function open_peek(session_state, target)
     session_state.peeked = target
+    local free_col
+    if session_state.offset ~= 0 then
+        -- The column of the label in the source window. The peek float does
+        -- not cover it.
+        local float_col = vim.fn.win_screenpos(session_state.float_win)[2]
+        local source_col = vim.fn.win_screenpos(session_state.source_win)[2]
+        free_col = float_col - source_col + session_state.left_side + target.col - 1 + session_state.offset
+    end
     peek.open(session_state.source_win, target.line, {
         anchor_row = session_state.anchor_offset + target.row,
         types = session_state.types,
+        free_col = free_col,
     })
     draw(session_state)
 end
@@ -286,7 +378,8 @@ M.run = function(options)
     end
 
     local cursor_line = vim.api.nvim_win_get_cursor(source_win)[1] - 1
-    local labeled, by_label = assign_labels(cells, cursor_line, config.get().jump.labels)
+    local jump_config = config.get().jump
+    local labeled, by_label = assign_labels(cells, cursor_line, jump_config.labels)
     ---@type ScrollbarJumpSession
     local current = {
         source_win = source_win,
@@ -296,6 +389,10 @@ M.run = function(options)
         width = state.width,
         height = state.height,
         anchor_offset = state.config.placement.row + state.sides.top,
+        left_side = state.sides.left,
+        offset = jump_config.offset,
+        zindex = (state.float_config.zindex or 50) + 1,
+        label_floats = {},
         targets = labeled,
         by_label = by_label,
         types = options.types,
@@ -344,6 +441,7 @@ M.run = function(options)
         pcall(vim.api.nvim_del_augroup_by_id, augroup)
     end
     peek.close()
+    close_floats(current)
     if vim.api.nvim_buf_is_valid(current.float_buf) then
         vim.api.nvim_buf_clear_namespace(current.float_buf, NAMESPACE, 0, -1)
     end
@@ -354,5 +452,17 @@ M.run = function(options)
 end
 
 M.NAMESPACE = NAMESPACE
+
+--- The label floats of the active label mode, by label. For tests.
+---@return table<string, integer>
+M._label_floats = function()
+    local result = {}
+    if session ~= nil then
+        for label, label_float in pairs(session.label_floats) do
+            result[label] = label_float.win
+        end
+    end
+    return result
+end
 
 return M

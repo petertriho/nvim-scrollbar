@@ -65,6 +65,27 @@ the line (`zz`). See [Mouse](mouse.md#click-and-drag).
 - `Cursor` marks get a label only when `types` names `Cursor`.
 - The labels stay when the scrollbar renders again. A mark that arrives after
   label mode starts gets no label.
+- By default, a label covers its mark cell. With `scrollbar.jump.offset`, the
+  label shows that number of columns from its mark cell, so the mark stays
+  visible. A positive offset is to the right, and a negative offset is to the
+  left. The border columns of the scrollbar float count in the offset. Neovim
+  keeps a label inside the editor.
+
+To put the labels beside the scrollbar, on the side of the text, use an offset
+that goes past the scrollbar float. For example, for a scrollbar of one column
+without a border:
+
+```lua
+require("scrollbar").setup({
+    scrollbar = {
+        -- -1 for the default east scrollbar, 1 for a west scrollbar.
+        jump = { offset = -1 },
+    },
+})
+```
+
+When the labels are beside the scrollbar, a peek float at the scrollbar opens
+past the label column.
 
 ### Scrollbar State
 
@@ -236,6 +257,7 @@ require("scrollbar").setup({
     scrollbar = {
         jump = {
             labels = "asdfghjklqwertyuiopzxcvbnm",
+            offset = 0,
         },
         hover = false, -- true, or { delay_ms = 300 }
     },
@@ -265,6 +287,7 @@ options.
 | Option | Default | Meaning |
 | --- | --- | --- |
 | `scrollbar.jump.labels` | `"asdfghjklqwertyuiopzxcvbnm"` | The labels, in order. Only lowercase ASCII letters, each one time. The uppercase letter of a label opens the peek float. |
+| `scrollbar.jump.offset` | `0` | Columns from each mark cell to its label. A negative offset is to the left. `0` puts the label on the mark cell. See [Labels](#labels). |
 | `scrollbar.hover` | `false` | `true` opens the peek float after 300 ms. `{ delay_ms = n }` sets the delay. |
 | `peek.position` | `"scrollbar"` | Position of the peek float. See [Peek Float](#peek-float). |
 | `peek.context` | `5` | Lines above and below the line of the mark. The float has `2 * context + 1` rows, or fewer when the window is smaller. |
