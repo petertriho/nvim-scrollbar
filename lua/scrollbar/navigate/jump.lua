@@ -1,5 +1,6 @@
 --- Label mode: labels on the mark cells of the scrollbar of the current
---- window, in the style of flash.nvim.
+--- window, in the style of flash.nvim (https://github.com/folke/flash.nvim).
+--- The code is not from flash.nvim.
 ---
 --- - A lowercase label jumps to the line of its cell, the line that a click
 ---   uses. The jump adds a jumplist entry first.

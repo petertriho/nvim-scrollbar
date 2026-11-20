@@ -39,7 +39,9 @@ end, { desc = "Glance at the marks" })
 ![Label mode: labels on the scrollbar marks, a peek float from an uppercase label, and a jump](https://github.com/user-attachments/assets/e0980b14-b9e9-4a03-9da5-bae29f0a2f07)
 
 `require("scrollbar").jump()` and `:ScrollbarJump` start label mode in the
-current window. Label mode reads the keys that you type until it ends:
+current window. Label mode is inspired by
+[flash.nvim](https://github.com/folke/flash.nvim). It reads the keys that you
+type until it ends:
 
 | Key | Result |
 | --- | --- |
@@ -134,8 +136,11 @@ The float stays inside the text area of the source window.
 ![The glance window: a list of the marks, a preview that follows the selection, an edit in the preview, and a jump](https://github.com/user-attachments/assets/65d29073-e2c5-4fb3-9f43-310737593faa)
 
 `require("scrollbar").glance()` and `:ScrollbarGlance` open the glance window
-of the current window. The glance window has two panes in one frame. The list
-of the marks is on the right, and the preview pane is on the left.
+of the current window. The glance window is inspired by
+[glance.nvim](https://github.com/dnlhc/glance.nvim): its frame, its actions,
+and the keys of each pane follow the design of glance.nvim. The glance window
+has two panes in one frame. The list of the marks is on the right, and the
+preview pane is on the left.
 
 - The frame opens below the cursor line, or above it when there is no space
   below. When neither side has space for `glance.height` rows, the frame uses

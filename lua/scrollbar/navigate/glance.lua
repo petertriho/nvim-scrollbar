@@ -1,5 +1,8 @@
---- The glance window, in the style of glance.nvim: a frame across the source
---- window with a list of the marks on the right and a preview pane on the left.
+--- The glance window, in the style of glance.nvim
+--- (https://github.com/dnlhc/glance.nvim): a frame across the source window
+--- with a list of the marks on the right and a preview pane on the left. The
+--- actions and the keys of each pane follow the design of glance.nvim. The
+--- code is not from glance.nvim.
 ---
 --- - The frame opens under the cursor line, or above it when there is no room.
 ---   It spans the text area of the source window. The list pane takes the
