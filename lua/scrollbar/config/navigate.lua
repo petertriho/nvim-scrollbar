@@ -1,6 +1,8 @@
---- Options of the features that move to and inspect the marks: `scrollbar.jump`
---- and `scrollbar.hover` in the scrollbar block, and the top-level `peek` and
---- `glance` blocks. Profiles do not change them.
+--- Options of the features that move to and inspect the marks:
+--- `scrollbar.jump`, `scrollbar.peek`, and `scrollbar.hover` in the scrollbar
+--- block, and the top-level `peek` and `glance` blocks. Profiles do not change
+--- them. `scrollbar.peek` configures the label mode of `peek()`, and the
+--- top-level `peek` configures the peek float.
 
 local frame = require("scrollbar.navigate.frame")
 local schema = require("scrollbar.config.schema")
@@ -10,16 +12,20 @@ local invalid = schema.invalid
 
 local M = {}
 
-M.JUMP_DEFAULTS = {
+--- The defaults of `scrollbar.jump` and of `scrollbar.peek`.
+M.LABEL_MODE_DEFAULTS = {
     labels = "asdfghjklqwertyuiopzxcvbnm",
     offset = 0,
 }
 
 local HOVER_DEFAULTS = { delay_ms = 300 }
 
+local LABEL_MODE_KEYS = { labels = true, offset = true }
+
 --- Keys of the scrollbar block that only its root accepts.
 M.SCROLLBAR_KEYS = {
-    jump = { labels = true, offset = true },
+    jump = LABEL_MODE_KEYS,
+    peek = LABEL_MODE_KEYS,
     hover = { delay_ms = true },
 }
 
@@ -153,13 +159,14 @@ local PEEK_WINDOW_SPEC = window_spec("the peek float", frame_hints("peek.frame")
 
 local GLANCE_WINDOW_SPEC = window_spec("the glance window", frame_hints("glance.builtin.frame"))
 
+--- `scrollbar.jump` or `scrollbar.peek`.
 ---@param value any
 ---@param path string
----@return ScrollbarJumpConfig
-M.jump = function(value, path)
-    local jump = schema.table(value, path)
+---@return ScrollbarLabelModeConfig
+M.label_mode = function(value, path)
+    local label_mode = schema.table(value, path)
     local labels_path = path .. ".labels"
-    local labels = jump.labels
+    local labels = label_mode.labels
     if type(labels) ~= "string" or labels == "" then
         invalid(labels_path .. " must be a non-empty string")
     end
@@ -176,7 +183,7 @@ M.jump = function(value, path)
         end
         seen[label] = true
     end
-    return { labels = labels, offset = schema.integer(jump.offset, path .. ".offset") }
+    return { labels = labels, offset = schema.integer(label_mode.offset, path .. ".offset") }
 end
 
 ---@param value any

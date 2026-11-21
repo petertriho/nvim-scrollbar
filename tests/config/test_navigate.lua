@@ -29,6 +29,7 @@ T["defaults"] = function()
     local config = require("scrollbar.config")
     local scrollbar = set_top({})
     expect.equality(scrollbar.jump, { labels = "asdfghjklqwertyuiopzxcvbnm", offset = 0 })
+    expect.equality(scrollbar.peek, { labels = "asdfghjklqwertyuiopzxcvbnm", offset = 0 })
     expect.equality(scrollbar.hover, false)
 
     local peek = config.get_peek()
@@ -60,34 +61,44 @@ T["defaults"] = function()
     expect.equality(builtin.window.open, {})
 end
 
-T["jump"] = MiniTest.new_set()
+-- `scrollbar.jump` and `scrollbar.peek` take the same options.
+T["label modes"] = MiniTest.new_set({ parametrize = { { "jump" }, { "peek" } } })
 
-T["jump"]["takes unique lowercase ASCII letters"] = function()
-    expect.equality(set_top({ scrollbar = { jump = { labels = "fjdk" } } }).jump, { labels = "fjdk", offset = 0 })
-    expect_invalid({ scrollbar = { jump = { labels = "" } } }, "scrollbar.jump.labels must be a non%-empty string")
-    expect_invalid({ scrollbar = { jump = { labels = 12 } } }, "scrollbar.jump.labels must be a non%-empty string")
-    expect_invalid(
-        { scrollbar = { jump = { labels = "abC" } } },
-        "scrollbar.jump.labels must contain only lowercase ASCII letters"
-    )
-    expect_invalid(
-        { scrollbar = { jump = { labels = "ab1" } } },
-        "scrollbar.jump.labels must contain only lowercase ASCII letters"
-    )
-    expect_invalid(
-        { scrollbar = { jump = { labels = "aé" } } },
-        "scrollbar.jump.labels must contain only lowercase ASCII letters"
-    )
-    expect_invalid({ scrollbar = { jump = { labels = "aba" } } }, "scrollbar.jump.labels contains duplicate label 'a'")
-    expect_invalid({ scrollbar = { jump = { keys = "ab" } } }, "unknown option 'scrollbar.jump.keys'")
-    expect_invalid({ scrollbar = { jump = false } }, "scrollbar.jump must be a table")
+T["label modes"]["take unique lowercase ASCII letters"] = function(key)
+    local function labels(value)
+        return { scrollbar = { [key] = { labels = value } } }
+    end
+    local path = "scrollbar%." .. key .. "%.labels"
+    expect.equality(set_top(labels("fjdk"))[key], { labels = "fjdk", offset = 0 })
+    expect_invalid(labels(""), path .. " must be a non%-empty string")
+    expect_invalid(labels(12), path .. " must be a non%-empty string")
+    expect_invalid(labels("abC"), path .. " must contain only lowercase ASCII letters")
+    expect_invalid(labels("ab1"), path .. " must contain only lowercase ASCII letters")
+    expect_invalid(labels("aé"), path .. " must contain only lowercase ASCII letters")
+    expect_invalid(labels("aba"), path .. " contains duplicate label 'a'")
+    expect_invalid({ scrollbar = { [key] = { keys = "ab" } } }, "unknown option 'scrollbar%." .. key .. "%.keys'")
+    expect_invalid({ scrollbar = { [key] = false } }, "scrollbar%." .. key .. " must be a table")
 end
 
-T["jump"]["takes an integer offset of either sign"] = function()
-    expect.equality(set_top({ scrollbar = { jump = { offset = 1 } } }).jump.offset, 1)
-    expect.equality(set_top({ scrollbar = { jump = { offset = -2 } } }).jump.offset, -2)
-    expect_invalid({ scrollbar = { jump = { offset = 1.5 } } }, "scrollbar.jump.offset must be an integer")
-    expect_invalid({ scrollbar = { jump = { offset = "right" } } }, "scrollbar.jump.offset must be an integer")
+T["label modes"]["take an integer offset of either sign"] = function(key)
+    local function offset(value)
+        return { scrollbar = { [key] = { offset = value } } }
+    end
+    local message = "scrollbar%." .. key .. "%.offset must be an integer"
+    expect.equality(set_top(offset(1))[key].offset, 1)
+    expect.equality(set_top(offset(-2))[key].offset, -2)
+    expect_invalid(offset(1.5), message)
+    expect_invalid(offset("right"), message)
+end
+
+T["jump and peek are separate"] = function()
+    local scrollbar = set_top({ scrollbar = { jump = { labels = "qw" }, peek = { labels = "zx", offset = -1 } } })
+    expect.equality(scrollbar.jump, { labels = "qw", offset = 0 })
+    expect.equality(scrollbar.peek, { labels = "zx", offset = -1 })
+    -- The two modes can use the same letters.
+    scrollbar = set_top({ scrollbar = { jump = { offset = 2 } } })
+    expect.equality(scrollbar.jump, { labels = "asdfghjklqwertyuiopzxcvbnm", offset = 2 })
+    expect.equality(scrollbar.peek, { labels = "asdfghjklqwertyuiopzxcvbnm", offset = 0 })
 end
 
 T["hover"] = MiniTest.new_set()
@@ -105,27 +116,34 @@ T["hover"]["is off by default and takes a boolean or a delay"] = function()
     expect_invalid({ scrollbar = { hover = { delay = 10 } } }, "unknown option 'scrollbar.hover.delay'")
 end
 
-T["jump and hover are global options of the scrollbar block"] = function()
+T["jump, peek, and hover are global options of the scrollbar block"] = function()
     local root = set_top({
         scrollbar = {
             jump = { labels = "xyz" },
+            peek = { labels = "uvw" },
             hover = true,
             profiles = { { match = { filetypes = { "lua" } }, thumb = { text = "#" } } },
         },
     })
     local variants = require("scrollbar.config").get_variants()
     expect.equality(variants[2].config.jump, root.jump)
+    expect.equality(variants[2].config.peek, root.peek)
     expect.equality(variants[2].config.hover, root.hover)
     expect_invalid(
         { scrollbar = { profiles = { { match = { filetypes = { "lua" } }, jump = { labels = "x" } } } } },
         "scrollbar.profiles%[1%].jump is a global option and cannot be set in a profile"
     )
     expect_invalid(
+        { scrollbar = { profiles = { { match = { filetypes = { "lua" } }, peek = { labels = "x" } } } } },
+        "scrollbar.profiles%[1%].peek is a global option and cannot be set in a profile"
+    )
+    expect_invalid(
         { scrollbar = { profiles = { { match = { filetypes = { "lua" } }, hover = true } } } },
         "scrollbar.profiles%[1%].hover is a global option and cannot be set in a profile"
     )
-    -- The minimap block has no jump and no hover.
+    -- The minimap block has no jump, no peek, and no hover.
     expect_invalid({ minimap = { hover = true } }, "unknown option 'minimap.hover'")
+    expect_invalid({ minimap = { peek = { labels = "x" } } }, "unknown option 'minimap.peek'")
 end
 
 T["peek"] = MiniTest.new_set()

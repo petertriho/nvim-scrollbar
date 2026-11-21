@@ -77,14 +77,16 @@ cursor:
 | Any other key | Ends label mode. Neovim does not run the key. |
 
 In both modes, the label of the peeked mark shows in uppercase. In `peek()`,
-that is also the key that moves to the mark. Both modes use the same labels and
-offset, and the same rules in the rest of this section. The labels of `peek()`
-use the `ScrollbarPeekLabel` group. See [Highlights](#highlights).
+that is also the key that moves to the mark. `peek()` takes its labels and its
+offset from `scrollbar.peek`, which has the same options and defaults as
+`scrollbar.jump`. The rest of this section applies to both modes. The labels of
+`peek()` use the `ScrollbarPeekLabel` group. See [Highlights](#highlights).
 
 ### Labels
 
-- The labels come from `scrollbar.jump.labels`. The cells with the lines
-  nearest to the cursor line get the labels first.
+- The labels come from `scrollbar.jump.labels`, or from
+  `scrollbar.peek.labels` for `peek()`. The cells with the lines nearest to
+  the cursor line get the labels first.
 - When the scrollbar has more mark cells than labels, the far cells get no
   label.
 - A mark that the thumb covers gets no label, because a click cannot reach it
@@ -92,9 +94,9 @@ use the `ScrollbarPeekLabel` group. See [Highlights](#highlights).
 - `Cursor` marks get a label only when `types` names `Cursor`.
 - The labels stay when the scrollbar renders again. A mark that arrives after
   label mode starts gets no label.
-- By default, a label covers its mark cell. With `scrollbar.jump.offset`, the
-  label shows that number of columns from its mark cell, so the mark stays
-  visible. A positive offset is to the right, and a negative offset is to the
+- By default, a label covers its mark cell. With `scrollbar.jump.offset`, or
+  `scrollbar.peek.offset` for `peek()`, the label shows that number of columns
+  from its mark cell, so the mark stays visible. A positive offset is to the right, and a negative offset is to the
   left. The border columns of the scrollbar float count in the offset. Neovim
   keeps a label inside the editor.
 
@@ -107,6 +109,7 @@ require("scrollbar").setup({
     scrollbar = {
         -- -1 for the default east scrollbar, 1 for a west scrollbar.
         jump = { offset = -1 },
+        peek = { offset = -1 },
     },
 })
 ```
@@ -547,9 +550,13 @@ require("scrollbar").setup({
             labels = "asdfghjklqwertyuiopzxcvbnm",
             offset = 0,
         },
+        peek = { -- label mode of peek()
+            labels = "asdfghjklqwertyuiopzxcvbnm",
+            offset = 0,
+        },
         hover = false, -- true, or { delay_ms = 300 }
     },
-    peek = {
+    peek = { -- the peek float
         frame = "scrollbar", -- "scrollbar", "cursor", "center", or a function
         window = {},
     },
@@ -588,14 +595,17 @@ require("scrollbar").setup({
 })
 ```
 
-`scrollbar.jump` and `scrollbar.hover` are global options of the scrollbar
-block. `peek` and `glance` are top-level blocks. Profiles do not change these
-options.
+`scrollbar.jump`, `scrollbar.peek`, and `scrollbar.hover` are global options
+of the scrollbar block. `peek` and `glance` are top-level blocks. Profiles do
+not change these options. `scrollbar.peek` configures the label mode of
+`peek()`, and the top-level `peek` block configures the peek float.
 
 | Option | Default | Meaning |
 | --- | --- | --- |
 | `scrollbar.jump.labels` | `"asdfghjklqwertyuiopzxcvbnm"` | The labels, in order. Only lowercase ASCII letters, each one time. The uppercase letter of a label opens the peek float. |
 | `scrollbar.jump.offset` | `0` | Columns from each mark cell to its label. A negative offset is to the left. `0` puts the label on the mark cell. See [Labels](#labels). |
+| `scrollbar.peek.labels` | `"asdfghjklqwertyuiopzxcvbnm"` | The labels of `peek()`, with the rules of `scrollbar.jump.labels`. The uppercase letter of a label moves to the mark. See [Peek First](#peek-first). |
+| `scrollbar.peek.offset` | `0` | Columns from each mark cell to its label in `peek()`, with the rules of `scrollbar.jump.offset`. |
 | `scrollbar.hover` | `false` | `true` opens the peek float after 300 ms. `{ delay_ms = n }` sets the delay. |
 | `peek.frame` | `"scrollbar"` | Place and size of the peek float: a preset or a function. See [Frame](#frame). |
 | `peek.window` | `{}` | Border, title, footer, and window options of the peek float. See [Window](#window). |

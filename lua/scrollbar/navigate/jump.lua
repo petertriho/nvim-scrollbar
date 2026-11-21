@@ -15,8 +15,9 @@
 --- - `<Esc>` closes the peek and ends label mode. Any other key ends label mode
 ---   and is dropped.
 ---
---- The labels of the jump mode use `ScrollbarJumpLabel`, and the labels of the
---- peek mode use `ScrollbarPeekLabel`.
+--- The jump mode reads `scrollbar.jump`, and the peek mode reads
+--- `scrollbar.peek`. The labels of the jump mode use `ScrollbarJumpLabel`, and
+--- the labels of the peek mode use `ScrollbarPeekLabel`.
 ---
 --- The targets freeze when label mode starts. The labels go to the cells
 --- nearest to the cursor first, and the cells past the last label have none.
@@ -25,15 +26,14 @@
 --- each render of its window. It ends when the float closes, when the float
 --- changes size, or when the source buffer of the window changes.
 ---
---- With `scrollbar.jump.offset = 0`, the labels are overlay extmarks in their
---- own namespace on the float buffer, with a priority above the rows of the
---- renderer, so a render that writes a row again keeps them on top. With
---- another offset, each label is a float of one cell, relative to the
---- scrollbar float, so the mark cells stay visible. Neovim places a float
---- relative to a float again when a window opens or closes or the layout
---- changes, but not when only the parent float moves with
---- `nvim_win_set_config`. Label mode places the label floats again after each
---- render, so they follow the scrollbar float in both cases.
+--- With an offset of 0, the labels are overlay extmarks in their own namespace
+--- on the float buffer, with a priority above the rows of the renderer, so a
+--- render that writes a row again keeps them on top. With another offset, each
+--- label is a float of one cell, relative to the scrollbar float, so the mark
+--- cells stay visible. Neovim places a float relative to a float again when a
+--- window opens or closes or the layout changes, but not when only the parent
+--- float moves with `nvim_win_set_config`. Label mode places the label floats
+--- again after each render, so they follow the scrollbar float in both cases.
 
 local config = require("scrollbar.config")
 local float = require("scrollbar.shared.float")
@@ -402,8 +402,8 @@ M.run = function(options)
     end
 
     local cursor_line = vim.api.nvim_win_get_cursor(source_win)[1] - 1
-    local jump_config = config.get().jump
-    local labeled, by_label = assign_labels(cells, cursor_line, jump_config.labels)
+    local mode_config = config.get()[mode]
+    local labeled, by_label = assign_labels(cells, cursor_line, mode_config.labels)
     ---@type ScrollbarJumpSession
     local current = {
         mode = mode,
@@ -416,7 +416,7 @@ M.run = function(options)
         height = state.height,
         anchor_offset = state.config.placement.row + state.sides.top,
         left_side = state.sides.left,
-        offset = jump_config.offset,
+        offset = mode_config.offset,
         zindex = (state.float_config.zindex or 50) + 1,
         label_floats = {},
         targets = labeled,

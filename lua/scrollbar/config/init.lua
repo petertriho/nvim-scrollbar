@@ -60,7 +60,8 @@ local DEFAULTS = {
         border = "none",
         wo = {},
     },
-    jump = navigate_config.JUMP_DEFAULTS,
+    jump = navigate_config.LABEL_MODE_DEFAULTS,
+    peek = navigate_config.LABEL_MODE_DEFAULTS,
     hover = false,
 }
 
@@ -520,7 +521,8 @@ local function normalize(value, shared, path, variant_id)
             },
         }),
         window = window_config.normalize(value.window, at("window"), WINDOW_SPEC),
-        jump = navigate_config.jump(value.jump, at("jump")),
+        jump = navigate_config.label_mode(value.jump, at("jump")),
+        peek = navigate_config.label_mode(value.peek, at("peek")),
         hover = navigate_config.hover(value.hover, at("hover")),
     })
     result.highlights = highlights.get_highlight_groups(result, variant_id, shared.set_highlights)

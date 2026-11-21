@@ -216,10 +216,11 @@
 ---@field throttle_ms? integer
 ---@field events? ScrollbarUserEventList Autocmd events that update the scrollbar. A list replaces the defaults. A table keyed by event name merges with them
 ---@field profiles? ScrollbarUserProfile[] Ordered contextual variants. The first match wins
----@field jump? ScrollbarUserJumpConfig Label mode of `require("scrollbar").jump()` and `require("scrollbar").peek()`
+---@field jump? ScrollbarUserLabelModeConfig Label mode of `require("scrollbar").jump()`
+---@field peek? ScrollbarUserLabelModeConfig Label mode of `require("scrollbar").peek()`. The top-level `peek` configures the peek float
 ---@field hover? boolean|ScrollbarUserHoverConfig Peek at the mark under the mouse pointer. Off by default
 
----@class ScrollbarUserJumpConfig
+---@class ScrollbarUserLabelModeConfig
 ---@field labels? string Unique lowercase ASCII letters. The uppercase letter of a label is also a key: it peeks in `jump()` and jumps in `peek()`
 ---@field offset? integer Columns from the mark cell to its label. A negative offset is to the left. 0 puts the label on the mark cell
 
@@ -305,7 +306,7 @@
 ---@field peek? ScrollbarUserPeekConfig
 ---@field glance? ScrollbarUserGlanceConfig
 
----@class ScrollbarJumpConfig
+---@class ScrollbarLabelModeConfig
 ---@field labels string
 ---@field offset integer
 
@@ -559,7 +560,8 @@
 ---@field overlap ScrollbarOverlapConfig
 ---@field marks table<string, ScrollbarMarkTypeConfig> Shown mark types
 ---@field window ScrollbarWindowConfig
----@field jump ScrollbarJumpConfig Global. Every variant has the value of the root
+---@field jump ScrollbarLabelModeConfig Global. Every variant has the value of the root
+---@field peek ScrollbarLabelModeConfig Global. Every variant has the value of the root
 ---@field hover false|ScrollbarHoverConfig Global. Every variant has the value of the root
 ---@field highlights ScrollbarHighlightGroups Compiled canonical or profile-internal group names
 ---@field layout_cache table Precompiled static inputs for the line-layer cache

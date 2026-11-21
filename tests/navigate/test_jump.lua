@@ -620,7 +620,7 @@ end
 
 T["peek mode"]["with an offset, the label floats use ScrollbarPeekLabel"] = function()
     local child = navigate.new_child()
-    setup(child, { config = offset_config(-1) })
+    setup(child, { config = navigate.config({ scrollbar = { peek = { offset = -1 } } }) })
     start(child, nil, "peek")
     input(child, "s")
     expect.equality(peek_line(child), 60)
@@ -637,6 +637,30 @@ T["peek mode"]["with an offset, the label floats use ScrollbarPeekLabel"] = func
     input(child, "D")
     expect.equality(cursor_line(child), 100)
     expect.equality(#child.api.nvim_list_wins(), 2)
+end
+
+T["peek mode"]["reads scrollbar.peek, not scrollbar.jump"] = function()
+    local child = navigate.new_child()
+    setup(child, {
+        config = navigate.config({ scrollbar = { jump = { labels = "qw" }, peek = { labels = "zx", offset = -1 } } }),
+    })
+    start(child, nil, "peek")
+    -- With the offset of `scrollbar.peek`, the labels are floats, and no label
+    -- is on the float buffer.
+    expect.equality(labels(child), {})
+    local floats = child.lua_get("vim.tbl_keys(require('scrollbar.navigate.jump')._label_floats())")
+    table.sort(floats)
+    expect.equality(floats, { "x", "z" })
+    input(child, "x")
+    expect.equality(peek_line(child), 60)
+    input(child, "<Esc>")
+    expect.equality(child.lua_get("_G.jump_done"), true)
+
+    -- The jump mode keeps the labels and the offset of `scrollbar.jump`.
+    start(child)
+    expect.equality(label_texts(child), { "q", "w" })
+    expect.equality(child.lua_get("require('scrollbar.navigate.jump')._label_floats()"), {})
+    input(child, "<Esc>")
 end
 
 T["peek mode"]["notifies with the peek prefix"] = function()

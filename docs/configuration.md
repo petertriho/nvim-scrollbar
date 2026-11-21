@@ -130,6 +130,10 @@ require("scrollbar").setup({
             labels = "asdfghjklqwertyuiopzxcvbnm",
             offset = 0,
         },
+        peek = { -- label mode of peek(), see Jump and Glance
+            labels = "asdfghjklqwertyuiopzxcvbnm",
+            offset = 0,
+        },
         hover = false, -- true, or { delay_ms = 300 }
         throttle_ms = 16,
         events = { -- see Events
@@ -229,8 +233,10 @@ require("scrollbar").setup({
 | `autohide` | `false` | `true` conceals each scrollbar after 1000 ms without activity in its window. `{ delay_ms = n }` sets the delay. |
 | `max_lines` | `false` | A buffer with more lines than this number gets no scrollbar. |
 | `floats` | `false` | Floats that get a scrollbar. The built-in kinds are the list and the preview of the snacks.nvim picker, the snacks.nvim zen window, and the results and the preview of the Telescope picker. A `when` function selects other floats. See [Floats](floats.md). |
-| `jump.labels` | `"asdfghjklqwertyuiopzxcvbnm"` | Labels of label mode, for `jump()` and `peek()`. See [Jump and Glance](jump-and-glance.md#labels). |
-| `jump.offset` | `0` | Columns from each mark cell to its label, for `jump()` and `peek()`. `0` puts the label on the mark cell. See [Jump and Glance](jump-and-glance.md#labels). |
+| `jump.labels` | `"asdfghjklqwertyuiopzxcvbnm"` | Labels of label mode. See [Jump and Glance](jump-and-glance.md#labels). |
+| `jump.offset` | `0` | Columns from each mark cell to its label. `0` puts the label on the mark cell. See [Jump and Glance](jump-and-glance.md#labels). |
+| `peek.labels` | `"asdfghjklqwertyuiopzxcvbnm"` | Labels of the label mode of `peek()`. The top-level `peek` block configures the peek float. See [Jump and Glance](jump-and-glance.md#peek-first). |
+| `peek.offset` | `0` | Columns from each mark cell to its label in `peek()`. See [Jump and Glance](jump-and-glance.md#labels). |
 | `hover` | `false` | `true` opens the peek float when the pointer stays on a mark cell for 300 ms. `{ delay_ms = n }` sets the delay. See [Hover](jump-and-glance.md#hover). |
 | `throttle_ms` | `16` | Renders that are queued within this interval combine into one frame. `0` renders as fast as possible. |
 | `events` | see Defaults | Autocommand events that update the scrollbar. See [Events](#events). |
@@ -1207,8 +1213,8 @@ overrides apply on top of the shared `marks` definitions.
 - `window`: Neovim validates the keys and the window options during setup.
   For this check, setup opens a hidden float and closes it at once. The default
   `window` opens no float. See [Window](#window).
-- `scrollbar.jump`, `scrollbar.hover`, `peek`, and `glance`: see
-  [Jump and Glance](jump-and-glance.md#options).
+- `scrollbar.jump`, `scrollbar.peek`, `scrollbar.hover`, `peek`, and
+  `glance`: see [Jump and Glance](jump-and-glance.md#options).
 - Unknown keys at every level are errors.
 
 Error messages give the full path of the option, for example
