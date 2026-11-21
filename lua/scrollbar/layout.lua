@@ -105,12 +105,36 @@ M.normalized_mark_rows = function(input)
     -- new band edges can change rows. Thus a binary search finds the marks of
     -- each band in each segment, instead of a rescan of every mark. Without
     -- segments, recompute all rows but store only the diffs.
+    --
+    -- `input.changed` lists the marks that changed in place. Their rows are
+    -- computed again and always reported, because a new line or type in the
+    -- same row still changes the content of that row. With the same extent,
+    -- no other mark can change rows, so the scan of all marks is skipped.
     local previous = input.previous
     if previous ~= nil and type(previous.rows) == "table" and #previous.rows == count then
         local mark_rows = previous.rows
         local changed = {}
         local segments = previous.segments
         local old_extent = previous.line_count
+        local forced = input.changed
+        if forced ~= nil then
+            if old_extent ~= total_extent then
+                -- A nil `forced` makes the recursion take a path below.
+                local shifted
+                mark_rows, shifted = M.normalized_mark_rows({
+                    height = height,
+                    line_count = total_extent,
+                    marks = marks,
+                    previous = previous,
+                })
+                changed = shifted or changed
+            end
+            for _, index in ipairs(forced) do
+                changed[#changed + 1] = { index, mark_rows[index] }
+                mark_rows[index] = M.map_position(marks[index].line, total_extent, height)
+            end
+            return mark_rows, changed
+        end
         if
             segments ~= nil
             and type(old_extent) == "number"
@@ -1833,6 +1857,7 @@ local function group_candidates(input, column_offset, expanded_lane_id, build)
     local compact = input.compact_search
     local search_config = input.config.marks.Search
     local search_lane = search_config and lane_for_type(input.config, "Search")
+    local compact_ranges = nil
     if compact ~= nil and search_config ~= nil and search_lane ~= nil then
         local precomputed = input.geometry.compact_mark_rows
         local compact_groups = {}
@@ -1866,9 +1891,17 @@ local function group_candidates(input, column_offset, expanded_lane_id, build)
             local total_extent = math.max(0, input.line_count)
             local maximum_position = math.max(0, total_extent - 1)
             local maximum_row = math.max(0, input.height - 1)
+            -- The [first, last] entries of each row, for incremental rebuilds
+            -- of single rows. Built-in search sorts the entries by line, so
+            -- the entries of a row are contiguous. Other orders leave the
+            -- ranges nil.
+            compact_ranges = {}
+            local range = nil
+            local entry = 0
             for offset = 1, #data, 4 do
                 local first, second, third, fourth = data:byte(offset, offset + 3)
                 local line = first * 0x1000000 + second * 0x10000 + third * 0x100 + fourth
+                entry = entry + 1
                 local row
                 if total_extent <= 1 or input.height <= 1 then
                     row = 0
@@ -1881,6 +1914,17 @@ local function group_candidates(input, column_offset, expanded_lane_id, build)
                 if row == last_compact_row then
                     group = last_compact_group
                 else
+                    if compact_ranges ~= nil then
+                        if range ~= nil then
+                            range[2] = entry - 1
+                        end
+                        if compact_ranges[row] ~= nil then
+                            compact_ranges = nil
+                        else
+                            range = { entry, entry }
+                            compact_ranges[row] = range
+                        end
+                    end
                     group = compact_groups[row]
                     if group == nil then
                         group = group_for(row, "Search", search_config, search_lane)
@@ -1893,6 +1937,9 @@ local function group_candidates(input, column_offset, expanded_lane_id, build)
                 local n = group.count + 1
                 group.count = n
                 group.lines[n] = line
+            end
+            if compact_ranges ~= nil and range ~= nil then
+                range[2] = entry
             end
         end
     end
@@ -1929,7 +1976,7 @@ local function group_candidates(input, column_offset, expanded_lane_id, build)
     end
     groups = shown_groups(groups, hidden)
     table.sort(groups, candidate_less)
-    return groups, segments
+    return groups, segments, compact_ranges
 end
 
 -- The named marks of each row in an expanded lane. Each named mark is its own
@@ -2121,11 +2168,38 @@ end
 -- and no ambiguity.
 local INCREMENTAL_CHANGE_LIMIT = 256
 
-local function rebuild_row_groups(input, row, mark_rows, segments, build)
+local function rebuild_row_groups(input, row, mark_rows, segments, compact_ranges, build)
     local config = input.config
     local marks = input.marks
     local groups = {}
     local by_type = {}
+    ---@param mark_type string
+    ---@return table|false
+    local function group_of(mark_type)
+        local group = by_type[mark_type]
+        if group == nil then
+            local mark_config = config.marks[mark_type]
+            local lane = mark_config and lane_for_type(config, mark_type) or nil
+            if mark_config ~= nil and lane ~= nil then
+                group = {
+                    row = row,
+                    lane_id = lane.id,
+                    type = mark_type,
+                    column = translated_column(config, lane.first_column, 0),
+                    max_column = translated_column(config, lane.last_column, 0),
+                    priority = mark_config.priority,
+                    lines = {},
+                    count = 0,
+                    ordinary_count = 0,
+                }
+                groups[#groups + 1] = group
+            else
+                group = false
+            end
+            by_type[mark_type] = group
+        end
+        return group
+    end
     for _, segment in ipairs(segments) do
         local lo, hi = segment[1], segment[2]
         local low, high = lo, hi + 1
@@ -2150,31 +2224,12 @@ local function rebuild_row_groups(input, row, mark_rows, segments, build)
         local last = low - 1
         for index = first, last do
             local mark = marks[index]
-            local mark_type = mark.type
-            local group = by_type[mark_type]
-            if group == nil then
-                local mark_config = config.marks[mark_type]
-                local lane = mark_config and lane_for_type(config, mark_type) or nil
-                if mark_config ~= nil and lane ~= nil then
-                    group = {
-                        row = row,
-                        lane_id = lane.id,
-                        type = mark_type,
-                        column = translated_column(config, lane.first_column, 0),
-                        max_column = translated_column(config, lane.last_column, 0),
-                        priority = mark_config.priority,
-                        source = mark,
-                        lines = {},
-                        count = 0,
-                        ordinary_count = 0,
-                    }
-                    by_type[mark_type] = group
-                    groups[#groups + 1] = group
-                else
-                    by_type[mark_type] = false
-                end
-            end
-            if group ~= false and group ~= nil then
+            local group = group_of(mark.type)
+            if group ~= false then
+                -- The segments come in provider order and each is sorted, so
+                -- the first mark of a group is its first source in
+                -- `source_less` order.
+                group.source = group.source or mark
                 local n = group.count + 1
                 group.count = n
                 group.lines[n] = mark.line
@@ -2182,13 +2237,39 @@ local function rebuild_row_groups(input, row, mark_rows, segments, build)
             end
         end
     end
+    local range = compact_ranges and compact_ranges[row] or nil
+    local compact = input.compact_search
+    if range ~= nil and compact ~= nil then
+        local group = group_of("Search")
+        if group ~= false then
+            local data = compact.data
+            for entry = range[1], range[2] do
+                local offset = (entry - 1) * 4 + 1
+                local first, second, third, fourth = data:byte(offset, offset + 3)
+                local line = first * 0x1000000 + second * 0x10000 + third * 0x100 + fourth
+                if entry == range[1] then
+                    group.compact_source = { provider = "search", line = line, type = "Search" }
+                end
+                local n = group.count + 1
+                group.count = n
+                group.lines[n] = line
+            end
+        end
+    end
     local hidden = nil
     for _, group in ipairs(groups) do
         ensure_ascending(group.lines)
         local variants = config.marks[group.type].text
-        group.provider = group.source.provider or ""
-        group.line = group.source.line
-        if not resolve_group_text(build, group, variants, group.source.text) then
+        -- The same representative as in `group_candidates`: the first source
+        -- in `source_less` order.
+        local representative = group.source
+        local compact_source = group.compact_source
+        if compact_source ~= nil and (representative == nil or source_less(compact_source, representative)) then
+            representative = compact_source
+        end
+        group.provider = representative.provider or ""
+        group.line = representative.line
+        if not resolve_group_text(build, group, variants, representative.text) then
             hidden = hidden or {}
             hidden[group] = true
         end
@@ -2270,7 +2351,8 @@ local function resolve_mark_layer(input)
         and type(previous.layer) == "table"
         and type(previous.layer.segments) == "table"
         and previous.layer.expanded_lane_id == false
-        and input.compact_search == nil
+        and previous.layer.compact == input.compact_search
+        and (input.compact_search == nil or (previous.layer.compact_ranges ~= nil and previous.layer.line_count == input.line_count))
         and type(previous.changed) == "table"
         and #previous.changed <= INCREMENTAL_CHANGE_LIMIT
         and previous.layer.height == input.height
@@ -2292,7 +2374,8 @@ local function resolve_mark_layer(input)
         end
         for row in pairs(changed_rows) do
             if row >= 0 and row < input.height then
-                rows[row] = place_row(rebuild_row_groups(input, row, mark_rows, prev.segments, build))
+                rows[row] =
+                    place_row(rebuild_row_groups(input, row, mark_rows, prev.segments, prev.compact_ranges, build))
             end
         end
         return {
@@ -2305,11 +2388,14 @@ local function resolve_mark_layer(input)
             height = input.height,
             mark_rows = mark_rows,
             text_reads = merged_text_reads(prev.text_reads, build.reader),
+            compact = input.compact_search,
+            line_count = input.line_count,
+            compact_ranges = prev.compact_ranges,
         }
     end
     local buckets, expanded_lane = expanded_buckets(input, build)
     local width, column_offset = layer_dimensions(input, buckets, expanded_lane)
-    local candidates, segments =
+    local candidates, segments, compact_ranges =
         group_candidates(input, column_offset, expanded_lane and expanded_lane.id or nil, build)
     add_expanded_candidates(input, candidates, buckets, expanded_lane, width, column_offset)
     table.sort(candidates, candidate_less)
@@ -2323,6 +2409,9 @@ local function resolve_mark_layer(input)
         height = input.height,
         mark_rows = input.geometry.mark_rows,
         text_reads = build.reader and build.reader.reads or nil,
+        compact = input.compact_search,
+        line_count = input.line_count,
+        compact_ranges = compact_ranges,
     }
 end
 

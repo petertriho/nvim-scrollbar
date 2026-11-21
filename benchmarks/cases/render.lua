@@ -4,6 +4,10 @@ local fixtures = require("benchmarks.fixtures")
 
 local MARK_COUNT = 2000
 local PROVIDER = "benchmark_render"
+-- A window provider with one mark, like the cursor provider
+local CURSOR_PROVIDER = "benchmark_cursor"
+-- Matches on every 10th line, like a search on the 10,000-line file
+local SEARCH_INTERVAL = 10
 
 ---@param unit "line" | "screenline"
 ---@param opts bench.RenderOptions
@@ -15,7 +19,7 @@ local function configure(unit, opts)
         providers = {
             cursor = false,
             diagnostic = false,
-            search = false,
+            search = opts.search == true,
             marks = false,
         },
         marks = opts.mark_text and { Misc = { text = opts.mark_text } } or nil,
@@ -57,6 +61,8 @@ end
 ---@field change? fun(state: bench.RenderState)
 ---@field mark_text? ScrollbarMarkTextFunction The text of the Misc marks
 ---@field thumb_text? ScrollbarThumbTextFunction
+---@field cursor_mark? boolean Adds one window mark of the type Cursor, which `change` can move.
+---@field search? boolean Adds compact search matches on every 10th line.
 
 ---@param unit "line" | "screenline"
 ---@param name string
@@ -81,15 +87,27 @@ local function render_case(unit, name, opts)
             end
 
             local providers = require("scrollbar.providers")
+            local store = require("scrollbar.shared.store")
             providers.register({ name = PROVIDER, targets = { scrollbar = true } })
             assert(
-                require("scrollbar.shared.store").set(
-                    PROVIDER,
-                    bufnr,
-                    fixtures.spread(MARK_COUNT, fixtures.LINE_COUNT, "Misc", "-")
-                ),
+                store.set(PROVIDER, bufnr, fixtures.spread(MARK_COUNT, fixtures.LINE_COUNT, "Misc", "-")),
                 "the store rejected the marks"
             )
+            if opts.cursor_mark then
+                providers.register({ name = CURSOR_PROVIDER, targets = { scrollbar = true } })
+                assert(
+                    store.set_window(CURSOR_PROVIDER, windows[1], { { line = 0, type = "Cursor" } }),
+                    "the store rejected the cursor mark"
+                )
+            end
+            if opts.search then
+                local lines = {}
+                for line = 0, fixtures.LINE_COUNT - 1, SEARCH_INTERVAL do
+                    lines[#lines + 1] = line
+                end
+                local compact = require("scrollbar.providers.search.compact").encode(lines)
+                assert(store._set_search_compact(bufnr, compact), "the store rejected the search matches")
+            end
             configure(unit, opts)
             ---@type bench.RenderState
             local state = { bufnr = bufnr, windows = windows, toggle = false, topline = 1 }
@@ -104,6 +122,9 @@ local function render_case(unit, name, opts)
         end,
         teardown = function()
             require("scrollbar.providers").unregister(PROVIDER)
+            if opts.cursor_mark then
+                require("scrollbar.providers").unregister(CURSOR_PROVIDER)
+            end
             fixtures.reset()
         end,
     }
@@ -151,6 +172,21 @@ local function move_cursor(state)
     vim.api.nvim_win_set_cursor(state.windows[1], { state.toggle and 2 or 3, 0 })
 end
 
+---Moves the window mark one line down, as a cursor move does, and starts at the top again at the end. Most moves
+---keep the row of the mark, and some move it to the next row.
+---@param state bench.RenderState
+local function move_cursor_mark(state)
+    state.topline = state.topline % fixtures.LINE_COUNT + 1
+    assert(
+        require("scrollbar.shared.store").set_window(
+            CURSOR_PROVIDER,
+            state.windows[1],
+            { { line = state.topline - 1, type = "Cursor" } }
+        ),
+        "the store rejected the cursor mark"
+    )
+end
+
 ---A mark text that reads the cursor line, so each cursor line change builds the mark layer again.
 ---@param context ScrollbarMarkTextContext
 ---@return string
@@ -189,5 +225,9 @@ return {
     -- calls the function for each group. The thumb case calls the function on
     -- each scroll.
     render_case("line", "mark_text_cursor", { mark_text = relative_line, change = move_cursor }),
+    -- The cursor provider changes its window mark on each cursor move. The
+    -- render must not rebuild the marks of the other providers.
+    render_case("line", "cursor_mark", { cursor_mark = true, change = move_cursor_mark }),
+    render_case("line", "cursor_mark_search", { cursor_mark = true, search = true, change = move_cursor_mark }),
     render_case("line", "thumb_text_scroll", { thumb_text = thumb_top_line, change = scroll }),
 }

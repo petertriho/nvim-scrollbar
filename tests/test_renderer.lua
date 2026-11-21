@@ -3017,6 +3017,237 @@ T["screen renders reuse flattened marks and skip text-height measurements while 
     })
 end
 
+T["a window mark move keeps the flattened marks of the other providers"] = function()
+    local child = new_child()
+    local result = child.lua_func(function(base_config)
+        local lines = {}
+        for index = 1, 400 do
+            lines[index] = "line " .. index
+        end
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        local source_win = vim.api.nvim_get_current_win()
+        local source_buf = vim.api.nvim_get_current_buf()
+        require("scrollbar.test.set_config")(base_config)
+        local store = require("scrollbar.shared.store")
+        local alpha = {}
+        for index = 1, 50 do
+            alpha[index] = { line = (index * 37) % 400, type = "Misc" }
+        end
+        assert(store.set("alpha", source_buf, alpha))
+        assert(store.set_window("window", source_win, { { line = 10, type = "Misc", text = "W" } }))
+
+        local layout = require("scrollbar.layout")
+        local original_mark_layer = layout.mark_layer
+        local inputs = {}
+        rawset(layout, "mark_layer", function(input)
+            inputs[#inputs + 1] = { marks = input.marks, incremental = input.previous ~= nil }
+            return original_mark_layer(input)
+        end)
+        local function first_marks(marks)
+            local objects = {}
+            for index = 1, 50 do
+                objects[index] = marks[index]
+            end
+            return objects
+        end
+        local function same_objects(left, right)
+            for index = 1, 50 do
+                if not rawequal(left[index], right[index]) then
+                    return false
+                end
+            end
+            return true
+        end
+
+        local renderer = require("scrollbar.renderer")
+        renderer.setup()
+        renderer.render(source_win)
+        local initial = inputs[#inputs]
+        local initial_objects = first_marks(initial.marks)
+
+        assert(store.set_window("window", source_win, { { line = 300, type = "Misc", text = "W" } }))
+        renderer.render(source_win)
+        local moved = inputs[#inputs]
+
+        assert(store.set_window("window", source_win, {
+            { line = 200, type = "Misc", text = "W" },
+            { line = 250, type = "Misc", text = "W" },
+        }))
+        renderer.render(source_win)
+        local grown = inputs[#inputs]
+
+        rawset(layout, "mark_layer", original_mark_layer)
+        return {
+            builds = #inputs,
+            moved_in_place = rawequal(initial.marks, moved.marks),
+            moved_incremental = moved.incremental,
+            moved_window_line = moved.marks[51].line,
+            grown_in_place = rawequal(moved.marks, grown.marks),
+            grown_keeps_alpha = same_objects(initial_objects, first_marks(grown.marks)),
+            grown_count = #grown.marks,
+        }
+    end, renderer_config())
+
+    expect.equality(result, {
+        builds = 3,
+        moved_in_place = true,
+        moved_incremental = true,
+        moved_window_line = 300,
+        grown_in_place = false,
+        grown_keeps_alpha = true,
+        grown_count = 52,
+    })
+end
+
+T["incremental line renders match full renders after mark, search, and line changes"] = function()
+    local child = new_child()
+    local result = child.lua_func(
+        function(base_config)
+            local line_count = 400
+            local lines = {}
+            for index = 1, line_count do
+                lines[index] = "line " .. index
+            end
+            vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+            -- Two windows of the same size. The third window takes the rest of
+            -- the screen.
+            vim.cmd("split")
+            vim.cmd("split")
+            local incremental_win = vim.api.nvim_get_current_win()
+            local reference_win = vim.fn.win_getid(vim.fn.winnr("j"))
+            vim.api.nvim_win_set_height(incremental_win, 6)
+            vim.api.nvim_win_set_height(reference_win, 6)
+            local source_buf = vim.api.nvim_get_current_buf()
+            require("scrollbar.test.set_config")(base_config, {
+                providers = { cursor = false, diagnostic = false, search = true },
+            })
+            local store = require("scrollbar.shared.store")
+            local compact = require("scrollbar.providers.search.compact")
+
+            -- A deterministic sequence, so that a failure repeats.
+            local seed = 12345
+            local function random(limit)
+                seed = (seed * 1103515245 + 12345) % 2147483648
+                -- The low bits of this generator repeat with a short period.
+                return math.floor(seed / 65536) % limit
+            end
+            local function spread(count, mark_type, text)
+                local marks = {}
+                for index = 1, count do
+                    marks[index] = { line = random(line_count), type = mark_type, text = text }
+                end
+                return marks
+            end
+            local function search_lines(count)
+                local matches = {}
+                for index = 1, count do
+                    matches[index] = random(line_count)
+                end
+                table.sort(matches)
+                return matches
+            end
+            local function set_window_marks(marks)
+                assert(store.set_window("window", incremental_win, marks))
+                assert(store.set_window("window", reference_win, marks))
+            end
+
+            local alpha_count = 30
+            assert(store.set("alpha", source_buf, spread(alpha_count, "Misc")))
+            -- Ordinary Search marks of another provider share groups with the
+            -- compact matches.
+            assert(store.set("buffer", source_buf, spread(5, "Search")))
+            assert(store._set_search_compact(source_buf, compact.encode(search_lines(60))))
+            set_window_marks({ { line = 0, type = "Misc", text = "W" } })
+
+            local layout = require("scrollbar.layout")
+            local original_mark_layer = layout.mark_layer
+            local incremental_builds = 0
+            local reference_reused = 0
+            rawset(layout, "mark_layer", function(input)
+                if input.previous ~= nil then
+                    if input.source_win == incremental_win then
+                        incremental_builds = incremental_builds + 1
+                    else
+                        reference_reused = reference_reused + 1
+                    end
+                end
+                return original_mark_layer(input)
+            end)
+
+            local renderer = require("scrollbar.renderer")
+            renderer.setup()
+            renderer.render(incremental_win)
+
+            local mismatches = {}
+            local steps = 300
+            for step = 1, steps do
+                local choice = random(100)
+                local operation
+                if choice < 60 then
+                    operation = "move"
+                    set_window_marks({ { line = random(line_count), type = "Misc", text = "W" } })
+                elseif choice < 70 then
+                    operation = "alpha"
+                    assert(store.set("alpha", source_buf, spread(alpha_count, "Misc")))
+                elseif choice < 75 then
+                    operation = "alpha count"
+                    alpha_count = math.max(1, alpha_count + (random(2) == 0 and -1 or 1))
+                    assert(store.set("alpha", source_buf, spread(alpha_count, "Misc")))
+                elseif choice < 80 then
+                    operation = "search"
+                    assert(store._set_search_compact(source_buf, compact.encode(search_lines(random(80)))))
+                elseif choice < 83 then
+                    operation = "search clear"
+                    store.clear("search", source_buf)
+                elseif choice < 88 then
+                    operation = "ordinary search"
+                    assert(store.set("buffer", source_buf, spread(5, "Search")))
+                elseif choice < 94 then
+                    operation = "append"
+                    vim.api.nvim_buf_set_lines(source_buf, -1, -1, false, { "extra" })
+                    line_count = line_count + 1
+                else
+                    operation = "delete"
+                    vim.api.nvim_buf_set_lines(source_buf, -2, -1, false, {})
+                    line_count = line_count - 1
+                end
+
+                local incremental = assert(renderer.render(incremental_win))
+                renderer.dispose(reference_win)
+                local reference = assert(renderer.render(reference_win))
+                for _, field in ipairs({ "rows", "highlights", "hitmap" }) do
+                    if not vim.deep_equal(incremental[field], reference[field]) then
+                        mismatches[#mismatches + 1] = string.format("step %d (%s): %s", step, operation, field)
+                    end
+                end
+            end
+
+            rawset(layout, "mark_layer", original_mark_layer)
+            return {
+                mismatches = mismatches,
+                incremental_builds = incremental_builds,
+                reference_reused = reference_reused,
+                steps = steps,
+                same_size = vim.api.nvim_win_get_height(incremental_win) == vim.api.nvim_win_get_height(reference_win)
+                    and vim.api.nvim_win_get_width(incremental_win) == vim.api.nvim_win_get_width(reference_win),
+            }
+        end,
+        renderer_config({
+            marks = {
+                Search = { text = { "-", "=", "#" } },
+                Misc = { text = "M" },
+            },
+        })
+    )
+
+    expect.equality(result.same_size, true)
+    expect.equality(result.mismatches, {})
+    expect.equality(result.reference_reused, 0)
+    -- Most steps move the window mark, and a move rebuilds only the old and
+    -- the new row of the mark.
+    expect.equality(result.incremental_builds > result.steps / 3, true)
+end
+
 T["configures owned state once and reapplies only changed float configuration"] = function()
     local child = new_child()
     local result = child.lua_func(function(base_config)

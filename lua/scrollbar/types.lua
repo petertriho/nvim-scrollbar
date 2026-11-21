@@ -757,6 +757,7 @@
 ---@field line_count integer Logical line count of the source buffer
 ---@field marks ScrollbarMark[]
 ---@field previous? { rows: integer[], line_count: number, height?: integer, segments?: integer[][] } Prior rows plus the context needed to recompute only shifted entries
+---@field changed? integer[] Indexes of marks that changed in place since `previous.rows`. The result lists them also when their row stays the same
 
 ---@class ScrollbarScreenGeometryInput
 ---@field source_win integer
@@ -829,6 +830,9 @@
 ---@field height integer Track height that the layer was built for
 ---@field mark_rows integer[] Track rows aligned with marks_identity
 ---@field text_reads? table<string, integer> Lazy context fields that the text functions read, with their values. Nil without text functions
+---@field compact? ScrollbarCompactSearch The compact search matches that the layer was built from
+---@field line_count? integer The line count that the layer was built for
+---@field compact_ranges? table<integer, integer[]> The [first, last] compact entries of each row in line math. Nil when the entries of a row are not contiguous
 
 ---@class ScrollbarLayoutOutput
 ---@field rows string[]
@@ -878,6 +882,21 @@
 ---@field window_revision integer
 ---@field marks ScrollbarLayoutMark[]
 ---@field compact_search? ScrollbarCompactSearch
+---@field provider_names string[] The providers of `marks`, in name order
+---@field regions table<string, ScrollbarFlattenedRegion> The sorted marks of each provider
+---@field generation integer Changes each time the content of `marks` changes
+---@field patch? ScrollbarFlattenedPatch The in-place change that made this generation
+
+---The sorted layout marks of one provider, and the store arrays they come from.
+---@class ScrollbarFlattenedRegion
+---@field buffer_marks? ScrollbarMark[]
+---@field window_marks? ScrollbarMark[]
+---@field marks ScrollbarLayoutMark[]
+
+---The indexes of a flattened marks table that changed in place.
+---@class ScrollbarFlattenedPatch
+---@field from integer The generation before the change
+---@field indexes integer[]
 
 ---@class ScrollbarLineMarkLayerCache
 ---@field source_buf integer
@@ -888,6 +907,8 @@
 ---@field height integer
 ---@field config table Precompiled cache-relevant inputs for the selected variant
 ---@field marks ScrollbarLayoutMark[] Identity of the flattened marks that the rows and the layer were built from
+---@field marks_generation integer The generation of `marks` that the rows and the layer were built from
+---@field compact_search? ScrollbarCompactSearch
 ---@field mark_rows integer[]
 ---@field layer ScrollbarResolvedMarkLayer
 
