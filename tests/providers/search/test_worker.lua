@@ -427,6 +427,157 @@ local function worker_scans(child)
     return child.lua_get([[package.loaded["scrollbar.test.search_counts"].scans]])
 end
 
+-- Records the count of searched lines of each worker result. The search
+-- provider reads the timing hook at setup, so this function sets up the
+-- providers again.
+local function record_scanned_lines(child)
+    child.lua([[
+        local scanned = {}
+        package.loaded["scrollbar.test.search_worker"].on_timing = function(event, payload)
+            if event == "result_callback_started" then
+                scanned[#scanned + 1] = payload.scanned_lines or -1
+            end
+        end
+        package.loaded["scrollbar.test.search_scanned"] = scanned
+        require("scrollbar.providers").setup({ config = require("scrollbar.config").get() })
+    ]])
+end
+
+-- Applies `edit` in the child, and returns whether the marks then equal a
+-- full search of the buffer, after a new worker result. Also returns the
+-- count of searched lines of that result.
+---@param edit string Lua statements with `bufnr` and `random`
+local function edit_and_compare(child, pattern, edit)
+    return child.lua_func(function(value)
+        local bufnr = vim.api.nvim_get_current_buf()
+        local scanned = package.loaded["scrollbar.test.search_scanned"]
+        local function full_search()
+            local view = vim.fn.winsaveview()
+            vim.api.nvim_win_set_cursor(0, { 1, 0 })
+            local lines = {}
+            vim.fn.searchpos(value.pattern, "Wnc", 0, 0, function()
+                lines[#lines + 1] = vim.api.nvim_win_get_cursor(0)[1] - 1
+                return true
+            end)
+            vim.fn.winrestview(view)
+            return lines
+        end
+        local function mark_lines()
+            local marks = require("scrollbar.shared.store").get(bufnr).search or {}
+            return vim.tbl_map(function(mark)
+                return mark.line
+            end, marks)
+        end
+        local results = #scanned
+        loadstring(value.edit)(bufnr)
+        vim.api.nvim_exec_autocmds("TextChanged", { buffer = bufnr })
+        local expected = full_search()
+        local same = vim.wait(2000, function()
+            return #scanned > results and vim.deep_equal(mark_lines(), expected)
+        end, 5)
+        return {
+            same = same,
+            scanned = scanned[#scanned],
+            line_count = vim.api.nvim_buf_line_count(bufnr),
+            expected = not same and expected or nil,
+            actual = not same and mark_lines() or nil,
+        }
+    end, { pattern = pattern, edit = edit })
+end
+
+T["changed-line scans match full scans after random edits"] = function()
+    local child = new_worker_child(false, { timing = true })
+    record_scanned_lines(child)
+    child.lua([[
+        _G.scrollbar_test_seed = 7
+        _G.scrollbar_test_random = function(limit)
+            _G.scrollbar_test_seed = (_G.scrollbar_test_seed * 1103515245 + 12345) % 2147483648
+            return math.floor(_G.scrollbar_test_seed / 65536) % limit
+        end
+        local words = { "ma", "x", "mama", "y", "ma ma" }
+        _G.scrollbar_test_lines = function(count)
+            local lines = {}
+            for index = 1, count do
+                local parts = {}
+                for part = 1, _G.scrollbar_test_random(4) do
+                    parts[part] = words[_G.scrollbar_test_random(#words) + 1]
+                end
+                lines[index] = table.concat(parts, " ")
+            end
+            return lines
+        end
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, _G.scrollbar_test_lines(200))
+        vim.api.nvim_win_set_cursor(0, { 1, 0 })
+    ]])
+    helpers.accept_search(child, "/", "ma")
+    child.lua([[vim.wait(2000, function()
+        return #package.loaded["scrollbar.test.search_scanned"] > 0
+    end)]])
+
+    -- One to three edits for each scan: inserts, deletes, and replacements
+    -- with a different line count.
+    local edit = [[
+        local bufnr = ...
+        local random = _G.scrollbar_test_random
+        for _ = 1, 1 + random(3) do
+            local count = vim.api.nvim_buf_line_count(bufnr)
+            local first = random(count)
+            local kind = random(4)
+            if kind == 0 then
+                vim.api.nvim_buf_set_lines(bufnr, first, first, false, _G.scrollbar_test_lines(1 + random(3)))
+            elseif kind == 1 and count > 20 then
+                vim.api.nvim_buf_set_lines(bufnr, first, math.min(count, first + 1 + random(3)), false, {})
+            elseif kind == 2 then
+                local last = math.min(count, first + 1 + random(3))
+                vim.api.nvim_buf_set_lines(bufnr, first, last, false, _G.scrollbar_test_lines(random(4)))
+            else
+                vim.api.nvim_buf_set_lines(bufnr, first, first + 1, false, _G.scrollbar_test_lines(1))
+            end
+        end
+    ]]
+    local steps = 40
+    local failures = {}
+    local changed = 0
+    for step = 1, steps do
+        local result = edit_and_compare(child, "ma", edit)
+        if not result.same then
+            failures[#failures + 1] = { step = step, expected = result.expected, actual = result.actual }
+        elseif result.scanned < result.line_count then
+            changed = changed + 1
+        end
+    end
+
+    expect.equality(failures, {})
+    expect.equality(changed >= steps / 4, true)
+end
+
+T["patterns across lines or with line numbers get full scans after edits"] = function()
+    local cases = {
+        -- A match that an edit on another line creates.
+        { pattern = [[ma\nx]], edit = "vim.api.nvim_buf_set_lines(..., 3, 3, false, { 'ma' })" },
+        -- Matches that an insert above them moves out of the line range.
+        { pattern = [[\%>2lma]], edit = "vim.api.nvim_buf_set_lines(..., 0, 0, false, { 'y' })" },
+        { pattern = [[\vma]], edit = "vim.api.nvim_buf_set_lines(..., 0, 0, false, { 'ma' })" },
+        { pattern = [[\(y \)\@<=ma]], edit = "vim.api.nvim_buf_set_lines(..., 1, 2, false, { 'y ma' })" },
+    }
+    for _, case in ipairs(cases) do
+        local child = new_worker_child(false, { timing = true })
+        record_scanned_lines(child)
+        helpers.set_lines(child, { "ma", "y", "ma", "x", "ma", "y ma" })
+        -- `type_keys` reads `<` as the start of a key name.
+        helpers.accept_search(child, "/", (case.pattern:gsub("<", "<LT>")))
+        child.lua([[vim.wait(2000, function()
+            return #package.loaded["scrollbar.test.search_scanned"] > 0
+        end)]])
+        local result = edit_and_compare(child, case.pattern, case.edit)
+        expect.equality({ pattern = case.pattern, same = result.same, scanned = result.scanned }, {
+            pattern = case.pattern,
+            same = true,
+            scanned = result.line_count,
+        })
+    end
+end
+
 T["refreshes while a scan runs keep the scan"] = function()
     local child = new_worker_child(false, { scan_delay_ms = 150 })
     count_worker_scans(child)

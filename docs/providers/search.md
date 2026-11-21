@@ -139,6 +139,12 @@ or `?` command line, or when the first search scan starts. A session without a
 search starts no process. All searched buffers share this process. Scans run
 outside the event loop of the parent Neovim.
 
+After an edit, the worker searches only the changed lines and moves the
+other matches. A pattern with one of these atoms gets a full scan, because its
+matches can span lines or depend on the line number or other state: `\n`,
+`\_`, `\%`, `\v`, `\@`, or `~`. The check is textual, so an escaped backslash
+before one of them also gives a full scan.
+
 A new setup stops the existing worker. The replacement starts at the next
 search. If the new configuration selects the synchronous backend, no
 replacement starts. The worker also stops when the parent Neovim exits.
