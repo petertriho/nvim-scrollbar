@@ -90,6 +90,65 @@ local function row_threshold(r, extent, height)
     return threshold
 end
 
+-- The line bands, in ascending order and without overlaps, in which a mark
+-- can change rows when the extent changes from `old_extent` to `new_extent`.
+local function moved_bands(old_extent, new_extent, height)
+    local bands = {}
+    for r = 1, height - 1 do
+        local old_edge = row_threshold(r, old_extent, height)
+        local new_edge = row_threshold(r, new_extent, height)
+        if old_edge ~= new_edge then
+            local lo = math.min(old_edge, new_edge)
+            local hi = math.max(old_edge, new_edge)
+            local merged = false
+            for _, band in ipairs(bands) do
+                if lo <= band[2] and band[1] <= hi then
+                    band[1] = math.min(band[1], lo)
+                    band[2] = math.max(band[2], hi)
+                    merged = true
+                    break
+                end
+            end
+            if not merged then
+                bands[#bands + 1] = { lo, hi }
+            end
+        end
+    end
+    -- Merge to a fixpoint: extending a band can make it overlap a later one.
+    local dirty = true
+    while dirty and #bands > 1 do
+        dirty = false
+        local kept = { bands[1] }
+        for index = 2, #bands do
+            local band = bands[index]
+            local target = kept[#kept]
+            if band[1] <= target[2] then
+                target[2] = math.max(target[2], band[2])
+                dirty = true
+            else
+                kept[#kept + 1] = band
+            end
+        end
+        bands = kept
+    end
+    return bands
+end
+
+-- The first index in `low`..`high` whose mark has a line >= `line`, or
+-- `high + 1`. The marks of the range are in line order.
+local function first_at_or_after(marks, low, high, line)
+    high = high + 1
+    while low < high do
+        local mid = math.floor((low + high) / 2)
+        if marks[mid].line < line then
+            low = mid + 1
+        else
+            high = mid
+        end
+    end
+    return low
+end
+
 -- Map the marks `first` to `last` to their rows again. Each mark that moves
 -- adds `{ index, previous row }` to `changed`.
 local function remap_rows(marks, mark_rows, changed, first, last, total_extent, height)
@@ -156,69 +215,13 @@ M.normalized_mark_rows = function(input)
             and count > 0
             and (previous.height == nil or previous.height == height)
         then
-            local bands = {}
-            for r = 1, height - 1 do
-                local old_edge = row_threshold(r, old_extent, height)
-                local new_edge = row_threshold(r, total_extent, height)
-                if old_edge ~= new_edge then
-                    local lo = math.min(old_edge, new_edge)
-                    local hi = math.max(old_edge, new_edge)
-                    local merged = false
-                    for _, band in ipairs(bands) do
-                        if lo <= band[2] and band[1] <= hi then
-                            band[1] = math.min(band[1], lo)
-                            band[2] = math.max(band[2], hi)
-                            merged = true
-                            break
-                        end
-                    end
-                    if not merged then
-                        bands[#bands + 1] = { lo, hi }
-                    end
-                end
-            end
-            -- Merge to a fixpoint: extending a band can make it overlap a later one.
-            local dirty = true
-            while dirty and #bands > 1 do
-                dirty = false
-                local kept = { bands[1] }
-                for index = 2, #bands do
-                    local band = bands[index]
-                    local target = kept[#kept]
-                    if band[1] <= target[2] then
-                        target[2] = math.max(target[2], band[2])
-                        dirty = true
-                    else
-                        kept[#kept + 1] = band
-                    end
-                end
-                bands = kept
-            end
+            local bands = moved_bands(old_extent, total_extent, height)
             for _, segment in ipairs(segments) do
                 local lo_index, hi_index = segment[1], segment[2]
                 for _, band in ipairs(bands) do
-                    -- First index with line >= band[1].
-                    local low, high = lo_index, hi_index + 1
-                    while low < high do
-                        local mid = math.floor((low + high) / 2)
-                        if marks[mid].line < band[1] then
-                            low = mid + 1
-                        else
-                            high = mid
-                        end
-                    end
-                    local first = low
-                    -- Last+1 index with line < band[2].
-                    low, high = first, hi_index + 1
-                    while low < high do
-                        local mid = math.floor((low + high) / 2)
-                        if marks[mid].line < band[2] then
-                            low = mid + 1
-                        else
-                            high = mid
-                        end
-                    end
-                    remap_rows(marks, mark_rows, changed, first, low - 1, total_extent, height)
+                    local first = first_at_or_after(marks, lo_index, hi_index, band[1])
+                    local after = first_at_or_after(marks, first, hi_index, band[2])
+                    remap_rows(marks, mark_rows, changed, first, after - 1, total_extent, height)
                 end
             end
             return mark_rows, changed
@@ -883,71 +886,70 @@ local function sweep_chunks(source_win, layer)
     layer.verified_at = uv.now()
 end
 
----Apply one recorded edit to the chunk table. Coordinates are in the buffer
----state before this edit, and `current_count` is the line count in that state.
----@return boolean applied false when a full rebuild is the cheaper path
----@return boolean? moved true when the edit can have changed a prefix
-local function reindex_chunks_for_edit(source_win, layer, first, last, updated, current_count)
+--- Drop the memo of the wrapped rows when an edit at `first` can change it.
+local function forget_wrapped_memo(layer, first)
+    if layer.wrapped_memo ~= nil and layer.wrapped_memo.line >= first then
+        layer.wrapped_memo = nil
+    end
+end
+
+--- Measure the edited sub-spans of one chunk again, for an edit that keeps
+--- the line count.
+---@return boolean? moved true when the edit can have changed a prefix. Nil
+---when the edit crosses a chunk boundary
+local function remeasure_sub_spans(source_win, layer, first, updated, current_count)
     local chunks = layer.chunks
-    if chunks == nil or #chunks == 0 then
-        return false
+    local i = chunk_index_for(layer, first)
+    if i == 0 then
+        return nil
     end
-    if updated - first > CHUNK_LINES * 8 then
-        return false
+    local chunk = chunks[i]
+    local chunk_end = i < #chunks and chunks[i + 1].start or current_count
+    if first < chunk.start or updated > chunk_end or chunk.subs == nil then
+        return nil
     end
-
-    -- Edit that keeps the line count: only the heights of the edited
-    -- sub-spans can change. This path applies only to manual folds. With
-    -- expr/indent/syntax folds, an edit can move the fold boundaries of other
-    -- lines, and the wholesale chunk rebuild catches that immediately (the
-    -- sweep covers silent changes).
-    if updated == last and layer.foldmethod == "manual" then
-        local i = chunk_index_for(layer, first)
-        if i > 0 then
-            local chunk = chunks[i]
-            local chunk_end = i < #chunks and chunks[i + 1].start or current_count
-            if first >= chunk.start and updated <= chunk_end and chunk.subs ~= nil then
-                local subs = chunk.subs
-                local s0 = math.floor((first - chunk.start) / CHUNK_SUB_LINES)
-                local s1 = math.floor((updated - 1 - chunk.start) / CHUNK_SUB_LINES)
-                local delta = 0
-                for s = s0, s1 do
-                    local sub_start = chunk.start + s * CHUNK_SUB_LINES
-                    local sub_stop = math.min(sub_start + CHUNK_SUB_LINES, chunk_end)
-                    local height = rows_between(source_win, sub_start, sub_stop, current_count)
-                    delta = delta + (height - subs[s + 1])
-                    subs[s + 1] = height
-                end
-                if delta ~= 0 then
-                    chunk.height = chunk.height + delta
-                    layer.total_extent = layer.total_extent + delta
-                    for index = i + 1, #chunks do
-                        chunks[index].base = chunks[index].base + delta
-                    end
-                end
-                chunk.memo = {}
-                -- Every anchor needs a memo entry, so the anchors of the chunk
-                -- go with its memo.
-                local kept = {}
-                for _, anchor in ipairs(layer.anchors) do
-                    if anchor == 0 or anchor < chunk.start or anchor >= chunk_end then
-                        kept[#kept + 1] = anchor
-                    end
-                end
-                layer.anchors = kept
-                if layer.wrapped_memo ~= nil and layer.wrapped_memo.line >= first then
-                    layer.wrapped_memo = nil
-                end
-                -- A one-line edit changes only the height of its line, so no
-                -- prefix changes when the height of its sub-span stays the
-                -- same. The lines of a longer edit can trade rows inside one
-                -- sub-span.
-                return true, delta ~= 0 or updated - first > 1
-            end
+    local subs = chunk.subs
+    local s0 = math.floor((first - chunk.start) / CHUNK_SUB_LINES)
+    local s1 = math.floor((updated - 1 - chunk.start) / CHUNK_SUB_LINES)
+    local delta = 0
+    for s = s0, s1 do
+        local sub_start = chunk.start + s * CHUNK_SUB_LINES
+        local sub_stop = math.min(sub_start + CHUNK_SUB_LINES, chunk_end)
+        local height = rows_between(source_win, sub_start, sub_stop, current_count)
+        delta = delta + (height - subs[s + 1])
+        subs[s + 1] = height
+    end
+    if delta ~= 0 then
+        chunk.height = chunk.height + delta
+        layer.total_extent = layer.total_extent + delta
+        for index = i + 1, #chunks do
+            chunks[index].base = chunks[index].base + delta
         end
-        -- Span crossing a chunk boundary: fall through to the wholesale rebuild.
     end
+    chunk.memo = {}
+    -- Every anchor needs a memo entry, so the anchors of the chunk
+    -- go with its memo.
+    local kept = {}
+    for _, anchor in ipairs(layer.anchors) do
+        if anchor == 0 or anchor < chunk.start or anchor >= chunk_end then
+            kept[#kept + 1] = anchor
+        end
+    end
+    layer.anchors = kept
+    forget_wrapped_memo(layer, first)
+    -- A one-line edit changes only the height of its line, so no
+    -- prefix changes when the height of its sub-span stays the
+    -- same. The lines of a longer edit can trade rows inside one
+    -- sub-span.
+    return delta ~= 0 or updated - first > 1
+end
 
+--- Measure again the chunks that an edit touches, and splice them into the
+--- chunk table.
+---@return boolean applied false when the edit starts before the chunks
+---@return boolean? moved true when the edit can have changed a prefix
+local function splice_chunks(source_win, layer, first, last, updated, current_count)
+    local chunks = layer.chunks
     local delta_lines = updated - last
 
     local i = chunk_index_for(layer, first)
@@ -1029,10 +1031,36 @@ local function reindex_chunks_for_edit(source_win, layer, first, last, updated, 
         end
     end
     layer.anchors = kept
-    if layer.wrapped_memo ~= nil and layer.wrapped_memo.line >= first then
-        layer.wrapped_memo = nil
-    end
+    forget_wrapped_memo(layer, first)
     return true, moved
+end
+
+---Apply one recorded edit to the chunk table. Coordinates are in the buffer
+---state before this edit, and `current_count` is the line count in that state.
+---@return boolean applied false when a full rebuild is the cheaper path
+---@return boolean? moved true when the edit can have changed a prefix
+local function reindex_chunks_for_edit(source_win, layer, first, last, updated, current_count)
+    local chunks = layer.chunks
+    if chunks == nil or #chunks == 0 then
+        return false
+    end
+    if updated - first > CHUNK_LINES * 8 then
+        return false
+    end
+
+    -- Edit that keeps the line count: only the heights of the edited
+    -- sub-spans can change. This path applies only to manual folds. With
+    -- expr/indent/syntax folds, an edit can move the fold boundaries of other
+    -- lines, and the wholesale chunk rebuild catches that immediately (the
+    -- sweep covers silent changes).
+    if updated == last and layer.foldmethod == "manual" then
+        local moved = remeasure_sub_spans(source_win, layer, first, updated, current_count)
+        if moved ~= nil then
+            return true, moved
+        end
+        -- Span crossing a chunk boundary: fall through to the wholesale rebuild.
+    end
+    return splice_chunks(source_win, layer, first, last, updated, current_count)
 end
 
 local function extent_layer_for(source_win)
@@ -1722,6 +1750,144 @@ local function shown_groups(groups, hidden)
     return result
 end
 
+--- Finish each group with the source that `representative` picks, drop the
+--- groups that a text function hides, and sort the rest.
+---@param representative fun(group: table, presorted: boolean): table
+---@return table[]
+local function finish_groups(build, groups, config, representative, presorted)
+    local hidden = nil
+    for _, group in ipairs(groups) do
+        if not finish_group(build, group, config, representative(group, presorted)) then
+            hidden = hidden or {}
+            hidden[group] = true
+        end
+    end
+    groups = shown_groups(groups, hidden)
+    table.sort(groups, candidate_less)
+    return groups
+end
+
+--- The first source of a group in `source_less` order. A group of the
+--- presorted hot path keeps only its first source, in `source`.
+local function first_source(group, presorted)
+    if group.compact_source ~= nil then
+        if group.sources == nil then
+            group.sources = { group.compact_source }
+        else
+            table.insert(group.sources, group.compact_source)
+            table.sort(group.sources, source_less)
+        end
+        return group.sources[1]
+    end
+    if group.sources ~= nil then
+        if not presorted then
+            table.sort(group.sources, source_less)
+        end
+        return group.sources[1]
+    end
+    return group.source
+end
+
+--- The first source in `source_less` order of a group that a row rebuild
+--- made: its first mark or its first compact match.
+local function first_row_source(group)
+    local representative = group.source
+    local compact_source = group.compact_source
+    if compact_source ~= nil and (representative == nil or source_less(compact_source, representative)) then
+        representative = compact_source
+    end
+    return representative
+end
+
+--- Add the matches of compact search, with their rows from the geometry.
+local function add_precomputed_compact(data, precomputed, group_for, search_config, search_lane)
+    local compact_groups = {}
+    local last_compact_row, last_compact_group
+    local index = 0
+    for offset = 1, #data, 4 do
+        local first, second, third, fourth = data:byte(offset, offset + 3)
+        local line = first * 0x1000000 + second * 0x10000 + third * 0x100 + fourth
+        index = index + 1
+        local row = precomputed[index]
+        local group
+        if row == last_compact_row then
+            group = last_compact_group
+        else
+            group = compact_groups[row]
+            if group == nil then
+                group = group_for(row, "Search", search_config, search_lane)
+                group.compact_source = { provider = "search", line = line, type = "Search" }
+                compact_groups[row] = group
+            end
+            last_compact_row = row
+            last_compact_group = group
+        end
+        local n = group.count + 1
+        group.count = n
+        group.lines[n] = line
+    end
+end
+
+--- Add the matches of compact search, and map each match to its row.
+---@return table<integer, integer[]>? compact_ranges The [first, last] entries of each row
+local function add_mapped_compact(input, data, group_for, search_config, search_lane)
+    local compact_groups = {}
+    local last_compact_row, last_compact_group
+    local total_extent = math.max(0, input.line_count)
+    local maximum_position = math.max(0, total_extent - 1)
+    local maximum_row = math.max(0, input.height - 1)
+    -- The [first, last] entries of each row, for incremental rebuilds of
+    -- single rows. Built-in search sorts the entries by line, so the entries
+    -- of a row are contiguous. Other orders leave the ranges nil.
+    local compact_ranges = {}
+    local range = nil
+    local entry = 0
+    for offset = 1, #data, 4 do
+        local first, second, third, fourth = data:byte(offset, offset + 3)
+        local line = first * 0x1000000 + second * 0x10000 + third * 0x100 + fourth
+        entry = entry + 1
+        local row
+        if total_extent <= 1 or input.height <= 1 then
+            row = 0
+        elseif total_extent <= input.height then
+            row = math.min(line, maximum_position)
+        else
+            row = math.floor(math.min(line, maximum_position) * maximum_row / maximum_position)
+        end
+        local group
+        if row == last_compact_row then
+            group = last_compact_group
+        else
+            if compact_ranges ~= nil then
+                if range ~= nil then
+                    range[2] = entry - 1
+                end
+                if compact_ranges[row] ~= nil then
+                    compact_ranges = nil
+                else
+                    range = { entry, entry }
+                    compact_ranges[row] = range
+                end
+            end
+            group = compact_groups[row]
+            if group == nil then
+                group = group_for(row, "Search", search_config, search_lane)
+                group.compact_source = { provider = "search", line = line, type = "Search" }
+                compact_groups[row] = group
+            end
+            last_compact_row = row
+            last_compact_group = group
+        end
+        local n = group.count + 1
+        group.count = n
+        group.lines[n] = line
+    end
+    if compact_ranges ~= nil and range ~= nil then
+        range[2] = entry
+    end
+    return compact_ranges
+end
+
 local function lane_for_type(config, mark_type)
     local lane_id = config.layout.routes[mark_type] or config.layout.catchall_lane
     if lane_id == false or lane_id == nil then
@@ -1875,117 +2041,14 @@ local function group_candidates(input, column_offset, expanded_lane_id, build)
     local compact_ranges = nil
     if compact ~= nil and search_config ~= nil and search_lane ~= nil then
         local precomputed = input.geometry.compact_mark_rows
-        local compact_groups = {}
-        local data = compact.data
-        local last_compact_row, last_compact_group
         if precomputed ~= nil then
-            local index = 0
-            for offset = 1, #data, 4 do
-                local first, second, third, fourth = data:byte(offset, offset + 3)
-                local line = first * 0x1000000 + second * 0x10000 + third * 0x100 + fourth
-                index = index + 1
-                local row = precomputed[index]
-                local group
-                if row == last_compact_row then
-                    group = last_compact_group
-                else
-                    group = compact_groups[row]
-                    if group == nil then
-                        group = group_for(row, "Search", search_config, search_lane)
-                        group.compact_source = { provider = "search", line = line, type = "Search" }
-                        compact_groups[row] = group
-                    end
-                    last_compact_row = row
-                    last_compact_group = group
-                end
-                local n = group.count + 1
-                group.count = n
-                group.lines[n] = line
-            end
+            add_precomputed_compact(compact.data, precomputed, group_for, search_config, search_lane)
         else
-            local total_extent = math.max(0, input.line_count)
-            local maximum_position = math.max(0, total_extent - 1)
-            local maximum_row = math.max(0, input.height - 1)
-            -- The [first, last] entries of each row, for incremental rebuilds
-            -- of single rows. Built-in search sorts the entries by line, so
-            -- the entries of a row are contiguous. Other orders leave the
-            -- ranges nil.
-            compact_ranges = {}
-            local range = nil
-            local entry = 0
-            for offset = 1, #data, 4 do
-                local first, second, third, fourth = data:byte(offset, offset + 3)
-                local line = first * 0x1000000 + second * 0x10000 + third * 0x100 + fourth
-                entry = entry + 1
-                local row
-                if total_extent <= 1 or input.height <= 1 then
-                    row = 0
-                elseif total_extent <= input.height then
-                    row = math.min(line, maximum_position)
-                else
-                    row = math.floor(math.min(line, maximum_position) * maximum_row / maximum_position)
-                end
-                local group
-                if row == last_compact_row then
-                    group = last_compact_group
-                else
-                    if compact_ranges ~= nil then
-                        if range ~= nil then
-                            range[2] = entry - 1
-                        end
-                        if compact_ranges[row] ~= nil then
-                            compact_ranges = nil
-                        else
-                            range = { entry, entry }
-                            compact_ranges[row] = range
-                        end
-                    end
-                    group = compact_groups[row]
-                    if group == nil then
-                        group = group_for(row, "Search", search_config, search_lane)
-                        group.compact_source = { provider = "search", line = line, type = "Search" }
-                        compact_groups[row] = group
-                    end
-                    last_compact_row = row
-                    last_compact_group = group
-                end
-                local n = group.count + 1
-                group.count = n
-                group.lines[n] = line
-            end
-            if compact_ranges ~= nil and range ~= nil then
-                range[2] = entry
-            end
+            compact_ranges = add_mapped_compact(input, compact.data, group_for, search_config, search_lane)
         end
     end
 
-    local hidden = nil
-    for _, group in ipairs(groups) do
-        local representative
-        if group.compact_source ~= nil then
-            if group.sources == nil then
-                group.sources = { group.compact_source }
-            else
-                table.insert(group.sources, group.compact_source)
-                table.sort(group.sources, source_less)
-            end
-            representative = group.sources[1]
-        elseif group.sources ~= nil then
-            if not presorted then
-                table.sort(group.sources, source_less)
-            end
-            representative = group.sources[1]
-        else
-            representative = group.source
-        end
-        if not finish_group(build, group, input.config, representative) then
-            hidden = hidden or {}
-            hidden[group] = true
-        end
-    end
-    groups = shown_groups(groups, hidden)
-    table.sort(groups, candidate_less)
-    return groups, segments, compact_ranges
+    return finish_groups(build, groups, input.config, first_source, presorted), segments, compact_ranges
 end
 
 -- The named marks of each row in an expanded lane. Each named mark is its own
@@ -2318,23 +2381,7 @@ local function rebuild_row_groups(input, row, mark_rows, segments, compact_range
             end
         end
     end
-    local hidden = nil
-    for _, group in ipairs(groups) do
-        -- The same representative as in `group_candidates`: the first source
-        -- in `source_less` order.
-        local representative = group.source
-        local compact_source = group.compact_source
-        if compact_source ~= nil and (representative == nil or source_less(compact_source, representative)) then
-            representative = compact_source
-        end
-        if not finish_group(build, group, config, representative) then
-            hidden = hidden or {}
-            hidden[group] = true
-        end
-    end
-    groups = shown_groups(groups, hidden)
-    table.sort(groups, candidate_less)
-    return groups
+    return finish_groups(build, groups, config, first_row_source, false)
 end
 
 local function place_row(groups)

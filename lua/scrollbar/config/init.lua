@@ -232,6 +232,80 @@ local function layer_signature(layer)
     return table.concat(layer.types, "\0")
 end
 
+--- The lane of a mark layer. The layer continues the lane of the same
+--- selector in the previous column, or starts a new lane. A selector or a
+--- mark type must occupy one contiguous lane.
+---@param layer ScrollbarNormalizedLayoutLayerInput
+---@param signature string
+---@param path string Error path of the layout
+---@param lanes table[]
+---@param lane_by_signature table<string, integer>
+---@param type_owner table<string, integer>
+---@param previous_signatures table<string, integer> The lanes of the previous column
+---@return integer lane_id
+local function lane_for_layer(layer, signature, path, lanes, lane_by_signature, type_owner, previous_signatures)
+    local lane_id = previous_signatures[signature]
+    if lane_id ~= nil then
+        return lane_id
+    end
+    if lane_by_signature[signature] ~= nil then
+        local label = layer.catch_all and "catch-all marks" or "mark type '" .. layer.types[1] .. "'"
+        invalid(path .. ": " .. label .. " must occupy one contiguous lane")
+    end
+    lane_id = #lanes + 1
+    lanes[lane_id] = {
+        id = lane_id,
+        catch_all = layer.catch_all,
+        types = layer.types,
+        columns = {},
+        max_width = false,
+    }
+    lane_by_signature[signature] = lane_id
+    if not layer.catch_all then
+        for _, mark_type in ipairs(layer.types) do
+            if type_owner[mark_type] ~= nil then
+                invalid(path .. ": mark type '" .. mark_type .. "' must occupy one contiguous lane")
+            end
+            type_owner[mark_type] = lane_id
+        end
+    end
+    return lane_id
+end
+
+--- Move the lanes to their physical columns, and route each mark type to its
+--- lane.
+---@param lanes table[]
+---@param width integer
+---@param reverse boolean
+---@param path string Error path of the layout
+---@return table<string, integer> routes
+---@return integer|false catchall_lane
+local function route_lanes(lanes, width, reverse, path)
+    local routes = {}
+    local catchall_lane = false
+    for _, lane in ipairs(lanes) do
+        local physical_columns = {}
+        for _, logical_column in ipairs(lane.columns) do
+            physical_columns[#physical_columns + 1] = reverse and width - logical_column + 1 or logical_column
+        end
+        table.sort(physical_columns)
+        lane.columns = physical_columns
+        lane.first_column = physical_columns[1]
+        lane.last_column = physical_columns[#physical_columns]
+        if lane.max_width ~= false and lane.max_width < #physical_columns then
+            invalid(path .. ": mark lane max_width must be greater than or equal to its base lane width")
+        end
+        if lane.catch_all then
+            catchall_lane = lane.id
+        else
+            for _, mark_type in ipairs(lane.types) do
+                routes[mark_type] = lane.id
+            end
+        end
+    end
+    return routes, catchall_lane
+end
+
 ---@param layout any
 ---@param anchor ScrollbarFloatAnchor
 ---@param path string
@@ -282,31 +356,8 @@ local function compile_layout(layout, anchor, path)
                 end
                 seen_layers[duplicate_key] = true
 
-                local lane_id = previous_signatures[signature]
-                if lane_id == nil then
-                    if lane_by_signature[signature] ~= nil then
-                        local label = layer.catch_all and "catch-all marks" or "mark type '" .. layer.types[1] .. "'"
-                        invalid(path .. ": " .. label .. " must occupy one contiguous lane")
-                    end
-                    lane_id = #lanes + 1
-                    lanes[lane_id] = {
-                        id = lane_id,
-                        catch_all = layer.catch_all,
-                        types = layer.types,
-                        columns = {},
-                        max_width = false,
-                    }
-                    lane_by_signature[signature] = lane_id
-                    if not layer.catch_all then
-                        for _, mark_type in ipairs(layer.types) do
-                            if type_owner[mark_type] ~= nil then
-                                invalid(path .. ": mark type '" .. mark_type .. "' must occupy one contiguous lane")
-                            end
-                            type_owner[mark_type] = lane_id
-                        end
-                    end
-                end
-
+                local lane_id =
+                    lane_for_layer(layer, signature, path, lanes, lane_by_signature, type_owner, previous_signatures)
                 local lane = lanes[lane_id]
                 if layer.max_width ~= false then
                     if lane.max_width ~= false and lane.max_width ~= layer.max_width then
@@ -337,28 +388,7 @@ local function compile_layout(layout, anchor, path)
         physical[physical_column] = column
     end
 
-    local routes = {}
-    local catchall_lane = false
-    for _, lane in ipairs(lanes) do
-        local physical_columns = {}
-        for _, logical_column in ipairs(lane.columns) do
-            physical_columns[#physical_columns + 1] = reverse and width - logical_column + 1 or logical_column
-        end
-        table.sort(physical_columns)
-        lane.columns = physical_columns
-        lane.first_column = physical_columns[1]
-        lane.last_column = physical_columns[#physical_columns]
-        if lane.max_width ~= false and lane.max_width < #physical_columns then
-            invalid(path .. ": mark lane max_width must be greater than or equal to its base lane width")
-        end
-        if lane.catch_all then
-            catchall_lane = lane.id
-        else
-            for _, mark_type in ipairs(lane.types) do
-                routes[mark_type] = lane.id
-            end
-        end
-    end
+    local routes, catchall_lane = route_lanes(lanes, width, reverse, path)
 
     ---@type false|ScrollbarNormalizedThumbSpan
     local thumb = false

@@ -523,32 +523,18 @@ local function request_cells(source_buf, filetype, grid, signature, generation, 
     }) ~= false
 end
 
----@param source_win integer
----@param selection ScrollbarMinimapConfigSelection
----@param root_config ScrollbarMinimapConfig
----@return ScrollbarMinimapRendererState?
-local function render_source(source_win, selection, root_config)
-    local active_config = selection.config
-    local floating = selection.kind ~= nil and selection.kind ~= "normal"
-    local float_zindex = floating and stack.float_zindex(source_win) or nil
-    local source_buf = vim.api.nvim_win_get_buf(source_win)
-    if floating then
-        floats.watch_buffer(source_buf)
-    end
-    local _, concealed = prepare_source(source_win, source_buf, root_config.autohide)
-    if concealed then
-        stack.publish("minimap", source_win, stack_footprint(active_config, source_win, float_zindex))
-        return nil
-    end
-
-    local area_top, area_height = source_area(source_win)
+--- The content size of the minimap in a text area of `area_height` rows.
+---@param active_config ScrollbarMinimapConfig
+---@param area_height integer
+---@return integer? width Nil when the minimap has no room
+---@return integer height
+local function target_size(active_config, area_height)
     -- The frame stays inside the text area, so the border rows limit the
     -- content height.
     local sides = active_config.window.sides
     local available_height = area_height - sides.top - sides.bottom
     if available_height < 1 and sides.top + sides.bottom > 0 then
-        close_source(source_win)
-        return nil
+        return nil, 0
     end
     local target_height = active_config.height
     if target_height == false then
@@ -557,92 +543,118 @@ local function render_source(source_win, selection, root_config)
     target_height = math.max(1, math.min(target_height, available_height))
     local target_width = active_config.width
     if target_width <= 0 then
-        close_source(source_win)
-        return nil
+        return nil, 0
     end
+    return target_width, target_height
+end
 
-    local viewport = source_viewport(source_win)
-    local viewport_top = viewport[1]
-    local viewport_bottom = viewport[2]
-    local projection = projection_module.new({
-        scale = active_config.scale,
-        line_count = line_count_of(source_buf),
-        rows = target_height,
-        width = target_width,
-        columns_per_dot = active_config.columns_per_dot,
-        top = viewport_top,
-        bottom = viewport_bottom,
-    })
+--- Whether a cached or pending slice was built from the current text.
+---@param entry { changedtick: integer, semantic_revision: integer, filetype: string }
+---@param changedtick integer
+---@param semantic_revision integer
+---@param filetype string
+---@return boolean
+local function current_entry(entry, changedtick, semantic_revision, filetype)
+    return entry.changedtick == changedtick
+        and entry.semantic_revision == semantic_revision
+        and entry.filetype == filetype
+end
 
-    local overlays = {}
-    if next(active_config.marks) ~= nil and options_ref and options_ref.overlays then
-        overlays = options_ref.overlays.project_with(source_win, projection, active_config.marks)
+--- Request the cells of `projection`, unless a pending request serves it.
+---@param source_buf integer
+---@param signature string
+---@param active_config ScrollbarMinimapConfig
+---@param projection ScrollbarMinimapProjection
+---@param target_width integer
+---@param changedtick integer
+---@param filetype string
+---@param semantic_state ScrollbarMinimapSemanticInput
+local function request_slice(
+    source_buf,
+    signature,
+    active_config,
+    projection,
+    target_width,
+    changedtick,
+    filetype,
+    semantic_state
+)
+    local buffer_pending = pending_cells[source_buf]
+    if buffer_pending == nil then
+        buffer_pending = {}
+        pending_cells[source_buf] = buffer_pending
     end
-    local overlay_sig = overlay_signature(overlays)
+    local pending = buffer_pending[signature]
+    if
+        pending ~= nil
+        and current_entry(pending, changedtick, semantic_state.revision, filetype)
+        and slice_serves(pending.grid, projection, false)
+    then
+        return
+    end
+    local first_row, row_count = projection_module.slice(projection)
+    request_generation = request_generation + 1
+    pending = {
+        changedtick = changedtick,
+        semantic_revision = semantic_state.revision,
+        generation = request_generation,
+        filetype = filetype,
+        grid = {
+            width = target_width,
+            first_row = first_row,
+            row_count = row_count,
+            scale_lines = projection.scale_lines,
+            scale_dots = projection.scale_dots,
+            columns_per_dot = active_config.columns_per_dot,
+            encoding = active_config.encoding,
+        },
+    }
+    buffer_pending[signature] = pending
+    if
+        not request_cells(source_buf, filetype, pending.grid, signature, pending.generation, semantic_state)
+        and buffer_pending[signature] == pending
+    then
+        buffer_pending[signature] = nil
+    end
+end
 
-    local desired_cells_signature = cell_signature(source_buf, active_config, target_width, target_height)
+--- The cached cells for `projection`. When the cache does not serve the
+--- projection, request the cells and use the cache as it is, or an empty
+--- slice, until they arrive. The sync backend fills the cache before the
+--- request returns.
+---@param source_buf integer
+---@param active_config ScrollbarMinimapConfig
+---@param projection ScrollbarMinimapProjection
+---@param target_width integer
+---@param target_height integer
+local function cell_slice(source_buf, active_config, projection, target_width, target_height)
+    local signature = cell_signature(source_buf, active_config, target_width, target_height)
     local changedtick = text_tick.get(source_buf)
     local filetype = vim.bo[source_buf].filetype
     local semantic_state = semantic_input(source_buf)
     local buffer_cache = cell_cache[source_buf]
-    local cache = buffer_cache and buffer_cache[desired_cells_signature] or nil
+    local cache = buffer_cache and buffer_cache[signature] or nil
     if
         cache == nil
-        or cache.changedtick ~= changedtick
-        or cache.semantic_revision ~= semantic_state.revision
-        or cache.filetype ~= filetype
+        or not current_entry(cache, changedtick, semantic_state.revision, filetype)
         or not slice_serves(cache, projection, true)
     then
-        local buffer_pending = pending_cells[source_buf]
-        if buffer_pending == nil then
-            buffer_pending = {}
-            pending_cells[source_buf] = buffer_pending
-        end
-        local pending = buffer_pending[desired_cells_signature]
-        if
-            pending == nil
-            or pending.changedtick ~= changedtick
-            or pending.semantic_revision ~= semantic_state.revision
-            or pending.filetype ~= filetype
-            or not slice_serves(pending.grid, projection, false)
-        then
-            local first_row, row_count = projection_module.slice(projection)
-            request_generation = request_generation + 1
-            pending = {
-                changedtick = changedtick,
-                semantic_revision = semantic_state.revision,
-                generation = request_generation,
-                filetype = filetype,
-                grid = {
-                    width = target_width,
-                    first_row = first_row,
-                    row_count = row_count,
-                    scale_lines = projection.scale_lines,
-                    scale_dots = projection.scale_dots,
-                    columns_per_dot = active_config.columns_per_dot,
-                    encoding = active_config.encoding,
-                },
-            }
-            buffer_pending[desired_cells_signature] = pending
-            if
-                not request_cells(
-                    source_buf,
-                    filetype,
-                    pending.grid,
-                    desired_cells_signature,
-                    pending.generation,
-                    semantic_state
-                ) and buffer_pending[desired_cells_signature] == pending
-            then
-                buffer_pending[desired_cells_signature] = nil
-            end
-        end
+        request_slice(
+            source_buf,
+            signature,
+            active_config,
+            projection,
+            target_width,
+            changedtick,
+            filetype,
+            semantic_state
+        )
         buffer_cache = cell_cache[source_buf]
-        cache = buffer_cache and buffer_cache[desired_cells_signature] or cache
+        cache = buffer_cache and buffer_cache[signature] or cache
     end
     if cache == nil then
         cache = {
-            signature = desired_cells_signature,
+            signature = signature,
             cells = {},
             first_row = 0,
             row_count = 0,
@@ -656,9 +668,17 @@ local function render_source(source_win, selection, root_config)
             mirror_signature = "",
         }
     end
+    return cache
+end
 
-    -- Rows outside the cached slice stay blank until the pending slice
-    -- arrives. Rows past the end of the map are always blank.
+--- The cells, the text rows, and the highlights of the visible rows. Rows
+--- outside the cached slice stay blank until the pending slice arrives. Rows
+--- past the end of the map are always blank.
+---@param cache table
+---@param projection ScrollbarMinimapProjection
+---@param target_width integer
+---@param target_height integer
+local function visible_rows(cache, projection, target_width, target_height)
     local cells = {}
     local blank_row
     for row = 1, target_height do
@@ -688,9 +708,12 @@ local function render_source(source_win, selection, root_config)
             highlights[index] = {}
         end
     end
+    return cells, rows, highlights
+end
 
-    local points, cursor_row, cursor_col = project_points(source_win, source_buf, projection)
-
+--- Add a span of the overlay highlight for each run of drawn cells in the
+--- row of each overlay.
+local function add_overlay_runs(highlights, cells, overlays)
     for _, overlay in ipairs(overlays) do
         local row = overlay.minimap_row
         if highlights[row] == nil then
@@ -713,22 +736,82 @@ local function render_source(source_win, selection, root_config)
             end
         end
     end
+end
+
+--- Give the spans the inactive variants of their highlights. The spans are
+--- new tables on each render, so the swap can change them in place.
+---@param highlights table[]
+---@param active_config ScrollbarMinimapConfig
+local function swap_inactive(highlights, active_config)
+    local replacements = highlight_module.inactive_map(active_config)
+    if replacements == nil then
+        return
+    end
+    for row = 1, #highlights do
+        for _, span in ipairs(highlights[row]) do
+            span.highlight = replacements[span.highlight] or span.highlight
+        end
+    end
+end
+
+---@param source_win integer
+---@param selection ScrollbarMinimapConfigSelection
+---@param root_config ScrollbarMinimapConfig
+---@return ScrollbarMinimapRendererState?
+local function render_source(source_win, selection, root_config)
+    local active_config = selection.config
+    local floating = selection.kind ~= nil and selection.kind ~= "normal"
+    local float_zindex = floating and stack.float_zindex(source_win) or nil
+    local source_buf = vim.api.nvim_win_get_buf(source_win)
+    if floating then
+        floats.watch_buffer(source_buf)
+    end
+    local _, concealed = prepare_source(source_win, source_buf, root_config.autohide)
+    if concealed then
+        stack.publish("minimap", source_win, stack_footprint(active_config, source_win, float_zindex))
+        return nil
+    end
+
+    local area_top, area_height = source_area(source_win)
+    local target_width, target_height = target_size(active_config, area_height)
+    if target_width == nil then
+        close_source(source_win)
+        return nil
+    end
+
+    local viewport = source_viewport(source_win)
+    local viewport_top = viewport[1]
+    local viewport_bottom = viewport[2]
+    local projection = projection_module.new({
+        scale = active_config.scale,
+        line_count = line_count_of(source_buf),
+        rows = target_height,
+        width = target_width,
+        columns_per_dot = active_config.columns_per_dot,
+        top = viewport_top,
+        bottom = viewport_bottom,
+    })
+
+    local overlays = {}
+    if next(active_config.marks) ~= nil and options_ref and options_ref.overlays then
+        overlays = options_ref.overlays.project_with(source_win, projection, active_config.marks)
+    end
+    local overlay_sig = overlay_signature(overlays)
+
+    local cache = cell_slice(source_buf, active_config, projection, target_width, target_height)
+    local cells, rows, highlights = visible_rows(cache, projection, target_width, target_height)
+
+    local points, cursor_row, cursor_col = project_points(source_win, source_buf, projection)
+
+    add_overlay_runs(highlights, cells, overlays)
 
     local band_first, band_last = projection_module.band(projection)
     overlay_layers(highlights, band_first, band_last, points, target_width, active_config.viewport)
 
     if selection.inactive then
-        -- The spans are new tables on each render, so the swap can change
-        -- them in place. It runs before `rendered_highlights`, so a blended
-        -- copy of `background_blend` takes the inactive color.
-        local replacements = highlight_module.inactive_map(active_config)
-        if replacements ~= nil then
-            for row = 1, #highlights do
-                for _, span in ipairs(highlights[row]) do
-                    span.highlight = replacements[span.highlight] or span.highlight
-                end
-            end
-        end
+        -- Before `rendered_highlights`, so a blended copy of
+        -- `background_blend` takes the inactive color.
+        swap_inactive(highlights, active_config)
     end
 
     local active_winblend, active_winhighlight = window_presentation(active_config)
@@ -915,6 +998,96 @@ M.reveal = floats.reveal
 ---@type fun(source_win: integer): boolean
 M.conceal = floats.conceal
 
+--- The changedtick of a worker result for `pending`. Nil when the request,
+--- the text, the filetype, or the semantic tokens changed since the request.
+---@param payload table
+---@param pending table
+---@param bufnr integer
+---@return integer?
+local function current_changedtick(payload, pending, bufnr)
+    local generation = payload.generation or pending.generation
+    local semantic_revision = payload.semantic_revision
+    if semantic_revision == nil then
+        semantic_revision = pending.semantic_revision
+    end
+    local filetype = payload.filetype or pending.filetype
+    if
+        generation ~= pending.generation
+        or semantic_revision ~= pending.semantic_revision
+        or filetype ~= pending.filetype
+    then
+        return nil
+    end
+    local changedtick = payload.changedtick
+    if type(changedtick) ~= "number" then
+        changedtick = vim.api.nvim_buf_is_valid(bufnr) and text_tick.get(bufnr) or 0
+    end
+    if
+        not vim.api.nvim_buf_is_valid(bufnr)
+        or text_tick.get(bufnr) ~= changedtick
+        or vim.bo[bufnr].filetype ~= filetype
+        or semantic_input(bufnr).revision ~= semantic_revision
+    then
+        return nil
+    end
+    return changedtick
+end
+
+--- Store the cells of a worker result, unless the cache holds cells of a
+--- later changedtick, and drop the request.
+---@param bufnr integer
+---@param signature string
+---@param payload table
+---@param pending table
+---@param buffer_pending table? The pending requests of `bufnr` when the result arrived
+---@param changedtick integer
+local function store_cells(bufnr, signature, payload, pending, buffer_pending, changedtick)
+    local buffer_cache = cell_cache[bufnr]
+    if buffer_cache == nil then
+        buffer_cache = {}
+        cell_cache[bufnr] = buffer_cache
+    end
+    local existing = buffer_cache[signature]
+    local grid = pending.grid
+    if existing == nil or changedtick >= existing.changedtick then
+        buffer_cache[signature] = {
+            signature = signature,
+            cells = payload.cells or {},
+            first_row = grid.first_row,
+            row_count = grid.row_count,
+            scale_lines = grid.scale_lines,
+            scale_dots = grid.scale_dots,
+            revision = (existing and existing.revision or 0) + 1,
+            changedtick = changedtick,
+            semantic_revision = semantic_input(bufnr).revision,
+            filetype = pending.filetype,
+            source_line_count = line_count_of(bufnr),
+            mirror_signature = signature,
+        }
+    end
+    if buffer_pending ~= nil then
+        if buffer_pending[signature] == pending then
+            buffer_pending[signature] = nil
+        end
+        if next(buffer_pending) == nil then
+            pending_cells[bufnr] = nil
+        end
+    end
+end
+
+--- Ask for a render of a minimap of `bufnr`.
+---@param bufnr integer
+local function mark_dirty(bufnr)
+    for winid, state in pairs(states) do
+        if state.source_buf == bufnr then
+            if options_ref and type(options_ref.on_dirty) == "function" then
+                options_ref.on_dirty(winid)
+            end
+            return
+        end
+    end
+end
+
 ---Worker result callback. Updates the dimension-specific cell cache and
 ---increments the revision, so that the next render uses the fresh content.
 ---`scrollbar.minimap` connects the `on_result` of the worker to this handler
@@ -934,30 +1107,8 @@ M.handle_worker_result = function(payload)
     if pending == nil then
         return
     end
-
-    local generation = payload.generation or pending.generation
-    local semantic_revision = payload.semantic_revision
-    if semantic_revision == nil then
-        semantic_revision = pending.semantic_revision
-    end
-    if generation ~= pending.generation or semantic_revision ~= pending.semantic_revision then
-        return
-    end
-    local filetype = payload.filetype or pending.filetype
-    if filetype ~= pending.filetype then
-        return
-    end
-
-    local changedtick = payload.changedtick
-    if type(changedtick) ~= "number" then
-        changedtick = vim.api.nvim_buf_is_valid(bufnr) and text_tick.get(bufnr) or 0
-    end
-    if
-        not vim.api.nvim_buf_is_valid(bufnr)
-        or text_tick.get(bufnr) ~= changedtick
-        or vim.bo[bufnr].filetype ~= filetype
-        or semantic_input(bufnr).revision ~= semantic_revision
-    then
+    local changedtick = current_changedtick(payload, pending, bufnr)
+    if changedtick == nil then
         return
     end
 
@@ -968,51 +1119,8 @@ M.handle_worker_result = function(payload)
     then
         store.set_minimap_spans("treesitter", bufnr, payload.worker_spans)
     end
-    local accepted_semantic_revision = semantic_input(bufnr).revision
-    local buffer_cache = cell_cache[bufnr]
-    if buffer_cache == nil then
-        buffer_cache = {}
-        cell_cache[bufnr] = buffer_cache
-    end
-    local existing = buffer_cache[signature]
-    local grid = pending.grid
-    if existing == nil or changedtick >= existing.changedtick then
-        buffer_cache[signature] = {
-            signature = signature,
-            cells = payload.cells or {},
-            first_row = grid.first_row,
-            row_count = grid.row_count,
-            scale_lines = grid.scale_lines,
-            scale_dots = grid.scale_dots,
-            revision = (existing and existing.revision or 0) + 1,
-            changedtick = changedtick,
-            semantic_revision = accepted_semantic_revision,
-            filetype = filetype,
-            source_line_count = line_count_of(bufnr),
-            mirror_signature = signature,
-        }
-    end
-    if buffer_pending ~= nil then
-        if buffer_pending[signature] == pending then
-            buffer_pending[signature] = nil
-        end
-        if next(buffer_pending) == nil then
-            pending_cells[bufnr] = nil
-        end
-    end
-    local source_win
-    for winid, state in pairs(states) do
-        if state.source_buf == bufnr then
-            source_win = winid
-            break
-        end
-    end
-    if source_win == nil then
-        return
-    end
-    if options_ref and type(options_ref.on_dirty) == "function" then
-        options_ref.on_dirty(source_win)
-    end
+    store_cells(bufnr, signature, payload, pending, buffer_pending, changedtick)
+    mark_dirty(bufnr)
 end
 
 M.handle_worker_failure = function()
