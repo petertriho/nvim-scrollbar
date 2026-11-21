@@ -1019,6 +1019,22 @@ local STARTUP_PRELUDE = {
     "highlights.set_highlights = function() vim.g.scrollbar_test_starts = vim.g.scrollbar_test_starts + 1 set_highlights() end",
 }
 
+-- The modules that the runtime start loads, and the first screen does not
+-- wait for.
+local RUNTIME_MODULES = {
+    "scrollbar.mouse",
+    "scrollbar.providers",
+    "scrollbar.renderer",
+    "scrollbar.scheduler",
+    "scrollbar.shared.text_tick",
+}
+
+---@param modules string[]
+---@return string
+local function loaded_modules_expression(modules)
+    return "vim.tbl_filter(function(name) return package.loaded[name] ~= nil end, " .. inline(modules) .. ")"
+end
+
 T["setup during start-up starts the runtime after start-up"] = function()
     local config = root_config({ set_highlights = true })
     local child = startup_child(vim.list_extend(vim.deepcopy(STARTUP_PRELUDE), {
@@ -1030,24 +1046,30 @@ T["setup during start-up starts the runtime after start-up"] = function()
         "starts = vim.g.scrollbar_test_starts,",
         "thumb_group = vim.fn.hlexists('ScrollbarThumb'),",
         "command = vim.fn.exists(':ScrollbarHide'),",
+        "loaded = #" .. loaded_modules_expression(RUNTIME_MODULES) .. ",",
         "}",
     }))
-    local result = child.lua_func(function()
+    local result = child.lua_func(function(modules)
         vim.wait(1000, function()
             return vim.g.scrollbar_test_starts > 0
         end)
+        local loaded = vim.tbl_filter(function(name)
+            return package.loaded[name] ~= nil
+        end, modules)
         require("scrollbar.scheduler").flush()
         return {
             during_startup = vim.g.scrollbar_test_during_startup,
             starts = vim.g.scrollbar_test_starts,
+            loaded = loaded,
             thumb_group = vim.fn.hlexists("ScrollbarThumb"),
             rendered = require("scrollbar.renderer").get_state(vim.api.nvim_get_current_win()) ~= nil,
         }
-    end)
+    end, RUNTIME_MODULES)
 
     expect.equality(result, {
-        during_startup = { did_enter = 0, starts = 0, thumb_group = 0, command = 2 },
+        during_startup = { did_enter = 0, starts = 0, thumb_group = 0, command = 2, loaded = 0 },
         starts = 1,
+        loaded = RUNTIME_MODULES,
         thumb_group = 1,
         rendered = true,
     })
