@@ -1,7 +1,8 @@
 --- The `floats` option of a block. It tells which floating windows are source
---- windows. The built-in kinds are the windows of the snacks.nvim picker and
---- the Telescope picker. A `when` matcher admits other floats, which get the
---- kind `"custom"`. Every float is off by default.
+--- windows. The built-in kinds are the windows of the snacks.nvim picker, the
+--- snacks.nvim zen window, and the windows of the Telescope picker. A `when`
+--- matcher admits other floats, which get the kind `"custom"`. Every float is
+--- off by default.
 
 local schema = require("scrollbar.config.schema")
 
@@ -9,15 +10,19 @@ local invalid = schema.invalid
 
 local M = {}
 
---- The built-in pickers and the key and kind of each of their windows, in the
---- order of validation.
+--- The plugins of the built-in kinds and the key and kind of each of their
+--- windows, in the order of validation. The snacks zen window is not a picker
+--- window, but it is a snacks.nvim window, so it uses the `snacks` key.
 local PICKERS = {
-    { name = "snacks", windows = { { "list", "snacks_list" }, { "preview", "snacks_preview" } } },
+    {
+        name = "snacks",
+        windows = { { "list", "snacks_list" }, { "preview", "snacks_preview" }, { "zen", "snacks_zen" } },
+    },
     { name = "telescope", windows = { { "results", "telescope_results" }, { "preview", "telescope_preview" } } },
 }
 
 local KEYS = {
-    snacks = { list = true, preview = true },
+    snacks = { list = true, preview = true, zen = true },
     telescope = { results = true, preview = true },
     when = true,
 }
@@ -35,7 +40,7 @@ local UNSUPPORTED = {
 }
 
 --- The built-in kinds, in a stable order.
-M.KINDS = { "snacks_list", "snacks_preview", "telescope_results", "telescope_preview" }
+M.KINDS = { "snacks_list", "snacks_preview", "snacks_zen", "telescope_results", "telescope_preview" }
 
 ---@param block "scrollbar"|"minimap"
 ---@return table<string, true|string> kinds Each kind that `match.floats` names. A string is the reason why the block rejects the kind

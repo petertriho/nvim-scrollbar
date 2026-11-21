@@ -5,12 +5,15 @@ local expect = MiniTest.expect
 local T = MiniTest.new_set()
 
 -- Installs `require("scrollbar.test.pickers")` in the child. It stubs the
--- picker state of snacks.nvim and Telescope in `package.loaded`, and it opens
--- the picker windows as plain floats.
+-- picker state of snacks.nvim and Telescope and the zen state of snacks.nvim
+-- in `package.loaded`, and it opens their windows as plain floats.
 local function install_pickers()
     local M = {}
     local snacks = {}
     local telescope = {}
+    local zen = {}
+
+    package.loaded["snacks.zen"] = zen
 
     package.loaded["snacks.picker.core.picker"] = {
         get = function()
@@ -93,6 +96,13 @@ local function install_pickers()
         return picker
     end
 
+    -- `Snacks.zen()` keeps its `snacks.win` in `require("snacks.zen").win`.
+    M.zen = function()
+        local winid = M.float({ row = 24, col = 2, height = 5 })
+        zen.win = { win = winid }
+        return winid
+    end
+
     M.snacks_moves = function()
         return snacks[1].list.moves
     end
@@ -104,6 +114,7 @@ local function install_pickers()
         for bufnr in pairs(telescope) do
             telescope[bufnr] = nil
         end
+        zen.win = nil
     end
 
     package.loaded["scrollbar.test.pickers"] = M
@@ -159,6 +170,7 @@ T["a float is a source only when the floats option admits its kind"] = function(
         local pickers = require("scrollbar.test.pickers")
         local snacks = pickers.snacks()
         local telescope = pickers.telescope()
+        local zen = pickers.zen()
         local plain = pickers.float({ row = 13, col = 40, width = 20, height = 3 })
         local owned = pickers.float({ row = 13, col = 62, width = 10, height = 3 })
         vim.w[owned].scrollbar_owned = true
@@ -183,6 +195,7 @@ T["a float is a source only when the floats option admits its kind"] = function(
             prompt = telescope.prompt_win,
             results = telescope.results_win,
             telescope_preview = telescope.preview_win,
+            zen = zen,
             plain = plain,
             owned = owned,
             minimap_owned = minimap_owned,
@@ -207,6 +220,8 @@ T["a float is a source only when the floats option admits its kind"] = function(
             off = kinds(false),
             on = kinds(true),
             snacks_preview = kinds({ snacks = { preview = true } }),
+            snacks = kinds({ snacks = true }),
+            snacks_zen = kinds({ snacks = { zen = true } }),
             telescope = kinds({ telescope = true }),
             telescope_results = kinds({ telescope = { results = true } }),
             when = kinds({ when = everything }),
@@ -221,6 +236,7 @@ T["a float is a source only when the floats option admits its kind"] = function(
         prompt = false,
         results = false,
         telescope_preview = false,
+        zen = false,
         plain = false,
         owned = false,
         minimap_owned = false,
@@ -237,12 +253,15 @@ T["a float is a source only when the floats option admits its kind"] = function(
             preview = "snacks_preview",
             results = "telescope_results",
             telescope_preview = "telescope_preview",
+            zen = "snacks_zen",
         })
     )
     expect.equality(result.snacks_preview, with({ preview = "snacks_preview" }))
+    expect.equality(result.snacks, with({ list = "snacks_list", preview = "snacks_preview", zen = "snacks_zen" }))
+    expect.equality(result.snacks_zen, with({ zen = "snacks_zen" }))
     expect.equality(result.telescope, with({ results = "telescope_results", telescope_preview = "telescope_preview" }))
     expect.equality(result.telescope_results, with({ results = "telescope_results" }))
-    -- `when` admits the floats that are not picker kinds, and never the
+    -- `when` admits the floats that are not built-in kinds, and never the
     -- floats of the renderers or the external windows.
     expect.equality(result.when, with({ input = "custom", prompt = "custom", plain = "custom" }))
 end

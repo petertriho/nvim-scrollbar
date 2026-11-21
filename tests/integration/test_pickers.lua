@@ -311,6 +311,44 @@ T["the windows of a focused snacks picker keep their active groups"] = function(
     expect.equality(wait_for(child, FLOAT_BARS_CLOSED), true)
 end
 
+-- Snacks sets `require("snacks.zen").win` after it opens the window. The kind
+-- memo can keep the result of an earlier check for a short time.
+local ZEN_READY = [[(function()
+    local win = require("snacks.zen").win
+    if win == nil or not vim.api.nvim_win_is_valid(win.win) then
+        return false
+    end
+    local bars = require("scrollbar.test.integration").bars(win.win)
+    return require("scrollbar.renderer").source_kind(win.win) == "snacks_zen"
+        and require("scrollbar.minimap.renderer").source_kind(win.win) == "snacks_zen"
+        and bars.scrollbar ~= false
+        and bars.minimap ~= false
+end)()]]
+
+T["the snacks zen and zoom windows get bars"] = function()
+    local child = new_child()
+    child.lua([[
+        local lines = {}
+        for index = 1, 100 do
+            lines[index] = "line " .. index
+        end
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        require("snacks").setup({})
+    ]])
+
+    -- A second call of the same function closes the window.
+    for _, toggle in ipairs({ "Snacks.zen.zoom()", "Snacks.zen()" }) do
+        child.lua(toggle)
+        expect.equality(wait_for(child, ZEN_READY), true)
+        local bars = child.lua_get('require("scrollbar.test.integration").bars(require("snacks.zen").win.win)')
+        expect.equality(bars.scrollbar, { win = true, zindex = bars.source_zindex + 1 })
+        expect.equality(bars.minimap, { win = true, zindex = bars.source_zindex + 1 })
+
+        child.lua(toggle)
+        expect.equality(wait_for(child, FLOAT_BARS_CLOSED), true)
+    end
+end
+
 local TELESCOPE_PICKER = [[(function()
     local state = require("telescope.state")
     local prompt = state.get_existing_prompt_bufnrs()[1]

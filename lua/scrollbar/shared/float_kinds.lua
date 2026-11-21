@@ -1,10 +1,11 @@
---- Built-in kinds of floating windows: the windows of the snacks.nvim picker
---- and the Telescope picker. The lookups read the picker state of a plugin
---- only when the plugin already loaded its picker module, so they never load
---- a plugin. Each plugin call runs in `pcall`, and a failure means "no kind".
+--- Built-in kinds of floating windows: the windows of the snacks.nvim picker,
+--- the snacks.nvim zen window, and the windows of the Telescope picker. The
+--- lookups read the state of a plugin only when the plugin already loaded the
+--- module, so they never load a plugin. Each plugin call runs in `pcall`, and
+--- a failure means "no kind".
 ---
---- The picker state is not a formal API of either plugin. The integration
---- test pins both plugins and fails when a field moves.
+--- This state is not a formal API of either plugin. The integration test pins
+--- both plugins and fails when a field moves.
 
 local M = {}
 
@@ -33,6 +34,13 @@ local function snacks_pickers()
         return {}
     end
     return pickers
+end
+
+--- The window of the snacks zen mode. `Snacks.zen.zoom()` opens its window
+--- through `Snacks.zen()`, so the zoom window is this window too.
+---@return integer?
+local function snacks_zen_window()
+    return snacks_window(package.loaded["snacks.zen"])
 end
 
 ---@return table[] pickers The open Telescope pickers
@@ -99,6 +107,9 @@ local function kind(winid)
                 return "snacks_preview"
             end
         end
+    end
+    if snacks_zen_window() == winid then
+        return "snacks_zen"
     end
     for _, picker in ipairs(telescope_pickers()) do
         if telescope_window(picker, "results") == winid then
@@ -189,7 +200,7 @@ end
 -- A picker field can be a metatable lookup that raises an error. Any failure
 -- means that the window has no kind.
 
---- The kind of a built-in picker window.
+--- The kind of a built-in window.
 ---@param winid integer
 ---@return ScrollbarFloatKind?
 M.kind = function(winid)

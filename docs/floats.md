@@ -5,6 +5,7 @@ By default, the scrollbar and the minimap show only on normal windows. The
 
 - The list and the preview of the snacks.nvim picker. The minimap does not
   support the list.
+- The window of the snacks.nvim zen mode and zoom mode.
 - The results and the preview of the Telescope picker.
 - Other floats that a `when` function selects.
 
@@ -32,15 +33,15 @@ The table form:
 ```lua
 scrollbar = {
     floats = {
-        snacks = { list = true, preview = true }, -- or true, or false
+        snacks = { list = true, preview = true, zen = true }, -- or true, or false
         telescope = { results = true, preview = true }, -- or true, or false
         when = require("scrollbar.recipes").when.filetypes({ "lazy" }),
     },
 }
 ```
 
-- `snacks = true` turns on the list and the preview. `telescope = true` turns
-  on the results and the preview.
+- `snacks = true` turns on the list, the preview, and the zen window.
+  `telescope = true` turns on the results and the preview.
 - A key that you do not set is off. For example, `snacks = { list = true }`
   turns on only the list.
 - `when` selects other floats. See [Other Floats](#other-floats).
@@ -54,13 +55,15 @@ float source has one of these kinds:
 | --- | --- | --- | --- |
 | `snacks_list` | The list of a snacks.nvim picker | `snacks.list` | Not supported |
 | `snacks_preview` | The preview of a snacks.nvim picker | `snacks.preview` | Supported |
+| `snacks_zen` | The window of `Snacks.zen()` and `Snacks.zen.zoom()` | `snacks.zen` | Supported |
 | `telescope_results` | The results of a Telescope picker | `telescope.results` | Supported |
 | `telescope_preview` | The preview of a Telescope picker | `telescope.preview` | Supported |
 | `custom` | A float that `when` accepts | `when` | Supported |
 
 The plugin never loads snacks.nvim or Telescope. It reads the state of a
 picker only after snacks.nvim loads `snacks.picker.core.picker` or Telescope
-loads `telescope.state`.
+loads `telescope.state`. It reads the zen window only after snacks.nvim loads
+`snacks.zen`.
 
 The input window of snacks and the prompt window of Telescope get no bar. They
 are not built-in kinds, and the default [`exclude`](#eligibility) table
@@ -230,6 +233,24 @@ snacks.nvim.
   screen.
 - A click on the track or a drag of the thumb selects the item at that
   position. The preview follows the selection.
+
+## The snacks.nvim Zen Window
+
+`Snacks.zen.zoom()` opens its window through `Snacks.zen()`. Thus the
+`snacks_zen` kind and the `snacks.zen` key apply to the zen window and to the
+zoom window.
+
+```lua
+scrollbar = {
+    floats = { snacks = { zen = true } },
+}
+```
+
+- The plugin reads the window from the `win` field of the `snacks.zen`
+  module. This field is private to snacks.nvim. If snacks.nvim removes or
+  renames it, the zen window gets no bar. The other windows are not affected.
+- `snacks_zen` is a built-in kind, so `when` never runs for the zen window.
+  To show the bars on the zen window, set `snacks.zen`.
 
 ## Text Changes
 

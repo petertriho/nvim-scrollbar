@@ -227,7 +227,7 @@ require("scrollbar").setup({
 | `visibility` | `"all"` | `"all"` shows a scrollbar in every eligible window. `"active"` shows only the scrollbar of the active window. |
 | `autohide` | `false` | `true` conceals each scrollbar after 1000 ms without activity in its window. `{ delay_ms = n }` sets the delay. |
 | `max_lines` | `false` | A buffer with more lines than this number gets no scrollbar. |
-| `floats` | `false` | Floats that get a scrollbar. The built-in kinds are the list and the preview of the snacks.nvim picker, and the results and the preview of the Telescope picker. A `when` function selects other floats. See [Floats](floats.md). |
+| `floats` | `false` | Floats that get a scrollbar. The built-in kinds are the list and the preview of the snacks.nvim picker, the snacks.nvim zen window, and the results and the preview of the Telescope picker. A `when` function selects other floats. See [Floats](floats.md). |
 | `jump.labels` | `"asdfghjklqwertyuiopzxcvbnm"` | Labels of label mode. See [Jump and Glance](jump-and-glance.md#labels). |
 | `jump.offset` | `0` | Columns from each mark cell to its label. `0` puts the label on the mark cell. See [Jump and Glance](jump-and-glance.md#labels). |
 | `hover` | `false` | `true` opens the peek float when the pointer stays on a mark cell for 300 ms. `{ delay_ms = n }` sets the delay. See [Hover](jump-and-glance.md#hover). |
@@ -1186,8 +1186,8 @@ overrides apply on top of the shared `marks` definitions.
   and `when`. `snacks` and `telescope` are booleans or tables of booleans.
   `when` is a function. See [Floats](floats.md).
 - `match.floats`: `true`, or a dense list of `"snacks_list"`,
-  `"snacks_preview"`, `"telescope_results"`, `"telescope_preview"`, and
-  `"custom"`.
+  `"snacks_preview"`, `"snacks_zen"`, `"telescope_results"`,
+  `"telescope_preview"`, and `"custom"`.
 - `unit`: `"line"` or `"screenline"`.
 - `placement.relative`: `"window"` or `"editor"`.
 - `placement.anchor`: `"NW"`, `"NE"`, `"SW"`, or `"SE"`.

@@ -38,6 +38,7 @@ local function kinds(overrides)
     return vim.tbl_extend("force", {
         snacks_list = false,
         snacks_preview = false,
+        snacks_zen = false,
         telescope_results = false,
         telescope_preview = false,
     }, overrides or {})
@@ -46,6 +47,7 @@ end
 local ALL = kinds({
     snacks_list = true,
     snacks_preview = true,
+    snacks_zen = true,
     telescope_results = true,
     telescope_preview = true,
 })
@@ -60,9 +62,14 @@ T["normalizes the floats forms of the scrollbar"] = function()
     expect.equality(floats(false), off)
     expect.equality(floats(true), { enabled = true, kinds = ALL, when = false })
     expect.equality(floats({ snacks = false, telescope = false }), off)
+    expect.equality(floats({ snacks = true }), {
+        enabled = true,
+        kinds = kinds({ snacks_list = true, snacks_preview = true, snacks_zen = true }),
+        when = false,
+    })
     expect.equality(
-        floats({ snacks = true }),
-        { enabled = true, kinds = kinds({ snacks_list = true, snacks_preview = true }), when = false }
+        floats({ snacks = { zen = true } }),
+        { enabled = true, kinds = kinds({ snacks_zen = true }), when = false }
     )
     expect.equality(
         floats({ snacks = { list = true }, telescope = { preview = true, results = false } }),
@@ -83,6 +90,7 @@ T["rejects invalid floats values"] = function()
     expect_invalid({ floats = { snacks = { input = true } } }, "unknown option 'scrollbar%.floats%.snacks%.input'")
     expect_invalid({ floats = { telescope = { list = true } } }, "unknown option 'scrollbar%.floats%.telescope%.list'")
     expect_invalid({ floats = { snacks = { list = 1 } } }, "scrollbar%.floats%.snacks%.list must be a boolean")
+    expect_invalid({ floats = { snacks = { zen = "zoom" } } }, "scrollbar%.floats%.snacks%.zen must be a boolean")
     expect_invalid({ floats = { when = true } }, "scrollbar%.floats%.when must be a function")
     expect_invalid(
         { profiles = { { match = { filetypes = { "lua" } }, floats = true } } },
@@ -96,11 +104,16 @@ T["the minimap turns on every kind except the snacks list"] = function()
         minimap().set({ floats = true }).floats.kinds,
         kinds({
             snacks_preview = true,
+            snacks_zen = true,
             telescope_results = true,
             telescope_preview = true,
         })
     )
-    expect.equality(minimap().set({ floats = { snacks = true } }).floats.kinds, kinds({ snacks_preview = true }))
+    expect.equality(
+        minimap().set({ floats = { snacks = true } }).floats.kinds,
+        kinds({ snacks_preview = true, snacks_zen = true })
+    )
+    expect.equality(minimap().set({ floats = { snacks = { zen = true } } }).floats.kinds, kinds({ snacks_zen = true }))
 
     local message = "minimap%.floats%.snacks%.list is not supported%. The minimap cannot draw the snacks list, "
         .. "because its buffer holds only the visible rows"
@@ -129,10 +142,13 @@ T["validates match.floats"] = function()
     expect_invalid(profile({ floats = { 1 } }), "match%.floats%[1%] must be a string")
     expect_invalid(
         profile({ floats = { "custom", "fzf" } }),
-        "match%.floats%[2%] must be one of: custom, snacks_list, snacks_preview, telescope_preview, telescope_results"
+        "match%.floats%[2%] must be one of: custom, snacks_list, snacks_preview, snacks_zen, telescope_preview, "
+            .. "telescope_results"
     )
 
     expect.no_error(config().set, { scrollbar = profile({ floats = { "snacks_preview", "custom" } }) })
+    expect.no_error(config().set, { scrollbar = profile({ floats = { "snacks_zen" } }) })
+    expect.no_error(minimap().set, profile({ floats = { "snacks_zen" } }))
     expect.no_error(config().set, { scrollbar = profile({ floats = true }) })
 end
 

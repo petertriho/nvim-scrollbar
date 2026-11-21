@@ -225,6 +225,7 @@ By default, the scrollbar and the minimap show only on normal windows. With
 floats:
 
 - The list and the preview of the snacks.nvim picker
+- The window of the snacks.nvim zen mode and zoom mode
 - The results and the preview of the Telescope picker
 
 A `when` function selects other floats:
