@@ -149,6 +149,32 @@ T["repeated edits debounce to one scan and retain previous marks"] = function()
     })
 end
 
+T["SafeState after each edit keeps the edit debounce"] = function()
+    local child = new_child()
+    helpers.set_lines(child, { "start", "match", "none" })
+    helpers.accept_search(child, "/", "match")
+    expect.equality(helpers.wait_for_mark_lines(child, { 1 }), true)
+    instrument_scans(child)
+
+    -- In Insert mode, SafeState fires after TextChangedI for each key. The
+    -- keys come 5 ms apart, so that the event loop runs between them.
+    child.lua([[
+        local bufnr = vim.api.nvim_get_current_buf()
+        for index = 1, 5 do
+            vim.api.nvim_buf_set_lines(bufnr, 2, 3, false, { string.rep("match ", index) })
+            vim.api.nvim_exec_autocmds("TextChangedI", { buffer = bufnr })
+            vim.api.nvim_exec_autocmds("SafeState", { buffer = bufnr })
+            vim.wait(5)
+        end
+    ]])
+
+    expect.equality(helpers.wait_for_mark_lines(child, { 1, 2, 2, 2, 2, 2 }), true)
+    expect.equality(scan_calls(child), {
+        { pattern = "match", flags = "Wnc" },
+        { pattern = "match", flags = "bWnc" },
+    })
+end
+
 T["visible buffers debounce independently"] = function()
     local child = new_child()
     helpers.set_lines(child, { "start", "match" })

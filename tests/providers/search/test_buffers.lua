@@ -60,7 +60,9 @@ T["TextChanged replaces stale marks in the visible entered buffer"] = function()
     expect.equality(helpers.mark_lines(child), { 1, 1 })
     child.api.nvim_buf_set_lines(0, 1, 2, false, { "preview" })
     child.api.nvim_exec_autocmds("TextChanged", { buffer = 0 })
-    expect.equality(helpers.mark_lines(child), { 1 })
+    -- The edit is not on the cursor line, so no CursorMoved refresh scans at
+    -- once, and the edit refresh scans after its debounce.
+    expect.equality(helpers.wait_for_mark_lines(child, { 1 }), true)
 end
 
 T["pattern signatures are isolated per buffer"] = function()
