@@ -167,14 +167,16 @@ require("scrollbar").setup({
         profiles = nil,
     },
     peek = { -- see Jump and Glance
-        position = "scrollbar", -- "scrollbar", "cursor", or "center"
-        context = 5,
-        width = 0.6,
+        frame = "scrollbar", -- "scrollbar", "cursor", "center", or a function
         window = {},
     },
     glance = { -- see Jump and Glance
-        list = "line", -- "line", "mark", or "type"
-        height = 18,
+        frame = "cursor", -- "scrollbar", "cursor", "center", or a function
+        list = {
+            entries = "line", -- "line", "mark", or "type"
+            width = 0.4,
+            side = "right", -- "right" or "left"
+        },
         keys = { -- see Jump and Glance
             list = {
                 jump = "<CR>",
@@ -614,7 +616,10 @@ example, to show line numbers beside the marks or in the thumb. The
 ### Recipes
 
 `require("scrollbar.recipes")` has ready-made text functions. Each recipe
-makes a text function. Call it, with an optional options table:
+makes a text function. Call it, with an optional options table. The module
+also has [predicate recipes](#predicate-recipes) and
+[frame recipes](jump-and-glance.md#frame) for the peek float and the glance
+window.
 
 ```lua
 local recipes = require("scrollbar.recipes")
@@ -1075,20 +1080,27 @@ global, so profiles do not change them. See
 [Jump and Glance](jump-and-glance.md#options) for each option.
 
 ```lua
+local frame = require("scrollbar.recipes").frame
+
 require("scrollbar").setup({
     scrollbar = {
         hover = true,
     },
     peek = {
-        position = "cursor",
+        frame = "cursor",
         window = { border = "rounded" },
     },
     glance = {
-        list = "type",
+        frame = frame.center({ width = 0.8, height = 0.7 }),
+        list = { entries = "type" },
         keys = { list = { close = "q" } },
     },
 })
 ```
+
+`peek.frame` and `glance.frame` take a preset name or a frame function. The
+[frame recipes](jump-and-glance.md#frame) in
+`require("scrollbar.recipes").frame` make frame functions.
 
 ## Precedence
 

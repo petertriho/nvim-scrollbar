@@ -2,6 +2,7 @@
 --- and `scrollbar.hover` in the scrollbar block, and the top-level `peek` and
 --- `glance` blocks. Profiles do not change them.
 
+local frame = require("scrollbar.navigate.frame")
 local schema = require("scrollbar.config.schema")
 local window_config = require("scrollbar.config.window")
 
@@ -23,23 +24,23 @@ M.SCROLLBAR_KEYS = {
 }
 
 local PEEK_DEFAULTS = {
-    position = "scrollbar",
-    context = 5,
-    width = 0.6,
+    frame = "scrollbar",
     window = {},
 }
 
 local PEEK_KEYS = {
-    position = true,
-    context = true,
-    width = true,
+    frame = true,
     -- `scrollbar.config.window` validates the keys of `window`.
     window = { ["*"] = true },
 }
 
 local GLANCE_DEFAULTS = {
-    list = "line",
-    height = 18,
+    frame = "cursor",
+    list = {
+        entries = "line",
+        width = 0.4,
+        side = "right",
+    },
     keys = {
         list = {
             jump = "<CR>",
@@ -83,8 +84,8 @@ local function action_spec(actions)
 end
 
 local GLANCE_KEYS = {
-    list = true,
-    height = true,
+    frame = true,
+    list = { entries = true, width = true, side = true },
     keys = {
         list = action_spec(GLANCE_ACTIONS.list),
         preview = action_spec(GLANCE_ACTIONS.preview),
@@ -129,14 +130,16 @@ local function window_spec(owner, hints)
     }
 end
 
-local PEEK_WINDOW_SPEC = window_spec("the peek float", {
-    width = "use 'peek.width'",
-    height = "use 'peek.context'",
-})
+---@param option string
+---@return table<string, string>
+local function frame_hints(option)
+    local hint = string.format("use '%s'", option)
+    return { relative = hint, row = hint, col = hint, width = hint, height = hint }
+end
 
-local GLANCE_WINDOW_SPEC = window_spec("the glance window", {
-    height = "use 'glance.height'",
-})
+local PEEK_WINDOW_SPEC = window_spec("the peek float", frame_hints("peek.frame"))
+
+local GLANCE_WINDOW_SPEC = window_spec("the glance window", frame_hints("glance.frame"))
 
 ---@param value any
 ---@param path string
@@ -175,13 +178,21 @@ M.hover = function(value, path)
     return hover
 end
 
+--- A preset name or a frame function. The frame module resolves a preset
+--- when the float opens, so setup does not load the recipes.
 ---@param value any
 ---@param path string
----@return number
-local function fraction(value, path)
-    if type(value) ~= "number" or value ~= value or value <= 0 or value > 1 then
-        invalid(path .. " must be a number greater than 0 and at most 1")
+---@return ScrollbarFrameValue
+local function frame_value(value, path)
+    if type(value) == "function" then
+        return value
     end
+    for _, preset in ipairs(frame.PRESETS) do
+        if value == preset then
+            return value
+        end
+    end
+    invalid(path .. ' must be "scrollbar", "cursor", "center", or a function')
     return value
 end
 
@@ -202,9 +213,7 @@ M.peek = function(value)
     schema.check_keys(value, PEEK_KEYS, "peek")
     local merged = schema.merge(PEEK_DEFAULTS, value)
     return {
-        position = schema.enum(merged.position, "peek.position", { "scrollbar", "cursor", "center" }),
-        context = schema.integer(merged.context, "peek.context", 0),
-        width = fraction(merged.width, "peek.width"),
+        frame = frame_value(merged.frame, "peek.frame"),
         window = window_config.normalize(merged.window, "peek.window", PEEK_WINDOW_SPEC),
     }
 end
@@ -231,6 +240,22 @@ local function key_list(value, path)
         result[index] = lhs
     end
     return result
+end
+
+--- The list options. The list frame must leave room for the preview, so a
+--- part of the frame width is less than 1.
+---@param value table Merged `glance.list`
+---@return ScrollbarGlanceListConfig
+local function glance_list(value)
+    local width = value.width
+    if not frame.is_size(width) or width == 1 then
+        invalid("glance.list.width must be a number greater than 0 and less than 1, or a whole number greater than 1")
+    end
+    return {
+        entries = schema.enum(value.entries, "glance.list.entries", { "line", "mark", "type" }),
+        width = width,
+        side = schema.enum(value.side, "glance.list.side", { "right", "left" }),
+    }
 end
 
 --- The keys of each pane. Two actions of one pane cannot share a key. Two
@@ -273,10 +298,13 @@ M.glance = function(value)
             end
         end
     end
+    if value.list ~= nil and type(value.list) ~= "table" then
+        invalid("glance.list must be a table: set the entries with glance.list.entries")
+    end
     local merged = schema.merge(GLANCE_DEFAULTS, value)
     return {
-        list = schema.enum(merged.list, "glance.list", { "line", "mark", "type" }),
-        height = schema.integer(merged.height, "glance.height", 1),
+        frame = frame_value(merged.frame, "glance.frame"),
+        list = glance_list(merged.list),
         keys = glance_keys(merged.keys),
         window = window_config.normalize(merged.window, "glance.window", GLANCE_WINDOW_SPEC),
     }

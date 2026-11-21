@@ -4,9 +4,13 @@
 --- actions and the keys of each pane follow the design of glance.nvim. The
 --- code is not from glance.nvim.
 ---
---- - The frame opens under the cursor line, or above it when there is no room.
----   It spans the text area of the source window. The list pane takes the
----   right 40% and the preview pane the left 60%.
+--- - `glance.frame` sets the place and the size of the frame of both panes.
+---   The default frame opens under the cursor line, or above it when there is
+---   no room, and spans the text area of the source window. The list pane
+---   takes `glance.list.width` on `glance.list.side`, and the preview pane
+---   takes the rest.
+--- - The frame runs again when the screen or the source window changes size.
+---   When it no longer fits, the glance window closes.
 --- - The list has focus. Native motions move the selection, and the preview
 ---   follows. The keys of `glance.keys.list` are buffer-local keys of the list.
 --- - The preview pane is a window on the source buffer, so an edit in it
@@ -23,6 +27,7 @@
 ---   setup.
 
 local config = require("scrollbar.config")
+local frame = require("scrollbar.navigate.frame")
 local move = require("scrollbar.navigate.move")
 local peek = require("scrollbar.navigate.peek")
 local targets = require("scrollbar.navigate.targets")
@@ -39,7 +44,7 @@ local SELECTION_ID = 1
 local AUGROUP = "ScrollbarGlance"
 local HEADER_GROUP = "ScrollbarGlanceHeader"
 local LINE_NR_GROUP = "ScrollbarGlanceLineNr"
-local PREVIEW_SHARE = 0.6
+local NO_ROOM = "glance: the current window has no room for the glance window"
 
 ---@class ScrollbarGlanceSpan
 ---@field start_col integer Zero-based byte column
@@ -52,7 +57,10 @@ local PREVIEW_SHARE = 0.6
 ---@field list_win integer
 ---@field list_buf integer
 ---@field preview_win integer
----@field mode ScrollbarGlanceList
+---@field mode ScrollbarGlanceEntries
+---@field window ScrollbarWindowConfig
+---@field list_config ScrollbarGlanceListConfig
+---@field frame_value ScrollbarFrameValue
 ---@field types? table<string, true>
 ---@field entries ScrollbarNavigateEntry[]
 ---@field spans ScrollbarGlanceSpan[][] Highlight spans of each list row
@@ -113,89 +121,87 @@ local function clamp(value, minimum, maximum)
 end
 
 ---@class ScrollbarGlanceGeometry
----@field row integer Zero-based row of the frame, relative to the text area of the source window
----@field height integer Content rows of both panes
----@field preview_col integer
----@field preview_width integer Content width
----@field list_col integer
----@field list_width integer Content width
+---@field preview table<string, any> Position keys and content size of the preview pane
+---@field list table<string, any> Position keys and content size of the list pane
 
---- Place the frame across the text area of the source window, under the
---- cursor line or above it.
+--- Split the frame into the list pane on `list.side` and the preview pane on
+--- the other side. Nil when a pane has no room for one content cell.
 ---@param source_win integer
+---@param placed ScrollbarFrame
 ---@param sides ScrollbarWindowSides
----@param height integer Configured content rows
+---@param list ScrollbarGlanceListConfig
 ---@return ScrollbarGlanceGeometry?
-M._geometry = function(source_win, sides, height)
-    local winbar = vim.api.nvim_get_option_value("winbar", { win = source_win })
-    local area_height = vim.api.nvim_win_get_height(source_win) - (winbar == "" and 0 or 1)
-    local area_width = vim.api.nvim_win_get_width(source_win)
-    local textoff = vim.fn.getwininfo(source_win)[1].textoff
-    local frame_rows = sides.top + sides.bottom
-    local frame_cols = sides.left + sides.right
-    local text_width = area_width - textoff
-
-    local cursor = vim.api.nvim_win_call(source_win, vim.fn.winline) - 1
-    local below = area_height - cursor - 1
-    local above = cursor
-    height = math.min(height, area_height - frame_rows)
-    local row
-    if height + frame_rows <= below then
-        row = cursor + 1
-    elseif height + frame_rows <= above then
-        row = cursor - height - frame_rows
-    elseif math.max(below, above) - frame_rows >= 1 then
-        -- Neither side has room for the full height, so the frame takes the
-        -- larger side.
-        if below >= above then
-            height = below - frame_rows
-            row = cursor + 1
-        else
-            height = above - frame_rows
-            row = 0
-        end
+M._split = function(source_win, placed, sides, list)
+    local width = placed.width
+    local list_frame
+    if list.width < 1 then
+        -- The preview gets the rounded-down part, so the default 0.4 gives
+        -- the same widths as a 60% preview.
+        list_frame = width - math.floor(width * (1 - list.width))
     else
-        row = clamp(cursor + 1, 0, area_height - height - frame_rows)
+        list_frame = math.min(list.width, width)
     end
-
-    local preview_frame = math.floor(text_width * PREVIEW_SHARE)
-    local list_frame = text_width - preview_frame
-    local preview_width = preview_frame - frame_cols
-    local list_width = list_frame - frame_cols
-    if height < 1 or preview_width < 1 or list_width < 1 then
+    local preview_frame = width - list_frame
+    local frame_cols = sides.left + sides.right
+    local height = placed.height - sides.top - sides.bottom
+    if height < 1 or list_frame - frame_cols < 1 or preview_frame - frame_cols < 1 then
         return nil
     end
-    return {
-        row = row,
-        height = height,
-        preview_col = textoff,
-        preview_width = preview_width,
-        list_col = textoff + preview_frame,
-        list_width = list_width,
-    }
+    local list_col, preview_col
+    if list.side == "left" then
+        list_col, preview_col = placed.col, placed.col + list_frame
+    else
+        preview_col, list_col = placed.col, placed.col + preview_frame
+    end
+    local function pane(col, frame_width)
+        local result = { width = frame_width - frame_cols, height = height }
+        frame.apply_position(placed, source_win, result)
+        result.col = col
+        return result
+    end
+    return { preview = pane(preview_col, preview_frame), list = pane(list_col, list_frame) }
+end
+
+--- The geometry of the panes for `glance.frame`. Nil, with the reason, when
+--- the frame failed or has no room.
+---@param source_win integer
+---@param sides ScrollbarWindowSides
+---@param value ScrollbarFrameValue
+---@param list ScrollbarGlanceListConfig
+---@return ScrollbarGlanceGeometry? geometry
+---@return "no_room"|"failed"? reason
+local function geometry(source_win, sides, value, list)
+    local placed, reason = frame.layout("glance", "glance.frame", value, source_win, sides)
+    if placed == nil then
+        return nil, reason
+    end
+    local result = M._split(source_win, placed, sides, list)
+    if result == nil then
+        return nil, "no_room"
+    end
+    return result, nil
 end
 
 ---@param source_win integer
 ---@param window ScrollbarWindowConfig
----@param row integer
----@param col integer
----@param width integer
----@param height integer
+---@param pane table<string, any> Position keys and content size
 ---@return table<string, any>
-local function pane_config(source_win, window, row, col, width, height)
+local function pane_config(source_win, window, pane)
     local result = {}
     for key, value in pairs(window.open) do
         result[key] = value
     end
-    result.relative = "win"
-    result.win = source_win
-    result.row = row
-    result.col = col
-    result.width = width
-    result.height = height
+    for key, value in pairs(pane) do
+        result[key] = value
+    end
+    if result.relative == "win" then
+        result.win = source_win
+    end
     result.focusable = true
     return result
 end
+
+local HIDDEN_PANE = { relative = "win", row = 0, col = 0, width = 1, height = 1 }
 
 --- The rows of the list and their highlight spans.
 ---@param source_buf integer
@@ -543,9 +549,39 @@ local function set_list_keys(current)
     end
 end
 
+--- Run the frame again after a resize and move both panes. The glance window
+--- closes when the frame no longer fits.
+---@param current ScrollbarGlanceSession
+local function relayout(current)
+    if current.closing or session ~= current then
+        return
+    end
+    for _, win in ipairs({ current.source_win, current.list_win, current.preview_win }) do
+        if not valid_window(win) then
+            return
+        end
+    end
+    local sides = window_config.sides(current.preview_win)
+    local result, reason = geometry(current.source_win, sides, current.frame_value, current.list_config)
+    if result == nil then
+        if reason == "no_room" then
+            notify(NO_ROOM)
+        end
+        M.close(true)
+        return
+    end
+    vim.api.nvim_win_set_config(current.preview_win, pane_config(current.source_win, current.window, result.preview))
+    vim.api.nvim_win_set_config(current.list_win, pane_config(current.source_win, current.window, result.list))
+end
+
 ---@param current ScrollbarGlanceSession
 local function watch(current)
     local group = current.augroup
+    frame.on_resize(group, function()
+        return current.source_win
+    end, function()
+        relayout(current)
+    end)
     vim.api.nvim_create_autocmd("CursorMoved", {
         group = group,
         buffer = current.list_buf,
@@ -619,7 +655,7 @@ M.open = function(options)
         return
     end
     local glance_config = config.get_glance()
-    local entries = targets.entries(source_win, glance_config.list, options.types)
+    local entries = targets.entries(source_win, glance_config.list.entries, options.types)
     if #entries == 0 then
         notify("glance: the current window has no marks")
         return
@@ -629,7 +665,7 @@ M.open = function(options)
 
     -- Without a `border` key, the panes apply 'winborder', so the sides are
     -- known only after a pane opens. The preview opens hidden.
-    local initial = pane_config(source_win, window, 0, 0, 1, 1)
+    local initial = pane_config(source_win, window, HIDDEN_PANE)
     initial.hide = true
     initial.style = "minimal"
     initial.noautocmd = true
@@ -640,14 +676,16 @@ M.open = function(options)
     end
     peek.configure_window(preview_win, window, { winfixbuf = true })
     local sides = window_config.sides(preview_win)
-    local geometry = M._geometry(source_win, sides, glance_config.height)
-    if geometry == nil then
+    local panes, reason = geometry(source_win, sides, glance_config.frame, glance_config.list)
+    if panes == nil then
         pcall(vim.api.nvim_win_close, preview_win, true)
-        notify("glance: the current window has no room for the glance window")
+        -- A failed frame function has notified.
+        if reason == "no_room" then
+            notify(NO_ROOM)
+        end
         return
     end
-    local preview_config =
-        pane_config(source_win, window, geometry.row, geometry.preview_col, geometry.preview_width, geometry.height)
+    local preview_config = pane_config(source_win, window, panes.preview)
     preview_config.hide = false
     vim.api.nvim_win_set_config(preview_win, preview_config)
 
@@ -655,8 +693,7 @@ M.open = function(options)
     vim.api.nvim_set_option_value("bufhidden", "wipe", { buf = list_buf })
     vim.api.nvim_set_option_value("filetype", "scrollbar_glance", { buf = list_buf })
     vim.api.nvim_set_option_value("modifiable", false, { buf = list_buf })
-    local list_config =
-        pane_config(source_win, window, geometry.row, geometry.list_col, geometry.list_width, geometry.height)
+    local list_config = pane_config(source_win, window, panes.list)
     list_config.style = "minimal"
     list_config.noautocmd = true
     local list_ok, list_win = pcall(vim.api.nvim_open_win, list_buf, true, list_config)
@@ -686,7 +723,10 @@ M.open = function(options)
         list_win = list_win,
         list_buf = list_buf,
         preview_win = preview_win,
-        mode = glance_config.list,
+        mode = glance_config.list.entries,
+        window = window,
+        list_config = glance_config.list,
+        frame_value = glance_config.frame,
         types = options.types,
         entries = {},
         spans = {},

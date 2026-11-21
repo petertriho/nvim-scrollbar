@@ -58,6 +58,29 @@ local function frame(child, win)
     }
 end
 
+--- Set the configuration from Lua source that returns the top-level
+--- overrides, so that they can hold functions. `recipes` is in scope.
+local function set_config(child, source)
+    child.lua(string.format(
+        [[
+        local recipes = require("scrollbar.recipes")
+        local top = (function() %s end)()
+        require("scrollbar.config").set(require("tests.navigate.helpers").config(top))
+    ]],
+        source
+    ))
+end
+
+---@param predicate fun(): boolean
+local function wait_until(predicate)
+    expect.equality(vim.wait(2000, predicate, 20), true)
+end
+
+local function panes(child)
+    local current = state(child)
+    return { preview = frame(child, current.preview_win), list = frame(child, current.list_win) }
+end
+
 local function preview_line(child)
     return child.api.nvim_win_get_cursor(state(child).preview_win)[1] - 1
 end
@@ -99,7 +122,8 @@ end
 
 T["frame"]["takes the larger side and clamps the height"] = function()
     local child = navigate.new_child()
-    setup(child, { config = navigate.config({ glance = { height = 40 } }) })
+    setup(child)
+    set_config(child, "return { glance = { frame = recipes.frame.cursor({ height = 40 }) } }")
     child.api.nvim_win_set_cursor(0, { 11, 0 })
     open(child)
     local list = frame(child, state(child).list_win)
@@ -133,7 +157,194 @@ T["frame"]["follows a 'winborder' change after setup"] = function()
     local preview = frame(child, current.preview_win)
     local list = frame(child, current.list_win)
     expect.equality(preview.width + 2 + list.width + 2, 80)
-    expect.equality(list.height, 18)
+    -- The 18 rows of the default frame include the border.
+    expect.equality(list.height, 16)
+end
+
+T["frame"]["center: at the center for every cursor line"] = function()
+    local child = navigate.new_child()
+    setup(child, { config = navigate.config({ glance = { frame = "center" } }) })
+    for _, line in ipairs({ 1, 11, 21 }) do
+        child.api.nvim_win_set_cursor(0, { line, 0 })
+        open(child)
+        expect.equality(panes(child), {
+            preview = { row = 2, col = 0, width = 48, height = 18 },
+            list = { row = 2, col = 48, width = 32, height = 18 },
+        })
+        child.lua("require('scrollbar.navigate.glance').close(true)")
+    end
+end
+
+T["frame"]["a function sets the frame from the context"] = function()
+    local child = navigate.new_child()
+    setup(child)
+    set_config(
+        child,
+        [[return { glance = { frame = function(ctx)
+            _G.frame_ctx = vim.deepcopy(ctx)
+            return { row = 3, col = 10, width = 60, height = 10 }
+        end } }]]
+    )
+    child.api.nvim_win_set_cursor(0, { 6, 0 })
+    open(child)
+    expect.equality(panes(child), {
+        preview = { row = 3, col = 10, width = 36, height = 10 },
+        list = { row = 3, col = 46, width = 24, height = 10 },
+    })
+    local ctx = child.lua_get("_G.frame_ctx")
+    expect.equality({ ctx.kind, ctx.cursor_row, ctx.anchor_row }, { "glance", 5, 5 })
+end
+
+T["frame"]["a result is clamped into the window"] = function()
+    local child = navigate.new_child()
+    setup(child)
+    set_config(
+        child,
+        "return { glance = { frame = function() return { row = -5, col = 50, width = 200, height = 100 } end } }"
+    )
+    open(child)
+    expect.equality(panes(child), {
+        preview = { row = 0, col = 0, width = 48, height = 22 },
+        list = { row = 0, col = 48, width = 32, height = 22 },
+    })
+end
+
+T["frame"]["an editor frame centers on the screen"] = function()
+    local child = navigate.new_child()
+    setup(child)
+    child.cmd("rightbelow vsplit")
+    set_config(
+        child,
+        [[return { glance = { frame = recipes.frame.center({ relative = "editor", width = 60, height = 10 }) } }]]
+    )
+    open(child)
+    local current = state(child)
+    for _, win in ipairs({ current.preview_win, current.list_win }) do
+        expect.equality(child.api.nvim_win_get_config(win).relative, "editor")
+    end
+    -- 24 lines less the command line leave 23 rows.
+    expect.equality(panes(child), {
+        preview = { row = 6, col = 10, width = 36, height = 10 },
+        list = { row = 6, col = 46, width = 24, height = 10 },
+    })
+end
+
+T["frame"]["list.width takes a part or cells, and list.side a side"] = function()
+    local child = navigate.new_child()
+    setup(child, { config = navigate.config({ glance = { list = { width = 30 } } }) })
+    open(child)
+    expect.equality(panes(child).list, { row = 1, col = 50, width = 30, height = 18 })
+    child.lua("require('scrollbar.navigate.glance').close(true)")
+
+    set_config(child, "return { glance = { list = { width = 0.25, side = 'left' } } }")
+    open(child)
+    expect.equality(panes(child), {
+        preview = { row = 1, col = 20, width = 60, height = 18 },
+        list = { row = 1, col = 0, width = 20, height = 18 },
+    })
+end
+
+T["frame"]["a frame without room for the panes notifies"] = function()
+    local child = navigate.new_child()
+    setup(child)
+    set_config(
+        child,
+        [[return { glance = {
+            frame = function() return { row = 0, col = 0, width = 5, height = 10 } end,
+            window = { border = "single" },
+        } }]]
+    )
+    local windows = #child.api.nvim_list_wins()
+    open(child)
+    expect.equality(state(child), nil)
+    expect.equality(#child.api.nvim_list_wins(), windows)
+    expect.equality(child.lua_get("_G.notes"), {
+        "[nvim-scrollbar] glance: the current window has no room for the glance window",
+    })
+end
+
+T["frame"]["an invalid result notifies once and opens nothing"] = function()
+    local child = navigate.new_child()
+    setup(child)
+    set_config(child, "return { glance = { frame = function() return 'x' end } }")
+    local windows = #child.api.nvim_list_wins()
+    open(child)
+    open(child)
+    expect.equality(state(child), nil)
+    expect.equality(#child.api.nvim_list_wins(), windows)
+    expect.equality(child.lua_get("_G.notes"), { "[nvim-scrollbar] glance.frame returned a string, not a table" })
+end
+
+T["resize"] = MiniTest.new_set()
+
+T["resize"]["the panes follow a resize of the source window and keep the selection"] = function()
+    local child = navigate.new_child()
+    local setup_result = setup(child)
+    set_config(child, "return { glance = { frame = recipes.frame.center({ height = 10 }) } }")
+    open(child)
+    child.type_keys("j", "j")
+    local row = list_row(child)
+    expect.equality(panes(child).list.row, 6)
+    child.api.nvim_win_set_height(setup_result.source_win, 16)
+    wait_until(function()
+        return panes(child).list.row == 3
+    end)
+    expect.equality(list_row(child), row)
+    expect.equality(child.api.nvim_get_current_win(), state(child).list_win)
+end
+
+T["resize"]["the panes follow a resize of the screen"] = function()
+    local child = navigate.new_child()
+    setup(child)
+    set_config(
+        child,
+        [[return { glance = { frame = recipes.frame.center({ relative = "editor", width = 60, height = 10 }) } }]]
+    )
+    open(child)
+    expect.equality(panes(child).preview.col, 10)
+    child.o.columns = 70
+    wait_until(function()
+        return panes(child).preview.col == 5
+    end)
+end
+
+T["resize"]["a resize of another window does not run the frame"] = function()
+    local child = navigate.new_child()
+    local setup_result = setup(child)
+    set_config(
+        child,
+        [[return { glance = { frame = function(ctx)
+            _G.frame_calls = (_G.frame_calls or 0) + 1
+            return recipes.frame.center({ width = 30, height = 10 })(ctx)
+        end } }]]
+    )
+    child.cmd("vsplit")
+    child.cmd("split")
+    local other = child.api.nvim_get_current_win()
+    child.api.nvim_set_current_win(setup_result.source_win)
+    open(child)
+    expect.equality(child.lua_get("_G.frame_calls"), 1)
+    child.api.nvim_win_set_height(other, 5)
+    vim.uv.sleep(100)
+    expect.equality(child.lua_get("_G.frame_calls"), 1)
+    child.api.nvim_win_set_width(setup_result.source_win, 30)
+    wait_until(function()
+        return child.lua_get("_G.frame_calls") == 2
+    end)
+end
+
+T["resize"]["a resize without room closes the frame with a notification"] = function()
+    local child = navigate.new_child()
+    local setup_result = setup(child, { config = navigate.config({ glance = { window = { border = "single" } } }) })
+    open(child)
+    child.api.nvim_win_set_height(setup_result.source_win, 2)
+    wait_until(function()
+        return state(child) == nil
+    end)
+    expect.equality(child.lua_get("_G.notes"), {
+        "[nvim-scrollbar] glance: the current window has no room for the glance window",
+    })
+    expect.equality(child.api.nvim_get_current_win(), setup_result.source_win)
 end
 
 T["list"] = MiniTest.new_set()
@@ -181,7 +392,7 @@ end
 
 T["list"]["mark mode lists each mark"] = function()
     local child = navigate.new_child()
-    setup(child, { config = navigate.config({ glance = { list = "mark" } }) })
+    setup(child, { config = navigate.config({ glance = { list = { entries = "mark" } } }) })
     open(child)
     expect.equality(list_lines(child), {
         " -  21  text 21",
@@ -194,7 +405,7 @@ end
 
 T["list"]["type mode groups the lines under headers"] = function()
     local child = navigate.new_child()
-    setup(child, { config = navigate.config({ glance = { list = "type" } }) })
+    setup(child, { config = navigate.config({ glance = { list = { entries = "type" } } }) })
     child.api.nvim_win_set_cursor(0, { 100, 0 })
     open(child)
     expect.equality(list_lines(child), {
@@ -300,7 +511,10 @@ end
 T["keys"]["next and previous skip the headers and wrap around"] = function()
     local child = navigate.new_child()
     setup(child, {
-        config = keys_config({ list = { next = "<C-j>", previous = "<C-k>" } }, { glance = { list = "type" } }),
+        config = keys_config(
+            { list = { next = "<C-j>", previous = "<C-k>" } },
+            { glance = { list = { entries = "type" } } }
+        ),
     })
     child.api.nvim_win_set_cursor(0, { 100, 0 })
     open(child)

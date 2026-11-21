@@ -17,8 +17,10 @@
 ---@alias ScrollbarProviderOption boolean|ScrollbarSearchProviderConfig|ScrollbarMarksProviderConfig|ScrollbarListProviderConfig
 ---@alias ScrollbarFloatKind "snacks_list"|"snacks_preview"|"telescope_results"|"telescope_preview"|"custom"
 ---@alias ScrollbarSourceKind "normal"|ScrollbarFloatKind A normal window, or the kind of a floating source window
----@alias ScrollbarPeekPosition "scrollbar"|"cursor"|"center"
----@alias ScrollbarGlanceList "line"|"mark"|"type"
+---@alias ScrollbarFramePreset "scrollbar"|"cursor"|"center"
+---@alias ScrollbarFrameFunction fun(ctx: ScrollbarFrameContext): ScrollbarFrameResult? Nil when the window has no room
+---@alias ScrollbarFrameValue ScrollbarFramePreset|ScrollbarFrameFunction
+---@alias ScrollbarGlanceEntries "line"|"mark"|"type"
 ---@alias ScrollbarUserKeys false|string|string[] `false` removes the keys
 
 ---@class ScrollbarUserWindowConfig
@@ -220,10 +222,36 @@
 ---@class ScrollbarUserHoverConfig
 ---@field delay_ms? integer Rest time of the pointer on a mark before the peek opens
 
+---@class ScrollbarFrameContext
+---@field kind "peek"|"glance"
+---@field winid integer Source window
+---@field bufnr integer Source buffer
+---@field win { width: integer, height: integer, textoff: integer } Columns of the window, text rows without the winbar, and columns of the gutter
+---@field editor { width: integer, height: integer } The area between the tabline and the command line
+---@field sides ScrollbarWindowSides Border cells of one pane
+---@field cursor_row integer Zero-based row of the cursor line in the text area
+---@field anchor_row integer Peek: the row of the mark (the label row or the pointer row). Glance: `cursor_row`
+---@field free ScrollbarFrameFree
+
+---@class ScrollbarFrameFree
+---@field side "E"|"W" Side of the scrollbar and the minimap floats. "E" without a float
+---@field first_col integer Zero-based column of the window
+---@field last_col integer Zero-based column of the window, exclusive
+
+---@class ScrollbarFrameResult
+---@field relative? "win"|"editor" Default "win"
+---@field row number Zero-based. Relative to the text area of the source window, or to the editor area. Fractions round down
+---@field col number Zero-based. Fractions round down
+---@field width number Outer columns, border included. At least 1 after rounding
+---@field height number Outer rows, border included. At least 1 after rounding
+
+---@class ScrollbarFrameRecipeOptions
+---@field width? number Outer width. A number up to 1 is a part of the text area, and a whole number above 1 is cells
+---@field height? number Outer height, with the same rule as `width`
+---@field relative? "win"|"editor" Only for `recipes.frame.center`. Default "win"
+
 ---@class ScrollbarUserPeekConfig
----@field position? ScrollbarPeekPosition
----@field context? integer Lines above and below the mark line
----@field width? number Share of the width of the source window, greater than 0 and at most 1
+---@field frame? ScrollbarFrameValue Place and size of the float. Default "scrollbar"
 ---@field window? ScrollbarUserWindowConfig Without `border`, the float uses 'winborder'
 
 ---@class ScrollbarUserGlanceListKeys
@@ -248,9 +276,14 @@
 ---@field list? ScrollbarUserGlanceListKeys Buffer-local keys of the list
 ---@field preview? ScrollbarUserGlancePreviewKeys Keys of the preview pane. They are buffer-local on the source buffer while the pane has focus
 
+---@class ScrollbarUserGlanceListConfig
+---@field entries? ScrollbarGlanceEntries Entries of the list. Default "line"
+---@field width? number Outer width of the list pane: a part (less than 1) of the frame width, or a whole number of cells above 1. Default 0.4
+---@field side? "right"|"left" Side of the list. The preview takes the other side. Default "right"
+
 ---@class ScrollbarUserGlanceConfig
----@field list? ScrollbarGlanceList
----@field height? integer Content rows of the frame
+---@field frame? ScrollbarFrameValue Place and size of the frame of both panes. Default "cursor"
+---@field list? ScrollbarUserGlanceListConfig
 ---@field keys? ScrollbarUserGlanceKeys Keys of the list and of the preview pane
 ---@field window? ScrollbarUserWindowConfig Applies to both panes. Without `border`, the panes use 'winborder'
 
@@ -272,9 +305,7 @@
 ---@field delay_ms integer
 
 ---@class ScrollbarPeekConfig
----@field position ScrollbarPeekPosition
----@field context integer
----@field width number
+---@field frame ScrollbarFrameValue
 ---@field window ScrollbarWindowConfig `open.border` is nil when the float uses 'winborder'
 
 ---@class ScrollbarGlanceListKeys
@@ -299,9 +330,14 @@
 ---@field list ScrollbarGlanceListKeys
 ---@field preview ScrollbarGlancePreviewKeys
 
+---@class ScrollbarGlanceListConfig
+---@field entries ScrollbarGlanceEntries
+---@field width number
+---@field side "right"|"left"
+
 ---@class ScrollbarGlanceConfig
----@field list ScrollbarGlanceList
----@field height integer
+---@field frame ScrollbarFrameValue
+---@field list ScrollbarGlanceListConfig
 ---@field keys ScrollbarGlanceKeys
 ---@field window ScrollbarWindowConfig `open.border` is nil when the panes use 'winborder'
 
