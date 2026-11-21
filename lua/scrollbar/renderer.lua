@@ -73,6 +73,10 @@ end
 ---@type table<integer, ScrollbarFlattenedMarksCache>
 local flattened_cache = {}
 
+-- The last generation of flattened marks. One counter for all windows, so
+-- that a marks table and a generation never pair again after a rebuild.
+local flattened_generation = 0
+
 ---@type table<integer, ScrollbarLineMarkLayerCache>
 local line_layer_cache = {}
 
@@ -649,12 +653,51 @@ local function flattened_mark_less(left, right)
     return (left.text or "") < (right.text or "")
 end
 
+---The marks of one provider as layout marks, sorted by (line, text).
+---@param provider string
+---@param buffer_marks? ScrollbarMark[]
+---@param window_marks? ScrollbarMark[]
+---@return ScrollbarLayoutMark[]
+local function flattened_region(provider, buffer_marks, window_marks)
+    local region = {}
+    for _, source in ipairs({ buffer_marks or NO_MARKS, window_marks or NO_MARKS }) do
+        for _, mark in ipairs(source) do
+            region[#region + 1] = {
+                provider = provider,
+                line = mark.line,
+                type = mark.type,
+                text = mark.text,
+            }
+        end
+    end
+    if #region > 1 then
+        table.sort(region, flattened_mark_less)
+    end
+    return region
+end
+
+---@param left ScrollbarLayoutMark
+---@param right ScrollbarLayoutMark
+---@return boolean
+local function same_layout_mark(left, right)
+    return left.line == right.line and left.type == right.type and left.text == right.text
+end
+
+---Returns the marks of all providers that the scrollbar consumes, in
+---`source_less` order. When only the marks of some providers changed, and
+---each of those providers kept its mark count, the function writes the new
+---marks into the previous table and returns that table again. Then the
+---patch lists the indexes that changed since the generation in `patch.from`.
+---A caller that holds data for the marks table at that generation can update
+---only those indexes. A caller at another generation must rebuild.
 ---@param source_win integer
 ---@param source_buf integer
 ---@return ScrollbarLayoutMark[] marks
 ---@return integer buffer_revision
 ---@return integer window_revision
 ---@return ScrollbarCompactSearch? compact_search
+---@return integer generation Changes each time the content of `marks` changes
+---@return ScrollbarFlattenedPatch? patch
 local function flattened_marks(source_win, source_buf)
     local buffer_snapshot = store._get_snapshot(source_buf)
     local window_snapshot = store._get_window_snapshot(source_win)
@@ -665,39 +708,90 @@ local function flattened_marks(source_win, source_buf)
         and cached.buffer_revision == buffer_snapshot.revision
         and cached.window_revision == window_snapshot.revision
     then
-        return cached.marks, buffer_snapshot.revision, window_snapshot.revision, cached.compact_search
+        return cached.marks,
+            buffer_snapshot.revision,
+            window_snapshot.revision,
+            cached.compact_search,
+            cached.generation,
+            cached.patch
     end
 
     local provider_names, compact_search = providers._consumed_marks(buffer_snapshot, window_snapshot, "scrollbar")
+    local previous = cached ~= nil and cached.source_buf == source_buf and cached or nil
 
-    -- This loop emits the providers in name order and sorts the marks of each
-    -- provider by (line, text), so the flattened array is in `source_less`
-    -- order. The layout then skips the sort of each group on rebuilds. This
-    -- code pays the sort cost only when a revision change rebuilds this cache
-    -- anyway.
-    local marks = {}
-    for _, provider in ipairs(provider_names) do
-        local base = #marks
-        for _, snapshot in ipairs({ buffer_snapshot.marks, window_snapshot.marks }) do
-            for _, mark in ipairs(snapshot[provider] or {}) do
-                marks[#marks + 1] = {
-                    provider = provider,
-                    line = mark.line,
-                    type = mark.type,
-                    text = mark.text,
-                }
+    -- The store replaces the mark array of a provider only when its marks
+    -- change, so the identity of the two source arrays identifies the sorted
+    -- region of the provider. A cursor move then rebuilds only the region of
+    -- the cursor provider, and the regions of the other providers keep their
+    -- sort.
+    ---@type table<string, ScrollbarFlattenedRegion>
+    local regions = {}
+    local changed_providers = {}
+    local in_place = previous ~= nil and #provider_names == #previous.provider_names
+    for index, provider in ipairs(provider_names) do
+        local buffer_marks = buffer_snapshot.marks[provider]
+        local window_marks = window_snapshot.marks[provider]
+        local region = previous and previous.regions[provider] or nil
+        if region == nil or region.buffer_marks ~= buffer_marks or region.window_marks ~= window_marks then
+            local old_count = region and #region.marks or nil
+            region = {
+                buffer_marks = buffer_marks,
+                window_marks = window_marks,
+                marks = flattened_region(provider, buffer_marks, window_marks),
+            }
+            if old_count == #region.marks then
+                changed_providers[provider] = true
+            else
+                in_place = false
             end
         end
-        if #marks > base + 1 then
-            local region = {}
-            for index = base + 1, #marks do
-                region[#region + 1] = marks[index]
+        if in_place and (previous == nil or previous.provider_names[index] ~= provider) then
+            in_place = false
+        end
+        regions[provider] = region
+    end
+
+    local marks
+    local generation
+    local patch = nil
+    if in_place and previous ~= nil then
+        -- The providers come in name order, and each region is sorted by
+        -- (line, text), so the flattened array stays in `source_less` order
+        -- and keeps the index range of each provider.
+        marks = previous.marks
+        generation = previous.generation
+        local changed = {}
+        local base = 0
+        for _, provider in ipairs(provider_names) do
+            local region_marks = regions[provider].marks
+            if changed_providers[provider] then
+                for offset = 1, #region_marks do
+                    local index = base + offset
+                    local mark = region_marks[offset]
+                    if not same_layout_mark(marks[index], mark) then
+                        changed[#changed + 1] = index
+                    end
+                    marks[index] = mark
+                end
             end
-            table.sort(region, flattened_mark_less)
-            for index = 1, #region do
-                marks[base + index] = region[index]
+            base = base + #region_marks
+        end
+        if #changed > 0 then
+            flattened_generation = flattened_generation + 1
+            patch = { from = generation, indexes = changed }
+            generation = flattened_generation
+        end
+    else
+        marks = {}
+        for _, provider in ipairs(provider_names) do
+            local region_marks = regions[provider].marks
+            local base = #marks
+            for offset = 1, #region_marks do
+                marks[base + offset] = region_marks[offset]
             end
         end
+        flattened_generation = flattened_generation + 1
+        generation = flattened_generation
     end
     flattened_cache[source_win] = {
         source_buf = source_buf,
@@ -705,8 +799,12 @@ local function flattened_marks(source_win, source_buf)
         window_revision = window_snapshot.revision,
         marks = marks,
         compact_search = compact_search,
+        provider_names = provider_names,
+        regions = regions,
+        generation = generation,
+        patch = patch,
     }
-    return marks, buffer_snapshot.revision, window_snapshot.revision, compact_search
+    return marks, buffer_snapshot.revision, window_snapshot.revision, compact_search, generation, patch
 end
 
 ---@param source_win integer
@@ -806,6 +904,8 @@ end
 ---@param active_config ScrollbarConfig
 ---@param marks ScrollbarLayoutMark[]
 ---@param compact_search? ScrollbarCompactSearch
+---@param marks_generation integer
+---@param marks_patch? ScrollbarFlattenedPatch
 ---@return ScrollbarLineMarkLayerCache
 local function line_mark_layer(
     source_win,
@@ -817,7 +917,9 @@ local function line_mark_layer(
     height,
     active_config,
     marks,
-    compact_search
+    compact_search,
+    marks_generation,
+    marks_patch
 )
     local layout_cache = active_config.layout_cache
     ---@type ScrollbarLineMarkLayerCache?
@@ -847,21 +949,35 @@ local function line_mark_layer(
         return cached
     end
 
-    -- Rows and the mark layer depend only on marks, line_count, height,
-    -- container_width, and the layout configuration. They do not depend on
-    -- the revisions. When the flattened marks table is the same object as in
-    -- the last build, the rows are computed again in place, and only the
-    -- shifted entries are stored. When no row shifted, every layer input is
-    -- provably identical, and the cached layer is reused.
+    -- Rows and the mark layer depend only on marks, compact_search,
+    -- line_count, height, container_width, and the layout configuration. They
+    -- do not depend on the revisions. When the flattened marks table is the
+    -- same object as in the last build, the rows are computed again in place,
+    -- and only the shifted entries are stored. The marks are then the same as
+    -- in the last build, or a patch lists the indexes that changed since
+    -- then. When no row shifted, every layer input is provably identical, and
+    -- the cached layer is reused. The rows of compact matches depend on the
+    -- line count, so with compact matches this path needs the same line count.
     local rows_changed = nil
     local mark_rows
+    local changed_marks = nil
+    local in_place = false
     if
         cached ~= nil
-        and compact_search == nil
         and cached.source_buf == source_buf
         and cached.marks == marks
         and cached.height == height
+        and cached.compact_search == compact_search
+        and (compact_search == nil or cached.line_count == line_count)
     then
+        if marks_patch ~= nil and marks_patch.from == cached.marks_generation then
+            changed_marks = marks_patch.indexes
+            in_place = true
+        else
+            in_place = cached.marks_generation == marks_generation
+        end
+    end
+    if in_place and cached ~= nil then
         mark_rows, rows_changed = layout.normalized_mark_rows({
             height = height,
             line_count = line_count,
@@ -872,6 +988,7 @@ local function line_mark_layer(
                 height = cached.height,
                 segments = cached.layer ~= nil and cached.layer.segments or nil,
             },
+            changed = changed_marks,
         })
     else
         mark_rows = layout.normalized_mark_rows({
@@ -892,6 +1009,7 @@ local function line_mark_layer(
         cached.buffer_revision = buffer_revision
         cached.window_revision = window_revision
         cached.line_count = line_count
+        cached.marks_generation = marks_generation
         return cached
     end
 
@@ -918,6 +1036,8 @@ local function line_mark_layer(
         height = height,
         config = layout_cache,
         marks = marks,
+        marks_generation = marks_generation,
+        compact_search = compact_search,
         mark_rows = mark_rows,
         layer = layout.mark_layer({
             config = active_config,
@@ -1190,11 +1310,12 @@ local function render_source(source_win, selection, root_config)
         release_statuscolumn(source_win)
     end
 
-    local marks, buffer_revision, window_revision, compact_search
+    local marks, buffer_revision, window_revision, compact_search, marks_generation, marks_patch
     if view ~= nil then
-        marks, buffer_revision, window_revision = NO_MARKS, 0, 0
+        marks, buffer_revision, window_revision, marks_generation = NO_MARKS, 0, 0, 0
     else
-        marks, buffer_revision, window_revision, compact_search = flattened_marks(source_win, source_buf)
+        marks, buffer_revision, window_revision, compact_search, marks_generation, marks_patch =
+            flattened_marks(source_win, source_buf)
     end
     local unit = view ~= nil and "line" or active_config.unit
     local line_count = nil
@@ -1255,7 +1376,9 @@ local function render_source(source_win, selection, root_config)
                 content_height,
                 active_config,
                 marks,
-                compact_search
+                compact_search,
+                marks_generation,
+                marks_patch
             )
             geometry = geometry_for(
                 active_config,

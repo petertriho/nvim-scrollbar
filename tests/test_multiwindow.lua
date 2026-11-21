@@ -288,6 +288,8 @@ T["window-local mark revisions rebuild only the affected static layer"] = functi
                 thumb = { text = "H", hide_if_all_visible = false },
             },
         })
+        -- The scrollbar draws only the marks of a provider that it consumes.
+        require("scrollbar.providers").register({ name = "test" })
         local store = require("scrollbar.shared.store")
         assert(store.set_window("test", first, { { line = 10, type = "Misc" } }))
         assert(store.set_window("test", second, { { line = 180, type = "Misc" } }))
