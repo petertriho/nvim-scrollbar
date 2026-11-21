@@ -95,6 +95,7 @@ local APPEARANCE_KEYS = {
             highlight_channel = true,
             inactive_highlight = true,
             inactive_highlight_channel = true,
+            highlight_from = true,
         },
     },
     -- `scrollbar.config.window` validates the keys of `window`.
@@ -388,6 +389,7 @@ local function layout_config(value)
         marks[mark_type] = {
             text = mark.text,
             priority = mark.priority,
+            highlight_from = mark.highlight_from,
         }
     end
     return {
@@ -490,6 +492,7 @@ local function normalize(value, shared, path, variant_id)
                 "highlight_channel",
                 "inactive_highlight",
                 "inactive_highlight_channel",
+                "highlight_from",
             },
         }),
         window = window_config.normalize(value.window, at("window"), WINDOW_SPEC),

@@ -88,8 +88,10 @@ local MARK_KEYS = {
     highlight_channel = true,
     inactive_highlight = true,
     inactive_highlight_channel = true,
+    highlight_from = true,
 }
 local HIGHLIGHT_CHANNELS = { "fg", "bg" }
+local HIGHLIGHT_SOURCES = { "self", "covered" }
 local V1_MARK_COLOR = "v1 option: put an nvim_set_hl() table in 'highlight'. " .. const.V1_MIGRATION
 local describe_mark_key = schema.hinter({
     color = V1_MARK_COLOR,
@@ -136,6 +138,12 @@ local function validate_mark_spec(spec, path, mark_type)
             path .. ".inactive_highlight_channel",
             HIGHLIGHT_CHANNELS
         ) or nil,
+        -- Only "covered" stays in the spec. "self" is the default, so the
+        -- specs and the layout cache key stay the same as without the field.
+        highlight_from = spec.highlight_from ~= nil
+                and schema.enum(spec.highlight_from, path .. ".highlight_from", HIGHLIGHT_SOURCES) == "covered"
+                and "covered"
+            or nil,
     }
 end
 

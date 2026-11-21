@@ -1065,6 +1065,45 @@ T["mark registry"]["highlight_channel is fg or bg and stays out of the spec unti
     )
 end
 
+T["mark registry"]["highlight_from is self or covered, only covered stays in the spec, and the minimap drops it"] = function()
+    local config = require("scrollbar.config")
+    local result = set_top({
+        minimap = { enabled = true },
+        marks = { Cursor = { highlight_from = "covered" }, Search = { highlight_from = "self" } },
+        scrollbar = { marks = { Warn = { highlight_from = "covered" } } },
+    })
+    expect.equality(result.marks.Cursor.highlight_from, "covered")
+    expect.equality(result.marks.Warn.highlight_from, "covered")
+    expect.equality(result.marks.Search.highlight_from, nil)
+    expect.equality(result.marks.Error.highlight_from, nil)
+    expect.equality(result.layout_cache.marks.Cursor.highlight_from, "covered")
+    expect.equality(result.layout_cache.marks.Error.highlight_from, nil)
+    local minimap = config.get_minimap()
+    for _, spec in pairs(minimap.marks) do
+        expect.equality(rawget(spec, "highlight_from"), nil)
+    end
+
+    -- A renderer override turns a shared "covered" off again.
+    result = set_top({
+        marks = { Cursor = { highlight_from = "covered" } },
+        scrollbar = { marks = { Cursor = { highlight_from = "self" } } },
+    })
+    expect.equality(result.marks.Cursor.highlight_from, nil)
+
+    expect_invalid_top(
+        { marks = { Cursor = { highlight_from = true } } },
+        "marks%.Cursor%.highlight_from must be one of: covered, self"
+    )
+    expect_invalid_top(
+        { scrollbar = { marks = { Cursor = { highlight_from = "below" } } } },
+        "scrollbar%.marks%.Cursor%.highlight_from must be one of: covered, self"
+    )
+    expect_invalid_top(
+        { minimap = { enabled = true, marks = { Info = { highlight_from = "covered" } } } },
+        "minimap%.marks%.Info%.highlight_from"
+    )
+end
+
 T["mark registry"]["inactive highlights follow the precedence of highlight and stay out of the spec until set"] = function()
     local config = require("scrollbar.config")
     local result = set_top({

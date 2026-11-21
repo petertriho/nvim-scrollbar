@@ -1766,6 +1766,9 @@ local function group_candidates(input, column_offset, expanded_lane_id, build)
                 count = 0,
                 ordinary_count = 0,
             }
+            if mark_config.highlight_from == "covered" then
+                group.inherits = true
+            end
             lane_groups[mark_type] = group
             groups[#groups + 1] = group
         end
@@ -2078,6 +2081,7 @@ local function add_expanded_candidates(input, candidates, buckets, lane, width, 
     -- mark that does not fit ends the row. A one-cell text takes the next
     -- available column, also across a column of another lane.
     local priority = input.config.marks.Mark.priority
+    local inherits = input.config.marks.Mark.highlight_from == "covered"
     local slot_count = #available
     for row, entries in pairs(buckets) do
         local slot = 1
@@ -2109,9 +2113,36 @@ local function add_expanded_candidates(input, candidates, buckets, lane, width, 
                     text = entry.text,
                     dynamic = entry.dynamic,
                 }
+                if inherits then
+                    candidates[#candidates].inherits = true
+                end
                 slot = slot + text_width
             end
         end
+    end
+end
+
+-- Records the type of a dropped glyph on the glyph with `highlight_from =
+-- "covered"` that drops it. The dropped glyph counts only when that one glyph
+-- takes all of its taken cells, because only then would the cells show it
+-- without the inheriting glyph. The groups come in lane order, so the first
+-- record is the mark that the cell would show. A dropped glyph of an
+-- inheriting type does not count: an inheriting mark takes the color of the
+-- first covered mark that does not inherit.
+local function record_covered(cells, column, last_column, mark_type)
+    local owner = nil
+    for cell = column, last_column do
+        local taken = cells[cell]
+        if taken then
+            if owner == nil then
+                owner = taken
+            elseif taken ~= owner then
+                return
+            end
+        end
+    end
+    if owner ~= nil and owner.inherits and owner.covered_type == nil then
+        owner.covered_type = mark_type
     end
 end
 
@@ -2120,6 +2151,9 @@ local function place_marks(input, groups)
     for row = 0, input.height - 1 do
         rows[row] = {}
     end
+    -- Whether a placed glyph inherits. Until then, no dropped glyph needs a
+    -- record.
+    local covering = false
 
     for _, group in ipairs(groups) do
         rows[group.row][group.lane_id] = rows[group.row][group.lane_id] or {}
@@ -2147,9 +2181,15 @@ local function place_marks(input, groups)
                         line = group.line,
                         lines = group.lines,
                     }
+                    if group.inherits then
+                        placed.inherits = true
+                        covering = true
+                    end
                     for cell = column, last_column do
                         cells[cell] = placed
                     end
+                elseif covering and not group.inherits then
+                    record_covered(cells, column, last_column, group.type)
                 end
             elseif last_column > group.max_column then
                 break
@@ -2195,6 +2235,9 @@ local function row_group(config, row, groups, by_type, mark_type)
                 count = 0,
                 ordinary_count = 0,
             }
+            if mark_config.highlight_from == "covered" then
+                group.inherits = true
+            end
             groups[#groups + 1] = group
         else
             group = false
@@ -2290,6 +2333,7 @@ end
 
 local function place_row(groups)
     local row_cells = {}
+    local covering = false
     for _, group in ipairs(groups) do
         local cells = row_cells[group.lane_id]
         if cells == nil then
@@ -2319,9 +2363,15 @@ local function place_row(groups)
                         line = group.line,
                         lines = group.lines,
                     }
+                    if group.inherits then
+                        placed.inherits = true
+                        covering = true
+                    end
                     for cell = column, last_column do
                         cells[cell] = placed
                     end
+                elseif covering and not group.inherits then
+                    record_covered(cells, column, last_column, group.type)
                 end
             elseif last_column > group.max_column then
                 break
@@ -2472,6 +2522,65 @@ local function visual_layer_signature(config, column, column_offset, expanded_la
     return table.concat(parts, "|")
 end
 
+-- The highlight type that an inheriting winner takes from the lower stacked
+-- mark layers: the first mark below it, from the upper layer down, that would
+-- be visible in its cells without it. A mark that inherits gives the type
+-- that it covers in its own lane, or else the walk goes on below it. Nil when
+-- no such mark exists, so the winner keeps its own highlight.
+local function stack_covered_type(config, placed, owner, reservations, column_offset, expanded_lane_id, in_thumb_row)
+    local below = false
+    for _, candidate in ipairs(placed) do
+        if candidate == owner then
+            below = true
+        elseif below and candidate.column <= owner.last_column and candidate.last_column >= owner.column then
+            local visible = true
+            local signature = visual_layer_signature(
+                config,
+                candidate.column,
+                column_offset,
+                expanded_lane_id,
+                in_thumb_row,
+                candidate.lane_id
+            )
+            for cell = candidate.column, candidate.last_column do
+                local priority =
+                    layer_priority(config, cell, column_offset, expanded_lane_id, "marks", candidate.lane_id)
+                -- Without the owner, a cell of the owner keeps only the
+                -- reservation of the thumb.
+                local reserved = reservations[cell]
+                if cell >= owner.column and cell <= owner.last_column then
+                    reserved = in_thumb_row and layer_priority(config, cell, column_offset, expanded_lane_id, "thumb")
+                        or nil
+                end
+                if
+                    priority == nil
+                    or visual_layer_signature(
+                        config,
+                        cell,
+                        column_offset,
+                        expanded_lane_id,
+                        in_thumb_row,
+                        candidate.lane_id
+                    ) ~= signature
+                    or (reserved ~= nil and reserved >= priority)
+                then
+                    visible = false
+                    break
+                end
+            end
+            if visible then
+                if not candidate.inherits then
+                    return candidate.type
+                end
+                if candidate.covered_type ~= nil then
+                    return candidate.covered_type
+                end
+            end
+        end
+    end
+    return nil
+end
+
 local function collect_row_marks(config, marks, width, column_offset, expanded_lane_id, in_thumb_row)
     local placed = {}
     for _, cells in pairs(marks) do
@@ -2509,6 +2618,9 @@ local function collect_row_marks(config, marks, width, column_offset, expanded_l
     end
 
     local winners = {}
+    -- The visible marks with `highlight_from = "covered"` that cover no mark
+    -- in their own lane.
+    local pending = nil
     for _, mark in ipairs(placed) do
         local visible = true
         local signature =
@@ -2530,9 +2642,27 @@ local function collect_row_marks(config, marks, width, column_offset, expanded_l
                 reservations[cell] =
                     layer_priority(config, cell, column_offset, expanded_lane_id, "marks", mark.lane_id)
             end
+            if mark.inherits and mark.covered_type == nil then
+                pending = pending or {}
+                pending[#pending + 1] = mark
+            end
         end
     end
-    return winners
+
+    -- The stack result stays in a table of this row, because the compose
+    -- reuses the placed marks of a row in later layers.
+    local inherited = nil
+    if pending ~= nil then
+        for _, mark in ipairs(pending) do
+            local mark_type =
+                stack_covered_type(config, placed, mark, reservations, column_offset, expanded_lane_id, in_thumb_row)
+            if mark_type ~= nil then
+                inherited = inherited or {}
+                inherited[mark] = mark_type
+            end
+        end
+    end
+    return winners, inherited
 end
 
 ---@param row_text? string|false The result of a thumb text function for this row. False leaves the row blank
@@ -2657,8 +2787,9 @@ local function add_span(spans, start_col, end_col, highlight, priority)
     end
 end
 
-local function mark_highlight(config, column, column_offset, expanded_lane_id, mark, in_thumb_row)
-    local groups = config.highlights.marks[mark.type]
+---@param highlight_type string The mark type whose groups the cell shows
+local function mark_highlight(config, column, column_offset, expanded_lane_id, mark, in_thumb_row, highlight_type)
+    local groups = config.highlights.marks[highlight_type]
     if config.overlap.marks == "tint" then
         return groups.tint
     end
@@ -2684,7 +2815,8 @@ local function render_row(input, row, marks, width, column_offset, expanded_lane
     local in_thumb_row = input.config.layout.thumb ~= false
         and row >= input.geometry.handle.first_row
         and row <= input.geometry.handle.last_row
-    local winners = collect_row_marks(input.config, marks, width, column_offset, expanded_lane_id, in_thumb_row)
+    local winners, inherited =
+        collect_row_marks(input.config, marks, width, column_offset, expanded_lane_id, in_thumb_row)
     local thumb_starts =
         thumb_glyphs(input.config, column_offset, winners, in_thumb_row, thumb_texts and thumb_texts[row])
     -- A tint mark is a background, so its cells are spaces.
@@ -2733,7 +2865,15 @@ local function render_row(input, row, marks, width, column_offset, expanded_lane
                     spans,
                     byte_column,
                     next_byte_column,
-                    mark_highlight(input.config, column, column_offset, expanded_lane_id, mark, in_thumb_row),
+                    mark_highlight(
+                        input.config,
+                        column,
+                        column_offset,
+                        expanded_lane_id,
+                        mark,
+                        in_thumb_row,
+                        mark.covered_type or (inherited and inherited[mark]) or mark.type
+                    ),
                     layer.priority
                 )
             end
@@ -2837,6 +2977,7 @@ local function row_equivalent(a, b)
                 or placed_a.type ~= placed_b.type
                 or placed_a.provider ~= placed_b.provider
                 or placed_a.line ~= placed_b.line
+                or placed_a.covered_type ~= placed_b.covered_type
             then
                 return false
             end
