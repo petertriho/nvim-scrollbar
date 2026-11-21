@@ -1,21 +1,23 @@
 local MiniTest = MiniTest
 local helpers = require("tests.helpers")
 local expect = MiniTest.expect
+local set_numbered_lines = require("tests.shared.helpers").set_numbered_lines
 
 local T = MiniTest.new_set()
 
-T["root setup preserves independent floats for two views of one buffer"] = function()
+local function new_child()
     local child = helpers.new_child()
     MiniTest.finally(function()
         helpers.stop_child(child)
     end)
+    return child
+end
 
+T["root setup preserves independent floats for two views of one buffer"] = function()
+    local child = new_child()
+
+    set_numbered_lines(child, 200)
     local result = child.lua_func(function()
-        local lines = {}
-        for index = 1, 200 do
-            lines[index] = "line " .. index
-        end
-        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
         local source_buf = vim.api.nvim_get_current_buf()
         local first = vim.api.nvim_get_current_win()
         vim.cmd("split")
@@ -70,17 +72,10 @@ T["root setup preserves independent floats for two views of one buffer"] = funct
 end
 
 T["same-buffer vertical splits avoid and update their own live gutters"] = function()
-    local child = helpers.new_child()
-    MiniTest.finally(function()
-        helpers.stop_child(child)
-    end)
+    local child = new_child()
 
+    set_numbered_lines(child, 200)
     local result = child.lua_func(function()
-        local lines = {}
-        for index = 1, 200 do
-            lines[index] = "line " .. index
-        end
-        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
         local source_buf = vim.api.nvim_get_current_buf()
         local first = vim.api.nvim_get_current_win()
         vim.cmd("vsplit")
@@ -185,17 +180,10 @@ T["same-buffer vertical splits avoid and update their own live gutters"] = funct
 end
 
 T["cursor marks stay local to each view of one buffer"] = function()
-    local child = helpers.new_child()
-    MiniTest.finally(function()
-        helpers.stop_child(child)
-    end)
+    local child = new_child()
 
+    set_numbered_lines(child, 200)
     local result = child.lua_func(function()
-        local lines = {}
-        for index = 1, 200 do
-            lines[index] = "line " .. index
-        end
-        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
         local first = vim.api.nvim_get_current_win()
         vim.cmd("split")
         local second = vim.api.nvim_get_current_win()
@@ -254,17 +242,10 @@ T["cursor marks stay local to each view of one buffer"] = function()
 end
 
 T["window-local mark revisions rebuild only the affected static layer"] = function()
-    local child = helpers.new_child()
-    MiniTest.finally(function()
-        helpers.stop_child(child)
-    end)
+    local child = new_child()
 
+    set_numbered_lines(child, 200)
     local result = child.lua_func(function()
-        local lines = {}
-        for index = 1, 200 do
-            lines[index] = "line " .. index
-        end
-        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
         local first = vim.api.nvim_get_current_win()
         vim.cmd("split")
         local second = vim.api.nvim_get_current_win()
@@ -333,10 +314,7 @@ T["window-local mark revisions rebuild only the affected static layer"] = functi
 end
 
 T["real named marks stay with their source buffer and resolve width per window height"] = function()
-    local child = helpers.new_child()
-    MiniTest.finally(function()
-        helpers.stop_child(child)
-    end)
+    local child = new_child()
 
     local result = child.lua_func(function()
         local function fill(bufnr)
@@ -434,10 +412,7 @@ T["real named marks stay with their source buffer and resolve width per window h
 end
 
 T["simultaneous windows render selected profile layouts geometry and filtering"] = function()
-    local child = helpers.new_child()
-    MiniTest.finally(function()
-        helpers.stop_child(child)
-    end)
+    local child = new_child()
 
     local result = child.lua_func(function()
         local function fill(bufnr)
@@ -562,17 +537,10 @@ T["simultaneous windows render selected profile layouts geometry and filtering"]
 end
 
 T["two views of one buffer select independently and profile switches replace rendered state"] = function()
-    local child = helpers.new_child()
-    MiniTest.finally(function()
-        helpers.stop_child(child)
-    end)
+    local child = new_child()
 
+    set_numbered_lines(child, 100)
     local result = child.lua_func(function()
-        local lines = {}
-        for index = 1, 100 do
-            lines[index] = "line " .. index
-        end
-        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
         local first = vim.api.nvim_get_current_win()
         vim.cmd("split")
         local second = vim.api.nvim_get_current_win()
@@ -670,10 +638,7 @@ T["two views of one buffer select independently and profile switches replace ren
 end
 
 T["editor-relative profiles render only for the active source beside window-relative profiles"] = function()
-    local child = helpers.new_child()
-    MiniTest.finally(function()
-        helpers.stop_child(child)
-    end)
+    local child = new_child()
 
     local result = child.lua_func(function()
         local first = vim.api.nvim_get_current_win()
@@ -740,17 +705,10 @@ T["editor-relative profiles render only for the active source beside window-rela
 end
 
 T["exclude.unfocusable keeps the renderers off normal windows that are not focusable"] = function()
-    local child = helpers.new_child()
-    MiniTest.finally(function()
-        helpers.stop_child(child)
-    end)
+    local child = new_child()
 
+    set_numbered_lines(child, 200)
     local result = child.lua_func(function()
-        local lines = {}
-        for index = 1, 200 do
-            lines[index] = "line " .. index
-        end
-        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
         local editor = vim.api.nvim_get_current_win()
         local pane = vim.api.nvim_open_win(vim.api.nvim_get_current_buf(), false, {
             split = "right",
@@ -834,10 +792,7 @@ T["exclude.unfocusable keeps the renderers off normal windows that are not focus
 end
 
 T["exclude.when excludes the windows it accepts for each renderer, and an error keeps them"] = function()
-    local child = helpers.new_child()
-    MiniTest.finally(function()
-        helpers.stop_child(child)
-    end)
+    local child = new_child()
 
     local result = child.lua_func(function()
         local lines = {}

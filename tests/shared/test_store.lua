@@ -1,5 +1,6 @@
 local MiniTest = MiniTest
 local expect = MiniTest.expect
+local provider_helpers = require("tests.providers.helpers")
 
 local T = MiniTest.new_set({
     hooks = {
@@ -15,44 +16,11 @@ local T = MiniTest.new_set({
     },
 })
 
-local function new_buffer(lines)
-    local bufnr = vim.api.nvim_create_buf(false, true)
-    vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, lines)
-    MiniTest.finally(function()
-        if vim.api.nvim_buf_is_valid(bufnr) then
-            vim.api.nvim_buf_delete(bufnr, { force = true })
-        end
-    end)
-    return bufnr
-end
+local new_buffer = provider_helpers.new_buffer
 
-local function show_buffer(bufnr)
-    local previous = vim.api.nvim_get_current_win()
-    vim.cmd("botright new")
-    local winid = vim.api.nvim_get_current_win()
-    vim.api.nvim_win_set_buf(winid, bufnr)
-    MiniTest.finally(function()
-        if vim.api.nvim_win_is_valid(winid) then
-            vim.api.nvim_win_close(winid, true)
-        end
-        if vim.api.nvim_win_is_valid(previous) then
-            vim.api.nvim_set_current_win(previous)
-        end
-    end)
-    return winid
-end
+local show_buffer = provider_helpers.show_buffer
 
-local function capture_notifications()
-    local notifications = {}
-    local original = vim.notify
-    rawset(vim, "notify", function(message, level)
-        table.insert(notifications, { message = message, level = level })
-    end)
-    MiniTest.finally(function()
-        rawset(vim, "notify", original)
-    end)
-    return notifications
-end
+local capture_notifications = provider_helpers.capture_notifications
 
 T["isolates providers and buffers and returns copied snapshots"] = function()
     local store = require("scrollbar.shared.store")

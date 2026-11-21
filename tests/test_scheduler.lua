@@ -15,6 +15,7 @@ end
 T["coalesces repeated invalidations and renders the latest state"] = function()
     local child = new_child()
     local result = child.lua_func(function()
+        local fakes = require("tests.scheduler_fakes")
         local winid = vim.api.nvim_get_current_win()
         local latest = 0
         local rendered = {}
@@ -27,26 +28,11 @@ T["coalesces repeated invalidations and renders the latest state"] = function()
                     throttle_ms = 10,
                 },
             }),
-            renderer = {
-                source_windows = function()
-                    return { winid }
-                end,
-                is_source_window = function(source_win)
-                    return source_win == winid
-                end,
-                is_buffer_eligible = function()
-                    return true
-                end,
-                is_owned_buffer = function()
-                    return false
-                end,
+            renderer = fakes.renderer({ winid }, {
                 render = function()
                     table.insert(rendered, latest)
                 end,
-                is_owned_window = function()
-                    return false
-                end,
-            },
+            }),
         })
 
         latest = 1
@@ -70,6 +56,7 @@ end
 T["requeues work arriving during a flush without losing the final state"] = function()
     local child = new_child()
     local result = child.lua_func(function()
+        local fakes = require("tests.scheduler_fakes")
         local winid = vim.api.nvim_get_current_win()
         local latest = 1
         local rendered = {}
@@ -82,19 +69,7 @@ T["requeues work arriving during a flush without losing the final state"] = func
                     throttle_ms = 5,
                 },
             }),
-            renderer = {
-                source_windows = function()
-                    return { winid }
-                end,
-                is_source_window = function(source_win)
-                    return source_win == winid
-                end,
-                is_buffer_eligible = function()
-                    return true
-                end,
-                is_owned_buffer = function()
-                    return false
-                end,
+            renderer = fakes.renderer({ winid }, {
                 render = function()
                     table.insert(rendered, latest)
                     if #rendered == 1 then
@@ -102,10 +77,7 @@ T["requeues work arriving during a flush without losing the final state"] = func
                         scheduler.invalidate_window(winid)
                     end
                 end,
-                is_owned_window = function()
-                    return false
-                end,
-            },
+            }),
         })
 
         scheduler.invalidate_window(winid)
@@ -123,6 +95,7 @@ end
 T["subscribes only to mark store events and unsubscribes on dispose"] = function()
     local child = new_child()
     local result = child.lua_func(function()
+        local fakes = require("tests.scheduler_fakes")
         local bufnr = vim.api.nvim_get_current_buf()
         local winid = vim.api.nvim_get_current_win()
         vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, { "one", "two" })
@@ -135,41 +108,12 @@ T["subscribes only to mark store events and unsubscribes on dispose"] = function
                     throttle_ms = 1000,
                 },
             }),
-            renderer = {
-                source_windows = function(target_buf)
-                    if target_buf == nil or target_buf == bufnr then
-                        return { winid }
-                    end
-                    return {}
-                end,
-                is_source_window = function(source_win)
-                    return source_win == winid
-                end,
-                is_buffer_eligible = function(target_buf)
-                    return target_buf == bufnr
-                end,
-                is_owned_buffer = function()
-                    return false
-                end,
-                is_owned_window = function()
-                    return false
-                end,
-                render = function() end,
-            },
+            renderer = fakes.buffer_renderer(bufnr, winid),
         })
 
-        local buffer_invalidations = {}
-        local window_invalidations = {}
-        local original_invalidate_buffer = scheduler.invalidate_buffer
-        local original_invalidate_window = scheduler.invalidate_window
-        rawset(scheduler, "invalidate_buffer", function(target_buf)
-            table.insert(buffer_invalidations, target_buf)
-            return original_invalidate_buffer(target_buf)
-        end)
-        rawset(scheduler, "invalidate_window", function(source_win)
-            table.insert(window_invalidations, source_win)
-            return original_invalidate_window(source_win)
-        end)
+        local invalidations = fakes.record_invalidations(scheduler)
+        local buffer_invalidations = invalidations.buffer
+        local window_invalidations = invalidations.window
 
         local store = require("scrollbar.shared.store")
         local providers = require("scrollbar.providers")
@@ -227,6 +171,7 @@ end
 T["uses one source-window snapshot to validate every pending window in a flush"] = function()
     local child = new_child()
     local result = child.lua_func(function()
+        local fakes = require("tests.scheduler_fakes")
         local first = vim.api.nvim_get_current_win()
         vim.cmd("split")
         local second = vim.api.nvim_get_current_win()
@@ -244,27 +189,15 @@ T["uses one source-window snapshot to validate every pending window in a flush"]
                     throttle_ms = 1000,
                 },
             }),
-            renderer = {
+            renderer = fakes.renderer(sources, {
                 source_windows = function()
                     enumerations = enumerations + 1
                     return sources
                 end,
-                is_source_window = function(winid)
-                    return vim.tbl_contains(sources, winid)
-                end,
-                is_buffer_eligible = function()
-                    return true
-                end,
-                is_owned_buffer = function()
-                    return false
-                end,
                 render = function(winid)
                     table.insert(rendered, winid)
                 end,
-                is_owned_window = function()
-                    return false
-                end,
-            },
+            }),
         })
 
         scheduler.invalidate_all()
@@ -574,31 +507,11 @@ end
 T["keeps independent deadlines and rejects stale callbacks"] = function()
     local child = new_child()
     local result = child.lua_func(function()
+        local fakes = require("tests.scheduler_fakes")
         local first = vim.api.nvim_get_current_win()
         vim.cmd("split")
         local second = vim.api.nvim_get_current_win()
-        local timers = {}
-        local uv = vim.uv or vim.loop
-        local original_new_timer = uv.new_timer
-        uv.new_timer = function()
-            local timer = { closed = false, starts = 0 }
-            function timer:start(timeout, _, callback)
-                self.timeout = timeout
-                self.callback = callback
-                self.starts = self.starts + 1
-            end
-            function timer:stop()
-                self.stopped = true
-            end
-            function timer:close()
-                self.closed = true
-            end
-            function timer:is_closing()
-                return self.closed
-            end
-            table.insert(timers, timer)
-            return timer
-        end
+        local timers, restore_timers = fakes.fake_timers()
 
         local concealed = {}
         local scheduler = require("scrollbar.scheduler")
@@ -610,19 +523,7 @@ T["keeps independent deadlines and rejects stale callbacks"] = function()
                     throttle_ms = 1000,
                 },
             }),
-            renderer = {
-                source_windows = function()
-                    return { first, second }
-                end,
-                is_source_window = function(winid)
-                    return winid == first or winid == second
-                end,
-                is_buffer_eligible = function()
-                    return true
-                end,
-                is_owned_buffer = function()
-                    return false
-                end,
+            renderer = fakes.renderer({ first, second }, {
                 reveal = function()
                     return true
                 end,
@@ -630,14 +531,10 @@ T["keeps independent deadlines and rejects stale callbacks"] = function()
                     table.insert(concealed, winid)
                     return true
                 end,
-                render = function() end,
                 is_visible = function()
                     return true
                 end,
-                is_owned_window = function()
-                    return false
-                end,
-            },
+            }),
         })
 
         vim.api.nvim_set_current_win(first)
@@ -667,7 +564,7 @@ T["keeps independent deadlines and rejects stale callbacks"] = function()
             return #concealed == 2
         end))
         scheduler.dispose()
-        uv.new_timer = original_new_timer
+        restore_timers()
 
         return {
             first = first,
@@ -688,30 +585,11 @@ end
 T["holds deadlines and closes source timers with their lifecycle"] = function()
     local child = new_child()
     local result = child.lua_func(function()
+        local fakes = require("tests.scheduler_fakes")
         local first = vim.api.nvim_get_current_win()
         vim.cmd("split")
         local second = vim.api.nvim_get_current_win()
-        local timers = {}
-        local uv = vim.uv or vim.loop
-        local original_new_timer = uv.new_timer
-        uv.new_timer = function()
-            local timer = { closed = false, starts = 0 }
-            function timer:start(_, _, callback)
-                self.callback = callback
-                self.starts = self.starts + 1
-            end
-            function timer:stop()
-                self.stopped = true
-            end
-            function timer:close()
-                self.closed = true
-            end
-            function timer:is_closing()
-                return self.closed
-            end
-            table.insert(timers, timer)
-            return timer
-        end
+        local timers, restore_timers = fakes.fake_timers()
 
         local concealed = {}
         local scheduler = require("scrollbar.scheduler")
@@ -784,7 +662,7 @@ T["holds deadlines and closes source timers with their lifecycle"] = function()
         scheduler.dispose()
         local render_timer_closed = timers[1].closed
         local second_timer_closed = second_timer.closed
-        uv.new_timer = original_new_timer
+        restore_timers()
 
         return {
             first = first,
@@ -810,6 +688,7 @@ end
 T["wires provider context invalidations directly and never refreshes providers on scroll"] = function()
     local child = new_child()
     local result = child.lua_func(function()
+        local fakes = require("tests.scheduler_fakes")
         local active_config = require("scrollbar.config").set({
             set_highlights = false,
             providers = {
@@ -830,29 +709,11 @@ T["wires provider context invalidations directly and never refreshes providers o
         local refreshes = 0
         local context
         local scheduler = require("scrollbar.scheduler")
-        local renderer = {
-            source_windows = function(target_buf)
-                if target_buf == nil or target_buf == bufnr then
-                    return { winid }
-                end
-                return {}
-            end,
-            is_source_window = function(source_win)
-                return source_win == winid
-            end,
-            is_buffer_eligible = function(target_buf)
-                return target_buf == bufnr
-            end,
-            is_owned_buffer = function()
-                return false
-            end,
+        local renderer = fakes.buffer_renderer(bufnr, winid, {
             render = function(source_win)
                 table.insert(rendered, source_win)
             end,
-            is_owned_window = function()
-                return false
-            end,
-        }
+        })
         scheduler.setup({ config = active_config, renderer = renderer })
 
         local providers = require("scrollbar.providers")
@@ -1185,6 +1046,7 @@ end
 T["rerenders every source when editor chrome options change"] = function()
     local child = new_child()
     local result = child.lua_func(function()
+        local fakes = require("tests.scheduler_fakes")
         local first = vim.api.nvim_get_current_win()
         vim.cmd("split")
         local second = vim.api.nvim_get_current_win()
@@ -1198,16 +1060,7 @@ T["rerenders every source when editor chrome options change"] = function()
                     throttle_ms = 1000,
                 },
             }),
-            renderer = {
-                source_windows = function()
-                    return { first, second }
-                end,
-                is_source_window = function(winid)
-                    return winid == first or winid == second
-                end,
-                is_buffer_eligible = function()
-                    return true
-                end,
+            renderer = fakes.renderer({ first, second }, {
                 is_owned_buffer = function(bufnr)
                     local ok, value = pcall(vim.api.nvim_buf_get_var, bufnr, "scrollbar_owned")
                     return ok and value == true
@@ -1218,7 +1071,7 @@ T["rerenders every source when editor chrome options change"] = function()
                 is_owned_window = function(winid)
                     return owned[winid] == true
                 end,
-            },
+            }),
         })
 
         local captures = {}
@@ -1295,6 +1148,7 @@ end
 T["refreshes colorscheme state and fully disposes timer and autocmd ownership"] = function()
     local child = new_child()
     local result = child.lua_func(function()
+        local fakes = require("tests.scheduler_fakes")
         local winid = vim.api.nvim_get_current_win()
         local rendered = 0
         local colors = 0
@@ -1306,26 +1160,11 @@ T["refreshes colorscheme state and fully disposes timer and autocmd ownership"] 
                     throttle_ms = 1000,
                 },
             }),
-            renderer = {
-                source_windows = function()
-                    return { winid }
-                end,
-                is_source_window = function(source_win)
-                    return source_win == winid
-                end,
-                is_buffer_eligible = function()
-                    return true
-                end,
-                is_owned_buffer = function()
-                    return false
-                end,
+            renderer = fakes.renderer({ winid }, {
                 render = function()
                     rendered = rendered + 1
                 end,
-                is_owned_window = function()
-                    return false
-                end,
-            },
+            }),
             on_colorscheme = function()
                 colors = colors + 1
             end,
@@ -1470,28 +1309,12 @@ end
 T["registers the complete default autocmd set"] = function()
     local child = new_child()
     local result = child.lua_func(function()
+        local fakes = require("tests.scheduler_fakes")
         local config = require("scrollbar.config").set({ scrollbar = {} })
         local scheduler = require("scrollbar.scheduler")
         scheduler.setup({
             config = config,
-            renderer = {
-                source_windows = function()
-                    return {}
-                end,
-                is_source_window = function()
-                    return false
-                end,
-                is_buffer_eligible = function()
-                    return false
-                end,
-                is_owned_buffer = function()
-                    return false
-                end,
-                is_owned_window = function()
-                    return false
-                end,
-                render = function() end,
-            },
+            renderer = fakes.idle_renderer(),
         })
         local augroup_id = scheduler.status().augroup_id
         local autocmds = vim.api.nvim_get_autocmds({ group = augroup_id })
@@ -1551,30 +1374,14 @@ end
 T["registers only the configured events and the subscriber rows"] = function()
     local child = new_child()
     local result = child.lua_func(function()
+        local fakes = require("tests.scheduler_fakes")
         local scheduler = require("scrollbar.scheduler")
         scheduler.setup({
             config = require("scrollbar.config").set({
                 set_highlights = false,
                 scrollbar = { events = { "WinScrolled", "TextChanged" } },
             }),
-            renderer = {
-                source_windows = function()
-                    return {}
-                end,
-                is_source_window = function()
-                    return false
-                end,
-                is_buffer_eligible = function()
-                    return true
-                end,
-                is_owned_buffer = function()
-                    return false
-                end,
-                is_owned_window = function()
-                    return false
-                end,
-                render = function() end,
-            },
+            renderer = fakes.renderer({}),
         })
         local function registered()
             local event_set = {}
@@ -1601,6 +1408,7 @@ end
 T["queues renders only for the configured events"] = function()
     local child = new_child()
     local result = child.lua_func(function()
+        local fakes = require("tests.scheduler_fakes")
         local winid = vim.api.nvim_get_current_win()
         local scheduler = require("scrollbar.scheduler")
         scheduler.setup({
@@ -1611,24 +1419,7 @@ T["queues renders only for the configured events"] = function()
                     events = { CursorMoved = false, CursorMovedI = false, FocusGained = true },
                 },
             }),
-            renderer = {
-                source_windows = function()
-                    return { winid }
-                end,
-                is_source_window = function(source_win)
-                    return source_win == winid
-                end,
-                is_buffer_eligible = function()
-                    return true
-                end,
-                is_owned_buffer = function()
-                    return false
-                end,
-                is_owned_window = function()
-                    return false
-                end,
-                render = function() end,
-            },
+            renderer = fakes.renderer({ winid }),
         })
 
         vim.api.nvim_exec_autocmds("CursorMoved", {})
@@ -1661,6 +1452,7 @@ end
 T["a configured pattern filters the row and replaces the default pattern"] = function()
     local child = new_child()
     local result = child.lua_func(function()
+        local fakes = require("tests.scheduler_fakes")
         local winid = vim.api.nvim_get_current_win()
         local scheduler = require("scrollbar.scheduler")
         scheduler.setup({
@@ -1671,24 +1463,7 @@ T["a configured pattern filters the row and replaces the default pattern"] = fun
                     events = { User = { pattern = "Foo" }, OptionSet = { pattern = { "spell" } } },
                 },
             }),
-            renderer = {
-                source_windows = function()
-                    return { winid }
-                end,
-                is_source_window = function(source_win)
-                    return source_win == winid
-                end,
-                is_buffer_eligible = function()
-                    return true
-                end,
-                is_owned_buffer = function()
-                    return false
-                end,
-                is_owned_window = function()
-                    return false
-                end,
-                render = function() end,
-            },
+            renderer = fakes.renderer({ winid }),
         })
 
         local option_patterns = {}
@@ -1783,6 +1558,7 @@ end
 T["a closed window leaves the queue when WinClosed is not a configured event"] = function()
     local child = new_child()
     local result = child.lua_func(function()
+        local fakes = require("tests.scheduler_fakes")
         local first = vim.api.nvim_get_current_win()
         vim.cmd("split")
         local second = vim.api.nvim_get_current_win()
@@ -1792,24 +1568,7 @@ T["a closed window leaves the queue when WinClosed is not a configured event"] =
                 set_highlights = false,
                 scrollbar = { throttle_ms = 1000, events = { "WinScrolled" } },
             }),
-            renderer = {
-                source_windows = function()
-                    return { first, second }
-                end,
-                is_source_window = function(source_win)
-                    return source_win == first or source_win == second
-                end,
-                is_buffer_eligible = function()
-                    return true
-                end,
-                is_owned_buffer = function()
-                    return false
-                end,
-                is_owned_window = function()
-                    return false
-                end,
-                render = function() end,
-            },
+            renderer = fakes.renderer({ first, second }),
         })
 
         scheduler.invalidate_window(first)
@@ -1828,6 +1587,7 @@ end
 T["VimLeavePre disposes the scheduler before teardown"] = function()
     local child = new_child()
     local result = child.lua_func(function()
+        local fakes = require("tests.scheduler_fakes")
         local config = require("scrollbar.config")
         local scheduler = require("scrollbar.scheduler")
         local setup_config = config.set({
@@ -1838,24 +1598,7 @@ T["VimLeavePre disposes the scheduler before teardown"] = function()
         })
         scheduler.setup({
             config = setup_config,
-            renderer = {
-                source_windows = function()
-                    return {}
-                end,
-                is_source_window = function()
-                    return false
-                end,
-                is_buffer_eligible = function()
-                    return false
-                end,
-                is_owned_buffer = function()
-                    return false
-                end,
-                is_owned_window = function()
-                    return false
-                end,
-                render = function() end,
-            },
+            renderer = fakes.idle_renderer(),
         })
         local before = scheduler.status().setup
         vim.api.nvim_exec_autocmds("VimLeavePre", {})

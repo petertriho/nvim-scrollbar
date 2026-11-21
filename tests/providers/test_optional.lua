@@ -1,5 +1,18 @@
 local MiniTest = MiniTest
 local expect = MiniTest.expect
+local provider_helpers = require("tests.providers.helpers")
+
+-- Remove the fake gitsigns, mini.diff, and vgit modules of a case.
+local function forget_fake_plugins()
+    package.preload["gitsigns"] = nil
+    package.loaded["gitsigns"] = nil
+    rawset(package.preload, "mini.diff", nil)
+    package.loaded["mini.diff"] = nil
+    rawset(package.preload, "vgit.git.git_buffer_store", nil)
+    package.loaded["vgit.git.git_buffer_store"] = nil
+    rawset(package.preload, "vgit.settings.signs", nil)
+    package.loaded["vgit.settings.signs"] = nil
+end
 
 local original_coc_action
 local original_ale_buffer_info
@@ -8,10 +21,7 @@ local original_loaded_signify
 local T = MiniTest.new_set({
     hooks = {
         pre_case = function()
-            local providers = package.loaded["scrollbar.providers"]
-            if providers then
-                providers.dispose()
-            end
+            provider_helpers.dispose_providers()
 
             original_coc_action = rawget(vim.fn, "CocActionAsync")
             original_ale_buffer_info = vim.g.ale_buffer_info
@@ -19,14 +29,7 @@ local T = MiniTest.new_set({
             rawset(vim.fn, "CocActionAsync", nil)
             vim.g.ale_buffer_info = nil
             vim.g.loaded_signify = nil
-            package.preload["gitsigns"] = nil
-            package.loaded["gitsigns"] = nil
-            rawset(package.preload, "mini.diff", nil)
-            package.loaded["mini.diff"] = nil
-            rawset(package.preload, "vgit.git.git_buffer_store", nil)
-            package.loaded["vgit.git.git_buffer_store"] = nil
-            rawset(package.preload, "vgit.settings.signs", nil)
-            package.loaded["vgit.settings.signs"] = nil
+            forget_fake_plugins()
 
             for _, module in ipairs({
                 "scrollbar.config",
@@ -45,21 +48,11 @@ local T = MiniTest.new_set({
             require("scrollbar.config").set({ scrollbar = {} })
         end,
         post_case = function()
-            local providers = package.loaded["scrollbar.providers"]
-            if providers then
-                providers.dispose()
-            end
+            provider_helpers.dispose_providers()
             rawset(vim.fn, "CocActionAsync", original_coc_action)
             vim.g.ale_buffer_info = original_ale_buffer_info
             vim.g.loaded_signify = original_loaded_signify
-            package.preload["gitsigns"] = nil
-            package.loaded["gitsigns"] = nil
-            rawset(package.preload, "mini.diff", nil)
-            package.loaded["mini.diff"] = nil
-            rawset(package.preload, "vgit.git.git_buffer_store", nil)
-            package.loaded["vgit.git.git_buffer_store"] = nil
-            rawset(package.preload, "vgit.settings.signs", nil)
-            package.loaded["vgit.settings.signs"] = nil
+            forget_fake_plugins()
         end,
     },
 })

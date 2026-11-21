@@ -1,14 +1,11 @@
 local MiniTest = MiniTest
 local expect = MiniTest.expect
+local provider_helpers = require("tests.providers.helpers")
 
 local T = MiniTest.new_set({
     hooks = {
         pre_case = function()
-            package.loaded["scrollbar.config"] = nil
-            package.loaded["scrollbar.renderer"] = nil
-            package.loaded["scrollbar.shared.store"] = nil
-            package.loaded["scrollbar.providers"] = nil
-            package.loaded["scrollbar.providers.marks"] = nil
+            provider_helpers.unload_modules({ "scrollbar.providers.marks" })
             require("scrollbar.config").set({
                 exclude = {
                     buftypes = {},
@@ -27,10 +24,7 @@ local T = MiniTest.new_set({
             end
         end,
         post_case = function()
-            local providers = package.loaded["scrollbar.providers"]
-            if providers then
-                providers.dispose()
-            end
+            provider_helpers.dispose_providers()
             for byte = string.byte("A"), string.byte("Z") do
                 pcall(vim.api.nvim_del_mark, string.char(byte))
             end
@@ -41,16 +35,9 @@ local T = MiniTest.new_set({
     },
 })
 
+-- The empty filetype also triggers FileType.
 local function new_buffer(lines, filetype)
-    local bufnr = vim.api.nvim_create_buf(false, true)
-    vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, lines)
-    vim.bo[bufnr].filetype = filetype or ""
-    MiniTest.finally(function()
-        if vim.api.nvim_buf_is_valid(bufnr) then
-            vim.api.nvim_buf_delete(bufnr, { force = true })
-        end
-    end)
-    return bufnr
+    return provider_helpers.new_buffer(lines, filetype or "")
 end
 
 local function setup_provider(options)
@@ -60,21 +47,7 @@ local function setup_provider(options)
     return providers
 end
 
-local function show_buffer(bufnr)
-    local previous = vim.api.nvim_get_current_win()
-    vim.cmd("botright new")
-    local winid = vim.api.nvim_get_current_win()
-    vim.api.nvim_win_set_buf(winid, bufnr)
-    MiniTest.finally(function()
-        if vim.api.nvim_win_is_valid(winid) then
-            vim.api.nvim_win_close(winid, true)
-        end
-        if vim.api.nvim_win_is_valid(previous) then
-            vim.api.nvim_set_current_win(previous)
-        end
-    end)
-    return winid
-end
+local show_buffer = provider_helpers.show_buffer
 
 local function has_complete_mark_set_events()
     local version = vim.version()
@@ -198,6 +171,31 @@ T["owned buffer events clear excluded and oversized state"] = function()
     expect.equality(store.get(target), {})
 end
 
+-- Move the file mark `name` to line 3 of `second`, then delete it. Check that
+-- the marks of `first` and `second` follow.
+local function expect_mark_moves(first, second, name)
+    local store = require("scrollbar.shared.store")
+    vim.api.nvim_buf_set_mark(second, name, 3, 0, {})
+    expect.equality(
+        await_mark_reconciliation(second, function()
+            return store.get(first).marks == nil and store.get(second).marks ~= nil
+        end),
+        true
+    )
+    expect.equality(store.get(first), {})
+    expect.equality(store.get(second).marks, { { line = 2, type = "Mark", text = name } })
+
+    vim.api.nvim_del_mark(name)
+    expect.equality(
+        await_mark_reconciliation(second, function()
+            return store.get(second).marks == nil
+        end),
+        true
+    )
+    expect.equality(store.get(first), {})
+    expect.equality(store.get(second), {})
+end
+
 T["named-mark reconciliation moves and deletes uppercase marks across source buffers"] = function()
     local store = require("scrollbar.shared.store")
     local first = new_buffer({ "one", "two", "three" })
@@ -212,25 +210,7 @@ T["named-mark reconciliation moves and deletes uppercase marks across source buf
     expect.equality(store.get(first).marks, { { line = 1, type = "Mark", text = "A" } })
     expect.equality(store.get(second), {})
 
-    vim.api.nvim_buf_set_mark(second, "A", 3, 0, {})
-    expect.equality(
-        await_mark_reconciliation(second, function()
-            return store.get(first).marks == nil and store.get(second).marks ~= nil
-        end),
-        true
-    )
-    expect.equality(store.get(first), {})
-    expect.equality(store.get(second).marks, { { line = 2, type = "Mark", text = "A" } })
-
-    vim.api.nvim_del_mark("A")
-    expect.equality(
-        await_mark_reconciliation(second, function()
-            return store.get(second).marks == nil
-        end),
-        true
-    )
-    expect.equality(store.get(first), {})
-    expect.equality(store.get(second), {})
+    expect_mark_moves(first, second, "A")
 end
 
 T["mark reconciliation moves and deletes numbered marks across source buffers"] = function()
@@ -257,25 +237,7 @@ T["mark reconciliation moves and deletes numbered marks across source buffers"] 
     expect.equality(store.get(first).marks, { { line = 1, type = "Mark", text = "1" } })
     expect.equality(store.get(second), {})
 
-    vim.api.nvim_buf_set_mark(second, "1", 3, 0, {})
-    expect.equality(
-        await_mark_reconciliation(second, function()
-            return store.get(first).marks == nil and store.get(second).marks ~= nil
-        end),
-        true
-    )
-    expect.equality(store.get(first), {})
-    expect.equality(store.get(second).marks, { { line = 2, type = "Mark", text = "1" } })
-
-    vim.api.nvim_del_mark("1")
-    expect.equality(
-        await_mark_reconciliation(second, function()
-            return store.get(second).marks == nil
-        end),
-        true
-    )
-    expect.equality(store.get(first), {})
-    expect.equality(store.get(second), {})
+    expect_mark_moves(first, second, "1")
 end
 
 T["does not load or publish an unloaded uppercase-mark target"] = function()

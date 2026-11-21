@@ -1,6 +1,7 @@
 local MiniTest = MiniTest
 local helpers = require("tests.helpers")
 local expect = MiniTest.expect
+local set_numbered_lines = require("tests.shared.helpers").set_numbered_lines
 
 local T = MiniTest.new_set()
 
@@ -63,13 +64,8 @@ end
 
 T["validates before disposing the active runtime"] = function()
     local child = new_child()
+    set_numbered_lines(child, 100)
     local result = child.lua_func(function(config)
-        local lines = {}
-        for index = 1, 100 do
-            lines[index] = "line " .. index
-        end
-        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
-
         local scrollbar = require("scrollbar")
         scrollbar.setup(config)
         require("scrollbar.scheduler").flush()
@@ -493,12 +489,8 @@ end
 
 T["repeated setup replaces all owned runtime resources without duplication"] = function()
     local child = new_child()
+    set_numbered_lines(child, 100)
     local result = child.lua_func(function(config)
-        local lines = {}
-        for index = 1, 100 do
-            lines[index] = "line " .. index
-        end
-        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
         local orphan_buf = vim.api.nvim_create_buf(false, true)
         vim.api.nvim_buf_set_var(orphan_buf, "scrollbar_owned", true)
         local orphan_win = vim.api.nvim_open_win(orphan_buf, false, {
@@ -573,12 +565,8 @@ end
 
 T["public commands change visibility globally across every owned window"] = function()
     local child = new_child()
+    set_numbered_lines(child, 200)
     local result = child.lua_func(function(config)
-        local lines = {}
-        for index = 1, 200 do
-            lines[index] = "line " .. index
-        end
-        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
         local first = vim.api.nvim_get_current_win()
         vim.cmd("split")
         local second = vim.api.nvim_get_current_win()
@@ -621,12 +609,8 @@ end
 
 T["autohide commands preserve global master visibility and temporary reveals"] = function()
     local child = new_child()
+    set_numbered_lines(child, 200)
     local result = child.lua_func(function(config)
-        local lines = {}
-        for index = 1, 200 do
-            lines[index] = "line " .. index
-        end
-        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
         local first = vim.api.nvim_get_current_win()
         vim.cmd("split")
         local second = vim.api.nvim_get_current_win()
@@ -712,12 +696,8 @@ end
 
 T["show defers exactly one render per source window to the scheduler"] = function()
     local child = new_child()
+    set_numbered_lines(child, 200)
     local result = child.lua_func(function(config)
-        local lines = {}
-        for index = 1, 200 do
-            lines[index] = "line " .. index
-        end
-        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
         vim.cmd("split")
 
         local scrollbar = require("scrollbar")
@@ -763,12 +743,8 @@ end
 
 T["public refresh recollects displayed buffers through providers and schedules rendering"] = function()
     local child = new_child()
+    set_numbered_lines(child, 100)
     local result = child.lua_func(function(config)
-        local lines = {}
-        for index = 1, 100 do
-            lines[index] = "line " .. index
-        end
-        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
         vim.cmd("vsplit")
         local providers = require("scrollbar.providers")
         local refreshes = 0
@@ -875,12 +851,8 @@ end
 
 T["disabled scrollbar creates no floats or commands and show keeps it hidden"] = function()
     local child = new_child()
+    set_numbered_lines(child, 100)
     local result = child.lua_func(function(config)
-        local lines = {}
-        for index = 1, 100 do
-            lines[index] = "line " .. index
-        end
-        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
         local source_win = vim.api.nvim_get_current_win()
         local scrollbar = require("scrollbar")
         local renderer = require("scrollbar.renderer")
@@ -956,12 +928,8 @@ end
 
 T["minimap-only setup renders the minimap without a scrollbar"] = function()
     local child = new_child()
+    set_numbered_lines(child, 100)
     local result = child.lua_func(function(config)
-        local lines = {}
-        for index = 1, 100 do
-            lines[index] = "line " .. index
-        end
-        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
         local source_win = vim.api.nvim_get_current_win()
         config.providers.cursor = true
         config.scrollbar.enabled = false

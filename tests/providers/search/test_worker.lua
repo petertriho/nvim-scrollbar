@@ -4,11 +4,26 @@ local expect = MiniTest.expect
 
 local T = MiniTest.new_set()
 
-local function new_worker_child(incsearch, worker_test)
+-- Record each notification of the child in
+-- `package.loaded["scrollbar.test.notifications"]`.
+local function record_notifications(child)
+    child.lua([[
+        package.loaded["scrollbar.test.notifications"] = {}
+        vim.notify = function(message, level)
+            table.insert(package.loaded["scrollbar.test.notifications"], { message = message, level = level })
+        end
+    ]])
+end
+
+---@param before_setup? fun(child: table) Runs before the setup of the search provider
+local function new_worker_child(incsearch, worker_test, before_setup)
     local child = helpers.new_child()
     MiniTest.finally(function()
         helpers.stop_child(child)
     end)
+    if before_setup ~= nil then
+        before_setup(child)
+    end
     helpers.setup_search_worker(child, incsearch, worker_test)
     return child
 end
@@ -329,17 +344,7 @@ T["obsolete worker callbacks cannot publish into a new session"] = function()
 end
 
 T["startup failure warns once and falls back through the synchronous scheduler"] = function()
-    local child = helpers.new_child()
-    MiniTest.finally(function()
-        helpers.stop_child(child)
-    end)
-    child.lua([[
-        package.loaded["scrollbar.test.notifications"] = {}
-        vim.notify = function(message, level)
-            table.insert(package.loaded["scrollbar.test.notifications"], { message = message, level = level })
-        end
-    ]])
-    helpers.setup_search_worker(child, false, { fail_start = true })
+    local child = new_worker_child(false, { fail_start = true }, record_notifications)
     helpers.set_lines(child, { "fallback", "fallback" })
     helpers.accept_search(child, "/", "fallback")
 
@@ -356,17 +361,7 @@ T["startup failure warns once and falls back through the synchronous scheduler"]
 end
 
 T["worker crashes reroute in-flight and future requests through exact fallback"] = function()
-    local child = helpers.new_child()
-    MiniTest.finally(function()
-        helpers.stop_child(child)
-    end)
-    child.lua([[
-        package.loaded["scrollbar.test.notifications"] = {}
-        vim.notify = function(message, level)
-            table.insert(package.loaded["scrollbar.test.notifications"], { message = message, level = level })
-        end
-    ]])
-    helpers.setup_search_worker(child, false, { scan_delay_ms = 500 })
+    local child = new_worker_child(false, { scan_delay_ms = 500 }, record_notifications)
     helpers.set_lines(child, { "start", "worker", "fallback" })
     helpers.accept_search(child, "/", "worker")
     expect.equality(

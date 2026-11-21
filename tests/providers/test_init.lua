@@ -1,13 +1,11 @@
 local MiniTest = MiniTest
 local expect = MiniTest.expect
+local provider_helpers = require("tests.providers.helpers")
 
 local T = MiniTest.new_set({
     hooks = {
         pre_case = function()
-            package.loaded["scrollbar.config"] = nil
-            package.loaded["scrollbar.renderer"] = nil
-            package.loaded["scrollbar.shared.store"] = nil
-            package.loaded["scrollbar.providers"] = nil
+            provider_helpers.unload_modules()
             require("scrollbar.config").set({
                 marks = {
                     Custom = { text = "!", priority = 1, highlight = "WarningMsg" },
@@ -15,51 +13,31 @@ local T = MiniTest.new_set({
             })
         end,
         post_case = function()
-            local providers = package.loaded["scrollbar.providers"]
-            if providers then
-                providers.dispose()
-            end
+            provider_helpers.dispose_providers()
         end,
     },
 })
 
-local function new_buffer(lines)
-    local bufnr = vim.api.nvim_create_buf(false, true)
-    vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, lines)
-    MiniTest.finally(function()
-        if vim.api.nvim_buf_is_valid(bufnr) then
-            vim.api.nvim_buf_delete(bufnr, { force = true })
-        end
-    end)
-    return bufnr
-end
+local new_buffer = provider_helpers.new_buffer
 
-local function show_buffer(bufnr)
-    local previous = vim.api.nvim_get_current_win()
-    vim.cmd("botright new")
-    local winid = vim.api.nvim_get_current_win()
-    vim.api.nvim_win_set_buf(winid, bufnr)
-    MiniTest.finally(function()
-        if vim.api.nvim_win_is_valid(winid) then
-            vim.api.nvim_win_close(winid, true)
-        end
-        if vim.api.nvim_win_is_valid(previous) then
-            vim.api.nvim_set_current_win(previous)
-        end
-    end)
-    return winid
-end
+local show_buffer = provider_helpers.show_buffer
 
-local function capture_notifications()
-    local notifications = {}
-    local original = vim.notify
-    rawset(vim, "notify", function(message, level)
-        table.insert(notifications, { message = message, level = level })
-    end)
-    MiniTest.finally(function()
-        rawset(vim, "notify", original)
-    end)
-    return notifications
+local capture_notifications = provider_helpers.capture_notifications
+
+-- A consumer policy in which `bufnr` is the only eligible buffer and `winid`,
+-- when it is given, is the only source window.
+local function consumer_policy(bufnr, winid)
+    return {
+        is_buffer_eligible = function(candidate)
+            return candidate == bufnr
+        end,
+        source_windows = function()
+            return { winid }
+        end,
+        is_source_window = function(source_win)
+            return winid ~= nil and source_win == winid
+        end,
+    }
 end
 
 local function expect_registration_error(provider, message)
@@ -335,17 +313,7 @@ T["keeps providers without targets scrollbar-only"] = function()
                     return false
                 end,
             },
-            minimap = {
-                is_buffer_eligible = function(bufnr)
-                    return bufnr == target
-                end,
-                source_windows = function()
-                    return {}
-                end,
-                is_source_window = function()
-                    return false
-                end,
-            },
+            minimap = consumer_policy(target),
         },
     })
 
@@ -561,28 +529,8 @@ T["uses the effective plan only for manager-owned builtins"] = function()
     local minimap_buffer = new_buffer({ "minimap" })
     local calls = { builtin_setup = 0, builtin_refresh = {}, custom_setup = 0 }
     local policies = {
-        scrollbar = {
-            is_buffer_eligible = function(bufnr)
-                return bufnr == scrollbar_buffer
-            end,
-            source_windows = function()
-                return {}
-            end,
-            is_source_window = function()
-                return false
-            end,
-        },
-        minimap = {
-            is_buffer_eligible = function(bufnr)
-                return bufnr == minimap_buffer
-            end,
-            source_windows = function()
-                return {}
-            end,
-            is_source_window = function()
-                return false
-            end,
-        },
+        scrollbar = consumer_policy(scrollbar_buffer),
+        minimap = consumer_policy(minimap_buffer),
     }
 
     providers._register_builtin({
@@ -681,28 +629,8 @@ T["filters manual refreshes by consumer and channel without changing old signatu
     })
     providers.setup({
         consumer_policies = {
-            scrollbar = {
-                is_buffer_eligible = function(bufnr)
-                    return bufnr == target
-                end,
-                source_windows = function()
-                    return { winid }
-                end,
-                is_source_window = function(source_win)
-                    return source_win == winid
-                end,
-            },
-            minimap = {
-                is_buffer_eligible = function(bufnr)
-                    return bufnr == target
-                end,
-                source_windows = function()
-                    return { winid }
-                end,
-                is_source_window = function(source_win)
-                    return source_win == winid
-                end,
-            },
+            scrollbar = consumer_policy(target, winid),
+            minimap = consumer_policy(target, winid),
         },
     })
     expect.equality(calls, { marks = 1, spans = 1, window_marks = 1, points = 1 })
@@ -763,28 +691,8 @@ T["applies consumer eligibility to consumer-filtered mark refreshes"] = function
     })
     providers.setup({
         consumer_policies = {
-            scrollbar = {
-                is_buffer_eligible = function(bufnr)
-                    return bufnr == scrollbar_buffer
-                end,
-                source_windows = function()
-                    return { scrollbar_window }
-                end,
-                is_source_window = function(winid)
-                    return winid == scrollbar_window
-                end,
-            },
-            minimap = {
-                is_buffer_eligible = function(bufnr)
-                    return bufnr == minimap_buffer
-                end,
-                source_windows = function()
-                    return { minimap_window }
-                end,
-                is_source_window = function(winid)
-                    return winid == minimap_window
-                end,
-            },
+            scrollbar = consumer_policy(scrollbar_buffer, scrollbar_window),
+            minimap = consumer_policy(minimap_buffer, minimap_window),
         },
     })
     calls = { buffers = {}, windows = {} }
@@ -1205,28 +1113,8 @@ T["isolates minimap callback failures from other providers and channels"] = func
     })
     providers.setup({
         consumer_policies = {
-            scrollbar = {
-                is_buffer_eligible = function(bufnr)
-                    return bufnr == target
-                end,
-                source_windows = function()
-                    return { winid }
-                end,
-                is_source_window = function(source_win)
-                    return source_win == winid
-                end,
-            },
-            minimap = {
-                is_buffer_eligible = function(bufnr)
-                    return bufnr == target
-                end,
-                source_windows = function()
-                    return { winid }
-                end,
-                is_source_window = function(source_win)
-                    return source_win == winid
-                end,
-            },
+            scrollbar = consumer_policy(target, winid),
+            minimap = consumer_policy(target, winid),
         },
     })
 
@@ -1314,28 +1202,8 @@ T["clears every owned channel on unregister and dispose through store events"] =
     register("all-channels-unregister")
     providers.setup({
         consumer_policies = {
-            scrollbar = {
-                is_buffer_eligible = function(bufnr)
-                    return bufnr == target
-                end,
-                source_windows = function()
-                    return { winid }
-                end,
-                is_source_window = function(source_win)
-                    return source_win == winid
-                end,
-            },
-            minimap = {
-                is_buffer_eligible = function(bufnr)
-                    return bufnr == target
-                end,
-                source_windows = function()
-                    return { winid }
-                end,
-                is_source_window = function(source_win)
-                    return source_win == winid
-                end,
-            },
+            scrollbar = consumer_policy(target, winid),
+            minimap = consumer_policy(target, winid),
         },
         invalidate_buffer = function(bufnr)
             table.insert(invalidated_buffers, bufnr)
@@ -1969,28 +1837,8 @@ T["refreshes a built-in only for the renderers that request it"] = function()
     local refreshed = {}
     local options
     local policies = {
-        scrollbar = {
-            is_buffer_eligible = function(bufnr)
-                return bufnr == scrollbar_buffer
-            end,
-            source_windows = function()
-                return {}
-            end,
-            is_source_window = function()
-                return false
-            end,
-        },
-        minimap = {
-            is_buffer_eligible = function(bufnr)
-                return bufnr == minimap_buffer
-            end,
-            source_windows = function()
-                return {}
-            end,
-            is_source_window = function()
-                return false
-            end,
-        },
+        scrollbar = consumer_policy(scrollbar_buffer),
+        minimap = consumer_policy(minimap_buffer),
     }
     local builtin = {
         name = "gitsigns",

@@ -1,5 +1,6 @@
 local MiniTest = MiniTest
 local expect = MiniTest.expect
+local provider_helpers = require("tests.providers.helpers")
 
 local function free_lists()
     for _, winid in ipairs(vim.api.nvim_list_wins()) do
@@ -10,18 +11,11 @@ end
 local T = MiniTest.new_set({
     hooks = {
         pre_case = function()
-            package.loaded["scrollbar.config"] = nil
-            package.loaded["scrollbar.renderer"] = nil
-            package.loaded["scrollbar.shared.store"] = nil
-            package.loaded["scrollbar.providers"] = nil
-            package.loaded["scrollbar.providers.loclist"] = nil
+            provider_helpers.unload_modules({ "scrollbar.providers.loclist" })
             free_lists()
         end,
         post_case = function()
-            local providers = package.loaded["scrollbar.providers"]
-            if providers then
-                providers.dispose()
-            end
+            provider_helpers.dispose_providers()
             free_lists()
         end,
     },
@@ -29,46 +23,12 @@ local T = MiniTest.new_set({
 
 ---@param options? any The value of `providers.loclist`
 local function setup_provider(options)
-    require("scrollbar.config").set({
-        exclude = {
-            buftypes = {},
-            filetypes = { "scrollbar-excluded" },
-        },
-        providers = { loclist = options == nil or options },
-        scrollbar = { max_lines = false },
-    })
-    local providers = require("scrollbar.providers")
-    providers.register(require("scrollbar.providers.loclist"))
-    providers.setup()
-    return providers
+    return provider_helpers.setup_list_provider("loclist", options)
 end
 
-local function new_buffer(lines)
-    local bufnr = vim.api.nvim_create_buf(false, true)
-    vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, lines)
-    MiniTest.finally(function()
-        if vim.api.nvim_buf_is_valid(bufnr) then
-            vim.api.nvim_buf_delete(bufnr, { force = true })
-        end
-    end)
-    return bufnr
-end
+local new_buffer = provider_helpers.new_buffer
 
-local function show_buffer(bufnr)
-    local previous = vim.api.nvim_get_current_win()
-    vim.cmd("botright new")
-    local winid = vim.api.nvim_get_current_win()
-    vim.api.nvim_win_set_buf(winid, bufnr)
-    MiniTest.finally(function()
-        if vim.api.nvim_win_is_valid(winid) then
-            vim.api.nvim_win_close(winid, true)
-        end
-        if vim.api.nvim_win_is_valid(previous) then
-            vim.api.nvim_set_current_win(previous)
-        end
-    end)
-    return winid
-end
+local show_buffer = provider_helpers.show_buffer
 
 local function marks(winid)
     return require("scrollbar.shared.store").get_window(winid).loclist
