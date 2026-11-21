@@ -15,18 +15,6 @@ local function new_child()
         for _, name in ipairs({ "alpha", "buffer", "test", "window" }) do
             providers.register({ name = name })
         end
-
-        -- Set `scrollbar` as the scrollbar block over the test baseline for
-        -- the top-level sections. `shared` replaces baseline sections.
-        package.loaded["scrollbar.test.set_config"] = function(scrollbar, shared)
-            local options = vim.tbl_extend("force", {
-                set_highlights = false,
-                providers = { cursor = false, diagnostic = false, search = false },
-                exclude = { buftypes = {}, filetypes = {} },
-            }, shared or {})
-            options.scrollbar = scrollbar
-            return require("scrollbar.config").set(options)
-        end
     ]])
     return child
 end

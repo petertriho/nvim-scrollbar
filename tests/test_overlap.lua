@@ -1,24 +1,13 @@
 local MiniTest = MiniTest
-local helpers = require("tests.helpers")
+local render_helpers = require("tests.render_helpers")
 local expect = MiniTest.expect
 
 local T = MiniTest.new_set()
 
 local function new_child()
-    local child = helpers.new_child()
+    local child = render_helpers.new_child()
     child.lua([[
         require("scrollbar.providers").register({ name = "test" })
-
-        -- Set `scrollbar` as the scrollbar block over the test baseline.
-        package.loaded["scrollbar.test.set_config"] = function(scrollbar, shared)
-            local options = vim.tbl_extend("force", {
-                set_highlights = false,
-                providers = { cursor = false, diagnostic = false, search = false },
-                exclude = { buftypes = {}, filetypes = {} },
-            }, shared or {})
-            options.scrollbar = scrollbar
-            return require("scrollbar.config").set(options)
-        end
 
         local lines = {}
         for index = 1, 200 do
@@ -27,9 +16,6 @@ local function new_child()
         vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
         vim.wo.wrap = false
     ]])
-    MiniTest.finally(function()
-        helpers.stop_child(child)
-    end)
     return child
 end
 

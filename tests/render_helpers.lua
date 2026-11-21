@@ -12,6 +12,9 @@ local M = {}
 --   lines.
 -- - `require("scrollbar.test.text_height_counter")()` counts the calls of
 --   `nvim_win_text_height` until `restore()`.
+-- - `require("scrollbar.test.set_config")(scrollbar, shared)` sets
+--   `scrollbar` as the scrollbar block over the test baseline. The sections
+--   of `shared` replace the sections of the baseline.
 local function install_child_modules()
     package.loaded["scrollbar.test.fill_lines"] = function(count)
         local lines = {}
@@ -20,6 +23,16 @@ local function install_child_modules()
         end
         vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
         return lines
+    end
+
+    package.loaded["scrollbar.test.set_config"] = function(scrollbar, shared)
+        local options = vim.tbl_extend("force", {
+            set_highlights = false,
+            providers = { cursor = false, diagnostic = false, search = false },
+            exclude = { buftypes = {}, filetypes = {} },
+        }, shared or {})
+        options.scrollbar = scrollbar
+        return require("scrollbar.config").set(options)
     end
 
     package.loaded["scrollbar.test.text_height_counter"] = function()
