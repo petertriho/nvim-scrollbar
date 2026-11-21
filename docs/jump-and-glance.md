@@ -106,9 +106,8 @@ past the label column.
 ## Peek Float
 
 The peek float is a float on the source buffer. It shows the line of a mark at
-its center, with `peek.context` lines above and below. It shows the source
-buffer itself, so it also shows the diagnostics, the signs, and the other
-extmarks of the buffer.
+its center. It shows the source buffer itself, so it also shows the
+diagnostics, the signs, and the other extmarks of the buffer.
 
 - One peek float shows at a time. Label mode and hover open it.
 - The float does not take focus, and the autocmds of other plugins do not see
@@ -121,15 +120,17 @@ extmarks of the buffer.
   shows the mark types of the line and the line number, for example
   ` Error, Warn · 61 `.
 
-`peek.position` sets the position of the float:
+`peek.frame` sets the place and the size of the float. It takes a preset or a
+function. See [Frame](#frame).
 
-| Position | Float |
+| Preset | Float |
 | --- | --- |
 | `"scrollbar"` | Beside the scrollbar, centered on the row of the mark. When the minimap is on the same side, the float is beside the minimap. |
-| `"cursor"` | Below the cursor line, or above it when there is no space below. |
+| `"cursor"` | Below the cursor line, or above it when there is no space below. When neither side has space, the float uses the larger side and gets fewer rows. |
 | `"center"` | At the center of the window. |
 
-The float stays inside the text area of the source window.
+The presets make a float of 11 rows by 60% of the width of the text area,
+border included. The float stays inside the source window.
 
 ## Glance Window
 
@@ -142,11 +143,15 @@ and the keys of each pane follow the design of glance.nvim. The glance window
 has two panes in one frame. The list of the marks is on the right, and the
 preview pane is on the left.
 
-- The frame opens below the cursor line, or above it when there is no space
-  below. When neither side has space for `glance.height` rows, the frame uses
-  the larger side.
-- The frame has the width of the text area of the window. The preview pane
-  takes 60% of the width, and the list takes 40%.
+- `glance.frame` sets the place and the size of the frame of both panes. It
+  takes a preset or a function. See [Frame](#frame). The default `"cursor"`
+  opens the frame below the cursor line, or above it when there is no space
+  below. When neither side has space for 18 rows, the frame uses the larger
+  side. The presets make a frame of 18 rows, border included, with the width
+  of the text area.
+- The list takes `glance.list.width` of the frame on the side of
+  `glance.list.side`, 40% on the right by default. The preview pane takes the
+  rest.
 - The list gets the focus. It selects the first entry at or after the cursor
   line.
 - The glance window works only in a normal window. In a float, such as the
@@ -161,7 +166,7 @@ scrollbar. It reads the providers that the scrollbar uses. With
 holds only the mark types that the renderer shows in the window. The search
 matches are `Search` entries.
 
-`glance.list` sets the entries of the list:
+`glance.list.entries` sets the entries of the list:
 
 | Value | Entries |
 | --- | --- |
@@ -287,8 +292,8 @@ require("scrollbar").setup({
 
 - Hover works only on scrollbars with `mouse = true` in normal windows. It
   does not work on the minimap or on the scrollbars of floats.
-- The peek float uses `peek.position`. With `"scrollbar"`, it is centered on
-  the row of the mark.
+- The peek float uses `peek.frame`. With `"scrollbar"`, it is centered on the
+  row of the mark.
 - Hover shows no labels, and it does nothing during label mode.
 - The peek float closes when the pointer leaves the cell, when you type a key,
   or when the source window scrolls. A pointer move to another mark cell
@@ -312,14 +317,16 @@ require("scrollbar").setup({
         hover = false, -- true, or { delay_ms = 300 }
     },
     peek = {
-        position = "scrollbar", -- "scrollbar", "cursor", or "center"
-        context = 5,
-        width = 0.6,
+        frame = "scrollbar", -- "scrollbar", "cursor", "center", or a function
         window = {},
     },
     glance = {
-        list = "line", -- "line", "mark", or "type"
-        height = 18,
+        frame = "cursor", -- "scrollbar", "cursor", "center", or a function
+        list = {
+            entries = "line", -- "line", "mark", or "type"
+            width = 0.4,
+            side = "right", -- "right" or "left"
+        },
         keys = {
             list = {
                 jump = "<CR>",
@@ -354,12 +361,12 @@ options.
 | `scrollbar.jump.labels` | `"asdfghjklqwertyuiopzxcvbnm"` | The labels, in order. Only lowercase ASCII letters, each one time. The uppercase letter of a label opens the peek float. |
 | `scrollbar.jump.offset` | `0` | Columns from each mark cell to its label. A negative offset is to the left. `0` puts the label on the mark cell. See [Labels](#labels). |
 | `scrollbar.hover` | `false` | `true` opens the peek float after 300 ms. `{ delay_ms = n }` sets the delay. |
-| `peek.position` | `"scrollbar"` | Position of the peek float. See [Peek Float](#peek-float). |
-| `peek.context` | `5` | Lines above and below the line of the mark. The float has `2 * context + 1` rows, or fewer when the window is smaller. |
-| `peek.width` | `0.6` | Width of the float as a part of the width of the text area. A number more than `0` and not more than `1`. |
+| `peek.frame` | `"scrollbar"` | Place and size of the peek float: a preset or a function. See [Frame](#frame). |
 | `peek.window` | `{}` | Border, title, footer, and window options of the peek float. See [Window](#window). |
-| `glance.list` | `"line"` | Entries of the list. See [List](#list). |
-| `glance.height` | `18` | Rows of the panes. The frame uses fewer rows when the window is smaller. |
+| `glance.frame` | `"cursor"` | Place and size of the frame of both panes: a preset or a function. See [Frame](#frame). |
+| `glance.list.entries` | `"line"` | Entries of the list. See [List](#list). |
+| `glance.list.width` | `0.4` | Width of the list pane, border included. A number less than `1` is a part of the frame width, and a whole number above `1` is cells. The preview pane takes the rest. |
+| `glance.list.side` | `"right"` | Side of the list pane: `"right"` or `"left"`. The preview pane takes the other side. |
 | `glance.keys.list` | See [Keys](#keys) | Keys of the actions in the list. |
 | `glance.keys.preview` | See [Keys](#keys) | Keys of the actions in the preview pane. |
 | `glance.window` | `{}` | Border, title, footer, and window options of both panes. See [Window](#window). |
@@ -383,7 +390,7 @@ keys as [`scrollbar.window`](configuration.md#window), with these differences:
 - Setup rejects the keys that the plugin sets: `relative`, `win`, `bufpos`,
   `anchor`, `row`, `col`, `width`, `height`, `focusable`, `hide`, `style`,
   `external`, `split`, `vertical`, `noautocmd`, and `fixed`. The error names
-  the option to use, for example `peek.context` for `height`.
+  the option to use, for example `peek.frame` for `height`.
 - The keys of `glance.window` apply to both panes.
 
 ```lua
@@ -399,6 +406,118 @@ require("scrollbar").setup({
     },
 })
 ```
+
+### Frame
+
+`peek.frame` and `glance.frame` set the place and the size of the frame: the
+outer box of the float, border included. For the glance window, the frame
+holds both panes. The value is a preset name or a frame function.
+`require("scrollbar.recipes").frame` has recipes that make frame functions.
+Each preset is its recipe without options, so `"cursor"` is the same as
+`recipes.frame.cursor()`.
+
+| Recipe | Options | Frame |
+| --- | --- | --- |
+| `recipes.frame.scrollbar()` | `width`, `height` | Beside the scrollbar, with the content rows centered on the row of the mark. When the minimap is on the same side, the frame is beside the minimap. The frame does not cover the scrollbar, the minimap, or a label. For glance, the row of the mark is the cursor row. |
+| `recipes.frame.cursor()` | `width`, `height` | Below the cursor line, or above it when there is no space below. When neither side has space, the frame uses the larger side and gets fewer rows. It starts at the left edge of the text area. |
+| `recipes.frame.center()` | `width`, `height`, `relative` | At the center of the text area. With `relative = "editor"`, at the center of the editor area. |
+
+`width` and `height` include the border:
+
+- A number up to `1` is a part of the text area: the window width without
+  the gutter, and the rows of the window without the winbar. `1` is the full
+  size.
+- A whole number above `1` is a count of cells.
+- With `relative = "editor"`, a part measures the editor area.
+- A size larger than the area shrinks to the area.
+
+Without `width` or `height`, a recipe uses the default size of the float:
+
+| Float | `width` | `height` |
+| --- | --- | --- |
+| Peek | `0.6` | `11` |
+| Glance | `1` | `18` |
+
+Call each recipe with `()`, as the [text recipes](configuration.md#recipes).
+A recipe checks its options when you call it.
+
+```lua
+local frame = require("scrollbar.recipes").frame
+
+require("scrollbar").setup({
+    peek = {
+        frame = frame.cursor({ height = 15 }),
+    },
+    glance = {
+        frame = frame.center({ relative = "editor", width = 0.8, height = 0.7 }),
+        list = { width = 40, side = "left" },
+    },
+})
+```
+
+#### Frame Functions
+
+A frame function gets a context table and returns the frame, or `nil` when
+the window has no space for the float. The plugin calls the function each
+time the float opens or moves.
+
+| Context field | Meaning |
+| --- | --- |
+| `kind` | `"peek"` or `"glance"`. |
+| `winid`, `bufnr` | The source window and its buffer. |
+| `win` | `{ width, height, textoff }`: the columns of the window, the rows of the window without the winbar, and the columns of the gutter. |
+| `editor` | `{ width, height }`: the editor area. |
+| `sides` | `{ top, right, bottom, left }`: the border cells of one pane, `0` or `1` each. |
+| `cursor_row` | The zero-based row of the cursor line in the window. |
+| `anchor_row` | The zero-based row of the mark: the row of the label in label mode, or the row of the pointer in hover. For glance, `cursor_row`. |
+| `free` | `{ side, first_col, last_col }`: the columns of the window that do not cover the scrollbar, the minimap, or a label. `side` is the side of the scrollbar, `"E"` or `"W"`. `last_col` is not part of the range. |
+
+| Result field | Meaning |
+| --- | --- |
+| `relative` | `"win"` (the default) or `"editor"`. |
+| `row`, `col` | The zero-based position of the frame. With `"win"`, `row` is relative to the first row below the winbar, and `col` to the first column of the window. With `"editor"`, both are relative to the editor area. |
+| `width`, `height` | The size of the frame in cells, border included. |
+
+- The plugin rounds the numbers down.
+- The plugin shrinks a frame that is larger than its area, then moves it into
+  the area. With `"win"`, the area is the window, so a frame can cover the
+  gutter.
+- The editor area is the space between the tabline and the command line. It
+  does not include the tabline when it shows, a global statusline
+  (`laststatus = 3`), or the command line. Row `0` is the first row below the
+  tabline.
+- When the panes have no space for one cell of content, the glance window
+  shows a notification, and the peek float does not open.
+- When the function fails or returns an invalid result, the float does not
+  open, and a notification shows. The same message shows only one time until
+  the next `setup()`.
+
+This function puts the glance frame in the bottom half of the window:
+
+```lua
+require("scrollbar").setup({
+    glance = {
+        frame = function(ctx)
+            local height = math.floor(ctx.win.height / 2)
+            return {
+                row = ctx.win.height - height,
+                col = ctx.win.textoff,
+                width = ctx.win.width - ctx.win.textoff,
+                height = height,
+            }
+        end,
+    },
+})
+```
+
+#### Resize
+
+When the screen changes size (`VimResized`), or when the source window
+changes size (`WinResized`), an open peek float or glance window runs its
+frame again and moves to the new frame. The glance window keeps its list, its
+selection, and the focus. When the new frame does not fit, the float closes:
+the glance window shows a notification and puts the focus in the source
+window. A size change of another window does nothing.
 
 ## Lua API and Commands
 

@@ -32,9 +32,7 @@ T["defaults"] = function()
     expect.equality(scrollbar.hover, false)
 
     local peek = config.get_peek()
-    expect.equality(peek.position, "scrollbar")
-    expect.equality(peek.context, 5)
-    expect.equality(peek.width, 0.6)
+    expect.equality(peek.frame, "scrollbar")
     -- Without a border key, the float applies 'winborder' when it opens.
     expect.equality(peek.window.open, {})
     expect.equality(peek.window.wo, {})
@@ -42,8 +40,8 @@ T["defaults"] = function()
     expect.equality(peek.window.sides, NO_SIDES)
 
     local glance = config.get_glance()
-    expect.equality(glance.list, "line")
-    expect.equality(glance.height, 18)
+    expect.equality(glance.frame, "cursor")
+    expect.equality(glance.list, { entries = "line", width = 0.4, side = "right" })
     expect.equality(glance.keys, {
         list = {
             jump = { "<CR>" },
@@ -132,18 +130,29 @@ T["peek"] = MiniTest.new_set()
 
 T["peek"]["validates its options"] = function()
     local config = require("scrollbar.config")
-    set_top({ peek = { position = "cursor", context = 0, width = 1 } })
-    local peek = config.get_peek()
-    expect.equality({ peek.position, peek.context, peek.width }, { "cursor", 0, 1 })
+    for _, preset in ipairs({ "scrollbar", "cursor", "center" }) do
+        set_top({ peek = { frame = preset } })
+        expect.equality(config.get_peek().frame, preset)
+    end
+    local function place()
+        return { row = 0, col = 0, width = 10, height = 5 }
+    end
+    set_top({ peek = { frame = place } })
+    expect.equality(config.get_peek().frame, place)
 
-    expect_invalid({ peek = { position = "left" } }, "peek.position must be one of: center, cursor, scrollbar")
-    expect_invalid({ peek = { context = -1 } }, "peek.context must be a non%-negative integer")
-    expect_invalid({ peek = { context = 1.5 } }, "peek.context must be")
-    expect_invalid({ peek = { width = 0 } }, "peek.width must be a number greater than 0 and at most 1")
-    expect_invalid({ peek = { width = 1.5 } }, "peek.width must be a number greater than 0 and at most 1")
-    expect_invalid({ peek = { width = "half" } }, "peek.width must be a number greater than 0 and at most 1")
-    expect_invalid({ peek = { height = 4 } }, "unknown option 'peek.height'")
+    expect_invalid({ peek = { frame = "left" } }, 'peek.frame must be "scrollbar", "cursor", "center", or a function$')
+    expect_invalid({ peek = { frame = { row = 1 } } }, "peek.frame must be")
+    -- The size is part of the frame.
+    for _, removed in ipairs({ "position", "context", "width", "height" }) do
+        expect_invalid({ peek = { [removed] = 1 } }, "unknown option 'peek." .. removed .. "'")
+    end
     expect_invalid({ peek = "no" }, "peek must be a table")
+end
+
+T["peek"]["setup does not load the recipes for a preset"] = function()
+    package.loaded["scrollbar.recipes"] = nil
+    set_top({ peek = { frame = "center" }, glance = { frame = "scrollbar" } })
+    expect.equality(package.loaded["scrollbar.recipes"], nil)
 end
 
 T["peek"]["window keeps 'winborder' and accepts the text-area options"] = function()
@@ -153,12 +162,13 @@ T["peek"]["window keeps 'winborder' and accepts the text-area options"] = functi
     expect.equality(window.open, { border = "single", title = "Peek" })
     expect.equality(window.wo, { number = false, signcolumn = "no" })
 
-    expect_invalid({ peek = { window = { row = 1 } } }, "peek.window.row: the peek float sets this key$")
-    expect_invalid(
-        { peek = { window = { width = 10 } } },
-        "peek.window.width: the peek float sets this key %(use 'peek.width'%)"
-    )
-    expect_invalid({ peek = { window = { height = 10 } } }, "use 'peek.context'")
+    for _, key in ipairs({ "relative", "row", "col", "width", "height" }) do
+        expect_invalid(
+            { peek = { window = { [key] = 1 } } },
+            "peek.window." .. key .. ": the peek float sets this key %(use 'peek.frame'%)$"
+        )
+    end
+    expect_invalid({ peek = { window = { anchor = "NW" } } }, "peek.window.anchor: the peek float sets this key$")
     expect_invalid(
         { peek = { window = { wo = { notanoption = 1 } } } },
         "peek.window.wo.notanoption is not a window option"
@@ -187,14 +197,37 @@ T["glance"] = MiniTest.new_set()
 
 T["glance"]["validates its options"] = function()
     local config = require("scrollbar.config")
-    set_top({ glance = { list = "type", height = 6 } })
-    expect.equality({ config.get_glance().list, config.get_glance().height }, { "type", 6 })
+    set_top({ glance = { frame = "center", list = { entries = "type" } } })
+    expect.equality(config.get_glance().frame, "center")
+    -- The keys of the list merge with the defaults.
+    expect.equality(config.get_glance().list, { entries = "type", width = 0.4, side = "right" })
+    set_top({ glance = { list = { width = 40, side = "left" } } })
+    expect.equality(config.get_glance().list, { entries = "line", width = 40, side = "left" })
+    set_top({ glance = { list = { width = 0.25 } } })
+    expect.equality(config.get_glance().list.width, 0.25)
 
-    expect_invalid({ glance = { list = "file" } }, "glance.list must be one of: line, mark, type")
-    expect_invalid({ glance = { height = 0 } }, "glance.height must be a positive integer")
-    expect_invalid({ glance = { width = 10 } }, "unknown option 'glance.width'")
-    expect_invalid({ glance = { window = { col = 1 } } }, "glance.window.col: the glance window sets this key$")
-    expect_invalid({ glance = { window = { height = 2 } } }, "use 'glance.height'")
+    expect_invalid({ glance = { frame = 1 } }, 'glance.frame must be "scrollbar", "cursor", "center", or a function$')
+    expect_invalid(
+        { glance = { list = "type" } },
+        "glance.list must be a table: set the entries with glance.list.entries$"
+    )
+    expect_invalid({ glance = { list = { entries = "file" } } }, "glance.list.entries must be one of: line, mark, type")
+    expect_invalid({ glance = { list = { side = "top" } } }, "glance.list.side must be one of: left, right")
+    expect_invalid({ glance = { list = { position = "left" } } }, "unknown option 'glance.list.position'")
+    local width_message = "glance.list.width must be a number greater than 0 and less than 1,"
+        .. " or a whole number greater than 1"
+    -- A list as wide as the frame leaves no room for the preview.
+    for _, width in ipairs({ 0, 1, 1.5, -2, "half" }) do
+        expect_invalid({ glance = { list = { width = width } } }, width_message)
+    end
+    for _, removed in ipairs({ "height", "width", "list_width" }) do
+        expect_invalid({ glance = { [removed] = 10 } }, "unknown option 'glance." .. removed .. "'")
+    end
+    expect_invalid(
+        { glance = { window = { col = 1 } } },
+        "glance.window.col: the glance window sets this key %(use 'glance.frame'%)$"
+    )
+    expect_invalid({ glance = { window = { height = 2 } } }, "use 'glance.frame'")
 end
 
 T["glance"]["keys take a string, a list, or false"] = function()
@@ -268,10 +301,10 @@ end
 
 T["failed setup preserves the peek and glance options"] = function()
     local config = require("scrollbar.config")
-    set_top({ peek = { context = 2 }, glance = { list = "mark" } })
-    expect_invalid({ peek = { context = 3 }, glance = { list = "bad" } }, "glance.list")
-    expect.equality(config.get_peek().context, 2)
-    expect.equality(config.get_glance().list, "mark")
+    set_top({ peek = { frame = "cursor" }, glance = { list = { entries = "mark" } } })
+    expect_invalid({ peek = { frame = "center" }, glance = { list = { entries = "bad" } } }, "glance.list")
+    expect.equality(config.get_peek().frame, "cursor")
+    expect.equality(config.get_glance().list.entries, "mark")
 end
 
 return T

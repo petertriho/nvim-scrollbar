@@ -1,17 +1,19 @@
---- Ready-made text functions for the marks and the thumb, and predicates for
---- the `when` options. Each recipe is a factory: call it, with its options,
---- to get the function.
+--- Ready-made text functions for the marks and the thumb, predicates for the
+--- `when` options, and frame functions for `peek.frame` and `glance.frame`.
+--- Each recipe is a factory: call it, with its options, to get the function.
 ---
 --- ```lua
 --- local recipes = require("scrollbar.recipes")
 --- marks = { GitAdd = { text = recipes.marks.line_number({ width = 4 }) } }
 --- profiles = { { match = { when = recipes.when.searching() }, ... } }
+--- glance = { frame = recipes.frame.center({ width = 0.8, height = 0.7 }) }
 --- ```
 ---
 --- A recipe reads only the context fields that its text needs. A mark text
 --- that reads `cursor_line` makes the scrollbar build the marks again on each
 --- cursor line change, so only `relative_number` reads it.
 
+local frame = require("scrollbar.navigate.frame")
 local text_function = require("scrollbar.text_function")
 
 local M = {}
@@ -442,6 +444,78 @@ M.when.negate = function(predicate, ...)
     local only = list[1]
     return function(context)
         return not only(context)
+    end
+end
+
+M.frame = {}
+
+local FRAME_OPTIONS = { width = true, height = true }
+local CENTER_OPTIONS = { width = true, height = true, relative = true }
+
+---Checks and copies the options of a frame recipe.
+---@param name string
+---@param options? ScrollbarFrameRecipeOptions
+---@param allowed table<string, true>
+---@return ScrollbarFrameRecipeOptions
+local function frame_options(name, options, allowed)
+    if options == nil then
+        return {}
+    end
+    check_keys(name, options, allowed)
+    local result = {}
+    for _, key in ipairs({ "width", "height" }) do
+        local value = options[key]
+        if value ~= nil then
+            if not frame.is_size(value) then
+                fail(name, key .. " must be a number greater than 0 and at most 1, or a whole number greater than 1")
+            end
+            result[key] = value
+        end
+    end
+    local relative = options.relative
+    if relative ~= nil then
+        if relative ~= "win" and relative ~= "editor" then
+            fail(name, 'relative must be "win" or "editor"')
+        end
+        result.relative = relative
+    end
+    return result
+end
+
+---Beside the scrollbar and the minimap floats, with the content rows centered
+---on the row of the mark. The frame does not cover the scrollbar, the
+---minimap, or a label. The preset `"scrollbar"` is this recipe without
+---options.
+---@param options? { width?: number, height?: number }
+---@return ScrollbarFrameFunction
+M.frame.scrollbar = function(options)
+    local resolved = frame_options("frame.scrollbar", options, FRAME_OPTIONS)
+    return function(ctx)
+        return frame.place.scrollbar(ctx, resolved)
+    end
+end
+
+---Below the cursor line, else above it. When neither side has room, the frame
+---takes the larger side and loses rows. The preset `"cursor"` is this recipe
+---without options.
+---@param options? { width?: number, height?: number }
+---@return ScrollbarFrameFunction
+M.frame.cursor = function(options)
+    local resolved = frame_options("frame.cursor", options, FRAME_OPTIONS)
+    return function(ctx)
+        return frame.place.cursor(ctx, resolved)
+    end
+end
+
+---At the center of the text area of the window, or of the editor area with
+---`relative = "editor"`. The preset `"center"` is this recipe without
+---options.
+---@param options? ScrollbarFrameRecipeOptions
+---@return ScrollbarFrameFunction
+M.frame.center = function(options)
+    local resolved = frame_options("frame.center", options, CENTER_OPTIONS)
+    return function(ctx)
+        return frame.place.center(ctx, resolved)
     end
 end
 

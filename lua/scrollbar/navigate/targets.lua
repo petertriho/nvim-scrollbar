@@ -338,7 +338,7 @@ local BUILDERS = { line = by_line, mark = by_mark, type = by_type }
 ---   order. A header starts each group, and the group has one entry for each
 ---   line.
 ---@param source_win integer
----@param mode ScrollbarGlanceList
+---@param mode ScrollbarGlanceEntries
 ---@param types? table<string, true> Mark types to keep. Nil keeps every type except `Cursor`
 ---@return ScrollbarNavigateEntry[]
 M.entries = function(source_win, mode, types)

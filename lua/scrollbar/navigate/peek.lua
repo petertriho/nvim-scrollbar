@@ -9,7 +9,7 @@
 --- window as a source.
 
 local config = require("scrollbar.config")
-local stack = require("scrollbar.shared.stack")
+local frame = require("scrollbar.navigate.frame")
 local targets = require("scrollbar.navigate.targets")
 local window_config = require("scrollbar.config.window")
 
@@ -18,6 +18,8 @@ local M = {}
 --- Window variable of the peek float and the glance panes. The source policy
 --- reads it.
 M.OWNED_VAR = "scrollbar_navigate_owned"
+
+local AUGROUP = "ScrollbarPeek"
 
 -- Window options of a float on the source buffer. `peek.window.wo` and
 -- `glance.window.wo` apply after them.
@@ -34,161 +36,27 @@ local WINDOW_OPTIONS = {
 ---@field source_buf integer
 ---@field win integer
 ---@field line integer Zero-based line under the cursor of the float
----@field position ScrollbarPeekPosition
 ---@field anchor_row? integer
 
 ---@type ScrollbarPeekState?
 local current
 
----@class ScrollbarPeekOpenOptions
----@field position? ScrollbarPeekPosition Default: `peek.position`
----@field anchor_row? integer Zero-based text row of the source window that a `"scrollbar"` float centers on. Default: the cursor row
----@field types? table<string, true> Mark types that the title names. Nil names every type except `Cursor`
----@field free_col? integer Zero-based column of the source window that a `"scrollbar"` float does not cover, for the labels beside the scrollbar
+-- The options of the last open call. A resize opens the float again with
+-- them. They stay out of the state, because a frame function cannot leave
+-- the process in a copy of the state.
+---@type ScrollbarPeekOpenOptions?
+local current_options
 
----@class ScrollbarPeekGeometry
----@field row integer Zero-based row of the frame, relative to the text area of the source window
----@field col integer Zero-based column of the frame, relative to the source window
----@field width integer Content width
----@field height integer Content height
+---@class ScrollbarPeekOpenOptions
+---@field frame? ScrollbarFrameValue Default: `peek.frame`
+---@field anchor_row? integer Zero-based text row of the source window that a `"scrollbar"` frame centers on. Default: the cursor row
+---@field types? table<string, true> Mark types that the title names. Nil names every type except `Cursor`
+---@field free_col? integer Zero-based column of the source window that a `"scrollbar"` frame does not cover, for the labels beside the scrollbar
 
 ---@param winid? integer
 ---@return boolean
 local function valid_window(winid)
     return type(winid) == "number" and vim.api.nvim_win_is_valid(winid)
-end
-
----@param source_win integer
----@return { width: integer, height: integer, textoff: integer, screen_col: integer }
-local function text_area(source_win)
-    local winbar = vim.api.nvim_get_option_value("winbar", { win = source_win })
-    local info = vim.fn.getwininfo(source_win)[1]
-    return {
-        width = vim.api.nvim_win_get_width(source_win),
-        height = math.max(0, vim.api.nvim_win_get_height(source_win) - (winbar == "" and 0 or 1)),
-        textoff = info.textoff,
-        screen_col = vim.fn.win_screenpos(source_win)[2] - 1,
-    }
-end
-
---- The side of the floats of the source window and their inward edge: the
---- column next to the float that is nearest to the text. Without a float, the
---- side is east and the edge is the right edge of the window.
----@param source_win integer
----@param area { width: integer, screen_col: integer }
----@return "E"|"W" side
----@return integer edge Zero-based column relative to the window. On the east side, the first column of the floats
-local function float_edge(source_win, area)
-    local side, edge
-    for _, renderer in ipairs({ "scrollbar", "minimap" }) do
-        local footprint = stack.footprint(renderer, source_win)
-        if footprint ~= nil and (side == nil or footprint.side == side) then
-            local origin = stack.resolve(renderer, source_win, footprint) or footprint.origin
-            local inward
-            if footprint.side == "W" then
-                inward = origin + footprint.col + footprint.width
-            else
-                inward = origin + footprint.col - footprint.width
-            end
-            if footprint.relative == "editor" then
-                inward = inward - area.screen_col
-            end
-            if side == nil then
-                side, edge = footprint.side, inward
-            elseif side == "W" then
-                edge = math.max(edge, inward)
-            else
-                edge = math.min(edge, inward)
-            end
-        end
-    end
-    if side == nil then
-        return "E", area.width
-    end
-    return side, math.max(0, math.min(edge, area.width))
-end
-
----@param value integer
----@param minimum integer
----@param maximum integer
----@return integer
-local function clamp(value, minimum, maximum)
-    return math.max(minimum, math.min(value, maximum))
-end
-
---- The rows of the cursor line of `source_win`, relative to its text area.
----@param source_win integer
----@return integer
-local function cursor_row(source_win)
-    return vim.api.nvim_win_call(source_win, vim.fn.winline) - 1
-end
-
---- Place the frame of a peek float in the source window.
----@param source_win integer
----@param position ScrollbarPeekPosition
----@param anchor_row? integer
----@param sides ScrollbarWindowSides
----@param peek_config ScrollbarPeekConfig
----@param free_col? integer
----@return ScrollbarPeekGeometry?
-M._geometry = function(source_win, position, anchor_row, sides, peek_config, free_col)
-    local area = text_area(source_win)
-    local frame_rows = sides.top + sides.bottom
-    local frame_cols = sides.left + sides.right
-    local height = math.min(2 * peek_config.context + 1, area.height - frame_rows)
-    local width = math.floor(peek_config.width * area.width)
-
-    local first_col = area.textoff
-    local last_col = area.width
-    local side = "E"
-    if position == "scrollbar" then
-        local edge
-        side, edge = float_edge(source_win, area)
-        if side == "E" then
-            last_col = edge
-        else
-            first_col = math.max(first_col, edge)
-        end
-        -- A free column on the side of the text moves the frame past it.
-        if free_col ~= nil then
-            if side == "E" and free_col < last_col then
-                last_col = math.max(first_col, free_col)
-            elseif side == "W" and free_col >= first_col then
-                first_col = math.min(last_col, free_col + 1)
-            end
-        end
-    end
-    width = math.min(width, last_col - first_col - frame_cols)
-    if height < 1 or width < 1 then
-        return nil
-    end
-    local frame_height = height + frame_rows
-    local frame_width = width + frame_cols
-    local max_row = area.height - frame_height
-
-    local row, col
-    if position == "scrollbar" then
-        local center = anchor_row or cursor_row(source_win)
-        row = center - sides.top - math.floor(height / 2)
-        col = side == "E" and last_col - frame_width or first_col
-    elseif position == "cursor" then
-        local cursor = cursor_row(source_win)
-        row = cursor + 1
-        if row > max_row then
-            -- No room below, so the float goes above the cursor line.
-            row = cursor - frame_height
-        end
-        col = first_col
-    else
-        row = math.floor(max_row / 2)
-        col = first_col + math.floor((last_col - first_col - frame_width) / 2)
-    end
-    return {
-        row = clamp(row, 0, max_row),
-        col = clamp(col, first_col, last_col - frame_width),
-        width = width,
-        height = height,
-    }
 end
 
 --- The title of a peek float: the mark types of the line and the line number.
@@ -237,41 +105,66 @@ end
 ---@param line integer
 local function show_line(win, line)
     local buf = vim.api.nvim_win_get_buf(win)
-    line = clamp(line, 0, vim.api.nvim_buf_line_count(buf) - 1)
+    line = frame.clamp(line, 0, vim.api.nvim_buf_line_count(buf) - 1)
     vim.api.nvim_win_set_cursor(win, { line + 1, 0 })
     vim.api.nvim_win_call(win, function()
         vim.cmd("normal! zz")
     end)
 end
 
+--- The configuration of the float in `placed`, a frame with its border.
 ---@param source_win integer
----@param geometry ScrollbarPeekGeometry
+---@param placed ScrollbarFrame
+---@param sides ScrollbarWindowSides
 ---@param window ScrollbarWindowConfig
 ---@param hidden boolean
 ---@return table<string, any>
-local function float_config(source_win, geometry, window, hidden)
+local function float_config(source_win, placed, sides, window, hidden)
     local result = {}
     for key, value in pairs(window.open) do
         result[key] = value
     end
-    result.relative = "win"
-    result.win = source_win
-    result.row = geometry.row
-    result.col = geometry.col
-    result.width = geometry.width
-    result.height = geometry.height
+    frame.apply_position(placed, source_win, result)
+    result.width = placed.width - sides.left - sides.right
+    result.height = placed.height - sides.top - sides.bottom
     result.focusable = false
     result.hide = hidden
     return result
 end
 
+local HIDDEN_FRAME = { relative = "win", row = 0, col = 0, width = 1, height = 1 }
+local NO_SIDES = { top = 0, right = 0, bottom = 0, left = 0 }
+
 --- Close the peek float.
 M.close = function()
     local state = current
     current = nil
+    current_options = nil
+    pcall(vim.api.nvim_del_augroup_by_name, AUGROUP)
     if state ~= nil and valid_window(state.win) then
         pcall(vim.api.nvim_win_close, state.win, true)
     end
+end
+
+--- Open the float again with the options of the last open call, after a
+--- resize. The float closes when the frame no longer fits.
+local function relayout()
+    local state = current
+    if state == nil then
+        return
+    end
+    if not valid_window(state.win) or not valid_window(state.source_win) then
+        M.close()
+        return
+    end
+    M.open(state.source_win, state.line, current_options)
+end
+
+local function watch()
+    local group = vim.api.nvim_create_augroup(AUGROUP, { clear = true })
+    frame.on_resize(group, function()
+        return current and current.source_win or nil
+    end, relayout)
 end
 
 --- Open the peek float at `line` of the buffer of `source_win`, or move the
@@ -279,12 +172,11 @@ end
 ---@param source_win integer
 ---@param line integer Zero-based line
 ---@param options? ScrollbarPeekOpenOptions
----@return integer? win The float, or nil when the source window has no room for it
+---@return integer? win The float, or nil when the source window has no room for it or the frame failed
 M.open = function(source_win, line, options)
     options = options or {}
     local peek_config = config.get_peek()
     local window = peek_config.window
-    local position = options.position or peek_config.position
     local source_buf = vim.api.nvim_win_get_buf(source_win)
 
     local state = current
@@ -297,7 +189,7 @@ M.open = function(source_win, line, options)
     if win == nil then
         -- Without a `border` key, the float applies 'winborder', so the sides
         -- are known only after the float opens. It opens hidden.
-        local initial = float_config(source_win, { row = 0, col = 0, width = 1, height = 1 }, window, true)
+        local initial = float_config(source_win, HIDDEN_FRAME, NO_SIDES, window, true)
         initial.style = "minimal"
         initial.noautocmd = true
         local ok, opened = pcall(vim.api.nvim_open_win, source_buf, false, initial)
@@ -311,26 +203,32 @@ M.open = function(source_win, line, options)
     ---@cast win integer
 
     local sides = window_config.sides(win)
-    local geometry = M._geometry(source_win, position, options.anchor_row, sides, peek_config, options.free_col)
-    if geometry == nil then
+    local placed = frame.layout("peek", "peek.frame", options.frame or peek_config.frame, source_win, sides, {
+        anchor_row = options.anchor_row,
+        free_col = options.free_col,
+    })
+    if placed == nil or placed.width - sides.left - sides.right < 1 or placed.height - sides.top - sides.bottom < 1 then
         pcall(vim.api.nvim_win_close, win, true)
-        current = nil
+        M.close()
         return nil
     end
-    local desired = float_config(source_win, geometry, window, false)
+    local desired = float_config(source_win, placed, sides, window, false)
     if window.open.title == nil and sides.top > 0 then
         desired.title = title(source_win, line, options.types)
     end
     vim.api.nvim_win_set_config(win, desired)
     show_line(win, line)
+    if current == nil then
+        watch()
+    end
     current = {
         source_win = source_win,
         source_buf = source_buf,
         win = win,
         line = line,
-        position = position,
         anchor_row = options.anchor_row,
     }
+    current_options = options
     return win
 end
 

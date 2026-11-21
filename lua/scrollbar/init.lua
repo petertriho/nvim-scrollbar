@@ -67,7 +67,8 @@ local function remove_orphaned_renderer_resources()
     end
 end
 
---- Close the label mode, the glance window, and the peek float.
+--- Close the label mode, the glance window, and the peek float, and forget
+--- the notifications of the frame functions.
 local function dispose_navigate()
     local jump = package.loaded["scrollbar.navigate.jump"]
     if jump ~= nil then
@@ -80,6 +81,10 @@ local function dispose_navigate()
     local peek = package.loaded["scrollbar.navigate.peek"]
     if peek ~= nil then
         peek.close()
+    end
+    local frame = package.loaded["scrollbar.navigate.frame"]
+    if frame ~= nil then
+        frame.reset()
     end
 end
 

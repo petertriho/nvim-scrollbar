@@ -245,6 +245,184 @@ T["options"]["are copied when the factory is called"] = function()
     expect.equality(line_number(mark_context({ line = 6 })), "   7")
 end
 
+---A frame context of a window of 80 by 22 cells without a gutter, a
+---scrollbar in the last 2 columns, and no border.
+---@param fields? table
+---@return ScrollbarFrameContext
+local function frame_context(fields)
+    return vim.tbl_deep_extend("force", {
+        kind = "glance",
+        winid = 1000,
+        bufnr = 1,
+        win = { width = 80, height = 22, textoff = 0 },
+        editor = { width = 120, height = 40 },
+        sides = { top = 0, right = 0, bottom = 0, left = 0 },
+        cursor_row = 0,
+        anchor_row = 0,
+        free = { side = "E", first_col = 0, last_col = 78 },
+    }, fields or {})
+end
+
+T["frame"] = MiniTest.new_set()
+
+T["frame"]["center: at the center of the text area"] = function()
+    local center = recipes.frame.center
+    expect.equality(center()(frame_context()), { row = 2, col = 0, width = 80, height = 18 })
+    expect.equality(
+        center()(frame_context({ kind = "peek" })),
+        { row = math.floor((22 - 11) / 2), col = 16, width = 48, height = 11 }
+    )
+    expect.equality(
+        center({ width = 0.5, height = 10 })(frame_context()),
+        { row = 6, col = 20, width = 40, height = 10 }
+    )
+    -- A part measures the text area, right of the gutter.
+    expect.equality(
+        center({ width = 0.5 })(frame_context({ win = { textoff = 4 } })),
+        { row = 2, col = 4 + 19, width = 38, height = 18 }
+    )
+    -- A size larger than the text area shrinks to it.
+    expect.equality(
+        center({ width = 200, height = 50 })(frame_context({ win = { textoff = 4 } })),
+        { row = 0, col = 4, width = 76, height = 22 }
+    )
+end
+
+T["frame"]["center: relative to the editor"] = function()
+    local place = recipes.frame.center({ relative = "editor", width = 0.8, height = 0.5 })
+    expect.equality(place(frame_context()), { relative = "editor", row = 10, col = 12, width = 96, height = 20 })
+    -- Without a size, the default size of the kind measures the editor area.
+    expect.equality(
+        recipes.frame.center({ relative = "editor" })(frame_context()),
+        { relative = "editor", row = 11, col = 0, width = 120, height = 18 }
+    )
+end
+
+T["frame"]["cursor: below, above, or the larger side"] = function()
+    local cursor = recipes.frame.cursor()
+    expect.equality(cursor(frame_context({ cursor_row = 3 })), { row = 4, col = 0, width = 80, height = 18 })
+    expect.equality(cursor(frame_context({ cursor_row = 20 })), { row = 2, col = 0, width = 80, height = 18 })
+    -- Row 10 has 11 rows below and 10 rows above.
+    expect.equality(cursor(frame_context({ cursor_row = 10 })), { row = 11, col = 0, width = 80, height = 11 })
+    expect.equality(cursor(frame_context({ cursor_row = 12 })), { row = 0, col = 0, width = 80, height = 12 })
+    -- The peek is 11 rows by 60% of the text width, and it starts at the gutter.
+    expect.equality(
+        cursor(frame_context({ kind = "peek", cursor_row = 3, win = { textoff = 5 } })),
+        { row = 4, col = 5, width = 45, height = 11 }
+    )
+    -- With a border, a side needs room for one content row and the border.
+    local bordered = frame_context({ cursor_row = 0, win = { height = 2 }, sides = { top = 1, bottom = 1 } })
+    expect.equality(cursor(bordered).row, 1)
+end
+
+T["frame"]["scrollbar: beside the floats, centered on the anchor row"] = function()
+    local scrollbar = recipes.frame.scrollbar()
+    expect.equality(
+        scrollbar(frame_context({ kind = "peek", anchor_row = 10 })),
+        { row = 5, col = 30, width = 48, height = 11 }
+    )
+    -- The content rows center on the anchor row, below a top border.
+    expect.equality(
+        scrollbar(frame_context({ kind = "peek", anchor_row = 10, sides = { top = 1, bottom = 1 } })).row,
+        10 - 1 - 4
+    )
+    expect.equality(
+        scrollbar(frame_context({ kind = "peek", free = { side = "W", first_col = 2, last_col = 80 } })).col,
+        2
+    )
+    -- The width stays inside the free columns.
+    expect.equality(
+        recipes.frame.scrollbar({ width = 1 })(frame_context({ free = { first_col = 10, last_col = 40 } })),
+        { row = -9, col = 10, width = 30, height = 18 }
+    )
+    expect.equality(scrollbar(frame_context({ free = { first_col = 40, last_col = 40 } })), nil)
+end
+
+T["frame"]["sizes take parts or cells"] = function()
+    local context = frame_context()
+    expect.equality(
+        recipes.frame.center({ width = 1, height = 1 })(context),
+        { row = 0, col = 0, width = 80, height = 22 }
+    )
+    expect.equality(recipes.frame.center({ width = 30, height = 2 })(context).width, 30)
+    expect.equality(recipes.frame.center({ width = 0.25 })(context).width, 20)
+end
+
+T["frame"]["presets are the recipes without options"] = function()
+    local frame = require("scrollbar.navigate.frame")
+    for _, kind in ipairs({ "peek", "glance" }) do
+        for _, preset in ipairs({ "scrollbar", "cursor", "center" }) do
+            local context = frame_context({ kind = kind, cursor_row = 5, anchor_row = 9 })
+            local from_preset = frame.run("test.frame", preset, context, 0)
+            local from_recipe = frame.run("test.frame", recipes.frame[preset](), context, 0)
+            expect.equality(from_preset, from_recipe)
+            expect.no_equality(from_preset, nil)
+        end
+    end
+end
+
+T["frame"]["factories reject invalid options"] = function()
+    local cases = {
+        { recipes.frame.center, "x", "[nvim-scrollbar] recipes.frame.center: options must be a table" },
+        { recipes.frame.center, { row = 1 }, "[nvim-scrollbar] recipes.frame.center: unknown option 'row'" },
+        {
+            recipes.frame.cursor,
+            { relative = "editor" },
+            "[nvim-scrollbar] recipes.frame.cursor: unknown option 'relative'",
+        },
+        {
+            recipes.frame.center,
+            { relative = "screen" },
+            '[nvim-scrollbar] recipes.frame.center: relative must be "win" or "editor"',
+        },
+    }
+    local size_message = " must be a number greater than 0 and at most 1, or a whole number greater than 1"
+    for _, value in ipairs({ 0, -1, 1.5, "half", 0 / 0, math.huge }) do
+        cases[#cases + 1] = {
+            recipes.frame.scrollbar,
+            { width = value },
+            "[nvim-scrollbar] recipes.frame.scrollbar: width" .. size_message,
+        }
+        cases[#cases + 1] = {
+            recipes.frame.cursor,
+            { height = value },
+            "[nvim-scrollbar] recipes.frame.cursor: height" .. size_message,
+        }
+    end
+    for _, case in ipairs(cases) do
+        local ok, err = pcall(case[1], case[2])
+        expect.equality(ok, false)
+        expect.equality(err, case[3])
+    end
+end
+
+T["frame"]["name the missing call of a factory"] = function()
+    local messages = {}
+    local original = vim.notify
+    vim.notify = function(message)
+        messages[#messages + 1] = message
+    end
+    MiniTest.finally(function()
+        vim.notify = original
+    end)
+    local frame = require("scrollbar.navigate.frame")
+    frame.reset()
+
+    -- The plugin calls `frame = recipes.frame.center` with the context.
+    expect.equality({ frame.run("glance.frame", recipes.frame.center, frame_context(), 0) }, { nil, "failed" })
+    expect.equality(messages, {
+        "[nvim-scrollbar] glance.frame failed: [nvim-scrollbar] recipes.frame.center:"
+            .. " call the recipe to get its function, for example recipes.frame.center()",
+    })
+end
+
+T["frame"]["options are copied when the factory is called"] = function()
+    local options = { width = 0.5 }
+    local place = recipes.frame.center(options)
+    options.width = 10
+    expect.equality(place(frame_context()).width, 40)
+end
+
 T["setup does not load the recipes"] = function()
     local child = helpers.new_child()
     MiniTest.finally(function()
