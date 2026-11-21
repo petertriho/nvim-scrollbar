@@ -1,3 +1,5 @@
+local buffer_marks = require("scrollbar.providers.buffer_marks")
+
 local M = {
     name = "vgit",
     targets = { scrollbar = true, minimap = true },
@@ -102,21 +104,6 @@ end
 
 ---@param context ScrollbarProviderContext
 ---@param bufnr integer
-local function update_buffer(context, bufnr)
-    if not context.is_buffer_eligible(bufnr) then
-        context.clear_marks(bufnr)
-        return
-    end
-    local ok, marks = pcall(collect_marks, bufnr)
-    if ok then
-        context.set_marks(bufnr, marks)
-    else
-        context.clear_marks(bufnr)
-    end
-end
-
----@param context ScrollbarProviderContext
----@param bufnr integer
 local function schedule_update(context, bufnr)
     if not context.is_buffer_eligible(bufnr) then
         context.clear_marks(bufnr)
@@ -134,7 +121,7 @@ local function schedule_update(context, bufnr)
         if not vim.api.nvim_buf_is_valid(bufnr) then
             return
         end
-        update_buffer(context, bufnr)
+        buffer_marks.update(context, bufnr, collect_marks)
     end, M.update_delay_ms)
 end
 

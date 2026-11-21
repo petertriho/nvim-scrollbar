@@ -42,6 +42,26 @@ M.GLOBAL_KEYS = {
 ---@field describe_profile fun(relative: string, path: string): string?
 ---@field normalize fun(value: table, shared: ScrollbarSharedConfig, path: string, variant_id: integer): table
 
+--- Validate the `placement` table of a block. Both blocks accept `relative`,
+--- `anchor`, `row`, `col`, and `zindex`. `key` names the enum that only this
+--- block accepts, and `values` lists its values.
+---@param placement table
+---@param path string Error path of the placement table
+---@param key string
+---@param values string[]
+---@return table
+M.placement = function(placement, path, key, values)
+    local result = {
+        relative = schema.enum(placement.relative, path .. ".relative", { "window", "editor" }),
+        anchor = schema.enum(placement.anchor, path .. ".anchor", { "NW", "NE", "SW", "SE" }),
+        row = schema.integer(placement.row, path .. ".row"),
+        col = schema.integer(placement.col, path .. ".col"),
+        zindex = schema.integer(placement.zindex, path .. ".zindex", 1),
+    }
+    result[key] = schema.enum(placement[key], path .. "." .. key, values)
+    return result
+end
+
 ---@param spec ScrollbarBlockSpec
 ---@return ScrollbarBlock
 M.block = function(spec)

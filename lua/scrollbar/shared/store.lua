@@ -185,6 +185,61 @@ local function next_minimap_point_revision(current)
     return (current and current.minimap_point_revision or 0) + 1
 end
 
+--- A buffer snapshot with new marks. It keeps the minimap spans of `current`.
+---@param current ScrollbarStoreTrustedSnapshot?
+---@param marks ScrollbarStoreSnapshot
+---@param compact_search ScrollbarCompactSearch?
+---@return ScrollbarStoreTrustedSnapshot
+local function with_buffer_marks(current, marks, compact_search)
+    return {
+        marks = marks,
+        revision = next_revision(current),
+        compact_search = compact_search,
+        minimap_spans = current and current.minimap_spans or empty_buffer_snapshot.minimap_spans,
+        minimap_span_revision = current and current.minimap_span_revision or 0,
+    }
+end
+
+--- A buffer snapshot with new minimap spans. It keeps the marks of `current`.
+---@param current ScrollbarStoreTrustedSnapshot?
+---@param spans ScrollbarMinimapSpanStoreSnapshot
+---@return ScrollbarStoreTrustedSnapshot
+local function with_buffer_spans(current, spans)
+    return {
+        marks = current and current.marks or empty_buffer_snapshot.marks,
+        revision = current and current.revision or 0,
+        compact_search = current and current.compact_search or nil,
+        minimap_spans = spans,
+        minimap_span_revision = next_minimap_span_revision(current),
+    }
+end
+
+--- A window snapshot with new marks. It keeps the minimap points of `current`.
+---@param current ScrollbarWindowStoreTrustedSnapshot?
+---@param marks ScrollbarWindowStoreSnapshot
+---@return ScrollbarWindowStoreTrustedSnapshot
+local function with_window_marks(current, marks)
+    return {
+        marks = marks,
+        revision = next_revision(current),
+        minimap_points = current and current.minimap_points or empty_window_snapshot.minimap_points,
+        minimap_point_revision = current and current.minimap_point_revision or 0,
+    }
+end
+
+--- A window snapshot with new minimap points. It keeps the marks of `current`.
+---@param current ScrollbarWindowStoreTrustedSnapshot?
+---@param points ScrollbarMinimapPointStoreSnapshot
+---@return ScrollbarWindowStoreTrustedSnapshot
+local function with_window_points(current, points)
+    return {
+        marks = current and current.marks or empty_window_snapshot.marks,
+        revision = current and current.revision or 0,
+        minimap_points = points,
+        minimap_point_revision = next_minimap_point_revision(current),
+    }
+end
+
 ---@param provider string
 ---@param channel ScrollbarStoreChannel
 ---@param target integer
@@ -555,13 +610,7 @@ M.set = function(provider, bufnr, marks)
     if replacing_compact then
         compact = nil
     end
-    marks_by_buffer[bufnr] = {
-        marks = updated,
-        revision = next_revision(current),
-        compact_search = compact,
-        minimap_spans = current and current.minimap_spans or empty_buffer_snapshot.minimap_spans,
-        minimap_span_revision = current and current.minimap_span_revision or 0,
-    }
+    marks_by_buffer[bufnr] = with_buffer_marks(current, updated, compact)
     notify("buffer", "marks", bufnr, provider)
     return true, { [bufnr] = true }
 end
@@ -601,13 +650,7 @@ M.set_minimap_spans = function(provider, bufnr, spans)
 
     local updated = copy_snapshot(buffer_spans)
     updated[provider] = normalized
-    marks_by_buffer[bufnr] = {
-        marks = current and current.marks or empty_buffer_snapshot.marks,
-        revision = current and current.revision or 0,
-        compact_search = current and current.compact_search or nil,
-        minimap_spans = updated,
-        minimap_span_revision = next_minimap_span_revision(current),
-    }
+    marks_by_buffer[bufnr] = with_buffer_spans(current, updated)
     notify("buffer", "minimap_spans", bufnr, provider)
     return true, { [bufnr] = true }
 end
@@ -636,13 +679,7 @@ M._set_search_compact = function(bufnr, compact)
     local buffer_marks = current and current.marks or empty_buffer_snapshot.marks
     local updated = copy_snapshot(buffer_marks)
     updated.search = nil
-    marks_by_buffer[bufnr] = {
-        marks = updated,
-        revision = next_revision(current),
-        compact_search = compact,
-        minimap_spans = current and current.minimap_spans or empty_buffer_snapshot.minimap_spans,
-        minimap_span_revision = current and current.minimap_span_revision or 0,
-    }
+    marks_by_buffer[bufnr] = with_buffer_marks(current, updated, compact)
     notify("buffer", "marks", bufnr, "search")
     return true, { [bufnr] = true }
 end
@@ -686,12 +723,7 @@ M.set_window = function(provider, winid, marks)
 
     local updated = copy_snapshot(window_marks)
     updated[provider] = normalized
-    marks_by_window[winid] = {
-        marks = updated,
-        revision = next_revision(current),
-        minimap_points = current and current.minimap_points or empty_window_snapshot.minimap_points,
-        minimap_point_revision = current and current.minimap_point_revision or 0,
-    }
+    marks_by_window[winid] = with_window_marks(current, updated)
     notify("window", "marks", winid, provider)
     return true, { [winid] = true }
 end
@@ -726,12 +758,7 @@ M.set_minimap_points = function(provider, winid, points)
 
     local updated = copy_snapshot(window_points)
     updated[provider] = normalized
-    marks_by_window[winid] = {
-        marks = current and current.marks or empty_window_snapshot.marks,
-        revision = current and current.revision or 0,
-        minimap_points = updated,
-        minimap_point_revision = next_minimap_point_revision(current),
-    }
+    marks_by_window[winid] = with_window_points(current, updated)
     notify("window", "minimap_points", winid, provider)
     return true, { [winid] = true }
 end
@@ -767,13 +794,7 @@ M.clear = function(provider, bufnr)
     if clears_compact then
         compact = nil
     end
-    marks_by_buffer[bufnr] = {
-        marks = updated,
-        revision = next_revision(current),
-        compact_search = compact,
-        minimap_spans = current.minimap_spans,
-        minimap_span_revision = current.minimap_span_revision,
-    }
+    marks_by_buffer[bufnr] = with_buffer_marks(current, updated, compact)
     mark_changed(changed, bufnr)
     notify("buffer", "marks", bufnr, provider)
     return changed
@@ -791,13 +812,7 @@ M.clear_minimap_spans = function(provider, bufnr)
 
     local updated = copy_snapshot(current.minimap_spans)
     updated[provider] = nil
-    marks_by_buffer[bufnr] = {
-        marks = current.marks,
-        revision = current.revision,
-        compact_search = current.compact_search,
-        minimap_spans = updated,
-        minimap_span_revision = next_minimap_span_revision(current),
-    }
+    marks_by_buffer[bufnr] = with_buffer_spans(current, updated)
     mark_changed(changed, bufnr)
     notify("buffer", "minimap_spans", bufnr, provider)
     return changed
@@ -815,12 +830,7 @@ M.clear_window = function(provider, winid)
 
     local updated = copy_snapshot(current.marks)
     updated[provider] = nil
-    marks_by_window[winid] = {
-        marks = updated,
-        revision = next_revision(current),
-        minimap_points = current.minimap_points,
-        minimap_point_revision = current.minimap_point_revision,
-    }
+    marks_by_window[winid] = with_window_marks(current, updated)
     mark_changed(changed, winid)
     notify("window", "marks", winid, provider)
     return changed
@@ -838,12 +848,7 @@ M.clear_minimap_points = function(provider, winid)
 
     local updated = copy_snapshot(current.minimap_points)
     updated[provider] = nil
-    marks_by_window[winid] = {
-        marks = current.marks,
-        revision = current.revision,
-        minimap_points = updated,
-        minimap_point_revision = next_minimap_point_revision(current),
-    }
+    marks_by_window[winid] = with_window_points(current, updated)
     mark_changed(changed, winid)
     notify("window", "minimap_points", winid, provider)
     return changed

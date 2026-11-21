@@ -1,3 +1,5 @@
+local buffer_marks = require("scrollbar.providers.buffer_marks")
+
 local M = {
     name = "mini_diff",
     targets = { scrollbar = true, minimap = true },
@@ -64,21 +66,6 @@ local function collect_marks(bufnr)
 end
 
 ---@param context ScrollbarProviderContext
----@param bufnr integer
-local function update_buffer(context, bufnr)
-    if not context.is_buffer_eligible(bufnr) then
-        context.clear_marks(bufnr)
-        return
-    end
-    local ok, marks = pcall(collect_marks, bufnr)
-    if ok then
-        context.set_marks(bufnr, marks)
-    else
-        context.clear_marks(bufnr)
-    end
-end
-
----@param context ScrollbarProviderContext
 M.setup = function(context)
     state.context = context
     local ok, mini_diff = pcall(require, "mini.diff")
@@ -93,7 +80,7 @@ M.setup = function(context)
             if state.context ~= context or not vim.api.nvim_buf_is_valid(args.buf) then
                 return
             end
-            update_buffer(context, args.buf)
+            buffer_marks.update(context, args.buf, collect_marks)
         end,
     })
 end
