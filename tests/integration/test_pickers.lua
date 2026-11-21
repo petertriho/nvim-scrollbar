@@ -192,18 +192,25 @@ local SNACKS_READY = [[(function()
         and require("scrollbar.test.integration").bars(picker.preview.win.win).scrollbar ~= false
 end)()]]
 
-T["a snacks picker gets bars on the list and the preview"] = function()
-    local child = new_child()
+--- Open the snacks file picker on the fixture, and wait until its list and
+--- its preview have bars.
+---@param child table
+---@return { list: integer, preview: integer, input: integer } windows
+local function open_snacks_picker(child)
     child.lua([[
         require("snacks").setup({ picker = { enabled = true } })
         Snacks.picker.files({ cwd = require("scrollbar.test.integration").fixture })
     ]])
     expect.equality(wait_for(child, SNACKS_READY), true)
-
-    local windows = child.lua_get([[(function()
+    return child.lua_get([[(function()
         local picker = Snacks.picker.get()[1]
         return { list = picker.list.win.win, preview = picker.preview.win.win, input = picker.input.win.win }
     end)()]])
+end
+
+T["a snacks picker gets bars on the list and the preview"] = function()
+    local child = new_child()
+    local windows = open_snacks_picker(child)
     local list = child.lua_func(function(winid)
         return require("scrollbar.test.integration").bars(winid)
     end, windows.list)
@@ -258,15 +265,8 @@ T["the windows of a focused snacks picker keep their active groups"] = function(
                 thumb = { hide_if_all_visible = false, inactive_highlight = "Normal" },
             },
         })
-        require("snacks").setup({ picker = { enabled = true } })
-        Snacks.picker.files({ cwd = require("scrollbar.test.integration").fixture })
     ]])
-    expect.equality(wait_for(child, SNACKS_READY), true)
-
-    local windows = child.lua_get([[(function()
-        local picker = Snacks.picker.get()[1]
-        return { list = picker.list.win.win, preview = picker.preview.win.win, input = picker.input.win.win }
-    end)()]])
+    local windows = open_snacks_picker(child)
     local result = child.lua_func(function(picker)
         local integration = require("scrollbar.test.integration")
         require("scrollbar.scheduler").flush()
