@@ -1,5 +1,5 @@
 local MiniTest = MiniTest
-local helpers = require("tests.helpers")
+local render_helpers = require("tests.render_helpers")
 local expect = MiniTest.expect
 
 -- The pinned plugins of `make test-deps`. Only the child of this file adds
@@ -159,10 +159,7 @@ local function new_child()
             MiniTest.skip(path .. " is missing. Run `make test-deps`.")
         end
     end
-    local child = helpers.new_child()
-    MiniTest.finally(function()
-        helpers.stop_child(child)
-    end)
+    local child = render_helpers.new_child()
     child.o.lines = 40
     child.o.columns = 120
     child.lua_func(install, DEPS, FILE_COUNT)
@@ -249,11 +246,7 @@ end
 T["the windows of a focused snacks picker keep their active groups"] = function()
     local child = new_child()
     child.lua([[
-        local lines = {}
-        for index = 1, 100 do
-            lines[index] = "line " .. index
-        end
-        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        require("scrollbar.test.fill_lines")(100)
         package.loaded["scrollbar.test.integration"].editor = vim.api.nvim_get_current_win()
         require("scrollbar").setup({
             set_highlights = true,
@@ -328,11 +321,7 @@ end)()]]
 T["the snacks zen and zoom windows get bars"] = function()
     local child = new_child()
     child.lua([[
-        local lines = {}
-        for index = 1, 100 do
-            lines[index] = "line " .. index
-        end
-        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        require("scrollbar.test.fill_lines")(100)
         require("snacks").setup({})
     ]])
 
