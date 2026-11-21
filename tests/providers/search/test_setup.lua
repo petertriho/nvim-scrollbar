@@ -12,6 +12,22 @@ local function new_child()
     return child
 end
 
+-- Count the `jobstart()` calls of the child. `jobstarts()` reads the count.
+local function count_jobstarts(child)
+    child.lua([[
+        package.loaded["scrollbar.test.jobstarts"] = 0
+        local jobstart = vim.fn.jobstart
+        rawset(vim.fn, "jobstart", function(...)
+            package.loaded["scrollbar.test.jobstarts"] = package.loaded["scrollbar.test.jobstarts"] + 1
+            return jobstart(...)
+        end)
+    ]])
+end
+
+local function jobstarts(child)
+    return child.lua_get([=[package.loaded["scrollbar.test.jobstarts"]]=])
+end
+
 T["configuration rejects a non-boolean incsearch option without mutation"] = function()
     local child = new_child()
     helpers.setup_search(child, false)
@@ -71,25 +87,18 @@ end
 
 T["production setup starts one shared search worker at the first search"] = function()
     local child = new_child()
-    child.lua([[
-        package.loaded["scrollbar.test.jobstarts"] = 0
-        local jobstart = vim.fn.jobstart
-        rawset(vim.fn, "jobstart", function(...)
-            package.loaded["scrollbar.test.jobstarts"] = package.loaded["scrollbar.test.jobstarts"] + 1
-            return jobstart(...)
-        end)
-    ]])
+    count_jobstarts(child)
 
     helpers.setup_search_default(child, true)
     helpers.set_lines(child, { "start", "production", "production" })
-    expect.equality(child.lua_get([=[package.loaded["scrollbar.test.jobstarts"]]=]), 0)
+    expect.equality(jobstarts(child), 0)
     expect.equality(child.lua_get([[require("scrollbar.providers.search.worker").status().state]]), "disposed")
 
     helpers.accept_search(child, "/", "production")
     expect.equality(helpers.wait_for_mark_lines(child, { 1, 2 }), true)
     helpers.accept_search(child, "?", "start")
     expect.equality(helpers.wait_for_mark_lines(child, { 0 }), true)
-    expect.equality(child.lua_get([=[package.loaded["scrollbar.test.jobstarts"]]=]), 1)
+    expect.equality(jobstarts(child), 1)
     expect.equality(child.lua_get([[require("scrollbar.providers.search.worker").status().state]]), "ready")
 end
 
@@ -106,21 +115,14 @@ end
 
 T["providers.search.backend=sync disables child startup"] = function()
     local child = new_child()
-    child.lua([[
-        package.loaded["scrollbar.test.jobstarts"] = 0
-        local jobstart = vim.fn.jobstart
-        rawset(vim.fn, "jobstart", function(...)
-            package.loaded["scrollbar.test.jobstarts"] = package.loaded["scrollbar.test.jobstarts"] + 1
-            return jobstart(...)
-        end)
-    ]])
+    count_jobstarts(child)
 
     helpers.setup_search_default_config(child, { incsearch = false, backend = "sync" })
     helpers.set_lines(child, { "start", "synchronous", "synchronous" })
     helpers.accept_search(child, "/", "synchronous")
 
     expect.equality(helpers.wait_for_mark_lines(child, { 1, 2 }), true)
-    expect.equality(child.lua_get([=[package.loaded["scrollbar.test.jobstarts"]]=]), 0)
+    expect.equality(jobstarts(child), 0)
     expect.equality(child.lua_get([[require("scrollbar.providers.search.worker").status().state]]), "disposed")
 end
 

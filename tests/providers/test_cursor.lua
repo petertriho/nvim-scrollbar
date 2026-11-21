@@ -1,14 +1,11 @@
 local MiniTest = MiniTest
 local expect = MiniTest.expect
+local provider_helpers = require("tests.providers.helpers")
 
 local T = MiniTest.new_set({
     hooks = {
         pre_case = function()
-            package.loaded["scrollbar.config"] = nil
-            package.loaded["scrollbar.renderer"] = nil
-            package.loaded["scrollbar.shared.store"] = nil
-            package.loaded["scrollbar.providers"] = nil
-            package.loaded["scrollbar.providers.cursor"] = nil
+            provider_helpers.unload_modules({ "scrollbar.providers.cursor" })
             require("scrollbar.config").set({
                 exclude = {
                     buftypes = {},
@@ -17,41 +14,17 @@ local T = MiniTest.new_set({
             })
         end,
         post_case = function()
-            local providers = package.loaded["scrollbar.providers"]
-            if providers then
-                providers.dispose()
-            end
+            provider_helpers.dispose_providers()
         end,
     },
 })
 
+-- The empty filetype also triggers FileType.
 local function new_buffer(lines, filetype)
-    local bufnr = vim.api.nvim_create_buf(false, true)
-    vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, lines)
-    vim.bo[bufnr].filetype = filetype or ""
-    MiniTest.finally(function()
-        if vim.api.nvim_buf_is_valid(bufnr) then
-            vim.api.nvim_buf_delete(bufnr, { force = true })
-        end
-    end)
-    return bufnr
+    return provider_helpers.new_buffer(lines, filetype or "")
 end
 
-local function show_buffer(bufnr)
-    local previous = vim.api.nvim_get_current_win()
-    vim.cmd("botright new")
-    local winid = vim.api.nvim_get_current_win()
-    vim.api.nvim_win_set_buf(winid, bufnr)
-    MiniTest.finally(function()
-        if vim.api.nvim_win_is_valid(winid) then
-            vim.api.nvim_win_close(winid, true)
-        end
-        if vim.api.nvim_win_is_valid(previous) then
-            vim.api.nvim_set_current_win(previous)
-        end
-    end)
-    return winid
-end
+local show_buffer = provider_helpers.show_buffer
 
 T["cursor movement updates and invalidates only the event window"] = function()
     local providers = require("scrollbar.providers")
