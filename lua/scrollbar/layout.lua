@@ -2168,38 +2168,47 @@ end
 -- and no ambiguity.
 local INCREMENTAL_CHANGE_LIMIT = 256
 
+-- The group of `mark_type` in a rebuilt row. The function creates the group
+-- on first use, and returns false for a type without a config or a lane. It
+-- is not a closure inside `rebuild_row_groups`, because LuaJIT does not
+-- compile the creation of a closure, and each rebuilt row would allocate one.
+---@param config table
+---@param row integer
+---@param groups table[]
+---@param by_type table<string, table|false>
+---@param mark_type string
+---@return table|false
+local function row_group(config, row, groups, by_type, mark_type)
+    local group = by_type[mark_type]
+    if group == nil then
+        local mark_config = config.marks[mark_type]
+        local lane = mark_config and lane_for_type(config, mark_type) or nil
+        if mark_config ~= nil and lane ~= nil then
+            group = {
+                row = row,
+                lane_id = lane.id,
+                type = mark_type,
+                column = translated_column(config, lane.first_column, 0),
+                max_column = translated_column(config, lane.last_column, 0),
+                priority = mark_config.priority,
+                lines = {},
+                count = 0,
+                ordinary_count = 0,
+            }
+            groups[#groups + 1] = group
+        else
+            group = false
+        end
+        by_type[mark_type] = group
+    end
+    return group
+end
+
 local function rebuild_row_groups(input, row, mark_rows, segments, compact_ranges, build)
     local config = input.config
     local marks = input.marks
     local groups = {}
     local by_type = {}
-    ---@param mark_type string
-    ---@return table|false
-    local function group_of(mark_type)
-        local group = by_type[mark_type]
-        if group == nil then
-            local mark_config = config.marks[mark_type]
-            local lane = mark_config and lane_for_type(config, mark_type) or nil
-            if mark_config ~= nil and lane ~= nil then
-                group = {
-                    row = row,
-                    lane_id = lane.id,
-                    type = mark_type,
-                    column = translated_column(config, lane.first_column, 0),
-                    max_column = translated_column(config, lane.last_column, 0),
-                    priority = mark_config.priority,
-                    lines = {},
-                    count = 0,
-                    ordinary_count = 0,
-                }
-                groups[#groups + 1] = group
-            else
-                group = false
-            end
-            by_type[mark_type] = group
-        end
-        return group
-    end
     for _, segment in ipairs(segments) do
         local lo, hi = segment[1], segment[2]
         local low, high = lo, hi + 1
@@ -2224,7 +2233,7 @@ local function rebuild_row_groups(input, row, mark_rows, segments, compact_range
         local last = low - 1
         for index = first, last do
             local mark = marks[index]
-            local group = group_of(mark.type)
+            local group = row_group(config, row, groups, by_type, mark.type)
             if group ~= false then
                 -- The segments come in provider order and each is sorted, so
                 -- the first mark of a group is its first source in
@@ -2240,7 +2249,7 @@ local function rebuild_row_groups(input, row, mark_rows, segments, compact_range
     local range = compact_ranges and compact_ranges[row] or nil
     local compact = input.compact_search
     if range ~= nil and compact ~= nil then
-        local group = group_of("Search")
+        local group = row_group(config, row, groups, by_type, "Search")
         if group ~= false then
             local data = compact.data
             for entry = range[1], range[2] do
