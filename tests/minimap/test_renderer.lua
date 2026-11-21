@@ -1,16 +1,10 @@
 local MiniTest = MiniTest
-local helpers = require("tests.helpers")
+local render_helpers = require("tests.render_helpers")
 local expect = MiniTest.expect
 
 local T = MiniTest.new_set()
 
-local function new_child()
-    local child = helpers.new_child()
-    MiniTest.finally(function()
-        helpers.stop_child(child)
-    end)
-    return child
-end
+local new_child = render_helpers.new_child
 
 local function reset_modules(child)
     child.lua([[
@@ -2370,11 +2364,7 @@ T["scrolling inside the cached slice requests no new cells"] = function()
     }, { set_highlights = false })
 
     local result = child.lua_func(function()
-        local lines = {}
-        for index = 1, 2000 do
-            lines[index] = "line " .. index
-        end
-        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        require("scrollbar.test.fill_lines")(2000)
         local worker = require("scrollbar.minimap.worker")
         local grids = {}
         local original_request = worker.request

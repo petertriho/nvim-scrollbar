@@ -1,34 +1,13 @@
 local MiniTest = MiniTest
-local helpers = require("tests.helpers")
+local render_helpers = require("tests.render_helpers")
 local expect = MiniTest.expect
 
 local T = MiniTest.new_set()
 
-local COUNTER_FACTORY_CODE = [=[
-    local calls = 0
-    local original = vim.api.nvim_win_text_height
-    ---@diagnostic disable-next-line: duplicate-set-field
-    vim.api.nvim_win_text_height = function(...)
-        calls = calls + 1
-        return original(...)
-    end
-    return {
-        count = function()
-            return calls
-        end,
-        delta = function(since)
-            return calls - since
-        end,
-        restore = function()
-            vim.api.nvim_win_text_height = original
-        end,
-    }
-]=]
-
 T["wrapped text edits keep extent accurate through the chunk table"] = function()
-    local child = helpers.new_child()
-    local result = child.lua_func(function(factory_code)
-        local counter = loadstring(factory_code)()
+    local child = render_helpers.new_child()
+    local result = child.lua_func(function()
+        local counter = require("scrollbar.test.text_height_counter")()
         local columns = 60
         local layout_module = require("scrollbar.layout")
         vim.o.columns = columns
@@ -76,7 +55,7 @@ T["wrapped text edits keep extent accurate through the chunk table"] = function(
         end
         counter.restore()
         return { extents = extents }
-    end, COUNTER_FACTORY_CODE)
+    end)
 
     expect.equality(#result.extents, 6)
     for _, accurate in ipairs(result.extents) do
@@ -85,9 +64,9 @@ T["wrapped text edits keep extent accurate through the chunk table"] = function(
 end
 
 T["mark walks after edits stay bounded instead of rescanning from row zero"] = function()
-    local child = helpers.new_child()
-    local result = child.lua_func(function(factory_code)
-        local counter = loadstring(factory_code)()
+    local child = render_helpers.new_child()
+    local result = child.lua_func(function()
+        local counter = require("scrollbar.test.text_height_counter")()
         local columns = 60
         vim.o.columns = columns
         local layout_module = require("scrollbar.layout")
@@ -130,7 +109,7 @@ T["mark walks after edits stay bounded instead of rescanning from row zero"] = f
         local edit_calls = counter.delta(before_edit)
         counter.restore()
         return { edit_calls = edit_calls, mark_count = #marks, elapsed_ms = elapsed_ms }
-    end, COUNTER_FACTORY_CODE)
+    end)
 
     expect.equality(result.edit_calls > 0, true)
     expect.equality(result.edit_calls <= 1000, true)

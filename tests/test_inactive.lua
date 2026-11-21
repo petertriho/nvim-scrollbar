@@ -1,16 +1,10 @@
 local MiniTest = MiniTest
-local helpers = require("tests.helpers")
+local render_helpers = require("tests.render_helpers")
 local expect = MiniTest.expect
 
 local T = MiniTest.new_set()
 
-local function new_child()
-    local child = helpers.new_child()
-    MiniTest.finally(function()
-        helpers.stop_child(child)
-    end)
-    return child
-end
+local new_child = render_helpers.new_child
 
 local function base_config(scrollbar, top)
     return vim.tbl_deep_extend("force", {
@@ -33,11 +27,7 @@ end
 -- Installs `require("scrollbar.test.inactive")` in the child: two vertical
 -- splits of one 300-line buffer, and a reader of the groups in each float.
 local function install()
-    local lines = {}
-    for index = 1, 300 do
-        lines[index] = "line " .. index
-    end
-    vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+    require("scrollbar.test.fill_lines")(300)
     local left = vim.api.nvim_get_current_win()
     vim.cmd("vsplit")
     local right = vim.api.nvim_get_current_win()

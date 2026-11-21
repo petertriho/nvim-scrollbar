@@ -1,16 +1,10 @@
 local MiniTest = MiniTest
-local helpers = require("tests.helpers")
+local render_helpers = require("tests.render_helpers")
 local expect = MiniTest.expect
 
 local T = MiniTest.new_set()
 
-local function new_child()
-    local child = helpers.new_child()
-    MiniTest.finally(function()
-        helpers.stop_child(child)
-    end)
-    return child
-end
+local new_child = render_helpers.new_child
 
 local function mouse_config(overrides, top)
     local schema = require("scrollbar.config.schema")
@@ -68,11 +62,7 @@ local function setup_single(child, options)
             vim.o.tabline = "TABLINE"
             vim.o.statusline = "STATUSLINE"
         end
-        local lines = {}
-        for index = 1, opts.line_count do
-            lines[index] = "line " .. index
-        end
-        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        require("scrollbar.test.fill_lines")(opts.line_count)
         vim.cmd("split")
         local source_win = vim.api.nvim_get_current_win()
         vim.api.nvim_win_set_height(source_win, opts.height)
@@ -285,11 +275,7 @@ T["clicks an empty track cell proportionally and restores source focus"] = funct
     local child = new_child()
     local setup = child.lua_func(function(config)
         vim.o.mouse = "a"
-        local lines = {}
-        for index = 1, 200 do
-            lines[index] = "line " .. index
-        end
-        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        require("scrollbar.test.fill_lines")(200)
         vim.cmd("split")
         local source_win = vim.api.nvim_get_current_win()
         vim.api.nvim_win_set_height(source_win, 10)
@@ -614,9 +600,10 @@ T["collapsed named marks keep their deterministic representative click"] = funct
     expect.equality(child.api.nvim_win_get_cursor(setup.source_win)[1], 101)
 end
 
-T["uses mark rest and pressed highlights on the translated east handle"] = function()
-    local child = new_child()
-    local setup = setup_single(child, {
+-- A NE scrollbar of one column with the handle and a lane of named marks that
+-- is up to 4 cells wide. The `marks` provider sets `marks`.
+local function setup_east_mark_lane(child, marks)
+    return setup_single(child, {
         config = mouse_config({
             placement = { anchor = "NE" },
             layout = {
@@ -626,11 +613,16 @@ T["uses mark rest and pressed highlights on the translated east handle"] = funct
             },
         }),
         mark_provider = "marks",
-        marks = {
-            { line = 0, type = "Mark", text = "a" },
-            { line = 1, type = "Mark", text = "b" },
-            { line = 2, type = "Mark", text = "c" },
-        },
+        marks = marks,
+    })
+end
+
+T["uses mark rest and pressed highlights on the translated east handle"] = function()
+    local child = new_child()
+    local setup = setup_east_mark_lane(child, {
+        { line = 0, type = "Mark", text = "a" },
+        { line = 1, type = "Mark", text = "b" },
+        { line = 2, type = "Mark", text = "c" },
     })
     expect.equality(setup.handle.column, 3)
     expect.equality(setup.hitmap[1][3], {
@@ -665,21 +657,10 @@ end
 
 T["drags from the translated east handle column"] = function()
     local child = new_child()
-    local setup = setup_single(child, {
-        config = mouse_config({
-            placement = { anchor = "NE" },
-            layout = {
-                columns = {
-                    { "track", "thumb", { types = { "Mark" }, max_width = 4 } },
-                },
-            },
-        }),
-        mark_provider = "marks",
-        marks = {
-            { line = 0, type = "Mark", text = "a" },
-            { line = 1, type = "Mark", text = "b" },
-            { line = 2, type = "Mark", text = "c" },
-        },
+    local setup = setup_east_mark_lane(child, {
+        { line = 0, type = "Mark", text = "a" },
+        { line = 1, type = "Mark", text = "b" },
+        { line = 2, type = "Mark", text = "c" },
     })
     expect.equality(setup.handle.column, 3)
 
@@ -732,18 +713,7 @@ end
 
 T["keeps an east handle press stationary when expansion changes relative columns"] = function()
     local child = new_child()
-    local setup = setup_single(child, {
-        config = mouse_config({
-            placement = { anchor = "NE" },
-            layout = {
-                columns = {
-                    { "track", "thumb", { types = { "Mark" }, max_width = 4 } },
-                },
-            },
-        }),
-        mark_provider = "marks",
-        marks = { { line = 2, type = "Mark", text = "c" } },
-    })
+    local setup = setup_east_mark_lane(child, { { line = 2, type = "Mark", text = "c" } })
     local screen_row = setup.position[1] + setup.handle.first_row
     local screen_col = setup.position[2] + setup.handle.column - 1
 
@@ -913,11 +883,7 @@ T["keeps independent ownership for multiple source windows"] = function()
     local child = new_child()
     local setup = child.lua_func(function(config)
         vim.o.mouse = "a"
-        local lines = {}
-        for index = 1, 200 do
-            lines[index] = "line " .. index
-        end
-        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        require("scrollbar.test.fill_lines")(200)
         local first = vim.api.nvim_get_current_win()
         vim.cmd("split")
         local second = vim.api.nvim_get_current_win()
@@ -1232,11 +1198,7 @@ T["keeps track interaction geometry captured at press time across profile switch
     local child = new_child()
     local setup = child.lua_func(function(config)
         vim.o.mouse = "a"
-        local lines = {}
-        for index = 1, 100 do
-            lines[index] = "line " .. index
-        end
-        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        require("scrollbar.test.fill_lines")(100)
         vim.cmd("split")
         local source_win = vim.api.nvim_get_current_win()
         vim.api.nvim_win_set_height(source_win, 10)
@@ -1289,11 +1251,7 @@ T["passes input to the source while cursor-hidden and restores interaction"] = f
     local child = new_child()
     local setup = child.lua_func(function(config)
         vim.o.mouse = "a"
-        local lines = {}
-        for index = 1, 200 do
-            lines[index] = "line " .. index
-        end
-        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        require("scrollbar.test.fill_lines")(200)
         vim.cmd("split")
         local source_win = vim.api.nvim_get_current_win()
         vim.api.nvim_win_set_height(source_win, 10)
@@ -1448,11 +1406,7 @@ T["maps clicks through the border and ignores border cells"] = function()
     local child = new_child()
     local setup = child.lua_func(function(config)
         vim.o.mouse = "a"
-        local lines = {}
-        for index = 1, 200 do
-            lines[index] = "line " .. index
-        end
-        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        require("scrollbar.test.fill_lines")(200)
         vim.cmd("split")
         local source_win = vim.api.nvim_get_current_win()
         vim.api.nvim_win_set_height(source_win, 10)

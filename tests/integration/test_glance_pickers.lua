@@ -6,17 +6,9 @@ local expect = MiniTest.expect
 -- of `test_pickers.lua` add them to their runtimepath.
 local DEPS = { "deps/snacks.nvim", "deps/telescope.nvim", "deps/plenary.nvim" }
 
-local MARKS = {
-    { line = 20, type = "Error" },
-    { line = 20, type = "GitChange" },
-    { line = 60, type = "Warn" },
-    { line = 100, type = "Hint" },
-    { line = 150, type = "Error" },
-}
-
 local T = MiniTest.new_set()
 
---- A child with the pinned pickers, the marks of MARKS, and a file buffer
+--- A child with the pinned pickers, the glance marks, and a file buffer
 --- with the line text "  text <n>". Line 61 has an unsaved edit.
 ---@param top? table Top-level overrides of the configuration
 ---@return table child
@@ -46,7 +38,7 @@ local function new_child(top)
     ]],
         { DEPS }
     )
-    local result = navigate.setup(child, { marks = MARKS, full = true, config = navigate.config(top) })
+    local result = navigate.setup(child, { marks = navigate.GLANCE_MARKS, full = true, config = navigate.config(top) })
     child.lua([[
         _G.notes = {}
         vim.notify = function(message, level)

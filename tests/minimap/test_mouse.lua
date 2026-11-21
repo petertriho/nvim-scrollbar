@@ -1,16 +1,10 @@
 local MiniTest = MiniTest
-local helpers = require("tests.helpers")
+local render_helpers = require("tests.render_helpers")
 local expect = MiniTest.expect
 
 local T = MiniTest.new_set()
 
-local function new_child()
-    local child = helpers.new_child()
-    MiniTest.finally(function()
-        helpers.stop_child(child)
-    end)
-    return child
-end
+local new_child = render_helpers.new_child
 
 local function reset_modules(child)
     child.lua([[
@@ -277,46 +271,13 @@ T["Insert mode click does not focus the float"] = function()
     expect.equality(child.lua_get([[require("scrollbar.minimap.mouse").get_interaction()]]), vim.NIL)
 end
 
-T["click at a minimap row moves the source cursor to the first line of the row"] = function()
-    local child = new_child()
-    reset_modules(child)
-    configure(child, { enabled = true, width = 4, height = 4 })
-
-    local result = child.lua_func(function()
+-- Render a buffer of `line_count` lines, press the minimap at row index 2,
+-- and return the cursor line of the source window. `press()` reads the
+-- position from `getmousepos()`, so the child stubs it.
+local function press_row_index_2(child, line_count)
+    return child.lua_func(function(count)
         local lines = {}
-        for index = 1, 20 do
-            lines[index] = string.rep("a", index)
-        end
-        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
-        local renderer = require("scrollbar.minimap.renderer")
-        local state = assert(renderer.render(0))
-        local mouse = require("scrollbar.minimap.mouse")
-        -- Simulate a click on row 2: call press directly with the float window
-        -- of the state. Press uses getmousepos, so the test stubs it.
-        local original_getmousepos = vim.fn.getmousepos
-        ---@diagnostic disable-next-line: duplicate-set-field
-        vim.fn.getmousepos = function()
-            return { winid = state.float_win, winrow = 3, wincol = 1, screenrow = 3, screencol = 1 }
-        end
-        mouse.press(state.float_win)
-        vim.fn.getmousepos = original_getmousepos
-        return {
-            cursor = vim.api.nvim_win_get_cursor(state.source_win),
-        }
-    end)
-
-    -- Each row covers 4 lines, so row index 2 starts at 0-based line 8.
-    expect.equality(result.cursor[1], 9)
-end
-
-T["click in the fit scale uses the rows of the fitted map"] = function()
-    local child = new_child()
-    reset_modules(child)
-    configure(child, { enabled = true, width = 4, height = 4, scale = "fit" })
-
-    local result = child.lua_func(function()
-        local lines = {}
-        for index = 1, 20 do
+        for index = 1, count do
             lines[index] = string.rep("a", index)
         end
         vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
@@ -329,7 +290,24 @@ T["click in the fit scale uses the rows of the fitted map"] = function()
         require("scrollbar.minimap.mouse").press(state.float_win)
         vim.fn.getmousepos = original_getmousepos
         return vim.api.nvim_win_get_cursor(state.source_win)[1]
-    end)
+    end, line_count)
+end
+
+T["click at a minimap row moves the source cursor to the first line of the row"] = function()
+    local child = new_child()
+    reset_modules(child)
+    configure(child, { enabled = true, width = 4, height = 4 })
+
+    -- Each row covers 4 lines, so row index 2 starts at 0-based line 8.
+    expect.equality(press_row_index_2(child, 20), 9)
+end
+
+T["click in the fit scale uses the rows of the fitted map"] = function()
+    local child = new_child()
+    reset_modules(child)
+    configure(child, { enabled = true, width = 4, height = 4, scale = "fit" })
+
+    local result = press_row_index_2(child, 20)
 
     -- 20 lines in 16 dot rows: row index 2 starts at dot 8, which is line
     -- floor(8 * 20 / 16) = 10.
@@ -341,22 +319,7 @@ T["click with a numeric scale uses the lines of each row"] = function()
     reset_modules(child)
     configure(child, { enabled = true, width = 4, height = 4, scale = 2 })
 
-    local result = child.lua_func(function()
-        local lines = {}
-        for index = 1, 30 do
-            lines[index] = string.rep("a", index)
-        end
-        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
-        local state = assert(require("scrollbar.minimap.renderer").render(0))
-        local original_getmousepos = vim.fn.getmousepos
-        ---@diagnostic disable-next-line: duplicate-set-field
-        vim.fn.getmousepos = function()
-            return { winid = state.float_win, winrow = 3, wincol = 1, screenrow = 3, screencol = 1 }
-        end
-        require("scrollbar.minimap.mouse").press(state.float_win)
-        vim.fn.getmousepos = original_getmousepos
-        return vim.api.nvim_win_get_cursor(state.source_win)[1]
-    end)
+    local result = press_row_index_2(child, 30)
 
     -- Each row covers 8 lines, so row index 2 starts at 0-based line 16.
     expect.equality(result, 17)

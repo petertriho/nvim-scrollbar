@@ -1,5 +1,5 @@
 local MiniTest = MiniTest
-local helpers = require("tests.helpers")
+local render_helpers = require("tests.render_helpers")
 local expect = MiniTest.expect
 
 local T = MiniTest.new_set()
@@ -9,7 +9,7 @@ local FLOAT_WINHIGHLIGHT = "Normal:ScrollbarBase,NormalNC:ScrollbarBase,EndOfBuf
     .. "Search:Scrollbar.NoSearch,CurSearch:Scrollbar.NoSearch,IncSearch:Scrollbar.NoSearch"
 
 local function new_child()
-    local child = helpers.new_child()
+    local child = render_helpers.new_child()
     child.lua([[
         local providers = require("scrollbar.providers")
         for _, name in ipairs({ "alpha", "buffer", "test", "window" }) do
@@ -28,9 +28,6 @@ local function new_child()
             return require("scrollbar.config").set(options)
         end
     ]])
-    MiniTest.finally(function()
-        helpers.stop_child(child)
-    end)
     return child
 end
 
@@ -107,11 +104,7 @@ end
 T["keeps source predicates in parity with full enumeration"] = function()
     local child = new_child()
     local result = child.lua_func(function(config)
-        local lines = {}
-        for index = 1, 100 do
-            lines[index] = "line " .. index
-        end
-        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        require("scrollbar.test.fill_lines")(100)
         local source_win = vim.api.nvim_get_current_win()
         require("scrollbar.test.set_config")(config)
         local renderer = require("scrollbar.renderer")
@@ -199,11 +192,7 @@ end
 T["maps focused renderer floats to sources and reconciles no active source"] = function()
     local child = new_child()
     local result = child.lua_func(function(config)
-        local lines = {}
-        for index = 1, 100 do
-            lines[index] = "line " .. index
-        end
-        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        require("scrollbar.test.fill_lines")(100)
         local source_win = vim.api.nvim_get_current_win()
         config.visibility = "active"
         config.mouse = true
@@ -290,11 +279,7 @@ end
 T["reconciles the full selected set before filtering by buffer"] = function()
     local child = new_child()
     local result = child.lua_func(function(config)
-        local lines = {}
-        for index = 1, 100 do
-            lines[index] = "line " .. index
-        end
-        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        local lines = require("scrollbar.test.fill_lines")(100)
         local first = vim.api.nvim_get_current_win()
         local first_buf = vim.api.nvim_get_current_buf()
         vim.cmd("vnew")
@@ -381,11 +366,7 @@ end
 T["keeps same-buffer source windows independent and writes only float buffers"] = function()
     local child = new_child()
     local result = child.lua_func(function(config)
-        local lines = {}
-        for index = 1, 200 do
-            lines[index] = "line " .. index
-        end
-        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        require("scrollbar.test.fill_lines")(200)
 
         local first = vim.api.nvim_get_current_win()
         vim.cmd("split")
@@ -509,11 +490,7 @@ T["switches canonical Thumb spans to pressed groups without losing priorities"] 
     local child = new_child()
     local result = child.lua_func(
         function(config)
-            local lines = {}
-            for index = 1, 100 do
-                lines[index] = "line " .. index
-            end
-            vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+            require("scrollbar.test.fill_lines")(100)
             local source_win = vim.api.nvim_get_current_win()
             require("scrollbar.test.set_config")(config)
             assert(
@@ -572,11 +549,7 @@ T["renders track only in declared columns over a transparent float base"] = func
     local child = new_child()
     local result = child.lua_func(
         function(config)
-            local lines = {}
-            for index = 1, 100 do
-                lines[index] = "line " .. index
-            end
-            vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+            require("scrollbar.test.fill_lines")(100)
             local source_win = vim.api.nvim_get_current_win()
             require("scrollbar.test.set_config")(config)
             assert(require("scrollbar.shared.store").set("test", vim.api.nvim_get_current_buf(), {
@@ -623,11 +596,7 @@ end
 T["enforces visibility and editor-relative single ownership"] = function()
     local child = new_child()
     local result = child.lua_func(function(base_config)
-        local lines = {}
-        for index = 1, 100 do
-            lines[index] = "line " .. index
-        end
-        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        require("scrollbar.test.fill_lines")(100)
         local first = vim.api.nvim_get_current_win()
         vim.cmd("split")
         local second = vim.api.nvim_get_current_win()
@@ -718,11 +687,7 @@ end
 T["requires and clears per-window reveals when autohide is enabled"] = function()
     local child = new_child()
     local result = child.lua_func(function(base_config)
-        local lines = {}
-        for index = 1, 100 do
-            lines[index] = "line " .. index
-        end
-        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        require("scrollbar.test.fill_lines")(100)
         local first = vim.api.nvim_get_current_win()
         vim.cmd("split")
         local second = vim.api.nvim_get_current_win()
@@ -781,11 +746,7 @@ end
 T["retains line caches only across transient concealment"] = function()
     local child = new_child()
     local result = child.lua_func(function(base_config)
-        local lines = {}
-        for index = 1, 200 do
-            lines[index] = "line " .. index
-        end
-        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        require("scrollbar.test.fill_lines")(200)
         local source_win = vim.api.nvim_get_current_win()
         local source_buf = vim.api.nvim_get_current_buf()
         base_config.autohide = { delay_ms = 500 }
@@ -841,11 +802,7 @@ end
 T["resolves every anchor and restores protected float configuration"] = function()
     local child = new_child()
     local result = child.lua_func(function(base_config)
-        local lines = {}
-        for index = 1, 80 do
-            lines[index] = "line " .. index
-        end
-        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        require("scrollbar.test.fill_lines")(80)
         local source_win = vim.api.nvim_get_current_win()
         local source_width = vim.api.nvim_win_get_width(source_win)
         local source_height = vim.api.nvim_win_get_height(source_win)
@@ -929,11 +886,7 @@ end
 T["applies inner and outer gutters only to window-relative west placements that reserve the gutter"] = function()
     local child = new_child()
     local result = child.lua_func(function(base_config)
-        local lines = {}
-        for index = 1, 80 do
-            lines[index] = "line " .. index
-        end
-        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        require("scrollbar.test.fill_lines")(80)
         local source_win = vim.api.nvim_get_current_win()
         vim.api.nvim_set_option_value("number", false, { win = source_win })
         vim.api.nvim_set_option_value("relativenumber", false, { win = source_win })
@@ -1014,11 +967,7 @@ end
 T["preserves and restores user statuscolumn ownership around west reservations"] = function()
     local child = new_child()
     local result = child.lua_func(function(base_config)
-        local lines = {}
-        for index = 1, 80 do
-            lines[index] = "line " .. index
-        end
-        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        require("scrollbar.test.fill_lines")(80)
         local source_win = vim.api.nvim_get_current_win()
         local original_statuscolumn = "%s%=%l│"
         vim.api.nvim_set_option_value("number", true, { win = source_win })
@@ -1358,11 +1307,7 @@ end
 T["declines west rendering when the full layout cannot fit in statuscolumn"] = function()
     local child = new_child()
     local result = child.lua_func(function(base_config)
-        local lines = {}
-        for index = 1, 100 do
-            lines[index] = "line " .. index
-        end
-        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        require("scrollbar.test.fill_lines")(100)
         local source_win = vim.api.nvim_get_current_win()
         vim.api.nvim_set_option_value("number", false, { win = source_win })
         vim.api.nvim_set_option_value("relativenumber", false, { win = source_win })
@@ -1404,11 +1349,7 @@ T["aligns editor-relative tracks with active split text rows"] = function()
         vim.o.tabline = "TABLINE"
         vim.o.statusline = "STATUSLINE"
 
-        local lines = {}
-        for index = 1, 200 do
-            lines[index] = "line " .. index
-        end
-        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        require("scrollbar.test.fill_lines")(200)
 
         local renderer = require("scrollbar.renderer")
         local cases = {}
@@ -1479,11 +1420,7 @@ T["keeps window-relative tracks inside source text rows"] = function()
         vim.o.tabline = "TABLINE"
         vim.o.statusline = "STATUSLINE"
 
-        local lines = {}
-        for index = 1, 200 do
-            lines[index] = "line " .. index
-        end
-        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        require("scrollbar.test.fill_lines")(200)
         local source_win = vim.api.nvim_get_current_win()
         local renderer = require("scrollbar.renderer")
 
@@ -1768,11 +1705,7 @@ T["renders compact built-in search exactly and invalidates it by revision"] = fu
     local child = new_child()
     local result = child.lua_func(
         function(base_config)
-            local lines = {}
-            for index = 1, 100 do
-                lines[index] = "line " .. index
-            end
-            vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+            require("scrollbar.test.fill_lines")(100)
             vim.cmd("split")
             local source_win = vim.api.nvim_get_current_win()
             vim.api.nvim_win_set_height(source_win, 10)
@@ -1927,11 +1860,7 @@ end
 T["updates only dirty rows and fully replaces rows when dimensions change"] = function()
     local child = new_child()
     local result = child.lua_func(function(config)
-        local lines = {}
-        for index = 1, 120 do
-            lines[index] = "line " .. index
-        end
-        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        require("scrollbar.test.fill_lines")(120)
         vim.cmd("split")
         local source_win = vim.api.nvim_get_current_win()
         vim.api.nvim_win_set_height(source_win, 8)
@@ -2178,11 +2107,7 @@ end
 T["grows and shrinks expanded floats in place while pinning base cells for every anchor"] = function()
     local child = new_child()
     local result = child.lua_func(function(base_config)
-        local lines = {}
-        for index = 1, 200 do
-            lines[index] = "line " .. index
-        end
-        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        require("scrollbar.test.fill_lines")(200)
         vim.cmd("split")
         local source_win = vim.api.nvim_get_current_win()
         vim.api.nvim_win_set_height(source_win, 8)
@@ -2335,11 +2260,7 @@ end
 T["uses window and editor placement containers and resolves width per source window height"] = function()
     local child = new_child()
     local result = child.lua_func(function(base_config)
-        local lines = {}
-        for index = 1, 200 do
-            lines[index] = "line " .. index
-        end
-        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        require("scrollbar.test.fill_lines")(200)
         local first = vim.api.nvim_get_current_win()
         vim.cmd("split")
         local second = vim.api.nvim_get_current_win()
@@ -2426,11 +2347,7 @@ end
 T["repositions in place and rebuilds expansion when the live gutter width changes"] = function()
     local child = new_child()
     local result = child.lua_func(function(base_config)
-        local lines = {}
-        for index = 1, 200 do
-            lines[index] = "line " .. index
-        end
-        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        require("scrollbar.test.fill_lines")(200)
         vim.cmd("vsplit")
         local source_win = vim.api.nvim_get_current_win()
         vim.api.nvim_win_set_width(source_win, 8)
@@ -2532,11 +2449,7 @@ end
 T["caches line mark work while keeping handle geometry current and invalidating exact inputs"] = function()
     local child = new_child()
     local result = child.lua_func(function(base_config)
-        local lines = {}
-        for index = 1, 240 do
-            lines[index] = "line " .. index
-        end
-        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        local lines = require("scrollbar.test.fill_lines")(240)
         vim.cmd("vsplit")
         local source_win = vim.api.nvim_get_current_win()
         vim.api.nvim_win_set_height(source_win, 8)
@@ -2709,11 +2622,7 @@ end
 T["profile switches compare explicit cache inputs and invalidate only their source window"] = function()
     local child = new_child()
     local result = child.lua_func(function(base_config)
-        local lines = {}
-        for index = 1, 200 do
-            lines[index] = "line " .. index
-        end
-        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        require("scrollbar.test.fill_lines")(200)
         local first = vim.api.nvim_get_current_win()
         vim.cmd("split")
         local second = vim.api.nvim_get_current_win()
@@ -2803,11 +2712,7 @@ end
 T["a profile switch that changes only highlights writes the groups of the new profile"] = function()
     local child = new_child()
     local result = child.lua_func(function(base_config)
-        local lines = {}
-        for index = 1, 200 do
-            lines[index] = "line " .. index
-        end
-        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        require("scrollbar.test.fill_lines")(200)
         local source_win = vim.api.nvim_get_current_win()
         local profile_active = false
         base_config.profiles = {
@@ -2860,11 +2765,7 @@ end
 T["direct config sets validate retained line caches by selected input"] = function()
     local child = new_child()
     local result = child.lua_func(function(base_config)
-        local lines = {}
-        for index = 1, 200 do
-            lines[index] = "line " .. index
-        end
-        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        require("scrollbar.test.fill_lines")(200)
         local first = vim.api.nvim_get_current_win()
         vim.cmd("split")
         local second = vim.api.nvim_get_current_win()
@@ -3020,11 +2921,7 @@ end
 T["a window mark move keeps the flattened marks of the other providers"] = function()
     local child = new_child()
     local result = child.lua_func(function(base_config)
-        local lines = {}
-        for index = 1, 400 do
-            lines[index] = "line " .. index
-        end
-        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        require("scrollbar.test.fill_lines")(400)
         local source_win = vim.api.nvim_get_current_win()
         local source_buf = vim.api.nvim_get_current_buf()
         require("scrollbar.test.set_config")(base_config)
@@ -3104,11 +3001,7 @@ T["incremental line renders match full renders after mark, search, and line chan
     local result = child.lua_func(
         function(base_config)
             local line_count = 400
-            local lines = {}
-            for index = 1, line_count do
-                lines[index] = "line " .. index
-            end
-            vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+            require("scrollbar.test.fill_lines")(line_count)
             -- Two windows of the same size. The third window takes the rest of
             -- the screen.
             vim.cmd("split")
@@ -3252,11 +3145,7 @@ T["an inheriting cursor mark follows the covered mark through in-place moves"] =
     local child = new_child()
     local result = child.lua_func(
         function(base_config)
-            local lines = {}
-            for index = 1, 400 do
-                lines[index] = "line " .. index
-            end
-            vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+            require("scrollbar.test.fill_lines")(400)
             local source_win = vim.api.nvim_get_current_win()
             local source_buf = vim.api.nvim_get_current_buf()
             require("scrollbar.test.set_config")(base_config)
@@ -3329,11 +3218,7 @@ T["incremental line renders match full renders with an inheriting cursor mark"] 
     local result = child.lua_func(
         function(base_config)
             local line_count = 300
-            local lines = {}
-            for index = 1, line_count do
-                lines[index] = "line " .. index
-            end
-            vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+            require("scrollbar.test.fill_lines")(line_count)
             vim.cmd("split")
             vim.cmd("split")
             local incremental_win = vim.api.nvim_get_current_win()
@@ -3420,11 +3305,7 @@ end
 T["configures owned state once and reapplies only changed float configuration"] = function()
     local child = new_child()
     local result = child.lua_func(function(base_config)
-        local lines = {}
-        for index = 1, 120 do
-            lines[index] = "line " .. index
-        end
-        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        local lines = require("scrollbar.test.fill_lines")(120)
         vim.cmd("split")
         local source_win = vim.api.nvim_get_current_win()
         vim.api.nvim_win_set_height(source_win, 8)
@@ -3547,11 +3428,7 @@ end
 T["hides on cursor overlap and restores the same resources only on transitions"] = function()
     local child = new_child()
     local result = child.lua_func(function(base_config)
-        local lines = {}
-        for index = 1, 120 do
-            lines[index] = "line " .. index
-        end
-        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        require("scrollbar.test.fill_lines")(120)
         local source_win = vim.api.nvim_get_current_win()
 
         require("scrollbar.test.set_config")(base_config)
@@ -3645,11 +3522,7 @@ end
 T["uses the full expanded width for cursor hiding"] = function()
     local child = new_child()
     local result = child.lua_func(function(base_config)
-        local lines = {}
-        for index = 1, 120 do
-            lines[index] = "line " .. index
-        end
-        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        require("scrollbar.test.fill_lines")(120)
         local source_win = vim.api.nvim_get_current_win()
         local source_buf = vim.api.nvim_get_current_buf()
         base_config.placement.anchor = "NW"
@@ -3712,11 +3585,7 @@ end
 T["skips disabled cursor work and keeps unavailable coordinates visible"] = function()
     local child = new_child()
     local result = child.lua_func(function(base_config)
-        local lines = {}
-        for index = 1, 120 do
-            lines[index] = "line " .. index
-        end
-        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        require("scrollbar.test.fill_lines")(120)
         local source_win = vim.api.nvim_get_current_win()
         local renderer = require("scrollbar.renderer")
 
@@ -3773,11 +3642,7 @@ end
 T["uses reported float bounds across widths placements anchors and clipping"] = function()
     local child = new_child()
     local result = child.lua_func(function(base_config)
-        local lines = {}
-        for index = 1, 120 do
-            lines[index] = "line " .. index
-        end
-        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        require("scrollbar.test.fill_lines")(120)
         local source_win = vim.api.nvim_get_current_win()
         local renderer = require("scrollbar.renderer")
         renderer.setup()
@@ -3897,11 +3762,7 @@ end
 T["transfers cursor hiding between source windows on WinEnter"] = function()
     local child = new_child()
     local result = child.lua_func(function(base_config)
-        local lines = {}
-        for index = 1, 120 do
-            lines[index] = "line " .. index
-        end
-        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        require("scrollbar.test.fill_lines")(120)
         local first = vim.api.nvim_get_current_win()
         vim.cmd("split")
         local second = vim.api.nvim_get_current_win()
@@ -3957,11 +3818,7 @@ end
 T["performs cursor position work only for the current source window"] = function()
     local child = new_child()
     local result = child.lua_func(function(base_config)
-        local lines = {}
-        for index = 1, 120 do
-            lines[index] = "line " .. index
-        end
-        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        require("scrollbar.test.fill_lines")(120)
         local first = vim.api.nvim_get_current_win()
         vim.cmd("split")
         local second = vim.api.nvim_get_current_win()
@@ -4016,11 +3873,7 @@ end
 T["repairs external hide mutations from cursor overlap state"] = function()
     local child = new_child()
     local result = child.lua_func(function(base_config)
-        local lines = {}
-        for index = 1, 120 do
-            lines[index] = "line " .. index
-        end
-        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        require("scrollbar.test.fill_lines")(120)
         local source_win = vim.api.nvim_get_current_win()
         require("scrollbar.test.set_config")(base_config)
         local renderer = require("scrollbar.renderer")
@@ -4075,11 +3928,7 @@ end
 T["resets cursor-hidden state across autohide concealment and recreation"] = function()
     local child = new_child()
     local result = child.lua_func(function(base_config)
-        local lines = {}
-        for index = 1, 120 do
-            lines[index] = "line " .. index
-        end
-        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        require("scrollbar.test.fill_lines")(120)
         local source_win = vim.api.nvim_get_current_win()
         base_config.autohide = { delay_ms = 500 }
         require("scrollbar.test.set_config")(base_config)
@@ -4130,11 +3979,7 @@ end
 T["cleans resources for lifecycle events, hide, toggle, and setup reset"] = function()
     local child = new_child()
     local result = child.lua_func(function(config)
-        local lines = {}
-        for index = 1, 100 do
-            lines[index] = "line " .. index
-        end
-        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        local lines = require("scrollbar.test.fill_lines")(100)
         local first = vim.api.nvim_get_current_win()
         vim.cmd("split")
         local second = vim.api.nvim_get_current_win()
@@ -4261,11 +4106,7 @@ end
 T["filters minimap-only marks and compact search before flattening"] = function()
     local child = new_child()
     local result = child.lua_func(function(base_config)
-        local lines = {}
-        for index = 1, 200 do
-            lines[index] = "line " .. index
-        end
-        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        require("scrollbar.test.fill_lines")(200)
         local source_win = vim.api.nvim_get_current_win()
         local source_buf = vim.api.nvim_get_current_buf()
 
@@ -4303,11 +4144,7 @@ end
 T["accepts marks of a hidden type from a custom provider without drawing them"] = function()
     local child = new_child()
     local result = child.lua_func(function(base_config)
-        local lines = {}
-        for index = 1, 100 do
-            lines[index] = "line " .. index
-        end
-        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        require("scrollbar.test.fill_lines")(100)
         local source_win = vim.api.nvim_get_current_win()
         local source_buf = vim.api.nvim_get_current_buf()
         local scrollbar_config = require("scrollbar.config")
@@ -4377,11 +4214,7 @@ local function text_function_child(text_function, scrollbar_overrides, line_coun
     child.lua(
         [[
         local text_function, overrides, line_count = ...
-        local lines = {}
-        for index = 1, line_count do
-            lines[index] = "line " .. index
-        end
-        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        require("scrollbar.test.fill_lines")(line_count)
         vim.api.nvim_win_set_height(0, 10)
         _G.source_win = vim.api.nvim_get_current_win()
         _G.source_buf = vim.api.nvim_get_current_buf()
@@ -4505,11 +4338,7 @@ end
 T["thumb text functions follow a scroll that keeps the thumb rows"] = function()
     local child = new_child()
     local result = child.lua_func(function(config)
-        local lines = {}
-        for index = 1, 1000 do
-            lines[index] = "line " .. index
-        end
-        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        require("scrollbar.test.fill_lines")(1000)
         vim.api.nvim_win_set_height(0, 10)
         local source_win = vim.api.nvim_get_current_win()
         config.thumb.text = function(context)
@@ -4541,11 +4370,7 @@ end
 T["the percent recipe follows a scroll"] = function()
     local child = new_child()
     local result = child.lua_func(function(config)
-        local lines = {}
-        for index = 1, 1000 do
-            lines[index] = "line " .. index
-        end
-        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        require("scrollbar.test.fill_lines")(1000)
         vim.api.nvim_win_set_height(0, 10)
         local source_win = vim.api.nvim_get_current_win()
         config.layout = { columns = { { "track", "marks" }, { "track", "thumb" }, { "track", "thumb" } } }
@@ -4584,11 +4409,7 @@ T["window"] = MiniTest.new_set()
 ---@param height? integer Height of a split for the source window. Without it, the source is the full window
 local function window_source(child, line_count, height)
     child.lua_func(function(count, split_height)
-        local lines = {}
-        for index = 1, count do
-            lines[index] = "line " .. index
-        end
-        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        require("scrollbar.test.fill_lines")(count)
         if split_height ~= vim.NIL and split_height ~= nil then
             vim.cmd("split")
             vim.api.nvim_win_set_height(0, split_height)
