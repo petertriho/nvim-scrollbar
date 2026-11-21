@@ -340,13 +340,14 @@ default links:
 
 | Group | Default link | Use |
 | --- | --- | --- |
-| `ScrollbarJumpLabel` | `Substitute` | The labels of label mode |
+| `ScrollbarJumpLabel` | `Substitute` | The labels of label mode from `jump()` |
+| `ScrollbarPeekLabel` | `ScrollbarJumpLabel` | The labels of label mode from `peek()` |
 | `ScrollbarGlanceHeader` | `Title` | The group headers of the glance window |
 | `ScrollbarGlanceLineNr` | `LineNr` | The line numbers of the glance list, in every picker |
 
 The glyphs of the glance list use the `Scrollbar<Type>` group of each mark
-type. The groups own these names, so `JumpLabel`, `GlanceHeader`, and
-`GlanceLineNr` are not valid mark types. See
+type. The groups own these names, so `JumpLabel`, `PeekLabel`,
+`GlanceHeader`, and `GlanceLineNr` are not valid mark types. See
 [Jump and Glance](jump-and-glance.md).
 
 ## Search Highlights

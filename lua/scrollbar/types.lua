@@ -216,11 +216,11 @@
 ---@field throttle_ms? integer
 ---@field events? ScrollbarUserEventList Autocmd events that update the scrollbar. A list replaces the defaults. A table keyed by event name merges with them
 ---@field profiles? ScrollbarUserProfile[] Ordered contextual variants. The first match wins
----@field jump? ScrollbarUserJumpConfig Label mode of `require("scrollbar").jump()`
+---@field jump? ScrollbarUserJumpConfig Label mode of `require("scrollbar").jump()` and `require("scrollbar").peek()`
 ---@field hover? boolean|ScrollbarUserHoverConfig Peek at the mark under the mouse pointer. Off by default
 
 ---@class ScrollbarUserJumpConfig
----@field labels? string Unique lowercase ASCII letters. The uppercase letter of a label opens the peek
+---@field labels? string Unique lowercase ASCII letters. The uppercase letter of a label is also a key: it peeks in `jump()` and jumps in `peek()`
 ---@field offset? integer Columns from the mark cell to its label. A negative offset is to the left. 0 puts the label on the mark cell
 
 ---@class ScrollbarUserHoverConfig

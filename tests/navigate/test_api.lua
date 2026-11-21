@@ -47,19 +47,22 @@ end
 local WARN = vim.log.levels.WARN
 local ERROR = vim.log.levels.ERROR
 
-T["jump() and glance() before setup() notify and do nothing"] = function()
+T["jump(), peek(), and glance() before setup() notify and do nothing"] = function()
     local child = navigate.new_child()
     capture_notes(child)
     child.lua([[
         require("scrollbar").jump()
+        require("scrollbar").peek()
         require("scrollbar").glance()
     ]])
     expect.equality(notes(child), {
         { "[nvim-scrollbar] jump() needs setup() first", WARN },
+        { "[nvim-scrollbar] peek() needs setup() first", WARN },
         { "[nvim-scrollbar] glance() needs setup() first", WARN },
     })
     expect.equality(#child.api.nvim_list_wins(), 1)
     expect.equality(child.fn.exists(":ScrollbarJump"), 0)
+    expect.equality(child.fn.exists(":ScrollbarPeek"), 0)
     expect.equality(child.fn.exists(":ScrollbarGlance"), 0)
 end
 
@@ -69,6 +72,19 @@ T["jump() runs label mode with the types filter"] = function()
     child.lua([[
         vim.api.nvim_feedkeys("a", "t", false)
         require("scrollbar").jump({ types = { "Info" } })
+    ]])
+    expect.equality(child.api.nvim_win_get_cursor(0), { 151, 0 })
+end
+
+T["peek() runs label mode in the peek mode with the types filter"] = function()
+    local child = navigate.new_child()
+    setup(child)
+    -- In the peek mode, an uppercase label jumps and ends label mode, and
+    -- Neovim then runs <Esc>. In the jump mode, `A` would peek, and <Esc>
+    -- would end label mode without a move.
+    child.lua([[
+        vim.api.nvim_feedkeys(vim.keycode("A<Esc>"), "t", false)
+        require("scrollbar").peek({ types = { "Info" } })
     ]])
     expect.equality(child.api.nvim_win_get_cursor(0), { 151, 0 })
 end
@@ -93,6 +109,8 @@ T["an unknown mark type or option gives an error and opens nothing"] = function(
         scrollbar.glance({ types = "Warn" })
         scrollbar.jump({ type = { "Warn" } })
         scrollbar.glance("Warn")
+        scrollbar.peek({ types = { "Nope" } })
+        scrollbar.peek({ picker = "builtin" })
     ]])
     expect.equality(notes(child), {
         { "[nvim-scrollbar] glance(): unknown mark type 'Nope'", ERROR },
@@ -100,6 +118,8 @@ T["an unknown mark type or option gives an error and opens nothing"] = function(
         { "[nvim-scrollbar] glance(): opts.types must be a list of mark type names", ERROR },
         { "[nvim-scrollbar] jump(): unknown option 'type'", ERROR },
         { "[nvim-scrollbar] glance(): opts must be a table", ERROR },
+        { "[nvim-scrollbar] peek(): unknown mark type 'Nope'", ERROR },
+        { "[nvim-scrollbar] peek(): unknown option 'picker'", ERROR },
     })
     expect.equality(glance_lines(child), nil)
     expect.equality(#child.api.nvim_list_wins(), 2)
@@ -309,12 +329,19 @@ T["commands"]["take mark types as arguments"] = function()
         vim.cmd("ScrollbarJump Warn Info")
     ]])
     expect.equality(child.api.nvim_win_get_cursor(0), { 61, 0 })
+
+    -- From line 60, the label `a` is on line 60 and `s` is on line 150.
+    child.lua([[
+        vim.api.nvim_feedkeys(vim.keycode("S<Esc>"), "t", false)
+        vim.cmd("ScrollbarPeek Warn Info")
+    ]])
+    expect.equality(child.api.nvim_win_get_cursor(0), { 151, 0 })
 end
 
 T["commands"]["complete the registered mark types"] = function()
     local child = navigate.new_child()
     setup(child)
-    for _, command in ipairs({ "ScrollbarJump", "ScrollbarGlance" }) do
+    for _, command in ipairs({ "ScrollbarJump", "ScrollbarPeek", "ScrollbarGlance" }) do
         local names = child.fn.getcompletion(command .. " Wa", "cmdline")
         expect.equality(names, { "Warn" })
         local all = child.fn.getcompletion(command .. " Error ", "cmdline")
@@ -323,19 +350,25 @@ T["commands"]["complete the registered mark types"] = function()
     end
 end
 
-T["commands"][":ScrollbarJump exists only with the scrollbar, and :ScrollbarGlance always"] = function()
+T["commands"][":ScrollbarJump and :ScrollbarPeek exist only with the scrollbar, and :ScrollbarGlance always"] = function()
     local child = navigate.new_child()
     setup(child)
     expect.equality(child.fn.exists(":ScrollbarJump"), 2)
+    expect.equality(child.fn.exists(":ScrollbarPeek"), 2)
     expect.equality(child.fn.exists(":ScrollbarGlance"), 2)
     child.lua_func(function(config)
         require("scrollbar").setup(config)
     end, navigate.config({ scrollbar = { enabled = false } }))
     expect.equality(child.fn.exists(":ScrollbarJump"), 0)
+    expect.equality(child.fn.exists(":ScrollbarPeek"), 0)
     expect.equality(child.fn.exists(":ScrollbarGlance"), 2)
-    child.lua([[require("scrollbar").jump()]])
+    child.lua([[
+        require("scrollbar").jump()
+        require("scrollbar").peek()
+    ]])
     expect.equality(notes(child), {
         { "[nvim-scrollbar] jump() needs the scrollbar, and scrollbar.enabled is false", WARN },
+        { "[nvim-scrollbar] peek() needs the scrollbar, and scrollbar.enabled is false", WARN },
     })
 end
 

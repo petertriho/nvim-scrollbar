@@ -319,6 +319,10 @@ T["the new highlight groups are reserved"] = function()
         "highlight group 'ScrollbarJumpLabel' is claimed by"
     )
     expect_invalid(
+        { marks = { PeekLabel = { text = "x", priority = 1, highlight = "Normal" } } },
+        "highlight group 'ScrollbarPeekLabel' is claimed by"
+    )
+    expect_invalid(
         { marks = { GlanceHeader = { text = "x", priority = 1, highlight = "Normal" } } },
         "highlight group 'ScrollbarGlanceHeader' is claimed by"
     )

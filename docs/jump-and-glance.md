@@ -5,7 +5,9 @@ marks:
 
 - **Label mode** (`jump()`) shows a label on each mark cell of the scrollbar
   of the current window. A lowercase label moves the cursor to the mark. An
-  uppercase label opens the peek float at the mark.
+  uppercase label opens the peek float at the mark. `peek()` starts label mode
+  with the roles of the two cases swapped, so a lowercase label opens the peek
+  float first.
 - The **peek float** shows the source buffer around one mark.
 - **Glance** (`glance()`) shows a list of the marks in a picker: the builtin
   glance window, a snacks.nvim or Telescope picker, or your own picker. The
@@ -28,6 +30,10 @@ end, { desc = "Jump to a scrollbar mark" })
 vim.keymap.set("n", "<leader>J", function()
     scrollbar.jump({ types = { "Error", "Warn" } })
 end, { desc = "Jump to an error or a warning" })
+
+vim.keymap.set("n", "<leader>p", function()
+    scrollbar.peek()
+end, { desc = "Peek at a scrollbar mark" })
 
 vim.keymap.set("n", "<leader>g", function()
     scrollbar.glance()
@@ -55,6 +61,25 @@ A move goes to the line that a click on the same cell goes to. The move adds
 an entry to the jumplist first, so `<C-o>` goes back. Then it moves to the
 start of the line, opens the folds that contain the line (`zv`), and centers
 the line (`zz`). See [Mouse](mouse.md#click-and-drag).
+
+### Peek First
+
+`require("scrollbar").peek()` and `:ScrollbarPeek` start the same label mode,
+but a lowercase label opens the peek float, and an uppercase label moves the
+cursor:
+
+| Key | Result |
+| --- | --- |
+| A lowercase label | Opens the peek float at the line of the mark. Label mode continues, and the label shows in uppercase. Another lowercase label moves the peek float. The same lowercase label again keeps the peek float on the same mark. |
+| An uppercase label | Moves the cursor to the line of the mark and ends label mode. |
+| `<CR>` | When the peek float is open, moves the cursor to the line of the peek float and ends label mode. |
+| `<Esc>` | Closes the peek float and ends label mode. |
+| Any other key | Ends label mode. Neovim does not run the key. |
+
+In both modes, the label of the peeked mark shows in uppercase. In `peek()`,
+that is also the key that moves to the mark. Both modes use the same labels and
+offset, and the same rules in the rest of this section. The labels of `peek()`
+use the `ScrollbarPeekLabel` group. See [Highlights](#highlights).
 
 ### Labels
 
@@ -92,7 +117,8 @@ past the label column.
 ### Scrollbar State
 
 - Label mode needs the scrollbar. With `scrollbar.enabled = false`, `jump()`
-  shows a notification, and `:ScrollbarJump` does not exist.
+  and `peek()` show a notification, and `:ScrollbarJump` and `:ScrollbarPeek`
+  do not exist.
 - Label mode works only in a normal window. In a float, such as the list of a
   picker, it shows a notification.
 - When the window has no scrollbar or no marks, label mode shows a
@@ -741,6 +767,7 @@ window. A size change of another window does nothing.
 | Lua | Command | Result |
 | --- | --- | --- |
 | `require("scrollbar").jump(opts)` | `:ScrollbarJump [types]` | Starts label mode. The command exists only when the scrollbar is enabled. |
+| `require("scrollbar").peek(opts)` | `:ScrollbarPeek [types]` | Starts label mode that peeks first. The command exists only when the scrollbar is enabled. |
 | `require("scrollbar").glance(opts)` | `:ScrollbarGlance [types]` | Opens the glance picker. The command always exists after `setup()`. |
 
 `opts.types` is a list of mark type names, for example
@@ -753,19 +780,21 @@ of the registered mark types.
 
 - An unknown mark type name or an invalid `opts.picker` gives an error
   notification, and nothing opens.
-- Before `setup()`, `jump()` and `glance()` show a notification and do
-  nothing.
+- Before `setup()`, `jump()`, `peek()`, and `glance()` show a notification
+  and do nothing.
 
 ## Highlights
 
 | Group | Default link | Use |
 | --- | --- | --- |
-| `ScrollbarJumpLabel` | `Substitute` | The labels of label mode |
+| `ScrollbarJumpLabel` | `Substitute` | The labels of label mode from `jump()` |
+| `ScrollbarPeekLabel` | `ScrollbarJumpLabel` | The labels of label mode from `peek()` |
 | `ScrollbarGlanceHeader` | `Title` | The group headers of the glance window |
 | `ScrollbarGlanceLineNr` | `LineNr` | The line numbers of the glance list, in every picker |
 
-With `set_highlights = false`, the plugin does not create these groups. See
-[Highlights](highlights.md#navigation-groups).
+With `set_highlights = false`, the plugin does not create these groups. Then
+define `ScrollbarPeekLabel` too, because it does not follow
+`ScrollbarJumpLabel`. See [Highlights](highlights.md#navigation-groups).
 
 ## Related
 

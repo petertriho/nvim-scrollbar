@@ -28,25 +28,30 @@ end
 
 --- Run label mode with keys in the typeahead. The call returns when label mode
 --- ends.
-local function run_with(child, keys, types)
-    child.lua_func(function(typed, names)
+local function run_with(child, keys, types, mode)
+    child.lua_func(function(typed, names, label_mode)
         vim.api.nvim_feedkeys(vim.keycode(typed), "t", false)
-        require("scrollbar.navigate.jump").run({ types = names })
-    end, keys, types)
+        -- A nil argument before another argument arrives as vim.NIL.
+        require("scrollbar.navigate.jump").run({ types = names ~= vim.NIL and names or nil, mode = label_mode })
+    end, keys, types, mode)
 end
 
 --- Start label mode and return while it waits for a key.
-local function start(child, types)
+local function start(child, types, mode)
     child.lua(
         [[
-        local names = ...
+        local names, label_mode = ...
+        -- A nil argument before another argument arrives as vim.NIL.
+        if names == vim.NIL then
+            names = nil
+        end
         _G.jump_done = false
         vim.schedule(function()
-            require("scrollbar.navigate.jump").run({ types = names })
+            require("scrollbar.navigate.jump").run({ types = names, mode = label_mode })
             _G.jump_done = true
         end)
     ]],
-        { types }
+        { types, mode }
     )
     vim.uv.sleep(50)
 end
@@ -517,6 +522,142 @@ T["offset"]["the label floats follow the scrollbar float when the minimap beside
     expect.equality(shown_labels(outward), { "a", "s", "d", "f", "g" })
     input(child, "a")
     expect.equality(cursor_line(child), 20)
+end
+
+T["peek mode"] = MiniTest.new_set()
+
+--- The highlight groups of the extmark labels, sorted and without duplicates.
+local function label_groups(child)
+    return child.lua([=[
+        local state = assert(require("scrollbar.renderer").get_state(vim.api.nvim_get_current_win()))
+        local namespace = require("scrollbar.navigate.jump").NAMESPACE
+        local seen = {}
+        for _, mark in ipairs(vim.api.nvim_buf_get_extmarks(state.float_buf, namespace, 0, -1, { details = true })) do
+            seen[mark[4].virt_text[1][2]] = true
+        end
+        local result = vim.tbl_keys(seen)
+        table.sort(result)
+        return result
+    ]=])
+end
+
+T["peek mode"]["a lowercase label opens the peek, and label mode stays"] = function()
+    local child = navigate.new_child()
+    setup(child)
+    start(child, nil, "peek")
+    input(child, "s")
+    expect.equality(peek_line(child), 60)
+    expect.equality(label_texts(child), { "a", "S", "d", "f", "g" })
+    expect.equality(child.lua_get("_G.jump_done"), false)
+
+    -- A second lowercase label moves the peek.
+    input(child, "f")
+    expect.equality(peek_line(child), 150)
+    expect.equality(label_texts(child), { "a", "s", "d", "F", "g" })
+
+    -- The same lowercase label again peeks again. It does not jump.
+    input(child, "f")
+    expect.equality(peek_line(child), 150)
+    expect.equality(child.lua_get("_G.jump_done"), false)
+
+    -- <CR> jumps to the peeked mark.
+    input(child, "<CR>")
+    expect.equality(child.lua_get("_G.jump_done"), true)
+    expect.equality(cursor_line(child), 150)
+    expect.equality(peek_line(child), nil)
+    expect.equality(labels(child), {})
+end
+
+T["peek mode"]["an uppercase label jumps, and <C-o> returns"] = function()
+    local child = navigate.new_child()
+    setup(child)
+    child.api.nvim_win_set_cursor(0, { 5, 0 })
+    run_with(child, "D", nil, "peek")
+    expect.equality(child.api.nvim_win_get_cursor(0), { 101, 0 })
+    expect.equality(labels(child), {})
+    child.type_keys("<C-o>")
+    expect.equality(child.api.nvim_win_get_cursor(0), { 5, 0 })
+end
+
+T["peek mode"]["an uppercase label jumps also while the peek is open"] = function()
+    local child = navigate.new_child()
+    setup(child)
+    run_with(child, "sA", nil, "peek")
+    expect.equality(cursor_line(child), 20)
+    expect.equality(peek_line(child), nil)
+end
+
+T["peek mode"]["<Esc> closes the peek, and another key ends label mode and is dropped"] = function()
+    local child = navigate.new_child()
+    setup(child)
+    run_with(child, "d<Esc>", nil, "peek")
+    expect.equality(cursor_line(child), 0)
+    expect.equality(peek_line(child), nil)
+    expect.equality(labels(child), {})
+
+    local before = child.api.nvim_buf_get_lines(0, 0, -1, false)
+    -- `X` is not a label, so it does not delete a character.
+    run_with(child, "X", nil, "peek")
+    expect.equality(child.api.nvim_buf_get_lines(0, 0, -1, false), before)
+    expect.equality(cursor_line(child), 0)
+    expect.equality(labels(child), {})
+end
+
+T["peek mode"]["the labels use ScrollbarPeekLabel, and the jump mode labels ScrollbarJumpLabel"] = function()
+    local child = navigate.new_child()
+    setup(child)
+    start(child, nil, "peek")
+    expect.equality(label_groups(child), { "ScrollbarPeekLabel" })
+    input(child, "s")
+    expect.equality(label_groups(child), { "ScrollbarPeekLabel" })
+    input(child, "<Esc>")
+    expect.equality(child.lua_get("_G.jump_done"), true)
+
+    start(child)
+    expect.equality(label_groups(child), { "ScrollbarJumpLabel" })
+    input(child, "<Esc>")
+end
+
+T["peek mode"]["with an offset, the label floats use ScrollbarPeekLabel"] = function()
+    local child = navigate.new_child()
+    setup(child, { config = offset_config(-1) })
+    start(child, nil, "peek")
+    input(child, "s")
+    expect.equality(peek_line(child), 60)
+    expect.equality(shown_labels(cell_screen(child, -1)), { "a", "S", "d", "f", "g" })
+    local highlights = child.lua([[
+        local seen = {}
+        for _, win in pairs(require("scrollbar.navigate.jump")._label_floats()) do
+            seen[vim.wo[win].winhighlight] = true
+        end
+        return vim.tbl_keys(seen)
+    ]])
+    expect.equality(highlights, { "NormalFloat:ScrollbarPeekLabel" })
+
+    input(child, "D")
+    expect.equality(cursor_line(child), 100)
+    expect.equality(#child.api.nvim_list_wins(), 2)
+end
+
+T["peek mode"]["notifies with the peek prefix"] = function()
+    local child = navigate.new_child()
+    setup(child, { marks = {} })
+    run_with(child, "", nil, "peek")
+    expect.equality(child.lua_get("_G.notes"), { "[nvim-scrollbar] peek: the scrollbar has no marks to peek at" })
+
+    local hidden = navigate.new_child()
+    setup(hidden, { config = navigate.config({ scrollbar = { show = false } }) })
+    run_with(hidden, "", nil, "peek")
+    expect.equality(hidden.lua_get("_G.notes"), { "[nvim-scrollbar] peek: the current window has no scrollbar" })
+
+    local floating = navigate.new_child()
+    setup(floating)
+    floating.lua([[
+        local buf = vim.api.nvim_get_current_buf()
+        vim.api.nvim_open_win(buf, true, { relative = "editor", row = 1, col = 1, width = 30, height = 10 })
+    ]])
+    run_with(floating, "", nil, "peek")
+    expect.equality(floating.lua_get("_G.notes"), { "[nvim-scrollbar] peek works only in a normal window" })
 end
 
 return T

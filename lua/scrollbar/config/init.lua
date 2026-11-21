@@ -575,6 +575,7 @@ local function validate_public_highlight_groups(scrollbar_variants, minimap_vari
         ScrollbarMinimapFloatTitle = "the minimap title",
         ScrollbarMinimapFloatFooter = "the minimap footer",
         ScrollbarJumpLabel = "the jump labels",
+        ScrollbarPeekLabel = "the peek labels",
         ScrollbarGlanceHeader = "the glance group headers",
         ScrollbarGlanceLineNr = "the glance line numbers",
     }

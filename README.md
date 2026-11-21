@@ -17,10 +17,11 @@ lines.
 
 Label mode puts a label on each mark of the scrollbar. Type a label to move to
 the mark, or type the uppercase label to see the lines of the mark in a peek
-float first. Glance shows a list of the marks in the glance window, which has
-a preview pane, or in a snacks.nvim, Telescope, or custom picker. With
-`scrollbar.hover`, the peek float also opens when the mouse pointer stays
-on a mark. Label mode is inspired by
+float first. `peek()` swaps the two cases: a label opens the peek float, and
+the uppercase label moves to the mark. Glance shows a list of the marks in the
+glance window, which has a preview pane, or in a snacks.nvim, Telescope, or
+custom picker. With `scrollbar.hover`, the peek float also opens when the
+mouse pointer stays on a mark. Label mode is inspired by
 [flash.nvim](https://github.com/folke/flash.nvim), and the glance window by
 [glance.nvim](https://github.com/dnlhc/glance.nvim).
 
@@ -35,13 +36,17 @@ vim.keymap.set("n", "<leader>j", function()
     require("scrollbar").jump()
 end, { desc = "Jump to a scrollbar mark" })
 
+vim.keymap.set("n", "<leader>p", function()
+    require("scrollbar").peek()
+end, { desc = "Peek at a scrollbar mark" })
+
 vim.keymap.set("n", "<leader>g", function()
     require("scrollbar").glance()
 end, { desc = "Glance at the marks" })
 ```
 
-The commands are `:ScrollbarJump [types]` and `:ScrollbarGlance [types]`. See
-[Jump and Glance](docs/jump-and-glance.md).
+The commands are `:ScrollbarJump [types]`, `:ScrollbarPeek [types]`, and
+`:ScrollbarGlance [types]`. See [Jump and Glance](docs/jump-and-glance.md).
 
 ## Requirements
 

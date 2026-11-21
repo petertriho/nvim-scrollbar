@@ -49,6 +49,7 @@ T["exposes only the public root orchestration API"] = function()
                 glance = vim.fn.exists(":ScrollbarGlance"),
                 hide = vim.fn.exists(":ScrollbarHide"),
                 jump = vim.fn.exists(":ScrollbarJump"),
+                peek = vim.fn.exists(":ScrollbarPeek"),
                 refresh = vim.fn.exists(":ScrollbarRefresh"),
                 show = vim.fn.exists(":ScrollbarShow"),
                 toggle = vim.fn.exists(":ScrollbarToggle"),
@@ -57,8 +58,8 @@ T["exposes only the public root orchestration API"] = function()
         }
     end, root_config())
 
-    expect.equality(result.keys, { "glance", "hide", "jump", "refresh", "setup", "show", "toggle" })
-    expect.equality(result.commands, { glance = 2, hide = 2, jump = 2, refresh = 2, show = 2, toggle = 2 })
+    expect.equality(result.keys, { "glance", "hide", "jump", "peek", "refresh", "setup", "show", "toggle" })
+    expect.equality(result.commands, { glance = 2, hide = 2, jump = 2, peek = 2, refresh = 2, show = 2, toggle = 2 })
     expect.equality(result.handlers_load, false)
 end
 

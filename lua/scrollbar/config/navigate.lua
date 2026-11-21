@@ -166,8 +166,8 @@ M.jump = function(value, path)
     local seen = {}
     for index = 1, #labels do
         local label = labels:sub(index, index)
-        -- The uppercase letter of each label opens the peek, so a label must
-        -- have one.
+        -- The uppercase letter of each label is also a key. It peeks in
+        -- `jump()` and jumps in `peek()`, so a label must have one.
         if not label:match("^[a-z]$") then
             invalid(labels_path .. " must contain only lowercase ASCII letters")
         end

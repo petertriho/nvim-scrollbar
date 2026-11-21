@@ -852,13 +852,18 @@ T["links the frame groups of both floats to the Neovim float groups"] = function
     })
 end
 
-T["links the jump and glance groups and keeps a user definition"] = function()
+T["links the jump, peek, and glance groups and keeps a user definition"] = function()
     local child = new_child()
     local result = child.lua_func(function(config)
         vim.api.nvim_set_hl(0, "ScrollbarGlanceHeader", { fg = "#654321" })
         require("scrollbar").setup(config)
         local groups = {}
-        for _, name in ipairs({ "ScrollbarJumpLabel", "ScrollbarGlanceHeader", "ScrollbarGlanceLineNr" }) do
+        for _, name in ipairs({
+            "ScrollbarJumpLabel",
+            "ScrollbarPeekLabel",
+            "ScrollbarGlanceHeader",
+            "ScrollbarGlanceLineNr",
+        }) do
             local definition = vim.api.nvim_get_hl(0, { name = name, link = true })
             groups[name] = { link = definition.link, fg = definition.fg }
         end
@@ -867,6 +872,7 @@ T["links the jump and glance groups and keeps a user definition"] = function()
 
     expect.equality(result, {
         ScrollbarJumpLabel = { link = "Substitute" },
+        ScrollbarPeekLabel = { link = "ScrollbarJumpLabel" },
         ScrollbarGlanceHeader = { fg = 0x654321 },
         ScrollbarGlanceLineNr = { link = "LineNr" },
     })

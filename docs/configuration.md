@@ -16,9 +16,10 @@ does these steps at once:
 The plugin starts the rest one event loop iteration later, after the first
 screen: the highlight groups, the floats, the providers, and the minimap. Thus
 `:hi ScrollbarThumb` shows no group directly after the call. A call of `show()`,
-`hide()`, `toggle()`, `refresh()`, `jump()`, or `glance()` before then starts
-the rest at once, and then does its work. The `show()`, `hide()`, `toggle()`,
-and `refresh()` functions of `require("scrollbar.minimap")` do the same.
+`hide()`, `toggle()`, `refresh()`, `jump()`, `peek()`, or `glance()` before
+then starts the rest at once, and then does its work. The `show()`, `hide()`,
+`toggle()`, and `refresh()` functions of `require("scrollbar.minimap")` do the
+same.
 
 A `setup()` call after start-up starts everything at once, for example when a
 plugin manager loads the plugin on an event or a key.
@@ -228,8 +229,8 @@ require("scrollbar").setup({
 | `autohide` | `false` | `true` conceals each scrollbar after 1000 ms without activity in its window. `{ delay_ms = n }` sets the delay. |
 | `max_lines` | `false` | A buffer with more lines than this number gets no scrollbar. |
 | `floats` | `false` | Floats that get a scrollbar. The built-in kinds are the list and the preview of the snacks.nvim picker, the snacks.nvim zen window, and the results and the preview of the Telescope picker. A `when` function selects other floats. See [Floats](floats.md). |
-| `jump.labels` | `"asdfghjklqwertyuiopzxcvbnm"` | Labels of label mode. See [Jump and Glance](jump-and-glance.md#labels). |
-| `jump.offset` | `0` | Columns from each mark cell to its label. `0` puts the label on the mark cell. See [Jump and Glance](jump-and-glance.md#labels). |
+| `jump.labels` | `"asdfghjklqwertyuiopzxcvbnm"` | Labels of label mode, for `jump()` and `peek()`. See [Jump and Glance](jump-and-glance.md#labels). |
+| `jump.offset` | `0` | Columns from each mark cell to its label, for `jump()` and `peek()`. `0` puts the label on the mark cell. See [Jump and Glance](jump-and-glance.md#labels). |
 | `hover` | `false` | `true` opens the peek float when the pointer stays on a mark cell for 300 ms. `{ delay_ms = n }` sets the delay. See [Hover](jump-and-glance.md#hover). |
 | `throttle_ms` | `16` | Renders that are queued within this interval combine into one frame. `0` renders as fast as possible. |
 | `events` | see Defaults | Autocommand events that update the scrollbar. See [Events](#events). |

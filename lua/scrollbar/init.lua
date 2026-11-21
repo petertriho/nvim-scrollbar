@@ -160,7 +160,13 @@ local COMMANDS = {
     ScrollbarRefresh = "refresh",
 }
 
--- Whether `setup()` ran. `jump()` and `glance()` need it.
+-- The commands of label mode. They exist only with the scrollbar.
+local LABEL_COMMANDS = {
+    ScrollbarJump = { method = "jump", desc = "Show labels on the marks of the scrollbar" },
+    ScrollbarPeek = { method = "peek", desc = "Show labels on the marks of the scrollbar, and peek first" },
+}
+
+-- Whether `setup()` ran. `jump()`, `peek()`, and `glance()` need it.
 local configured = false
 
 ---@param message string
@@ -178,12 +184,13 @@ end
 -- The options of each method.
 local NAVIGATE_OPTIONS = {
     jump = { types = true },
+    peek = { types = true },
     glance = { types = true, picker = true },
 }
 
---- The mark type filter of `jump()` and `glance()`, or nothing when the
---- options are not valid.
----@param name "jump"|"glance"
+--- The mark type filter of `jump()`, `peek()`, and `glance()`, or nothing
+--- when the options are not valid.
+---@param name "jump"|"peek"|"glance"
 ---@param opts any
 ---@return boolean ok
 ---@return table<string, true>? types
@@ -228,19 +235,34 @@ local function navigate_types(name, opts)
     return true, types
 end
 
---- Label mode on the mark cells of the scrollbar of the current window.
+--- Start label mode in `mode`, the action of a lowercase label.
+---@param mode ScrollbarJumpMode
 ---@param opts? ScrollbarNavigateUserOptions
-M.jump = function(opts)
+local function label_mode(mode, opts)
     deferred_start.run()
-    local ok, types = navigate_types("jump", opts)
+    local ok, types = navigate_types(mode, opts)
     if not ok then
         return
     end
     if not config.get().enabled then
-        notify("jump() needs the scrollbar, and scrollbar.enabled is false", vim.log.levels.WARN)
+        notify(mode .. "() needs the scrollbar, and scrollbar.enabled is false", vim.log.levels.WARN)
         return
     end
-    require("scrollbar.navigate.jump").run({ types = types })
+    require("scrollbar.navigate.jump").run({ types = types, mode = mode })
+end
+
+--- Label mode on the mark cells of the scrollbar of the current window. A
+--- lowercase label jumps to its mark, and an uppercase label peeks at it.
+---@param opts? ScrollbarNavigateUserOptions
+M.jump = function(opts)
+    label_mode("jump", opts)
+end
+
+--- Label mode that peeks first. A lowercase label peeks at its mark, and an
+--- uppercase label jumps to it.
+---@param opts? ScrollbarNavigateUserOptions
+M.peek = function(opts)
+    label_mode("peek", opts)
 end
 
 --- The glance picker with the marks of the current window.
@@ -267,7 +289,7 @@ local function complete_mark_types(arg_lead)
     return names
 end
 
----@param method "jump"|"glance"
+---@param method "jump"|"peek"|"glance"
 ---@return fun(args: { fargs: string[] })
 local function navigate_command(method)
     return function(args)
@@ -284,15 +306,17 @@ local function update_commands(enabled)
             pcall(vim.api.nvim_del_user_command, name)
         end
     end
-    if enabled then
-        vim.api.nvim_create_user_command("ScrollbarJump", navigate_command("jump"), {
-            force = true,
-            nargs = "*",
-            complete = complete_mark_types,
-            desc = "Show labels on the marks of the scrollbar",
-        })
-    else
-        pcall(vim.api.nvim_del_user_command, "ScrollbarJump")
+    for name, command in pairs(LABEL_COMMANDS) do
+        if enabled then
+            vim.api.nvim_create_user_command(name, navigate_command(command.method), {
+                force = true,
+                nargs = "*",
+                complete = complete_mark_types,
+                desc = command.desc,
+            })
+        else
+            pcall(vim.api.nvim_del_user_command, name)
+        end
     end
     vim.api.nvim_create_user_command("ScrollbarGlance", navigate_command("glance"), {
         force = true,

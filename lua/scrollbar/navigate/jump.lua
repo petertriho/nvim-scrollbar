@@ -2,13 +2,21 @@
 --- window, in the style of flash.nvim (https://github.com/folke/flash.nvim).
 --- The code is not from flash.nvim.
 ---
---- - A lowercase label jumps to the line of its cell, the line that a click
----   uses. The jump adds a jumplist entry first.
---- - An uppercase label opens the peek float at the line, and label mode stays.
----   The label of the peeked cell shows in uppercase. `<CR>` jumps to the
----   peeked line.
+--- Label mode has two modes, which swap the roles of the two cases of a label.
+--- `jump()` starts the jump mode, and `peek()` starts the peek mode.
+---
+--- - The jump key of a label jumps to the line of its cell, the line that a
+---   click uses. The jump adds a jumplist entry first. It is the lowercase
+---   label in the jump mode and the uppercase label in the peek mode.
+--- - The peek key of a label opens the peek float at the line, and label mode
+---   stays. It is the uppercase label in the jump mode and the lowercase label
+---   in the peek mode. The label of the peeked cell shows in uppercase in both
+---   modes. `<CR>` jumps to the peeked line.
 --- - `<Esc>` closes the peek and ends label mode. Any other key ends label mode
 ---   and is dropped.
+---
+--- The labels of the jump mode use `ScrollbarJumpLabel`, and the labels of the
+--- peek mode use `ScrollbarPeekLabel`.
 ---
 --- The targets freeze when label mode starts. The labels go to the cells
 --- nearest to the cursor first, and the cells past the last label have none.
@@ -37,7 +45,8 @@ local M = {}
 
 local NAMESPACE = vim.api.nvim_create_namespace("ScrollbarJumpLabels")
 local AUGROUP = "ScrollbarJump"
-local LABEL_GROUP = "ScrollbarJumpLabel"
+---@type table<ScrollbarJumpMode, string>
+local LABEL_GROUPS = { jump = "ScrollbarJumpLabel", peek = "ScrollbarPeekLabel" }
 -- Above the rows of the renderer, which have the default priority 4096.
 local LABEL_PRIORITY = 10000
 local CR = vim.keycode("<CR>")
@@ -48,6 +57,9 @@ local MOUSE_MOVE = vim.keycode("<MouseMove>")
 -- returns. `getcharstr()` drops `<Ignore>`, and a user rarely has this key.
 local WAKEUP = vim.keycode("<F35>")
 
+--- The action of a lowercase label. An uppercase label does the other action.
+---@alias ScrollbarJumpMode "jump"|"peek"
+
 ---@class ScrollbarJumpTarget: ScrollbarNavigateCell
 ---@field label? string
 
@@ -56,6 +68,8 @@ local WAKEUP = vim.keycode("<F35>")
 ---@field buf integer
 
 ---@class ScrollbarJumpSession
+---@field mode ScrollbarJumpMode
+---@field label_group string Highlight group of the labels
 ---@field source_win integer
 ---@field source_buf integer
 ---@field float_win integer
@@ -124,7 +138,7 @@ local function draw_float(session_state, target)
             return
         end
         -- `winblend = 0` keeps the label opaque under a global 'winblend'.
-        float.configure_window(win, peek.OWNED_VAR, "NormalFloat:" .. LABEL_GROUP, 0)
+        float.configure_window(win, peek.OWNED_VAR, "NormalFloat:" .. session_state.label_group, 0)
         label_float = { win = win, buf = buf }
         session_state.label_floats[target.label] = label_float
     else
@@ -164,7 +178,7 @@ local function draw(session_state)
     for _, target in ipairs(session_state.targets) do
         if target.label ~= nil and target.row < line_count then
             vim.api.nvim_buf_set_extmark(float_buf, NAMESPACE, target.row, 0, {
-                virt_text = { { label_text(session_state, target), LABEL_GROUP } },
+                virt_text = { { label_text(session_state, target), session_state.label_group } },
                 virt_text_win_col = target.col - 1,
                 hl_mode = "replace",
                 priority = LABEL_PRIORITY,
@@ -298,10 +312,14 @@ local function read_keys(session_state)
             return
         end
         if key ~= MOUSE_MOVE then
-            local target = session_state.by_label[key]
-            local peek_target = key:match("^%u$") and session_state.by_label[key:lower()] or nil
-            if target ~= nil then
-                jump(session_state, target)
+            local lower_target = session_state.by_label[key]
+            local upper_target = key:match("^%u$") and session_state.by_label[key:lower()] or nil
+            local jump_target, peek_target = lower_target, upper_target
+            if session_state.mode == "peek" then
+                jump_target, peek_target = upper_target, lower_target
+            end
+            if jump_target ~= nil then
+                jump(session_state, jump_target)
                 return
             elseif peek_target ~= nil then
                 open_peek(session_state, peek_target)
@@ -332,6 +350,7 @@ end
 
 ---@class ScrollbarJumpOptions
 ---@field types? table<string, true> Mark types that get labels. Nil labels every type except `Cursor`
+---@field mode? ScrollbarJumpMode Action of a lowercase label. Default "jump"
 
 --- Start label mode in the current window. The function returns when label
 --- mode ends.
@@ -341,9 +360,10 @@ M.run = function(options)
     if session ~= nil then
         return
     end
+    local mode = options.mode or "jump"
     local source_win = vim.api.nvim_get_current_win()
     if vim.api.nvim_win_get_config(source_win).relative ~= "" then
-        notify("jump works only in a normal window")
+        notify(mode .. " works only in a normal window")
         return
     end
     local renderer = require("scrollbar.renderer")
@@ -368,13 +388,16 @@ M.run = function(options)
     local state = renderer.get_state(source_win)
     if state == nil then
         restore()
-        notify("jump: the current window has no scrollbar")
+        notify(mode .. ": the current window has no scrollbar")
         return
     end
     local cells = targets.cells(source_win, options.types)
     if #cells == 0 then
         restore()
-        notify("jump: the scrollbar has no marks to jump to")
+        notify(
+            mode == "peek" and "peek: the scrollbar has no marks to peek at"
+                or "jump: the scrollbar has no marks to jump to"
+        )
         return
     end
 
@@ -383,6 +406,8 @@ M.run = function(options)
     local labeled, by_label = assign_labels(cells, cursor_line, jump_config.labels)
     ---@type ScrollbarJumpSession
     local current = {
+        mode = mode,
+        label_group = LABEL_GROUPS[mode],
         source_win = source_win,
         source_buf = state.source_buf,
         float_win = state.float_win,
