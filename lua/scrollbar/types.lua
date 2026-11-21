@@ -15,7 +15,7 @@
 ---@alias ScrollbarHighlightDefinition table<string, any> A table accepted by nvim_set_hl()
 ---@alias ScrollbarHighlight string|ScrollbarHighlightDefinition
 ---@alias ScrollbarProviderOption boolean|ScrollbarSearchProviderConfig|ScrollbarMarksProviderConfig|ScrollbarListProviderConfig
----@alias ScrollbarFloatKind "snacks_list"|"snacks_preview"|"telescope_results"|"telescope_preview"|"custom"
+---@alias ScrollbarFloatKind "snacks_list"|"snacks_preview"|"snacks_zen"|"telescope_results"|"telescope_preview"|"custom"
 ---@alias ScrollbarSourceKind "normal"|ScrollbarFloatKind A normal window, or the kind of a floating source window
 ---@alias ScrollbarFramePreset "scrollbar"|"cursor"|"center"
 ---@alias ScrollbarFrameFunction fun(ctx: ScrollbarFrameContext): ScrollbarFrameResult? Nil when the window has no room
@@ -176,17 +176,18 @@
 ---@class ScrollbarUserSnacksFloats
 ---@field list? boolean The picker list. The scrollbar only
 ---@field preview? boolean The picker preview
+---@field zen? boolean The window of `Snacks.zen()` and `Snacks.zen.zoom()`
 
 ---@class ScrollbarUserTelescopeFloats
 ---@field results? boolean The picker results
 ---@field preview? boolean The picker preview
 
 ---@class ScrollbarUserFloatsTable
----@field snacks? boolean|ScrollbarUserSnacksFloats `true` turns on every window of the snacks.nvim picker that the block supports
+---@field snacks? boolean|ScrollbarUserSnacksFloats `true` turns on every snacks.nvim window that the block supports
 ---@field telescope? boolean|ScrollbarUserTelescopeFloats `true` turns on every window of the Telescope picker
 ---@field when? fun(context: ScrollbarFloatContext): boolean Admits other floats with the kind `"custom"`
 
----@alias ScrollbarUserFloats boolean|ScrollbarUserFloatsTable `true` turns on every built-in picker window that the block supports
+---@alias ScrollbarUserFloats boolean|ScrollbarUserFloatsTable `true` turns on every built-in window that the block supports
 
 ---@class ScrollbarUserAppearance
 ---@field preset? string Built-in preset. The options at the same level win over it

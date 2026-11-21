@@ -7,7 +7,7 @@
 --- Each source window has a kind. A normal window has the kind `"normal"`.
 --- With `exclude.unfocusable`, a normal window that is not focusable is not a
 --- source. A floating window is a source only when the `floats` option of the block
---- admits it: a built-in picker kind with its toggle on, or another float that
+--- admits it: a built-in kind with its toggle on, or another float that
 --- the `when` matcher accepts (kind `"custom"`). The floats of both renderers
 --- and external windows are never sources. Last, the `exclude.when` matcher
 --- can exclude any window that the other rules accept.
@@ -227,8 +227,8 @@ M.new = function(options)
                 return nil
             end
         end
-        -- Only the toggles decide a picker window, so `when` sees only the
-        -- other floats.
+        -- Only the toggles decide a window of a built-in kind, so `when`
+        -- sees only the other floats.
         local kind = float_kinds.kind(winid)
         if kind ~= nil then
             return floats.kinds[kind] and kind or nil
