@@ -144,6 +144,9 @@ values are registration errors. `refresh_minimap` and
   and does not replace the existing provider.
 - Registration before setup defers activation. Registration after setup runs
   `setup`, then immediately runs the initial refreshes for eligible targets.
+  During start-up, setup starts the providers after the first screen. A
+  registration before that start also defers activation to it. See
+  [Start-up](../configuration.md#start-up).
 - `unregister(name)` returns `true` when it removes a provider, and `false`
   when no provider has that name.
 - `get(name)` returns the registered provider table or `nil`.

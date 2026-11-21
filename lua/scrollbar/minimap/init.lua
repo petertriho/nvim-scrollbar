@@ -14,6 +14,7 @@
 
 local config = require("scrollbar.minimap.config")
 local controls_module = require("scrollbar.shared.controls")
+local deferred_start = require("scrollbar.shared.deferred_start")
 local highlights = require("scrollbar.minimap.highlights")
 local mouse = require("scrollbar.minimap.mouse")
 local overlays = require("scrollbar.minimap.overlays")
@@ -127,10 +128,27 @@ local controls = controls_module.new({
     end,
 })
 
-M.show = controls.show
-M.hide = controls.hide
-M.toggle = controls.toggle
-M.refresh = controls.refresh
+-- A `setup()` call during start-up defers the start of the minimap. The
+-- functions of the API run that start first.
+M.show = function()
+    deferred_start.run()
+    controls.show()
+end
+
+M.hide = function()
+    deferred_start.run()
+    controls.hide()
+end
+
+M.toggle = function()
+    deferred_start.run()
+    controls.toggle()
+end
+
+M.refresh = function()
+    deferred_start.run()
+    controls.refresh()
+end
 
 M.dispose = function()
     dispose_runtime()

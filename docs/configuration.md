@@ -4,6 +4,25 @@
 values are setup errors, and the previous configuration stays active. Every
 call starts from fresh defaults. It does not merge with a previous setup call.
 
+## Start-up
+
+A `setup()` call during start-up, for example in `init.lua`, does not delay the
+first screen. "During start-up" means before the `VimEnter` event. Such a call
+does these steps at once:
+
+- It validates the options and makes them the active configuration.
+- It creates the `:Scrollbar*` commands.
+
+The plugin starts the rest one event loop iteration later, after the first
+screen: the highlight groups, the floats, the providers, and the minimap. Thus
+`:hi ScrollbarThumb` shows no group directly after the call. A call of `show()`,
+`hide()`, `toggle()`, `refresh()`, `jump()`, or `glance()` before then starts
+the rest at once, and then does its work. The `show()`, `hide()`, `toggle()`,
+and `refresh()` functions of `require("scrollbar.minimap")` do the same.
+
+A `setup()` call after start-up starts everything at once, for example when a
+plugin manager loads the plugin on an event or a key.
+
 ## Structure
 
 The configuration has shared sections and one block for each renderer:

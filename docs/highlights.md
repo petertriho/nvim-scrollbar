@@ -2,8 +2,10 @@
 
 The scrollbar and the minimap generate automatic highlights independently. When
 the top-level `set_highlights = true` (the default), setup creates the scrollbar
-groups. It also creates the minimap groups when the minimap is enabled. The
-plugin updates these groups after each `ColorScheme` event. The plugin creates
+groups. It also creates the minimap groups when the minimap is enabled. A setup
+during start-up creates the groups after the first screen. See
+[Start-up](configuration.md#start-up). The plugin updates these groups after
+each `ColorScheme` event. The plugin creates
 public groups only as `default = true` links, so it keeps existing user or
 colorscheme definitions.
 

@@ -1,4 +1,5 @@
 local config = require("scrollbar.config")
+local deferred_start = require("scrollbar.shared.deferred_start")
 local highlights = require("scrollbar.highlights")
 local mouse = require("scrollbar.mouse")
 local navigate_config = require("scrollbar.config.navigate")
@@ -210,6 +211,7 @@ end
 --- Label mode on the mark cells of the scrollbar of the current window.
 ---@param opts? ScrollbarNavigateUserOptions
 M.jump = function(opts)
+    deferred_start.run()
     local ok, types = navigate_types("jump", opts)
     if not ok then
         return
@@ -224,6 +226,7 @@ end
 --- The glance picker with the marks of the current window.
 ---@param opts? ScrollbarGlanceUserOptions
 M.glance = function(opts)
+    deferred_start.run()
     local ok, types = navigate_types("glance", opts)
     if not ok then
         return
@@ -279,20 +282,17 @@ local function update_commands(enabled)
     })
 end
 
----@param overrides? ScrollbarUserConfig
-M.setup = function(overrides)
-    local active_config = config.set(overrides)
-    local active_minimap_config = config.get_minimap()
-    local provider_plan = config.get_provider_plan()
+---@param active_config ScrollbarConfig
+---@param active_minimap_config ScrollbarMinimapConfig
+---@param provider_plan ScrollbarEffectiveProviderPlan
+local function start_runtime(active_config, active_minimap_config, provider_plan)
     dispose_runtime()
-    configured = true
     text_tick.setup()
     reconcile_builtins(provider_plan)
 
     -- The call also defines the blend-only groups when `set_highlights` is
     -- false.
     highlights.set_highlights()
-    update_commands(active_config.enabled)
 
     renderer.setup()
     -- Each scheduler ignores the floats of the other renderer: their own
@@ -340,6 +340,29 @@ M.setup = function(overrides)
     end
 end
 
+---@param overrides? ScrollbarUserConfig
+M.setup = function(overrides)
+    local active_config = config.set(overrides)
+    local active_minimap_config = config.get_minimap()
+    local provider_plan = config.get_provider_plan()
+    configured = true
+    update_commands(active_config.enabled)
+    local function start()
+        start_runtime(active_config, active_minimap_config, provider_plan)
+    end
+    -- During start-up, the runtime starts after the first screen. The
+    -- highlight groups, the floats, and the provider data come one event loop
+    -- iteration later, so the first screen does not wait for them. After
+    -- start-up, for example when a plugin manager loads the plugin lazily,
+    -- the runtime starts at once.
+    if vim.v.vim_did_enter == 0 then
+        deferred_start.defer(start)
+        return
+    end
+    deferred_start.cancel()
+    start()
+end
+
 local controls = require("scrollbar.shared.controls").new({
     renderer = renderer,
     scheduler = scheduler,
@@ -350,9 +373,24 @@ local controls = require("scrollbar.shared.controls").new({
     refresh_highlights = highlights.refresh_inactive,
 })
 
-M.show = controls.show
-M.hide = controls.hide
-M.toggle = controls.toggle
-M.refresh = controls.refresh
+M.show = function()
+    deferred_start.run()
+    controls.show()
+end
+
+M.hide = function()
+    deferred_start.run()
+    controls.hide()
+end
+
+M.toggle = function()
+    deferred_start.run()
+    controls.toggle()
+end
+
+M.refresh = function()
+    deferred_start.run()
+    controls.refresh()
+end
 
 return M

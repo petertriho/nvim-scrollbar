@@ -990,4 +990,112 @@ T["minimap-only setup renders the minimap without a scrollbar"] = function()
     })
 end
 
+--- Starts a child whose `-c` command runs `code`. A `-c` command runs before
+--- `VimEnter`, so `code` runs during start-up.
+---@param code string[] Lua statements
+local function startup_child(code)
+    local child = MiniTest.new_child_neovim()
+    child.start({ "--noplugin", "-u", "scripts/minimal_init.lua", "-c", "lua " .. table.concat(code, " ") })
+    MiniTest.finally(function()
+        helpers.stop_child(child)
+    end)
+    return child
+end
+
+---@param value any
+---@return string
+local function inline(value)
+    return vim.inspect(value, { newline = " ", indent = "" })
+end
+
+-- Fills the buffer, and counts the calls of `set_highlights`, which runs once
+-- for each runtime start.
+local STARTUP_PRELUDE = {
+    "local lines = {} for index = 1, 100 do lines[index] = 'line ' .. index end",
+    "vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)",
+    "local highlights = require('scrollbar.highlights')",
+    "local set_highlights = highlights.set_highlights",
+    "vim.g.scrollbar_test_starts = 0",
+    "highlights.set_highlights = function() vim.g.scrollbar_test_starts = vim.g.scrollbar_test_starts + 1 set_highlights() end",
+}
+
+T["setup during start-up starts the runtime after start-up"] = function()
+    local config = root_config({ set_highlights = true })
+    local child = startup_child(vim.list_extend(vim.deepcopy(STARTUP_PRELUDE), {
+        "require('scrollbar').setup(" .. inline(config) .. ")",
+        -- A later setup replaces the pending start.
+        "require('scrollbar').setup(" .. inline(config) .. ")",
+        "vim.g.scrollbar_test_during_startup = {",
+        "did_enter = vim.v.vim_did_enter,",
+        "starts = vim.g.scrollbar_test_starts,",
+        "thumb_group = vim.fn.hlexists('ScrollbarThumb'),",
+        "command = vim.fn.exists(':ScrollbarHide'),",
+        "}",
+    }))
+    local result = child.lua_func(function()
+        vim.wait(1000, function()
+            return vim.g.scrollbar_test_starts > 0
+        end)
+        require("scrollbar.scheduler").flush()
+        return {
+            during_startup = vim.g.scrollbar_test_during_startup,
+            starts = vim.g.scrollbar_test_starts,
+            thumb_group = vim.fn.hlexists("ScrollbarThumb"),
+            rendered = require("scrollbar.renderer").get_state(vim.api.nvim_get_current_win()) ~= nil,
+        }
+    end)
+
+    expect.equality(result, {
+        during_startup = { did_enter = 0, starts = 0, thumb_group = 0, command = 2 },
+        starts = 1,
+        thumb_group = 1,
+        rendered = true,
+    })
+end
+
+T["an API call during start-up starts the runtime first"] = function()
+    local child = startup_child(vim.list_extend(vim.deepcopy(STARTUP_PRELUDE), {
+        "require('scrollbar').setup(" .. inline(root_config()) .. ")",
+        "require('scrollbar').hide()",
+        "vim.g.scrollbar_test_during_startup = { starts = vim.g.scrollbar_test_starts, visible = require('scrollbar.renderer').is_visible() }",
+    }))
+    local result = child.lua_func(function()
+        -- Let the scheduled start run, if it would.
+        vim.wait(50)
+        require("scrollbar.scheduler").flush()
+        return {
+            during_startup = vim.g.scrollbar_test_during_startup,
+            starts = vim.g.scrollbar_test_starts,
+            visible = require("scrollbar.renderer").is_visible(),
+            rendered = require("scrollbar.renderer").get_state(vim.api.nvim_get_current_win()) ~= nil,
+        }
+    end)
+
+    expect.equality(result, {
+        during_startup = { starts = 1, visible = false },
+        starts = 1,
+        visible = false,
+        rendered = false,
+    })
+end
+
+T["setup after start-up starts the runtime at once"] = function()
+    local child = new_child()
+    local result = child.lua_func(function(config)
+        local highlights = require("scrollbar.highlights")
+        local set_highlights = highlights.set_highlights
+        local starts = 0
+        rawset(highlights, "set_highlights", function()
+            starts = starts + 1
+            set_highlights()
+        end)
+        require("scrollbar").setup(config)
+        local after_setup = starts
+        vim.wait(50)
+        return { did_enter = vim.v.vim_did_enter, after_setup = after_setup, later = starts }
+    end, root_config())
+
+    expect.equality(result, { did_enter = 1, after_setup = 1, later = 1 })
+end
+
 return T

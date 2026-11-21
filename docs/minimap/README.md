@@ -106,7 +106,9 @@ win over the preset. See [Minimap presets](../presets.md#minimap-presets).
 | `:MinimapToggle` | Switches between `Show` and `Hide`. |
 | `:MinimapRefresh` | Runs the refresh callbacks of the minimap providers and renders again. It does not show a hidden minimap or a minimap that autohide concealed. |
 
-Setup creates the commands when it runs with `minimap.enabled = true`. With
+Setup creates the commands when it runs with `minimap.enabled = true`. A setup
+during start-up creates them after the first screen, with the rest of the
+minimap. See [Start-up](../configuration.md#start-up). With
 `minimap.show = false`, the minimap starts hidden. `:MinimapShow` shows it.
 
 ## Placement and Size
