@@ -790,6 +790,73 @@ local function normalize_targets(provider)
     return targets
 end
 
+-- Each refresh_owner scope and its refresh function, in the order of the
+-- checks. A minimap function also needs the minimap target.
+local REFRESH_SCOPES = {
+    { scope = "buffer", field = "refresh" },
+    { scope = "window", field = "refresh_window" },
+    { scope = "minimap_buffer", field = "refresh_minimap", minimap = true },
+    { scope = "minimap_window", field = "refresh_minimap_window", minimap = true },
+}
+
+local KNOWN_SCOPES = {}
+for _, pair in ipairs(REFRESH_SCOPES) do
+    KNOWN_SCOPES[pair.scope] = true
+end
+
+--- Raise a registration error of `provider`. `level` counts from the
+--- function that calls this one, like the level of `error`.
+---@param provider ScrollbarProvider
+---@param level integer
+---@param format string
+local function invalid_provider(provider, level, format, ...)
+    error(string.format("[nvim-scrollbar] provider '%s' " .. format, provider.name, ...), level + 1)
+end
+
+--- Check `refresh_owner`, and that each scope in it and its refresh function
+--- come together. Called from `register`, so the errors use level 4.
+---@param provider ScrollbarProvider
+---@param targets { scrollbar: boolean, minimap: boolean }
+local function check_refresh_owner(provider, targets)
+    if provider.refresh_owner ~= nil and type(provider.refresh_owner) ~= "table" then
+        invalid_provider(provider, 4, "refresh_owner must be a table")
+    end
+    local refresh_owner = provider.refresh_owner or {}
+    local unknown_scope
+    for scope in pairs(refresh_owner) do
+        if not KNOWN_SCOPES[scope] then
+            local scope_name = type(scope) == "string" and scope or "<" .. type(scope) .. ">"
+            if unknown_scope == nil or scope_name < unknown_scope then
+                unknown_scope = scope_name
+            end
+        end
+    end
+    if unknown_scope ~= nil then
+        invalid_provider(provider, 4, "refresh_owner has unknown scope '%s'", unknown_scope)
+    end
+    for _, pair in ipairs(REFRESH_SCOPES) do
+        local owner = refresh_owner[pair.scope]
+        if owner ~= nil and owner ~= "manager" and owner ~= "provider" then
+            invalid_provider(provider, 4, "refresh_owner.%s must be 'manager' or 'provider'", pair.scope)
+        end
+    end
+    for _, pair in ipairs(REFRESH_SCOPES) do
+        if provider[pair.field] ~= nil and refresh_owner[pair.scope] == nil then
+            invalid_provider(provider, 4, "%s requires refresh_owner.%s", pair.field, pair.scope)
+        end
+    end
+    for _, pair in ipairs(REFRESH_SCOPES) do
+        if refresh_owner[pair.scope] ~= nil and provider[pair.field] == nil then
+            invalid_provider(provider, 4, "refresh_owner.%s requires %s", pair.scope, pair.field)
+        end
+    end
+    for _, pair in ipairs(REFRESH_SCOPES) do
+        if pair.minimap and provider[pair.field] ~= nil and not targets.minimap then
+            invalid_provider(provider, 4, "%s requires targets.minimap", pair.field)
+        end
+    end
+end
+
 ---@param provider ScrollbarProvider
 ---@param builtin boolean
 local function register(provider, builtin)
@@ -812,113 +879,7 @@ local function register(provider, builtin)
             error(string.format("[nvim-scrollbar] provider '%s' %s must be a function", provider.name, field), 3)
         end
     end
-    if provider.refresh_owner ~= nil and type(provider.refresh_owner) ~= "table" then
-        error(string.format("[nvim-scrollbar] provider '%s' refresh_owner must be a table", provider.name), 3)
-    end
-    local refresh_owner = provider.refresh_owner or {}
-    local unknown_scope
-    for scope in pairs(refresh_owner) do
-        if scope ~= "buffer" and scope ~= "window" and scope ~= "minimap_buffer" and scope ~= "minimap_window" then
-            local scope_name = type(scope) == "string" and scope or "<" .. type(scope) .. ">"
-            if unknown_scope == nil or scope_name < unknown_scope then
-                unknown_scope = scope_name
-            end
-        end
-    end
-    if unknown_scope ~= nil then
-        error(
-            string.format(
-                "[nvim-scrollbar] provider '%s' refresh_owner has unknown scope '%s'",
-                provider.name,
-                unknown_scope
-            ),
-            3
-        )
-    end
-    for _, scope in ipairs({ "buffer", "window", "minimap_buffer", "minimap_window" }) do
-        local owner = refresh_owner[scope]
-        if owner ~= "manager" and owner ~= "provider" then
-            if owner ~= nil then
-                error(
-                    string.format(
-                        "[nvim-scrollbar] provider '%s' refresh_owner.%s must be 'manager' or 'provider'",
-                        provider.name,
-                        scope
-                    ),
-                    3
-                )
-            end
-        end
-    end
-    if provider.refresh ~= nil and refresh_owner.buffer == nil then
-        error(string.format("[nvim-scrollbar] provider '%s' refresh requires refresh_owner.buffer", provider.name), 3)
-    end
-    if provider.refresh_window ~= nil and refresh_owner.window == nil then
-        error(
-            string.format("[nvim-scrollbar] provider '%s' refresh_window requires refresh_owner.window", provider.name),
-            3
-        )
-    end
-    if provider.refresh_minimap ~= nil and refresh_owner.minimap_buffer == nil then
-        error(
-            string.format(
-                "[nvim-scrollbar] provider '%s' refresh_minimap requires refresh_owner.minimap_buffer",
-                provider.name
-            ),
-            3
-        )
-    end
-    if provider.refresh_minimap_window ~= nil and refresh_owner.minimap_window == nil then
-        error(
-            string.format(
-                "[nvim-scrollbar] provider '%s' refresh_minimap_window requires refresh_owner.minimap_window",
-                provider.name
-            ),
-            3
-        )
-    end
-    if refresh_owner.buffer ~= nil and provider.refresh == nil then
-        error(string.format("[nvim-scrollbar] provider '%s' refresh_owner.buffer requires refresh", provider.name), 3)
-    end
-    if refresh_owner.window ~= nil and provider.refresh_window == nil then
-        error(
-            string.format("[nvim-scrollbar] provider '%s' refresh_owner.window requires refresh_window", provider.name),
-            3
-        )
-    end
-    if refresh_owner.minimap_buffer ~= nil and provider.refresh_minimap == nil then
-        error(
-            string.format(
-                "[nvim-scrollbar] provider '%s' refresh_owner.minimap_buffer requires refresh_minimap",
-                provider.name
-            ),
-            3
-        )
-    end
-    if refresh_owner.minimap_window ~= nil and provider.refresh_minimap_window == nil then
-        error(
-            string.format(
-                "[nvim-scrollbar] provider '%s' refresh_owner.minimap_window requires refresh_minimap_window",
-                provider.name
-            ),
-            3
-        )
-    end
-    if provider.refresh_minimap ~= nil and not targets.minimap then
-        error(
-            string.format("[nvim-scrollbar] provider '%s' refresh_minimap requires targets.minimap", provider.name),
-            3
-        )
-    end
-    if provider.refresh_minimap_window ~= nil and not targets.minimap then
-        error(
-            string.format(
-                "[nvim-scrollbar] provider '%s' refresh_minimap_window requires targets.minimap",
-                provider.name
-            ),
-            3
-        )
-    end
+    check_refresh_owner(provider, targets)
     if registry[provider.name] ~= nil then
         error(string.format("[nvim-scrollbar] provider '%s' is already registered", provider.name), 3)
     end

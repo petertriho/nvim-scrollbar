@@ -894,6 +894,57 @@ local function thumb_text_source(source_win, source_buf, line_count, view)
     }
 end
 
+--- Whether a cached layer was built for the same container width and layout
+--- configuration.
+---@param cached ScrollbarLineMarkLayerCache
+---@param container_width integer
+---@param layout_cache table
+---@return boolean
+local function same_layout(cached, container_width, layout_cache)
+    return cached.container_width == container_width
+        and (cached.config == layout_cache or vim.deep_equal(cached.config, layout_cache))
+end
+
+--- Whether the rows of a cached layer can be computed again in place: the
+--- marks table, the height, and the compact matches are the same as in the
+--- last build, and the marks are also the same, or a patch lists the indexes
+--- that changed since then. The rows of compact matches depend on the line
+--- count, so with compact matches this also needs the same line count.
+---@param cached ScrollbarLineMarkLayerCache
+---@param source_buf integer
+---@param marks ScrollbarLayoutMark[]
+---@param height integer
+---@param compact_search? ScrollbarCompactSearch
+---@param line_count integer
+---@param marks_generation integer
+---@param marks_patch? ScrollbarFlattenedPatch
+---@return boolean in_place
+---@return integer[]? changed_marks The indexes of the patch
+local function in_place_rows(
+    cached,
+    source_buf,
+    marks,
+    height,
+    compact_search,
+    line_count,
+    marks_generation,
+    marks_patch
+)
+    if
+        cached.source_buf ~= source_buf
+        or cached.marks ~= marks
+        or cached.height ~= height
+        or cached.compact_search ~= compact_search
+        or (compact_search ~= nil and cached.line_count ~= line_count)
+    then
+        return false, nil
+    end
+    if marks_patch ~= nil and marks_patch.from == cached.marks_generation then
+        return true, marks_patch.indexes
+    end
+    return cached.marks_generation == marks_generation, nil
+end
+
 ---@param source_win integer
 ---@param source_buf integer
 ---@param buffer_revision integer
@@ -941,9 +992,8 @@ local function line_mark_layer(
         and cached.buffer_revision == buffer_revision
         and cached.window_revision == window_revision
         and cached.line_count == line_count
-        and cached.container_width == container_width
         and cached.height == height
-        and (cached.config == layout_cache or vim.deep_equal(cached.config, layout_cache))
+        and same_layout(cached, container_width, layout_cache)
     then
         cached.config = layout_cache
         return cached
@@ -956,26 +1006,13 @@ local function line_mark_layer(
     -- and only the shifted entries are stored. The marks are then the same as
     -- in the last build, or a patch lists the indexes that changed since
     -- then. When no row shifted, every layer input is provably identical, and
-    -- the cached layer is reused. The rows of compact matches depend on the
-    -- line count, so with compact matches this path needs the same line count.
+    -- the cached layer is reused.
     local rows_changed = nil
     local mark_rows
-    local changed_marks = nil
-    local in_place = false
-    if
-        cached ~= nil
-        and cached.source_buf == source_buf
-        and cached.marks == marks
-        and cached.height == height
-        and cached.compact_search == compact_search
-        and (compact_search == nil or cached.line_count == line_count)
-    then
-        if marks_patch ~= nil and marks_patch.from == cached.marks_generation then
-            changed_marks = marks_patch.indexes
-            in_place = true
-        else
-            in_place = cached.marks_generation == marks_generation
-        end
+    local in_place, changed_marks = false, nil
+    if cached ~= nil then
+        in_place, changed_marks =
+            in_place_rows(cached, source_buf, marks, height, compact_search, line_count, marks_generation, marks_patch)
     end
     if in_place and cached ~= nil then
         mark_rows, rows_changed = layout.normalized_mark_rows({
@@ -998,33 +1035,22 @@ local function line_mark_layer(
         })
     end
 
-    if
-        rows_changed ~= nil
-        and #rows_changed == 0
-        and cached ~= nil
-        and cached.container_width == container_width
-        and (cached.config == layout_cache or vim.deep_equal(cached.config, layout_cache))
-    then
-        cached.config = layout_cache
-        cached.buffer_revision = buffer_revision
-        cached.window_revision = window_revision
-        cached.line_count = line_count
-        cached.marks_generation = marks_generation
-        return cached
-    end
-
-    -- When a few rows shifted and all other inputs are identical, the layout
-    -- gets the previous layer, so that it rebuilds only the affected rows.
     local previous_layer_input = nil
-    if
-        rows_changed ~= nil
-        and #rows_changed > 0
-        and cached ~= nil
-        and cached.layer ~= nil
-        and cached.container_width == container_width
-        and (cached.config == layout_cache or vim.deep_equal(cached.config, layout_cache))
-    then
-        previous_layer_input = { layer = cached.layer, changed = rows_changed }
+    if rows_changed ~= nil and cached ~= nil and same_layout(cached, container_width, layout_cache) then
+        if #rows_changed == 0 then
+            cached.config = layout_cache
+            cached.buffer_revision = buffer_revision
+            cached.window_revision = window_revision
+            cached.line_count = line_count
+            cached.marks_generation = marks_generation
+            return cached
+        end
+        -- When a few rows shifted and all other inputs are identical, the
+        -- layout gets the previous layer, so that it rebuilds only the
+        -- affected rows.
+        if cached.layer ~= nil then
+            previous_layer_input = { layer = cached.layer, changed = rows_changed }
+        end
     end
 
     cached = {
@@ -1263,6 +1289,193 @@ local function invalidate_list(winid)
     end
 end
 
+--- The statuscolumn columns that a bar of `width` content columns needs.
+---@param active_config ScrollbarConfig
+---@param width integer
+---@return integer
+local function reservation_span(active_config, width)
+    return math.max(0, frame_width(active_config, width) + active_config.placement.col)
+end
+
+--- Keep the stack footprint of a concealed bar.
+---@param source_win integer
+---@param active_config ScrollbarConfig
+---@param float_zindex? integer
+local function publish_concealed(source_win, active_config, float_zindex)
+    local previous = stack.footprint("scrollbar", source_win)
+    local origin = placement_origin(active_config, source_win, source_text_area(source_win))
+    local width = previous and previous.width or frame_width(active_config, active_config.layout.width)
+    stack.publish("scrollbar", source_win, stack_footprint(active_config, float_zindex, origin, width, previous))
+end
+
+--- Reserve the statuscolumn before the first layout pass, with the width of
+--- the last render. Without a reservation in the configuration, release the
+--- reservation of the window.
+---@param source_win integer
+---@param active_config ScrollbarConfig
+---@param existing_state { width: integer }?
+---@return boolean reserved
+---@return boolean ok False when the window has no room for the reservation
+local function prepare_reservation(source_win, active_config, existing_state)
+    if not reserves_statuscolumn(active_config) then
+        release_statuscolumn(source_win)
+        return false, true
+    end
+    local initial_width = existing_state and existing_state.width or active_config.layout.width
+    local initial_span = reservation_span(active_config, initial_width)
+    if
+        initial_span > 0
+        and ensure_statuscolumn(source_win, initial_span, reservation_position(active_config)) == nil
+    then
+        return true, false
+    end
+    return true, true
+end
+
+--- Whether the statuscolumn reservation holds a bar of `width` content
+--- columns.
+---@param source_win integer
+---@param active_config ScrollbarConfig
+---@param width integer
+---@return boolean
+local function reservation_holds(source_win, active_config, width)
+    local required_span = reservation_span(active_config, width)
+    local reservation = statuscolumn_reservations[source_win]
+    return required_span == 0 or (reservation ~= nil and reservation.span >= required_span)
+end
+
+--- The marks of a source window. A snacks list shows no marks.
+---@param source_win integer
+---@param source_buf integer
+---@param view ScrollbarSnacksListView?
+local function read_marks(source_win, source_buf, view)
+    if view ~= nil then
+        return NO_MARKS, 0, 0, nil, 0, nil
+    end
+    return flattened_marks(source_win, source_buf)
+end
+
+--- The columns that the marks can grow into: the text area, or the editor
+--- with `relative = "editor"`, up to a minimap beside the bar and inside a
+--- limited statuscolumn reservation, without the side borders.
+---@param source_win integer
+---@param active_config ScrollbarConfig
+---@param area table<string, integer>
+---@param reserved boolean
+---@param stack_origin integer?
+---@return integer
+local function container_width_for(source_win, active_config, area, reserved, stack_origin)
+    local west = west_anchor(active_config)
+    local width
+    if active_config.placement.relative == "window" then
+        local base_textoff = reserved and reservation_base_textoff(source_win) or 0
+        width = math.max(0, area.width - base_textoff)
+        if stack_origin ~= nil then
+            -- Beside a minimap, named marks grow only up to the far edge.
+            width = math.max(0, west and area.width - stack_origin or stack_origin)
+        end
+        local reservation = statuscolumn_reservations[source_win]
+        if reserved and reservation ~= nil and reservation.limited then
+            width = math.min(width, math.max(0, reservation.span - active_config.placement.col))
+        end
+    else
+        width = vim.o.columns
+        if stack_origin ~= nil then
+            width = math.max(0, west and vim.o.columns - stack_origin or stack_origin)
+        end
+    end
+    local sides = active_config.window.sides
+    return math.max(0, width - sides.left - sides.right)
+end
+
+--- Open the float of a source window, or move and update the float of
+--- `state` when it is still usable.
+---@param state ScrollbarWindowState?
+---@param source_win integer
+---@param source_buf integer
+---@param selection ScrollbarConfigSelection
+---@param floating boolean
+---@param reserved boolean
+---@param area table<string, integer>
+---@param stack_origin integer?
+---@param stack_zindex integer
+---@param width integer Content width of the float
+---@param height integer Content height of the float
+---@param cursor_position_available boolean
+---@return ScrollbarWindowState state
+---@return integer own_origin
+local function place_float(
+    state,
+    source_win,
+    source_buf,
+    selection,
+    floating,
+    reserved,
+    area,
+    stack_origin,
+    stack_zindex,
+    width,
+    height,
+    cursor_position_available
+)
+    local active_config = selection.config
+    if
+        state ~= nil
+        and valid_window(state.float_win)
+        and vim.api.nvim_buf_is_valid(state.float_buf)
+        and state.window_signature == active_config.window.signature
+    then
+        local own_origin = placement_origin(active_config, source_win, area)
+        local active_float_config = float_config(
+            active_config,
+            source_win,
+            area,
+            stack_origin or own_origin,
+            stack_zindex,
+            width,
+            height,
+            cursor_position_available and state.hidden_by_cursor or false
+        )
+        local moved = float.track_source(state, source_win, floating)
+        float.apply_config(state, active_float_config, cursor_position_available, moved)
+        update_presentation(state, active_config)
+        return state, own_origin
+    end
+
+    if state ~= nil then
+        close_state(state)
+        if reserved then
+            ensure_statuscolumn(source_win, reservation_span(active_config, width), reservation_position(active_config))
+        end
+    end
+    -- After the reservation above, which can move the origin.
+    local own_origin = placement_origin(active_config, source_win, area)
+    local active_float_config = float_config(
+        active_config,
+        source_win,
+        area,
+        stack_origin or own_origin,
+        stack_zindex,
+        width,
+        height,
+        cursor_position_available
+    )
+    state = create_state(
+        source_win,
+        source_buf,
+        active_config,
+        selection.variant_id,
+        active_float_config,
+        configure_buffer,
+        configure_window
+    )
+    float.track_source(state, source_win, floating)
+    if cursor_position_available then
+        float.resolve_position()
+    end
+    return state, own_origin
+end
+
 ---@param source_win integer
 ---@param selection ScrollbarConfigSelection
 ---@param root_config ScrollbarConfig
@@ -1279,10 +1492,7 @@ local function render_source(source_win, selection, root_config)
     end
     local existing_state, concealed = prepare_source(source_win, source_buf, root_config.autohide)
     if concealed then
-        local previous = stack.footprint("scrollbar", source_win)
-        local origin = placement_origin(active_config, source_win, source_text_area(source_win))
-        local width = previous and previous.width or frame_width(active_config, active_config.layout.width)
-        stack.publish("scrollbar", source_win, stack_footprint(active_config, float_zindex, origin, width, previous))
+        publish_concealed(source_win, active_config, float_zindex)
         return nil
     end
     ---@type ScrollbarSnacksListView?
@@ -1295,28 +1505,14 @@ local function render_source(source_win, selection, root_config)
             return nil
         end
     end
-    local reserved = reserves_statuscolumn(active_config)
-    if reserved then
-        local initial_width = existing_state and existing_state.width or active_config.layout.width
-        local initial_span = math.max(0, frame_width(active_config, initial_width) + active_config.placement.col)
-        if
-            initial_span > 0
-            and ensure_statuscolumn(source_win, initial_span, reservation_position(active_config)) == nil
-        then
-            close_source(source_win)
-            return nil
-        end
-    else
-        release_statuscolumn(source_win)
+    local reserved, reservation_ok = prepare_reservation(source_win, active_config, existing_state)
+    if not reservation_ok then
+        close_source(source_win)
+        return nil
     end
 
-    local marks, buffer_revision, window_revision, compact_search, marks_generation, marks_patch
-    if view ~= nil then
-        marks, buffer_revision, window_revision, marks_generation = NO_MARKS, 0, 0, 0
-    else
-        marks, buffer_revision, window_revision, compact_search, marks_generation, marks_patch =
-            flattened_marks(source_win, source_buf)
-    end
+    local marks, buffer_revision, window_revision, compact_search, marks_generation, marks_patch =
+        read_marks(source_win, source_buf, view)
     local unit = view ~= nil and "line" or active_config.unit
     local line_count = nil
     if unit == "line" then
@@ -1326,13 +1522,11 @@ local function render_source(source_win, selection, root_config)
     if type(active_config.thumb.text) == "function" then
         thumb_context = thumb_text_source(source_win, source_buf, line_count, view)
     end
-    local west = west_anchor(active_config)
     local stack_origin, stack_zindex =
         stack.resolve("scrollbar", source_win, stack_placement(active_config, float_zindex))
     local sides = active_config.window.sides
     local area
     local content_height
-    local container_width
     local geometry
     local output
     for _ = 1, 3 do
@@ -1344,25 +1538,7 @@ local function render_source(source_win, selection, root_config)
             close_source(source_win)
             return nil
         end
-        if active_config.placement.relative == "window" then
-            local base_textoff = reserved and reservation_base_textoff(source_win) or 0
-            container_width = math.max(0, area.width - base_textoff)
-            if stack_origin ~= nil then
-                -- Beside a minimap, named marks grow only up to the far edge.
-                container_width = math.max(0, west and area.width - stack_origin or stack_origin)
-            end
-            local reservation = statuscolumn_reservations[source_win]
-            if reserved and reservation ~= nil and reservation.limited then
-                local maximum_width = math.max(0, reservation.span - active_config.placement.col)
-                container_width = math.min(container_width, maximum_width)
-            end
-        else
-            container_width = vim.o.columns
-            if stack_origin ~= nil then
-                container_width = math.max(0, west and vim.o.columns - stack_origin or stack_origin)
-            end
-        end
-        container_width = math.max(0, container_width - sides.left - sides.right)
+        local container_width = container_width_for(source_win, active_config, area, reserved, stack_origin)
 
         local mark_layer
         if line_count ~= nil then
@@ -1444,7 +1620,7 @@ local function render_source(source_win, selection, root_config)
         if not reserved then
             break
         end
-        local span = math.max(0, frame_width(active_config, output.width) + active_config.placement.col)
+        local span = reservation_span(active_config, output.width)
         local current = statuscolumn_reservations[source_win]
         if span == (current and current.span or 0) then
             break
@@ -1456,13 +1632,9 @@ local function render_source(source_win, selection, root_config)
     end
 
     assert(area ~= nil and content_height ~= nil and geometry ~= nil and output ~= nil, "render geometry unavailable")
-    if reserved then
-        local reservation = statuscolumn_reservations[source_win]
-        local required_span = math.max(0, frame_width(active_config, output.width) + active_config.placement.col)
-        if required_span > 0 and (reservation == nil or reservation.span < required_span) then
-            close_source(source_win)
-            return nil
-        end
+    if reserved and not reservation_holds(source_win, active_config, output.width) then
+        close_source(source_win)
+        return nil
     end
     if
         active_config.hide_if_all_visible
@@ -1472,66 +1644,20 @@ local function render_source(source_win, selection, root_config)
         return nil
     end
     local cursor_row, cursor_col = float.cursor_screen_position(source_win, active_config)
-    local cursor_position_available = cursor_row ~= nil and cursor_col ~= nil
-    local own_origin
-    ---@type ScrollbarWindowState?
-    local state = states[source_win]
-    if
-        state == nil
-        or not valid_window(state.float_win)
-        or not vim.api.nvim_buf_is_valid(state.float_buf)
-        or state.window_signature ~= active_config.window.signature
-    then
-        if state ~= nil then
-            close_state(state)
-            if reserved then
-                ensure_statuscolumn(
-                    source_win,
-                    math.max(0, frame_width(active_config, output.width) + active_config.placement.col),
-                    reservation_position(active_config)
-                )
-            end
-        end
-        own_origin = placement_origin(active_config, source_win, area)
-        local active_float_config = float_config(
-            active_config,
-            source_win,
-            area,
-            stack_origin or own_origin,
-            stack_zindex,
-            output.width,
-            content_height,
-            cursor_position_available
-        )
-        state = create_state(
-            source_win,
-            source_buf,
-            active_config,
-            selection.variant_id,
-            active_float_config,
-            configure_buffer,
-            configure_window
-        )
-        float.track_source(state, source_win, floating)
-        if cursor_position_available then
-            float.resolve_position()
-        end
-    else
-        own_origin = placement_origin(active_config, source_win, area)
-        local active_float_config = float_config(
-            active_config,
-            source_win,
-            area,
-            stack_origin or own_origin,
-            stack_zindex,
-            output.width,
-            content_height,
-            cursor_position_available and state.hidden_by_cursor or false
-        )
-        local moved = float.track_source(state, source_win, floating)
-        float.apply_config(state, active_float_config, cursor_position_available, moved)
-        update_presentation(state, active_config)
-    end
+    local state, own_origin = place_float(
+        states[source_win],
+        source_win,
+        source_buf,
+        selection,
+        floating,
+        reserved,
+        area,
+        stack_origin,
+        stack_zindex,
+        output.width,
+        content_height,
+        cursor_row ~= nil and cursor_col ~= nil
+    )
 
     local cleared_row =
         float.update_cursor_visibility(state, cursor_row, cursor_col, active_config.hide_on_cursor == "row")
