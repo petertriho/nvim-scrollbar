@@ -1,13 +1,33 @@
 local config = require("scrollbar.config")
 local deferred_start = require("scrollbar.shared.deferred_start")
 local highlights = require("scrollbar.highlights")
-local mouse = require("scrollbar.mouse")
 local navigate_config = require("scrollbar.config.navigate")
-local providers = require("scrollbar.providers")
-local renderer = require("scrollbar.renderer")
-local scheduler = require("scrollbar.scheduler")
 local stack = require("scrollbar.shared.stack")
-local text_tick = require("scrollbar.shared.text_tick")
+
+-- The runtime modules load in the first runtime start, or in the first API
+-- call that needs them. Thus `require("scrollbar")`, and a `setup()` call
+-- during start-up, load only the configuration modules before the first
+-- screen. The configuration modules also load `highlights` and `stack`.
+---@module "scrollbar.mouse"
+local mouse
+---@module "scrollbar.providers"
+local providers
+---@module "scrollbar.renderer"
+local renderer
+---@module "scrollbar.scheduler"
+local scheduler
+---@module "scrollbar.shared.text_tick"
+local text_tick
+
+local function load_runtime()
+    if renderer == nil then
+        mouse = require("scrollbar.mouse")
+        providers = require("scrollbar.providers")
+        renderer = require("scrollbar.renderer")
+        scheduler = require("scrollbar.scheduler")
+        text_tick = require("scrollbar.shared.text_tick")
+    end
+end
 
 local M = {}
 
@@ -286,6 +306,7 @@ end
 ---@param active_minimap_config ScrollbarMinimapConfig
 ---@param provider_plan ScrollbarEffectiveProviderPlan
 local function start_runtime(active_config, active_minimap_config, provider_plan)
+    load_runtime()
     dispose_runtime()
     text_tick.setup()
     reconcile_builtins(provider_plan)
@@ -363,34 +384,45 @@ M.setup = function(overrides)
     start()
 end
 
-local controls = require("scrollbar.shared.controls").new({
-    renderer = renderer,
-    scheduler = scheduler,
-    consumer = "scrollbar",
-    autohide = function()
-        return config.get().autohide ~= false
-    end,
-    refresh_highlights = highlights.refresh_inactive,
-})
+---@type ScrollbarControls?
+local controls = nil
+
+--- The controls of the public API. The first call loads the runtime modules.
+---@return ScrollbarControls
+local function get_controls()
+    if controls == nil then
+        load_runtime()
+        controls = require("scrollbar.shared.controls").new({
+            renderer = renderer,
+            scheduler = scheduler,
+            consumer = "scrollbar",
+            autohide = function()
+                return config.get().autohide ~= false
+            end,
+            refresh_highlights = highlights.refresh_inactive,
+        })
+    end
+    return controls
+end
 
 M.show = function()
     deferred_start.run()
-    controls.show()
+    get_controls().show()
 end
 
 M.hide = function()
     deferred_start.run()
-    controls.hide()
+    get_controls().hide()
 end
 
 M.toggle = function()
     deferred_start.run()
-    controls.toggle()
+    get_controls().toggle()
 end
 
 M.refresh = function()
     deferred_start.run()
-    controls.refresh()
+    get_controls().refresh()
 end
 
 return M
