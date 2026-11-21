@@ -1,3 +1,5 @@
+local buffer_marks = require("scrollbar.providers.buffer_marks")
+
 local M = {
     name = "gitsigns",
     targets = { scrollbar = true, minimap = true },
@@ -52,41 +54,16 @@ local function collect_marks(bufnr)
 end
 
 ---@param context ScrollbarProviderContext
----@param bufnr integer
-local function update_buffer(context, bufnr)
-    if not context.is_buffer_eligible(bufnr) then
-        context.clear_marks(bufnr)
-        return
-    end
-    local ok, marks = pcall(collect_marks, bufnr)
-    if ok then
-        context.set_marks(bufnr, marks)
-    else
-        context.clear_marks(bufnr)
-    end
-end
-
----@param context ScrollbarProviderContext
 ---@param args table
 local function update_affected_buffers(context, args)
-    local buffers = {}
     local data = type(args.data) == "table" and args.data or {}
     local event_buffer = data.buffer or data.bufnr
     if type(event_buffer) == "number" and vim.api.nvim_buf_is_valid(event_buffer) then
-        buffers[event_buffer] = true
-    else
-        for _, winid in ipairs(context.source_windows()) do
-            local ok, bufnr = pcall(vim.api.nvim_win_get_buf, winid)
-            if ok then
-                buffers[bufnr] = true
-            end
-        end
+        buffer_marks.update(context, event_buffer, collect_marks)
+        return
     end
-
-    local ordered = vim.tbl_keys(buffers)
-    table.sort(ordered)
-    for _, bufnr in ipairs(ordered) do
-        update_buffer(context, bufnr)
+    for _, bufnr in ipairs(buffer_marks.source_buffers(context)) do
+        buffer_marks.update(context, bufnr, collect_marks)
     end
 end
 

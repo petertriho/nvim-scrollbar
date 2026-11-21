@@ -90,6 +90,18 @@ local function row_threshold(r, extent, height)
     return threshold
 end
 
+-- Map the marks `first` to `last` to their rows again. Each mark that moves
+-- adds `{ index, previous row }` to `changed`.
+local function remap_rows(marks, mark_rows, changed, first, last, total_extent, height)
+    for index = first, last do
+        local row = M.map_position(marks[index].line, total_extent, height)
+        if mark_rows[index] ~= row then
+            changed[#changed + 1] = { index, mark_rows[index] }
+            mark_rows[index] = row
+        end
+    end
+end
+
 ---@param input ScrollbarNormalizedMarkGeometryInput
 M.normalized_mark_rows = function(input)
     local total_extent = math.max(0, input.line_count)
@@ -206,24 +218,12 @@ M.normalized_mark_rows = function(input)
                             high = mid
                         end
                     end
-                    for index = first, low - 1 do
-                        local row = M.map_position(marks[index].line, total_extent, height)
-                        if mark_rows[index] ~= row then
-                            changed[#changed + 1] = { index, mark_rows[index] }
-                            mark_rows[index] = row
-                        end
-                    end
+                    remap_rows(marks, mark_rows, changed, first, low - 1, total_extent, height)
                 end
             end
             return mark_rows, changed
         end
-        for index = 1, count do
-            local row = M.map_position(marks[index].line, total_extent, height)
-            if mark_rows[index] ~= row then
-                changed[#changed + 1] = { index, mark_rows[index] }
-                mark_rows[index] = row
-            end
-        end
+        remap_rows(marks, mark_rows, changed, 1, count, total_extent, height)
         return mark_rows, changed
     end
     local mark_rows = {}
@@ -1694,6 +1694,18 @@ local function resolve_group_text(build, group, variants, provider_text)
     return true
 end
 
+--- Set the lines, the source, and the text of a group from its
+--- representative source.
+---@return boolean shown False when a text function hides the group
+local function finish_group(build, group, config, representative)
+    -- Group lines must be in ascending numeric order (the mouse navigation
+    -- order), independent of the provider-major source order.
+    ensure_ascending(group.lines)
+    group.provider = representative.provider or ""
+    group.line = representative.line
+    return resolve_group_text(build, group, config.marks[group.type].text, representative.text)
+end
+
 ---@param groups table[]
 ---@param hidden table<table, true>? Groups that a text function hid
 ---@return table[]
@@ -1966,13 +1978,7 @@ local function group_candidates(input, column_offset, expanded_lane_id, build)
         else
             representative = group.source
         end
-        -- Group lines must be in ascending numeric order (the mouse
-        -- navigation order), independent of the provider-major source order.
-        ensure_ascending(group.lines)
-        local variants = input.config.marks[group.type].text
-        group.provider = representative.provider or ""
-        group.line = representative.line
-        if not resolve_group_text(build, group, variants, representative.text) then
+        if not finish_group(build, group, input.config, representative) then
             hidden = hidden or {}
             hidden[group] = true
         end
@@ -2146,56 +2152,60 @@ local function record_covered(cells, column, last_column, mark_type)
     end
 end
 
+-- Place the glyphs of `group` in the free cells of its lane. `covering` tells
+-- whether a placed glyph inherits. Until then, no dropped glyph needs a
+-- record. Returns the new value of `covering`.
+local function place_group(cells, group, covering)
+    local column = group.column
+    for _, glyph in ipairs(group_glyphs(group)) do
+        local last_column = column + glyph.width - 1
+        if glyph.width > 0 and last_column <= group.max_column then
+            local available = true
+            for cell = column, last_column do
+                if cells[cell] then
+                    available = false
+                    break
+                end
+            end
+            if available then
+                local placed = {
+                    text = glyph.text,
+                    width = glyph.width,
+                    column = column,
+                    last_column = last_column,
+                    lane_id = group.lane_id,
+                    type = group.type,
+                    provider = group.provider,
+                    line = group.line,
+                    lines = group.lines,
+                }
+                if group.inherits then
+                    placed.inherits = true
+                    covering = true
+                end
+                for cell = column, last_column do
+                    cells[cell] = placed
+                end
+            elseif covering and not group.inherits then
+                record_covered(cells, column, last_column, group.type)
+            end
+        elseif last_column > group.max_column then
+            break
+        end
+        column = column + glyph.width
+    end
+    return covering
+end
+
 local function place_marks(input, groups)
     local rows = {}
     for row = 0, input.height - 1 do
         rows[row] = {}
     end
-    -- Whether a placed glyph inherits. Until then, no dropped glyph needs a
-    -- record.
     local covering = false
-
     for _, group in ipairs(groups) do
         rows[group.row][group.lane_id] = rows[group.row][group.lane_id] or {}
-        local cells = rows[group.row][group.lane_id]
-        local column = group.column
-        for _, glyph in ipairs(group_glyphs(group)) do
-            local last_column = column + glyph.width - 1
-            if glyph.width > 0 and last_column <= group.max_column then
-                local available = true
-                for cell = column, last_column do
-                    if cells[cell] then
-                        available = false
-                        break
-                    end
-                end
-                if available then
-                    local placed = {
-                        text = glyph.text,
-                        width = glyph.width,
-                        column = column,
-                        last_column = last_column,
-                        lane_id = group.lane_id,
-                        type = group.type,
-                        provider = group.provider,
-                        line = group.line,
-                        lines = group.lines,
-                    }
-                    if group.inherits then
-                        placed.inherits = true
-                        covering = true
-                    end
-                    for cell = column, last_column do
-                        cells[cell] = placed
-                    end
-                elseif covering and not group.inherits then
-                    record_covered(cells, column, last_column, group.type)
-                end
-            elseif last_column > group.max_column then
-                break
-            end
-            column = column + glyph.width
-        end
+        covering = place_group(rows[group.row][group.lane_id], group, covering)
     end
     return rows
 end
@@ -2310,8 +2320,6 @@ local function rebuild_row_groups(input, row, mark_rows, segments, compact_range
     end
     local hidden = nil
     for _, group in ipairs(groups) do
-        ensure_ascending(group.lines)
-        local variants = config.marks[group.type].text
         -- The same representative as in `group_candidates`: the first source
         -- in `source_less` order.
         local representative = group.source
@@ -2319,9 +2327,7 @@ local function rebuild_row_groups(input, row, mark_rows, segments, compact_range
         if compact_source ~= nil and (representative == nil or source_less(compact_source, representative)) then
             representative = compact_source
         end
-        group.provider = representative.provider or ""
-        group.line = representative.line
-        if not resolve_group_text(build, group, variants, representative.text) then
+        if not finish_group(build, group, config, representative) then
             hidden = hidden or {}
             hidden[group] = true
         end
@@ -2340,44 +2346,7 @@ local function place_row(groups)
             cells = {}
             row_cells[group.lane_id] = cells
         end
-        local column = group.column
-        for _, glyph in ipairs(group_glyphs(group)) do
-            local last_column = column + glyph.width - 1
-            if glyph.width > 0 and last_column <= group.max_column then
-                local available = true
-                for cell = column, last_column do
-                    if cells[cell] then
-                        available = false
-                        break
-                    end
-                end
-                if available then
-                    local placed = {
-                        text = glyph.text,
-                        width = glyph.width,
-                        column = column,
-                        last_column = last_column,
-                        lane_id = group.lane_id,
-                        type = group.type,
-                        provider = group.provider,
-                        line = group.line,
-                        lines = group.lines,
-                    }
-                    if group.inherits then
-                        placed.inherits = true
-                        covering = true
-                    end
-                    for cell = column, last_column do
-                        cells[cell] = placed
-                    end
-                elseif covering and not group.inherits then
-                    record_covered(cells, column, last_column, group.type)
-                end
-            elseif last_column > group.max_column then
-                break
-            end
-            column = column + glyph.width
-        end
+        covering = place_group(cells, group, covering)
     end
     return row_cells
 end

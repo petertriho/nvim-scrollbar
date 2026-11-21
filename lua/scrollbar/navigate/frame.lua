@@ -209,6 +209,23 @@ local function size(ctx, options, width_measure, height_measure)
         cells(options.height or defaults.height, height_measure)
 end
 
+--- The size of the frame in an area of `area_width` by `area_height` cells.
+---@param ctx ScrollbarFrameContext
+---@param options ScrollbarFrameRecipeOptions
+---@param area_width integer
+---@param area_height integer
+---@return integer? width Nil when the area has no room for one cell
+---@return integer height
+local function size_in(ctx, options, area_width, area_height)
+    local width, height = size(ctx, options, area_width, area_height)
+    width = math.min(width, area_width)
+    height = math.min(height, area_height)
+    if width < 1 or height < 1 then
+        return nil, 0
+    end
+    return width, height
+end
+
 ---@type table<ScrollbarFramePreset, fun(ctx: ScrollbarFrameContext, options: ScrollbarFrameRecipeOptions): ScrollbarFrameResult?>
 M.place = {}
 
@@ -236,11 +253,8 @@ end
 --- frame takes the larger side and loses rows.
 M.place.cursor = function(ctx, options)
     local win = ctx.win
-    local text_width = win.width - win.textoff
-    local width, height = size(ctx, options, text_width, win.height)
-    width = math.min(width, text_width)
-    height = math.min(height, win.height)
-    if width < 1 or height < 1 then
+    local width, height = size_in(ctx, options, win.width - win.textoff, win.height)
+    if width == nil then
         return nil
     end
     local frame_rows = ctx.sides.top + ctx.sides.bottom
@@ -270,10 +284,8 @@ end
 M.place.center = function(ctx, options)
     if options.relative == "editor" then
         local editor = ctx.editor
-        local width, height = size(ctx, options, editor.width, editor.height)
-        width = math.min(width, editor.width)
-        height = math.min(height, editor.height)
-        if width < 1 or height < 1 then
+        local width, height = size_in(ctx, options, editor.width, editor.height)
+        if width == nil then
             return nil
         end
         return {
@@ -286,10 +298,8 @@ M.place.center = function(ctx, options)
     end
     local win = ctx.win
     local text_width = win.width - win.textoff
-    local width, height = size(ctx, options, text_width, win.height)
-    width = math.min(width, text_width)
-    height = math.min(height, win.height)
-    if width < 1 or height < 1 then
+    local width, height = size_in(ctx, options, text_width, win.height)
+    if width == nil then
         return nil
     end
     return {

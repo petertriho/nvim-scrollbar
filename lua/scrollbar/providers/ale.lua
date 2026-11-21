@@ -1,3 +1,5 @@
+local buffer_marks = require("scrollbar.providers.buffer_marks")
+
 local M = {
     name = "ale",
     targets = { scrollbar = true, minimap = true },
@@ -44,16 +46,7 @@ M.setup = function(context)
                 return
             end
             local bufnr = args.buf ~= 0 and args.buf or vim.api.nvim_get_current_buf()
-            if not context.is_buffer_eligible(bufnr) then
-                context.clear_marks(bufnr)
-                return
-            end
-            local ok, marks = pcall(collect_marks, bufnr)
-            if ok then
-                context.set_marks(bufnr, marks)
-            else
-                context.clear_marks(bufnr)
-            end
+            buffer_marks.update(context, bufnr, collect_marks)
         end,
     })
 end

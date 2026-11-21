@@ -450,14 +450,8 @@ local function normalize(value, shared, path, variant_id)
     local autohide = block_config.autohide(value.autohide, at("autohide"))
 
     local placement = schema.table(value.placement, at("placement"))
-    local normalized_placement = {
-        relative = schema.enum(placement.relative, at("placement.relative"), { "window", "editor" }),
-        anchor = schema.enum(placement.anchor, at("placement.anchor"), { "NW", "NE", "SW", "SE" }),
-        row = schema.integer(placement.row, at("placement.row")),
-        col = schema.integer(placement.col, at("placement.col")),
-        gutter = schema.enum(placement.gutter, at("placement.gutter"), { "inner", "outer", "overlap" }),
-        zindex = schema.integer(placement.zindex, at("placement.zindex"), 1),
-    }
+    local normalized_placement =
+        block_config.placement(placement, at("placement"), "gutter", { "inner", "outer", "overlap" })
 
     local track = schema.table(value.track, at("track"))
     local thumb = schema.table(value.thumb, at("thumb"))
