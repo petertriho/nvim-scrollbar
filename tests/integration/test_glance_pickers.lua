@@ -260,12 +260,43 @@ local function telescope_action(child, action)
     end, action, TELESCOPE_PROMPT)
 end
 
+--- Wait until the results buffer of Telescope shows `expected`, without the
+--- empty lines, and return the last rows. Telescope runs more than one pass
+--- over the entries. A pass can leave stale rows above the entries until it
+--- completes, for a moment after the selection is ready.
+---@param expected string[]
+---@return string[]
+local function telescope_rows(child, expected)
+    local source = string.format(
+        [[
+        local picker = %s
+        return vim.tbl_filter(function(line)
+            return line ~= ""
+        end, vim.api.nvim_buf_get_lines(picker.results_bufnr, 0, -1, false))
+    ]],
+        TELESCOPE_PICKER
+    )
+    local deadline = vim.uv.hrtime() + 5e9
+    local rows
+    repeat
+        rows = child.lua(source)
+        if vim.deep_equal(rows, expected) then
+            break
+        end
+        vim.uv.sleep(20)
+    until vim.uv.hrtime() > deadline
+    return rows
+end
+
 T["telescope"] = MiniTest.new_set()
 
 T["telescope"]["shows the rows in list order, selects ctx.selected, and previews unsaved edits"] = function()
     local child = new_child()
     child.api.nvim_win_set_cursor(0, { 50, 0 })
     open_telescope(child, 4, 61)
+    -- The default sorting strategy puts the first row at the bottom.
+    local rows = { "  - 151  text 151", "  - 101  text 101", "> -  61  unsaved 61", "  -  21  text 21" }
+    expect.equality(telescope_rows(child, rows), rows)
     local view = child.lua(string.format(
         [[
         local picker = %s
@@ -273,13 +304,9 @@ T["telescope"]["shows the rows in list order, selects ctx.selected, and previews
         for entry in picker.manager:iter() do
             lnums[#lnums + 1] = entry.value.lnum
         end
-        local rows = vim.tbl_filter(function(line)
-            return line ~= ""
-        end, vim.api.nvim_buf_get_lines(picker.results_bufnr, 0, -1, false))
         local preview_buf = vim.api.nvim_win_get_buf(picker.preview_win)
         return {
             lnums = lnums,
-            rows = rows,
             preview = vim.api.nvim_buf_get_lines(preview_buf, 59, 62, false),
         }
     ]],
@@ -287,8 +314,6 @@ T["telescope"]["shows the rows in list order, selects ctx.selected, and previews
     ))
     expect.equality(view, {
         lnums = { 21, 61, 101, 151 },
-        -- The default sorting strategy puts the first row at the bottom.
-        rows = { "  - 151  text 151", "  - 101  text 101", "> -  61  unsaved 61", "  -  21  text 21" },
         preview = { "  text 60", "  unsaved 61", "  text 62" },
     })
     telescope_action(child, "close")
@@ -298,22 +323,14 @@ end
 T["telescope"]["type mode shows the type column"] = function()
     local child = new_child({ glance = { entries = "type" } })
     open_telescope(child, 5, 21)
-    local rows = child.lua(string.format(
-        [[
-        local picker = %s
-        return vim.tbl_filter(function(line)
-            return line ~= ""
-        end, vim.api.nvim_buf_get_lines(picker.results_bufnr, 0, -1, false))
-    ]],
-        TELESCOPE_PICKER
-    ))
-    expect.equality(rows, {
+    local rows = {
         "  GitChange  ┃  21  text 21",
         "  Hint       - 101  text 101",
         "  Warn       -  61  unsaved 61",
         "  Error      - 151  text 151",
         "> Error      -  21  text 21",
-    })
+    }
+    expect.equality(telescope_rows(child, rows), rows)
 end
 
 T["telescope"]["<CR> jumps in the source window and adds a jumplist entry"] = function()
