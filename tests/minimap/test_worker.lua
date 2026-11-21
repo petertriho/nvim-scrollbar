@@ -1,14 +1,30 @@
 local MiniTest = MiniTest
 local helpers = require("tests.helpers")
+local render_helpers = require("tests.render_helpers")
 local expect = MiniTest.expect
 
 local T = MiniTest.new_set()
 
+-- Installs `require("scrollbar.test.block_grid")` in the child.
+-- `block_grid(width, row_count)` is a request grid from row 0 with the block
+-- encoding, one line for each dot, and one column for each dot.
+local function install_block_grid()
+    package.loaded["scrollbar.test.block_grid"] = function(width, row_count)
+        return {
+            width = width,
+            first_row = 0,
+            row_count = row_count,
+            scale_lines = 1,
+            scale_dots = 1,
+            columns_per_dot = 1,
+            encoding = "block",
+        }
+    end
+end
+
 local function new_child()
-    local child = helpers.new_child()
-    MiniTest.finally(function()
-        helpers.stop_child(child)
-    end)
+    local child = render_helpers.new_child()
+    child.lua_func(install_block_grid)
     return child
 end
 
@@ -89,15 +105,7 @@ T["sync backend returns a cell grid for a buffer"] = function()
         vim.api.nvim_buf_set_lines(0, 0, -1, false, { "abc", "defghi" })
         require("scrollbar.minimap.worker").request({
             bufnr = 0,
-            grid = {
-                width = 4,
-                first_row = 0,
-                row_count = 2,
-                scale_lines = 1,
-                scale_dots = 1,
-                columns_per_dot = 1,
-                encoding = "block",
-            },
+            grid = require("scrollbar.test.block_grid")(4, 2),
             filetype = "",
             generation = 1,
             signature = "test",
@@ -151,15 +159,7 @@ T["sync backend composes parent semantic spans and echoes their revision"] = fun
         vim.api.nvim_buf_set_lines(0, 0, -1, false, { "a😀 b" })
         require("scrollbar.minimap.worker").request({
             bufnr = 0,
-            grid = {
-                width = 3,
-                first_row = 0,
-                row_count = 1,
-                scale_lines = 1,
-                scale_dots = 1,
-                columns_per_dot = 1,
-                encoding = "block",
-            },
+            grid = require("scrollbar.test.block_grid")(3, 1),
             filetype = "",
             generation = 1,
             signature = "semantic-sync",
@@ -208,15 +208,7 @@ T["sync backend skips all treesitter work when the provider is disabled"] = func
         vim.api.nvim_buf_set_lines(0, 0, -1, false, { "abcdef" })
         require("scrollbar.minimap.worker").request({
             bufnr = 0,
-            grid = {
-                width = 3,
-                first_row = 0,
-                row_count = 1,
-                scale_lines = 1,
-                scale_dots = 1,
-                columns_per_dot = 1,
-                encoding = "block",
-            },
+            grid = require("scrollbar.test.block_grid")(3, 1),
             filetype = "lua",
             generation = 1,
             signature = "test",
@@ -272,15 +264,7 @@ T["worker backend renders a buffer via child RPC"] = function()
         vim.api.nvim_buf_set_lines(0, 0, -1, false, { "abc", "defghi" })
         require("scrollbar.minimap.worker").request({
             bufnr = 0,
-            grid = {
-                width = 4,
-                first_row = 0,
-                row_count = 2,
-                scale_lines = 1,
-                scale_dots = 1,
-                columns_per_dot = 1,
-                encoding = "block",
-            },
+            grid = require("scrollbar.test.block_grid")(4, 2),
             filetype = "",
             generation = 1,
             signature = "test",
@@ -309,30 +293,14 @@ T["worker backend retains distinct same-buffer projection requests"] = function(
         local worker = require("scrollbar.minimap.worker")
         worker.request({
             bufnr = 0,
-            grid = {
-                width = 4,
-                first_row = 0,
-                row_count = 2,
-                scale_lines = 1,
-                scale_dots = 1,
-                columns_per_dot = 1,
-                encoding = "block",
-            },
+            grid = require("scrollbar.test.block_grid")(4, 2),
             filetype = "",
             generation = 1,
             signature = "short",
         })
         worker.request({
             bufnr = 0,
-            grid = {
-                width = 4,
-                first_row = 0,
-                row_count = 3,
-                scale_lines = 1,
-                scale_dots = 1,
-                columns_per_dot = 1,
-                encoding = "block",
-            },
+            grid = require("scrollbar.test.block_grid")(4, 3),
             filetype = "",
             generation = 1,
             signature = "tall",
@@ -368,15 +336,7 @@ T["worker synchronizes each parent semantic revision once per buffer mirror"] = 
         }
         worker.request({
             bufnr = 0,
-            grid = {
-                width = 4,
-                first_row = 0,
-                row_count = 1,
-                scale_lines = 1,
-                scale_dots = 1,
-                columns_per_dot = 1,
-                encoding = "block",
-            },
+            grid = require("scrollbar.test.block_grid")(4, 1),
             filetype = "",
             generation = 1,
             signature = "wide",
@@ -385,15 +345,7 @@ T["worker synchronizes each parent semantic revision once per buffer mirror"] = 
         })
         worker.request({
             bufnr = 0,
-            grid = {
-                width = 2,
-                first_row = 0,
-                row_count = 1,
-                scale_lines = 1,
-                scale_dots = 1,
-                columns_per_dot = 1,
-                encoding = "block",
-            },
+            grid = require("scrollbar.test.block_grid")(2, 1),
             filetype = "",
             generation = 1,
             signature = "narrow",
@@ -407,15 +359,7 @@ T["worker synchronizes each parent semantic revision once per buffer mirror"] = 
 
         worker.request({
             bufnr = 0,
-            grid = {
-                width = 4,
-                first_row = 0,
-                row_count = 1,
-                scale_lines = 1,
-                scale_dots = 1,
-                columns_per_dot = 1,
-                encoding = "block",
-            },
+            grid = require("scrollbar.test.block_grid")(4, 1),
             filetype = "",
             generation = 2,
             signature = "wide",
@@ -476,15 +420,7 @@ T["worker and sync backends produce identical parent semantic cells"] = function
         vim.api.nvim_buf_set_lines(0, 0, -1, false, input.lines)
         require("scrollbar.minimap.worker").request({
             bufnr = 0,
-            grid = {
-                width = 5,
-                first_row = 0,
-                row_count = 1,
-                scale_lines = 1,
-                scale_dots = 1,
-                columns_per_dot = 1,
-                encoding = "block",
-            },
+            grid = require("scrollbar.test.block_grid")(5, 1),
             filetype = "",
             generation = 1,
             signature = "semantic-equivalence",
@@ -501,15 +437,7 @@ T["worker and sync backends produce identical parent semantic cells"] = function
         vim.api.nvim_buf_set_lines(0, 0, -1, false, input.lines)
         require("scrollbar.minimap.worker").request({
             bufnr = 0,
-            grid = {
-                width = 5,
-                first_row = 0,
-                row_count = 1,
-                scale_lines = 1,
-                scale_dots = 1,
-                columns_per_dot = 1,
-                encoding = "block",
-            },
+            grid = require("scrollbar.test.block_grid")(5, 1),
             filetype = "",
             generation = 1,
             signature = "semantic-equivalence",
@@ -541,15 +469,7 @@ T["worker backend skips language resolution and child treesitter work when disab
         vim.api.nvim_buf_set_lines(0, 0, -1, false, { "local value = 1" })
         require("scrollbar.minimap.worker").request({
             bufnr = 0,
-            grid = {
-                width = 4,
-                first_row = 0,
-                row_count = 2,
-                scale_lines = 1,
-                scale_dots = 1,
-                columns_per_dot = 1,
-                encoding = "block",
-            },
+            grid = require("scrollbar.test.block_grid")(4, 2),
             filetype = "lua",
             generation = 1,
             signature = "mono-worker",
@@ -596,15 +516,7 @@ T["worker and sync backends produce identical cell grids for the same fixture"] 
         vim.bo.filetype = "lua"
         require("scrollbar.minimap.worker").request({
             bufnr = 0,
-            grid = {
-                width = 8,
-                first_row = 0,
-                row_count = 4,
-                scale_lines = 1,
-                scale_dots = 1,
-                columns_per_dot = 1,
-                encoding = "block",
-            },
+            grid = require("scrollbar.test.block_grid")(8, 4),
             filetype = "lua",
             generation = 1,
             signature = "fixture",
@@ -633,15 +545,7 @@ T["worker and sync backends produce identical cell grids for the same fixture"] 
         vim.bo.filetype = "lua"
         require("scrollbar.minimap.worker").request({
             bufnr = 0,
-            grid = {
-                width = 8,
-                first_row = 0,
-                row_count = 4,
-                scale_lines = 1,
-                scale_dots = 1,
-                columns_per_dot = 1,
-                encoding = "block",
-            },
+            grid = require("scrollbar.test.block_grid")(8, 4),
             filetype = "lua",
             generation = 1,
             signature = "fixture",
@@ -684,15 +588,7 @@ T["repeated setup resets the treesitter provider to disabled"] = function()
         vim.api.nvim_buf_set_lines(0, 0, -1, false, { "local value = 1" })
         require("scrollbar.minimap.worker").request({
             bufnr = 0,
-            grid = {
-                width = 4,
-                first_row = 0,
-                row_count = 1,
-                scale_lines = 1,
-                scale_dots = 1,
-                columns_per_dot = 1,
-                encoding = "block",
-            },
+            grid = require("scrollbar.test.block_grid")(4, 1),
             filetype = "lua",
             generation = 1,
             signature = "reset",
@@ -716,15 +612,7 @@ T["chunked snapshot transfers large buffers and renders every source line"] = fu
         vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
         require("scrollbar.minimap.worker").request({
             bufnr = 0,
-            grid = {
-                width = 4,
-                first_row = 0,
-                row_count = 13,
-                scale_lines = 1,
-                scale_dots = 1,
-                columns_per_dot = 1,
-                encoding = "block",
-            },
+            grid = require("scrollbar.test.block_grid")(4, 13),
             filetype = "",
             generation = 1,
             signature = "big",
@@ -751,15 +639,7 @@ T["mirror invalidation triggers a re-snapshot when buffer edits during snapshot"
         local worker = require("scrollbar.minimap.worker")
         worker.request({
             bufnr = 0,
-            grid = {
-                width = 4,
-                first_row = 0,
-                row_count = 4,
-                scale_lines = 1,
-                scale_dots = 1,
-                columns_per_dot = 1,
-                encoding = "block",
-            },
+            grid = require("scrollbar.test.block_grid")(4, 4),
             filetype = "",
             generation = 1,
             signature = "race",
@@ -798,15 +678,7 @@ T["child mirror invalidation requeues the in-flight squash after resnapshot"] = 
         local worker = require("scrollbar.minimap.worker")
         worker.request({
             bufnr = 0,
-            grid = {
-                width = 80,
-                first_row = 0,
-                row_count = 24,
-                scale_lines = 1,
-                scale_dots = 1,
-                columns_per_dot = 1,
-                encoding = "block",
-            },
+            grid = require("scrollbar.test.block_grid")(80, 24),
             filetype = "",
             generation = 1,
             signature = "mirror-invalid",
@@ -859,15 +731,7 @@ T["a requeued squash keeps its semantic spans"] = function()
         local worker = require("scrollbar.minimap.worker")
         worker.request({
             bufnr = 0,
-            grid = {
-                width = 4,
-                first_row = 0,
-                row_count = 1,
-                scale_lines = 1,
-                scale_dots = 1,
-                columns_per_dot = 1,
-                encoding = "block",
-            },
+            grid = require("scrollbar.test.block_grid")(4, 1),
             filetype = "",
             generation = 1,
             signature = "requeued-spans",
@@ -915,15 +779,7 @@ T["on_lines deltas update child mirror after snapshot completes"] = function()
         vim.api.nvim_buf_set_lines(0, 0, -1, false, { "abc", "def" })
         require("scrollbar.minimap.worker").request({
             bufnr = 0,
-            grid = {
-                width = 4,
-                first_row = 0,
-                row_count = 2,
-                scale_lines = 1,
-                scale_dots = 1,
-                columns_per_dot = 1,
-                encoding = "block",
-            },
+            grid = require("scrollbar.test.block_grid")(4, 2),
             filetype = "",
             generation = 1,
             signature = "v1",
@@ -936,15 +792,7 @@ T["on_lines deltas update child mirror after snapshot completes"] = function()
         vim.api.nvim_exec_autocmds("TextChanged", { buffer = 0 })
         require("scrollbar.minimap.worker").request({
             bufnr = 0,
-            grid = {
-                width = 4,
-                first_row = 0,
-                row_count = 2,
-                scale_lines = 1,
-                scale_dots = 1,
-                columns_per_dot = 1,
-                encoding = "block",
-            },
+            grid = require("scrollbar.test.block_grid")(4, 2),
             filetype = "",
             generation = 2,
             signature = "v2",
@@ -1227,15 +1075,7 @@ T["startup failure warns once and flips to sync for the rest of the session"] = 
         vim.api.nvim_buf_set_lines(0, 0, -1, false, { "abc" })
         require("scrollbar.minimap.worker").request({
             bufnr = 0,
-            grid = {
-                width = 1,
-                first_row = 0,
-                row_count = 1,
-                scale_lines = 1,
-                scale_dots = 1,
-                columns_per_dot = 1,
-                encoding = "block",
-            },
+            grid = require("scrollbar.test.block_grid")(1, 1),
             filetype = "",
             generation = 1,
             signature = "test",
@@ -1269,7 +1109,7 @@ T["worker crash flips to sync and emits exactly one warning"] = function()
     child.lua([[
         vim.api.nvim_buf_set_lines(0, 0, -1, false, { "abc" })
         require("scrollbar.minimap.worker").request({
-            bufnr = 0, grid = { width = 2, first_row = 0, row_count = 1, scale_lines = 1, scale_dots = 1, columns_per_dot = 1, encoding = "block" }, filetype = "",
+            bufnr = 0, grid = require("scrollbar.test.block_grid")(2, 1), filetype = "",
             generation = 1, signature = "before",
         })
     ]])
@@ -1293,15 +1133,7 @@ T["worker crash flips to sync and emits exactly one warning"] = function()
         vim.api.nvim_buf_set_lines(0, 0, -1, false, { "def" })
         require("scrollbar.minimap.worker").request({
             bufnr = 0,
-            grid = {
-                width = 1,
-                first_row = 0,
-                row_count = 1,
-                scale_lines = 1,
-                scale_dots = 1,
-                columns_per_dot = 1,
-                encoding = "block",
-            },
+            grid = require("scrollbar.test.block_grid")(1, 1),
             filetype = "",
             generation = 2,
             signature = "after",

@@ -1,5 +1,5 @@
 local MiniTest = MiniTest
-local helpers = require("tests.helpers")
+local render_helpers = require("tests.render_helpers")
 local expect = MiniTest.expect
 
 local layout = require("scrollbar.layout")
@@ -10,11 +10,34 @@ local function mark(line)
     return { line = line, type = "Search" }
 end
 
+-- Installs `require("scrollbar.test.wrong_mark_rows")` in the child.
+-- `wrong_mark_rows(source_win, geometry, marks, total, height)` counts the
+-- marks whose row in `geometry` differs from the row of a direct measure of
+-- the screen lines above the mark, in a track of `height` rows over `total`
+-- screen lines.
+local function install_wrong_mark_rows()
+    package.loaded["scrollbar.test.wrong_mark_rows"] = function(source_win, geometry, marks, total, height)
+        local layout_module = require("scrollbar.layout")
+        local wrong = 0
+        for index, entry in ipairs(marks) do
+            local prefix = entry.line == 0 and 0
+                or vim.api.nvim_win_text_height(source_win, {
+                    start_row = 0,
+                    start_vcol = 0,
+                    end_row = entry.line,
+                    end_vcol = 0,
+                }).all
+            if geometry.mark_rows[index] ~= layout_module.map_position(prefix, total, height) then
+                wrong = wrong + 1
+            end
+        end
+        return wrong
+    end
+end
+
 local function new_child()
-    local child = helpers.new_child()
-    MiniTest.finally(function()
-        helpers.stop_child(child)
-    end)
+    local child = render_helpers.new_child()
+    child.lua_func(install_wrong_mark_rows)
     return child
 end
 
@@ -153,11 +176,7 @@ end
 T["screen geometry keeps same-buffer window views independent"] = function()
     local child = new_child()
     local result = child.lua_func(function()
-        local lines = {}
-        for index = 1, 200 do
-            lines[index] = "line " .. index
-        end
-        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        require("scrollbar.test.fill_lines")(200)
 
         local first_win = vim.api.nvim_get_current_win()
         vim.cmd("split")
@@ -209,11 +228,7 @@ T["screen geometry uses the renderer-owned text track height"] = function()
         vim.o.statusline = "STATUSLINE"
         vim.wo.winbar = "WINBAR"
 
-        local lines = {}
-        for index = 1, 200 do
-            lines[index] = "line " .. index
-        end
-        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        require("scrollbar.test.fill_lines")(200)
         local source_win = vim.api.nvim_get_current_win()
         local raw_height = vim.api.nvim_win_get_height(source_win)
         local track_height = raw_height - 1
@@ -393,24 +408,6 @@ end
 T["screen geometry cache hits issue zero nvim_win_text_height calls beyond the canary"] = function()
     local child = new_child()
     local result = child.lua_func(function()
-        local function wrap_win_text_height_counter()
-            local calls = 0
-            local original = vim.api.nvim_win_text_height
-            ---@diagnostic disable-next-line: duplicate-set-field
-            vim.api.nvim_win_text_height = function(...)
-                calls = calls + 1
-                return original(...)
-            end
-            return {
-                count = function()
-                    return calls
-                end,
-                restore = function()
-                    vim.api.nvim_win_text_height = original
-                end,
-            }
-        end
-
         local lines = {}
         for index = 1, 200 do
             if index % 25 == 0 then
@@ -433,7 +430,7 @@ T["screen geometry cache hits issue zero nvim_win_text_height calls beyond the c
             marks[#marks + 1] = { line = index, type = "Search" }
         end
 
-        local counter = wrap_win_text_height_counter()
+        local counter = require("scrollbar.test.text_height_counter")()
         local function call_screen()
             local before = counter.count()
             local geometry = layout_module.screen({
@@ -463,29 +460,7 @@ end
 T["renderer clear_source_cache clears the screen-geometry cache"] = function()
     local child = new_child()
     local result = child.lua_func(function()
-        local function wrap_win_text_height_counter()
-            local calls = 0
-            local original = vim.api.nvim_win_text_height
-            ---@diagnostic disable-next-line: duplicate-set-field
-            vim.api.nvim_win_text_height = function(...)
-                calls = calls + 1
-                return original(...)
-            end
-            return {
-                count = function()
-                    return calls
-                end,
-                restore = function()
-                    vim.api.nvim_win_text_height = original
-                end,
-            }
-        end
-
-        local lines = {}
-        for index = 1, 200 do
-            lines[index] = "line " .. index
-        end
-        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        require("scrollbar.test.fill_lines")(200)
 
         local layout_module = require("scrollbar.layout")
         local renderer = require("scrollbar.renderer")
@@ -503,7 +478,7 @@ T["renderer clear_source_cache clears the screen-geometry cache"] = function()
             })
         end
 
-        local counter = wrap_win_text_height_counter()
+        local counter = require("scrollbar.test.text_height_counter")()
         call_screen()
         local after_first = counter.count()
         call_screen()
@@ -526,36 +501,14 @@ end
 T["track_row_to_line issues zero text-height calls in uniform windows"] = function()
     local child = new_child()
     local result = child.lua_func(function()
-        local function wrap_win_text_height_counter()
-            local calls = 0
-            local original = vim.api.nvim_win_text_height
-            ---@diagnostic disable-next-line: duplicate-set-field
-            vim.api.nvim_win_text_height = function(...)
-                calls = calls + 1
-                return original(...)
-            end
-            return {
-                count = function()
-                    return calls
-                end,
-                restore = function()
-                    vim.api.nvim_win_text_height = original
-                end,
-            }
-        end
-
-        local lines = {}
-        for index = 1, 400 do
-            lines[index] = "line " .. index
-        end
-        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        require("scrollbar.test.fill_lines")(400)
 
         local layout_module = require("scrollbar.layout")
         local source_win = vim.api.nvim_get_current_win()
         local height = vim.api.nvim_win_get_height(source_win)
         local total_extent = vim.api.nvim_win_text_height(source_win, {}).all
 
-        local counter = wrap_win_text_height_counter()
+        local counter = require("scrollbar.test.text_height_counter")()
         local function call_track(row)
             local before = counter.count()
             layout_module.track_row_to_line(source_win, row, height, "screenline", total_extent)
@@ -584,40 +537,15 @@ T["track_row_to_line issues zero text-height calls in uniform windows"] = functi
     expect.equality(result.final_delta, 0)
 end
 
-local COUNTER_FACTORY_CODE = [=[
-    local calls = 0
-    local original = vim.api.nvim_win_text_height
-    ---@diagnostic disable-next-line: duplicate-set-field
-    vim.api.nvim_win_text_height = function(...)
-        calls = calls + 1
-        return original(...)
-    end
-    return {
-        count = function()
-            return calls
-        end,
-        delta = function(since)
-            return calls - since
-        end,
-        restore = function()
-            vim.api.nvim_win_text_height = original
-        end,
-    }
-]=]
-
 T["screen geometry cache invalidates on fold close without an autocmd"] = function()
     local child = new_child()
-    local result = child.lua_func(function(factory_code)
+    local result = child.lua_func(function()
         local layout_module = require("scrollbar.layout")
         -- Tighten the uniform verify interval, so that the next screen pass
         -- always observes the silent fold change.
         layout_module.screen_extent_verify_interval_ms = 0
-        local counter = loadstring(factory_code)()
-        local lines = {}
-        for index = 1, 200 do
-            lines[index] = "line " .. index
-        end
-        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        local counter = require("scrollbar.test.text_height_counter")()
+        require("scrollbar.test.fill_lines")(200)
         vim.wo.foldmethod = "manual"
         vim.cmd("30,80fold")
         vim.cmd("30,80foldopen")
@@ -644,7 +572,7 @@ T["screen geometry cache invalidates on fold close without an autocmd"] = functi
             g2_extent = g2.total_extent,
             g2_calls = g2_calls,
         }
-    end, COUNTER_FACTORY_CODE)
+    end)
 
     expect.equality(result.g2_extent < result.g1_extent, true)
     expect.equality(result.g2_calls > 1, true)
@@ -652,8 +580,8 @@ end
 
 T["screen geometry cache invalidates on window option change"] = function()
     local child = new_child()
-    local result = child.lua_func(function(factory_code)
-        local counter = loadstring(factory_code)()
+    local result = child.lua_func(function()
+        local counter = require("scrollbar.test.text_height_counter")()
         vim.o.columns = 30
         -- Tighten the digest interval. Otherwise, consecutive standalone calls
         -- share a digest window and correctly reuse the cached digest. Wired
@@ -690,7 +618,7 @@ T["screen geometry cache invalidates on window option change"] = function()
             g2_extent = g2.total_extent,
             wrap_calls = wrap_calls,
         }
-    end, COUNTER_FACTORY_CODE)
+    end)
 
     expect.equality(result.g2_extent > result.g1_extent, true)
     expect.equality(result.wrap_calls > 1, true)
@@ -698,13 +626,9 @@ end
 
 T["screen geometry skips measurements on layout-only option changes"] = function()
     local child = new_child()
-    local result = child.lua_func(function(factory_code)
-        local counter = loadstring(factory_code)()
-        local lines = {}
-        for index = 1, 50 do
-            lines[index] = "line " .. index
-        end
-        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+    local result = child.lua_func(function()
+        local counter = require("scrollbar.test.text_height_counter")()
+        require("scrollbar.test.fill_lines")(50)
         vim.wo.number = false
 
         local layout_module = require("scrollbar.layout")
@@ -729,7 +653,7 @@ T["screen geometry skips measurements on layout-only option changes"] = function
             g2_extent = g2.total_extent,
             number_calls = number_calls,
         }
-    end, COUNTER_FACTORY_CODE)
+    end)
 
     expect.equality(result.g2_extent == result.g1_extent, true)
     -- 'number' cannot change vertical extents. A uniform window keeps its
@@ -739,13 +663,9 @@ end
 
 T["screen geometry recomputes viewport without measurements on scroll"] = function()
     local child = new_child()
-    local result = child.lua_func(function(factory_code)
-        local counter = loadstring(factory_code)()
-        local lines = {}
-        for index = 1, 400 do
-            lines[index] = "line " .. index
-        end
-        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+    local result = child.lua_func(function()
+        local counter = require("scrollbar.test.text_height_counter")()
+        require("scrollbar.test.fill_lines")(400)
 
         local layout_module = require("scrollbar.layout")
         local source_win = vim.api.nvim_get_current_win()
@@ -772,7 +692,7 @@ T["screen geometry recomputes viewport without measurements on scroll"] = functi
             g2_viewport_start = g2.viewport_start,
             g2_calls = g2_calls,
         }
-    end, COUNTER_FACTORY_CODE)
+    end)
 
     expect.equality(result.g2_viewport_start ~= result.g1_viewport_start, true)
     expect.equality(result.g2_calls, 0)
@@ -780,13 +700,9 @@ end
 
 T["screen geometry tracks text growth without measurements in uniform windows"] = function()
     local child = new_child()
-    local result = child.lua_func(function(factory_code)
-        local counter = loadstring(factory_code)()
-        local lines = {}
-        for index = 1, 200 do
-            lines[index] = "line " .. index
-        end
-        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+    local result = child.lua_func(function()
+        local counter = require("scrollbar.test.text_height_counter")()
+        require("scrollbar.test.fill_lines")(200)
         vim.wo.wrap = false
         vim.wo.foldmethod = "manual"
 
@@ -817,7 +733,7 @@ T["screen geometry tracks text growth without measurements in uniform windows"] 
             g2_extent = g2.total_extent,
             g2_calls = g2_calls,
         }
-    end, COUNTER_FACTORY_CODE)
+    end)
 
     expect.equality(result.g2_extent > result.g1_extent, true)
     -- Uniform manual-fold nowrap windows update extents by arithmetic.
@@ -826,13 +742,9 @@ end
 
 T["screen geometry handles window resize without measurements in uniform windows"] = function()
     local child = new_child()
-    local result = child.lua_func(function(factory_code)
-        local counter = loadstring(factory_code)()
-        local lines = {}
-        for index = 1, 400 do
-            lines[index] = "line " .. index
-        end
-        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+    local result = child.lua_func(function()
+        local counter = require("scrollbar.test.text_height_counter")()
+        require("scrollbar.test.fill_lines")(400)
 
         local layout_module = require("scrollbar.layout")
         local source_win = vim.api.nvim_get_current_win()
@@ -857,7 +769,7 @@ T["screen geometry handles window resize without measurements in uniform windows
             g2_last_row = g2.handle.last_row,
             g2_calls = g2_calls,
         }
-    end, COUNTER_FACTORY_CODE)
+    end)
 
     expect.equality(result.g2_last_row < result.g1_last_row, true)
     expect.equality(result.g2_calls, 0)
@@ -866,11 +778,7 @@ end
 T["M.screen projects compact_search rows aligned with equivalent expanded marks"] = function()
     local child = new_child()
     local result = child.lua_func(function()
-        local lines = {}
-        for index = 1, 30 do
-            lines[index] = "line " .. index
-        end
-        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        require("scrollbar.test.fill_lines")(30)
         vim.cmd("split")
         local source_win = vim.api.nvim_get_current_win()
         vim.api.nvim_win_set_height(source_win, 10)
@@ -974,11 +882,7 @@ T["uniform probe finds a silent fold in every slice below the viewport"] = funct
         layout_module.screen_extent_verify_interval_ms = 0
         -- 1003 lines below the viewport make four slices of 250 lines and a
         -- remainder of 3 lines.
-        local lines = {}
-        for index = 1, 2023 do
-            lines[index] = "line " .. index
-        end
-        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        require("scrollbar.test.fill_lines")(2023)
         vim.wo.foldmethod = "manual"
         vim.wo.wrap = false
         local source_win = vim.api.nvim_get_current_win()
@@ -1095,11 +999,7 @@ end
 T["screen geometry reuses the mark rows on a scroll in a folded window"] = function()
     local child = new_child()
     local result = child.lua_func(function()
-        local lines = {}
-        for index = 1, 3000 do
-            lines[index] = "line " .. index
-        end
-        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        require("scrollbar.test.fill_lines")(3000)
         vim.wo.foldmethod = "manual"
         vim.cmd("101,200fold")
 
@@ -1149,11 +1049,7 @@ T["screen geometry follows a fold that moves to another chunk"] = function()
     local result = child.lua_func(function()
         -- 1100 lines make three chunks of 512 lines. The two folds are in the
         -- first two chunks, so that one sweep usually measures both changes.
-        local lines = {}
-        for index = 1, 1100 do
-            lines[index] = "line " .. index
-        end
-        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        require("scrollbar.test.fill_lines")(1100)
         vim.wo.foldmethod = "manual"
         vim.cmd("101,150fold")
         vim.cmd("601,650fold")
@@ -1188,19 +1084,7 @@ T["screen geometry follows a fold that moves to another chunk"] = function()
         end
         layout_module.screen_extent_sweep_interval_ms = nil
 
-        local wrong = 0
-        for index, entry in ipairs(marks) do
-            local prefix = entry.line == 0 and 0
-                or vim.api.nvim_win_text_height(source_win, {
-                    start_row = 0,
-                    start_vcol = 0,
-                    end_row = entry.line,
-                    end_vcol = 0,
-                }).all
-            if geometry.mark_rows[index] ~= layout_module.map_position(prefix, total, height) then
-                wrong = wrong + 1
-            end
-        end
+        local wrong = require("scrollbar.test.wrong_mark_rows")(source_win, geometry, marks, total, height)
         return { wrong = wrong, extent = geometry.total_extent, total = total }
     end)
 
@@ -1219,11 +1103,7 @@ T["screen geometry follows a fold that moves inside one chunk"] = function()
         -- Two folds of the same size in different sub-spans of one chunk swap
         -- their state, so the height of the chunk does not change.
         local function wrong_rows(line_count, first_fold, second_fold)
-            local lines = {}
-            for index = 1, line_count do
-                lines[index] = "line " .. index
-            end
-            vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+            require("scrollbar.test.fill_lines")(line_count)
             vim.wo.foldmethod = "manual"
             vim.cmd("normal! zE")
             vim.cmd(first_fold .. "fold")
@@ -1249,19 +1129,7 @@ T["screen geometry follows a fold that moves inside one chunk"] = function()
             end
 
             local total = vim.api.nvim_win_text_height(source_win, {}).all
-            local wrong = 0
-            for index, entry in ipairs(marks) do
-                local prefix = entry.line == 0 and 0
-                    or vim.api.nvim_win_text_height(source_win, {
-                        start_row = 0,
-                        start_vcol = 0,
-                        end_row = entry.line,
-                        end_vcol = 0,
-                    }).all
-                if geometry.mark_rows[index] ~= layout_module.map_position(prefix, total, height) then
-                    wrong = wrong + 1
-                end
-            end
+            local wrong = require("scrollbar.test.wrong_mark_rows")(source_win, geometry, marks, total, height)
             return wrong
         end
 
@@ -1485,19 +1353,7 @@ T["screen geometry keeps the chunk memo valid after a fold in an earlier chunk"]
         layout_module.screen_extent_sweep_interval_ms = nil
 
         local total = vim.api.nvim_win_text_height(source_win, {}).all
-        local count = 0
-        for index, entry in ipairs(marks) do
-            local prefix = entry.line == 0 and 0
-                or vim.api.nvim_win_text_height(source_win, {
-                    start_row = 0,
-                    start_vcol = 0,
-                    end_row = entry.line,
-                    end_vcol = 0,
-                }).all
-            if geometry.mark_rows[index] ~= layout_module.map_position(prefix, total, height) then
-                count = count + 1
-            end
-        end
+        local count = require("scrollbar.test.wrong_mark_rows")(source_win, geometry, marks, total, height)
         return count
     end)
 
@@ -1509,11 +1365,7 @@ T["screen geometry keeps the prefixes of more marks than the memo floor"] = func
     local result = child.lua_func(function()
         -- More marked lines than PREFIX_MAP_LIMIT (32768), in a folded buffer.
         local line_count = 34000
-        local lines = {}
-        for index = 1, line_count do
-            lines[index] = "line " .. index
-        end
-        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        require("scrollbar.test.fill_lines")(line_count)
         vim.wo.foldmethod = "manual"
         for start = 101, line_count - 30, 200 do
             vim.cmd(string.format("%d,%dfold", start, start + 19))
@@ -1615,19 +1467,7 @@ local function rows_after_fallback(edit)
         local geometry = call_screen()
 
         local total = vim.api.nvim_win_text_height(source_win, {}).all
-        local wrong = 0
-        for index, entry in ipairs(marks) do
-            local prefix = entry.line == 0 and 0
-                or vim.api.nvim_win_text_height(source_win, {
-                    start_row = 0,
-                    start_vcol = 0,
-                    end_row = entry.line,
-                    end_vcol = 0,
-                }).all
-            if geometry.mark_rows[index] ~= layout_module.map_position(prefix, total, height) then
-                wrong = wrong + 1
-            end
-        end
+        local wrong = require("scrollbar.test.wrong_mark_rows")(source_win, geometry, marks, total, height)
         return { wrong = wrong, extent_before = extent_before, total = total }
     end, edit)
 end

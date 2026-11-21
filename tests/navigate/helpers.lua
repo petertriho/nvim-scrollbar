@@ -106,6 +106,40 @@ M.setup = function(child, options)
     })
 end
 
+--- The marks of the glance tests: two marks on line 20, and one mark on each
+--- of lines 60, 100, and 150.
+M.GLANCE_MARKS = {
+    { line = 20, type = "Error" },
+    { line = 20, type = "GitChange" },
+    { line = 60, type = "Warn" },
+    { line = 100, type = "Hint" },
+    { line = 150, type = "Error" },
+}
+
+--- `M.setup` with `M.GLANCE_MARKS` when `options.marks` is not set. Then each
+--- line gets the text "  text <n>", so that the list rows show its number,
+--- and the messages of `vim.notify` go to `_G.notes`.
+---@param child table
+---@param options? table The options of `M.setup`
+---@return { source_win: integer, source_buf: integer, float_win?: integer, float_buf?: integer }
+M.setup_glance = function(child, options)
+    options = options or {}
+    options.marks = options.marks or M.GLANCE_MARKS
+    local result = M.setup(child, options)
+    child.lua([[
+        _G.notes = {}
+        vim.notify = function(message)
+            table.insert(_G.notes, message)
+        end
+        local lines = {}
+        for index = 1, vim.api.nvim_buf_line_count(0) do
+            lines[index] = "  text " .. index
+        end
+        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+    ]])
+    return result
+end
+
 --- The text of screen rows `first` to `last` (1-based), columns `first_col`
 --- to `last_col`.
 M.screen_rows = function(child, first, last, first_col, last_col)

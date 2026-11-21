@@ -1,16 +1,10 @@
 local MiniTest = MiniTest
-local helpers = require("tests.helpers")
+local render_helpers = require("tests.render_helpers")
 local expect = MiniTest.expect
 
 local T = MiniTest.new_set()
 
-local function new_child()
-    local child = helpers.new_child()
-    MiniTest.finally(function()
-        helpers.stop_child(child)
-    end)
-    return child
-end
+local new_child = render_helpers.new_child
 
 local function base_config(scrollbar, top)
     return vim.tbl_deep_extend("force", {
@@ -711,11 +705,7 @@ end
 T["generates and renders isolated automatic groups for every profile"] = function()
     local child = new_child()
     local result = child.lua_func(function(config)
-        local lines = {}
-        for index = 1, 100 do
-            lines[index] = "line " .. index
-        end
-        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+        local lines = require("scrollbar.test.fill_lines")(100)
         local first_buf = vim.api.nvim_get_current_buf()
         vim.bo[first_buf].filetype = "lua"
         local first = vim.api.nvim_get_current_win()

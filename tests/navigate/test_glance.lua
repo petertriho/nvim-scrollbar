@@ -4,32 +4,7 @@ local expect = MiniTest.expect
 
 local T = MiniTest.new_set()
 
-local MARKS = {
-    { line = 20, type = "Error" },
-    { line = 20, type = "GitChange" },
-    { line = 60, type = "Warn" },
-    { line = 100, type = "Hint" },
-    { line = 150, type = "Error" },
-}
-
-local function setup(child, options)
-    options = options or {}
-    options.marks = options.marks or MARKS
-    local result = navigate.setup(child, options)
-    child.lua([[
-        _G.notes = {}
-        vim.notify = function(message)
-            table.insert(_G.notes, message)
-        end
-        -- Each line has its number, so the list rows show it.
-        local lines = {}
-        for index = 1, vim.api.nvim_buf_line_count(0) do
-            lines[index] = "  text " .. index
-        end
-        vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
-    ]])
-    return result
-end
+local setup = navigate.setup_glance
 
 local function open(child, types)
     child.lua_func(function(names)

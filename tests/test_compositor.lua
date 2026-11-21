@@ -254,7 +254,9 @@ T["selects the text entry from the count of marks of one type in a row"] = funct
     expect.equality(result.rows, { "-", "=", "#", "#" })
 end
 
-T["keeps compact search exactly equivalent to ordinary search marks"] = function()
+-- The reference of the compact search cases: the search marks at lines 10,
+-- 10, 11, and 99, and an "A" mark at line 20, as ordinary marks in 2 rows.
+local function ordinary_search_reference()
     local active_config = config({
         layout = { columns = { { "marks" }, { "track" } } },
         marks = { Search = { text = { "-", "=", "#" } } },
@@ -271,6 +273,19 @@ T["keeps compact search exactly equivalent to ordinary search marks"] = function
         },
         mark_rows = { 0, 0, 0, 0, 1 },
     })
+    return active_config, ordinary
+end
+
+-- The compact search marks at lines 10, 10, 11, and 99 give the same result as
+-- the ordinary marks of `ordinary_search_reference()`.
+local function expect_search_reference(compact, ordinary)
+    expect.equality(compact, ordinary)
+    expect.equality(compact.rows, { "A ", "- " })
+    expect.equality(compact.hitmap[1][1].lines, { 10, 10, 11, 20 })
+end
+
+T["keeps compact search exactly equivalent to ordinary search marks"] = function()
+    local active_config, ordinary = ordinary_search_reference()
     local compact = compose({
         config = active_config,
         height = 2,
@@ -280,28 +295,11 @@ T["keeps compact search exactly equivalent to ordinary search marks"] = function
         mark_rows = { 0 },
     })
 
-    expect.equality(compact, ordinary)
-    expect.equality(compact.rows, { "A ", "- " })
-    expect.equality(compact.hitmap[1][1].lines, { 10, 10, 11, 20 })
+    expect_search_reference(compact, ordinary)
 end
 
 T["screen compact search via compact_mark_rows stays equivalent to ordinary marks"] = function()
-    local active_config = config({
-        layout = { columns = { { "marks" }, { "track" } } },
-        marks = { Search = { text = { "-", "=", "#" } } },
-    })
-    local ordinary = compose({
-        config = active_config,
-        height = 2,
-        marks = {
-            { provider = "search", line = 10, type = "Search" },
-            { provider = "search", line = 10, type = "Search" },
-            { provider = "search", line = 11, type = "Search" },
-            { provider = "alpha", line = 20, type = "Search", text = "A" },
-            { provider = "search", line = 99, type = "Search" },
-        },
-        mark_rows = { 0, 0, 0, 0, 1 },
-    })
+    local active_config, ordinary = ordinary_search_reference()
     local compact = compose({
         config = active_config,
         height = 2,
@@ -311,9 +309,7 @@ T["screen compact search via compact_mark_rows stays equivalent to ordinary mark
         mark_rows = { 0 },
     })
 
-    expect.equality(compact, ordinary)
-    expect.equality(compact.rows, { "A ", "- " })
-    expect.equality(compact.hitmap[1][1].lines, { 10, 10, 11, 20 })
+    expect_search_reference(compact, ordinary)
 end
 
 T["groups an unsorted compact blob like the same ordinary search marks"] = function()
