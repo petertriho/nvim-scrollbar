@@ -409,9 +409,9 @@ T["frame"]["name the missing call of a factory"] = function()
     frame.reset()
 
     -- The plugin calls `frame = recipes.frame.center` with the context.
-    expect.equality({ frame.run("glance.frame", recipes.frame.center, frame_context(), 0) }, { nil, "failed" })
+    expect.equality({ frame.run("glance.builtin.frame", recipes.frame.center, frame_context(), 0) }, { nil, "failed" })
     expect.equality(messages, {
-        "[nvim-scrollbar] glance.frame failed: [nvim-scrollbar] recipes.frame.center:"
+        "[nvim-scrollbar] glance.builtin.frame failed: [nvim-scrollbar] recipes.frame.center:"
             .. " call the recipe to get its function, for example recipes.frame.center()",
     })
 end
@@ -421,6 +421,78 @@ T["frame"]["options are copied when the factory is called"] = function()
     local place = recipes.frame.center(options)
     options.width = 10
     expect.equality(place(frame_context()).width, 40)
+end
+
+T["glance"] = MiniTest.new_set()
+
+---Replaces the pickers of `scrollbar.glance` with recorders for one test.
+---@return table calls
+local function stub_pickers()
+    local calls = {}
+    local original = package.loaded["scrollbar.glance"]
+    local function recorder(name)
+        return function(ctx, opts)
+            calls[#calls + 1] = { name, #ctx.items, opts }
+        end
+    end
+    package.loaded["scrollbar.glance"] = {
+        builtin = recorder("builtin"),
+        snacks = recorder("snacks"),
+        telescope = recorder("telescope"),
+    }
+    MiniTest.finally(function()
+        package.loaded["scrollbar.glance"] = original
+    end)
+    return calls
+end
+
+---A glance context with `count` entries.
+---@param count integer
+---@return table
+local function glance_context(count)
+    local items = {}
+    for index = 1, count do
+        items[index] = { lnum = index }
+    end
+    return { source_win = 1000, source_buf = 1, items = items, selected = 1 }
+end
+
+T["glance"]["threshold opens the glance window up to max entries"] = function()
+    local calls = stub_pickers()
+    local opts = { layout = { preset = "ivy" } }
+    local pick = recipes.glance.threshold({ max = 3, picker = "snacks", opts = opts })
+    pick(glance_context(1))
+    pick(glance_context(3))
+    pick(glance_context(4))
+    expect.equality(calls, { { "builtin", 1 }, { "builtin", 3 }, { "snacks", 4, opts } })
+end
+
+T["glance"]["threshold uses 50 entries by default"] = function()
+    local calls = stub_pickers()
+    local pick = recipes.glance.threshold({ picker = "telescope" })
+    pick(glance_context(50))
+    pick(glance_context(51))
+    expect.equality(calls, { { "builtin", 50 }, { "telescope", 51 } })
+end
+
+T["glance"]["threshold rejects invalid options"] = function()
+    local cases = {
+        { nil, 'needs picker: "snacks" or "telescope"' },
+        { "x", "options must be a table" },
+        { { picker = "snacks", min = 1 }, "unknown option 'min'" },
+        { { max = 50 }, 'picker must be "snacks" or "telescope"' },
+        { { picker = "builtin" }, 'picker must be "snacks" or "telescope"' },
+        { { picker = "snacks", max = 0 }, "max must be a positive integer" },
+        { { picker = "snacks", max = 1.5 }, "max must be a positive integer" },
+        { { picker = "snacks", opts = "ivy" }, "opts must be a table" },
+        -- The plugin calls `picker = recipes.glance.threshold` with the context.
+        { glance_context(2), "call the recipe to get its function, for example recipes.glance.threshold()" },
+    }
+    for _, case in ipairs(cases) do
+        local ok, err = pcall(recipes.glance.threshold, case[1])
+        expect.equality(ok, false)
+        expect.equality(err, "[nvim-scrollbar] recipes.glance.threshold: " .. case[2])
+    end
 end
 
 T["setup does not load the recipes"] = function()

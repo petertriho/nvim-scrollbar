@@ -7,9 +7,9 @@ marks:
   of the current window. A lowercase label moves the cursor to the mark. An
   uppercase label opens the peek float at the mark.
 - The **peek float** shows the source buffer around one mark.
-- The **glance window** (`glance()`) shows a list of the marks and a preview
-  pane. You can move in the list, edit the buffer in the preview, and jump to
-  a mark.
+- **Glance** (`glance()`) shows a list of the marks in a picker: the builtin
+  glance window, a snacks.nvim or Telescope picker, or your own picker. The
+  glance window has a preview pane in which you can edit the buffer.
 - **Hover** opens the peek float when the mouse pointer stays on a mark cell
   of the scrollbar.
 
@@ -132,31 +132,44 @@ function. See [Frame](#frame).
 The presets make a float of 11 rows by 60% of the width of the text area,
 border included. The float stays inside the source window.
 
-## Glance Window
+## Glance Pickers
 
-![The glance window: a list of the marks, a preview that follows the selection, an edit in the preview, and a jump](https://github.com/user-attachments/assets/65d29073-e2c5-4fb3-9f43-310737593faa)
+`require("scrollbar").glance()` and `:ScrollbarGlance` show the marks of the
+current window in a picker. `glance.picker` selects the picker:
 
-`require("scrollbar").glance()` and `:ScrollbarGlance` open the glance window
-of the current window. The glance window is inspired by
-[glance.nvim](https://github.com/dnlhc/glance.nvim): its frame, its actions,
-and the keys of each pane follow the design of glance.nvim. The glance window
-has two panes in one frame. The list of the marks is on the right, and the
-preview pane is on the left.
+| Value | Picker |
+| --- | --- |
+| `"builtin"` | The [glance window](#glance-window): a list of the marks and a preview pane in one frame. This is the default. |
+| `"snacks"` | A [snacks.nvim](https://github.com/folke/snacks.nvim) picker. See [Snacks and Telescope](#snacks-and-telescope). |
+| `"telescope"` | A [Telescope](https://github.com/nvim-telescope/telescope.nvim) picker. See [Snacks and Telescope](#snacks-and-telescope). |
+| A function | Your function gets the glance context and opens a picker. See [Custom Pickers](#custom-pickers) and [Picker Recipes](#picker-recipes). |
 
-- `glance.frame` sets the place and the size of the frame of both panes. It
-  takes a preset or a function. See [Frame](#frame). The default `"cursor"`
-  opens the frame below the cursor line, or above it when there is no space
-  below. When neither side has space for 18 rows, the frame uses the larger
-  side. The presets make a frame of 18 rows, border included, with the width
-  of the text area.
-- The list takes `glance.list.width` of the frame on the side of
-  `glance.list.side`, 40% on the right by default. The preview pane takes the
-  rest.
-- The list gets the focus. It selects the first entry at or after the cursor
-  line.
-- The glance window works only in a normal window. In a float, such as the
-  list of a picker, it shows a notification. When the window has no marks, it
-  shows a notification.
+```lua
+require("scrollbar").setup({
+    glance = {
+        picker = "snacks",
+    },
+})
+```
+
+`glance({ picker = ... })` uses a different picker for one call. It takes the
+same values as `glance.picker`. `:ScrollbarGlance` always uses
+`glance.picker`.
+
+```lua
+vim.keymap.set("n", "<leader>G", function()
+    require("scrollbar").glance({ picker = "telescope" })
+end, { desc = "Glance at the marks in Telescope" })
+```
+
+`glance()` does these checks before the picker opens, so a picker always gets
+at least one entry:
+
+- In a float, such as the list of a picker, `glance()` shows a notification.
+- When the window has no marks, `glance()` shows a notification.
+
+When the picker raises an error, `glance()` shows the error in a
+notification.
 
 ### List
 
@@ -166,37 +179,228 @@ scrollbar. It reads the providers that the scrollbar uses. With
 holds only the mark types that the renderer shows in the window. The search
 matches are `Search` entries.
 
-`glance.list.entries` sets the entries of the list:
+`glance.entries` sets the entries of the list in every picker:
 
 | Value | Entries |
 | --- | --- |
 | `"line"` | One entry for each line with a mark. The entry shows the mark with the highest priority. |
 | `"mark"` | One entry for each mark. A line with two marks has two entries. |
-| `"type"` | One group for each mark type, with one entry for each line. A header shows the type name and the number of lines. The groups are in mark priority order, then in name order. |
+| `"type"` | One group for each mark type, with one entry for each line. The groups are in mark priority order, then in name order. |
 
 Each entry shows the glyph of its mark, the line number, and the text of the
 line:
 
 ```text
- -  21  local function setup()
- ┃  61  return M
+-  21  local function setup()
+┃  61  return M
 ```
 
 - The glyph is the first item of the `text` list of the mark type. A `Mark`
   entry shows the letter of the mark. A type without a fixed glyph, for
   example a type with a text function, shows `•`.
 - The glyph uses the `Scrollbar<Type>` group of its mark type. The line
-  number uses `ScrollbarGlanceLineNr`, and a header uses
-  `ScrollbarGlanceHeader`.
-- A header is not a jump target. On a header, the preview shows the first
-  entry of the group, and the jump key does nothing.
+  number uses `ScrollbarGlanceLineNr`.
+- In `"type"` mode, the glance window shows a header row for each group. The
+  other pickers have no header rows, so each row starts with the type name:
+
+  ```text
+  Error      -  21  local x = nil
+  Error      -  48  return x.y
+  GitChange  ┃  61  return M
+  ```
+
+### Snacks and Telescope
+
+With `picker = "snacks"` or `picker = "telescope"`, glance opens a picker of
+that plugin. Install and set up the plugin yourself. When the plugin does not
+load, `glance()` shows an error notification and opens nothing.
+
+- The rows have the same columns as the rows of the glance window. The filter
+  matches the mark types, the line number, and the text of the line.
+- With an empty prompt, the rows are in list order. The picker selects the
+  first entry at or after the cursor line.
+- The preview shows the source buffer at the line of the entry. It also shows
+  unsaved edits.
+- The `glance.builtin` options do not apply. The picker uses the layout and
+  the keys of its plugin.
+
+These actions use the moves of glance. They keep the keys of the plugin:
+
+| snacks | Telescope | Result |
+| --- | --- | --- |
+| `confirm` (`<CR>`) | `select_default` (`<CR>`) | Closes the picker and moves the cursor of the source window to the line of the entry. The move is the same as a label mode move, so `<C-o>` goes back. |
+| `split`, `edit_split` (`<C-s>`) | `select_horizontal` (`<C-x>`) | Opens a split of the source window, and then does the same move in the new window. |
+| `vsplit`, `edit_vsplit` (`<C-v>`) | `select_vertical` (`<C-v>`) | The same as the split action, with a vertical split. |
+| `qflist` (`<C-q>`) | `send_selected_to_qflist` (`<M-q>`) | Closes the picker and puts the selected entries in a new quickfix list. Without a selection, it puts all the entries that the filter shows. |
+| `qflist_all` | `send_to_qflist` (`<C-q>`) | Closes the picker and puts all the entries that the filter shows in a new quickfix list. |
+
+The quickfix list is the same as the list of the `quickfix` action of the
+glance window. The other actions of the plugins do not change.
+
+To change the layout or other options of the picker, wrap it in a function.
+See [Custom Pickers](#custom-pickers).
+
+### Custom Pickers
+
+A `glance.picker` function gets the glance context `ctx`. The context holds
+the entries of the list and the functions that move to them:
+
+| Field | Meaning |
+| --- | --- |
+| `source_win`, `source_buf` | The window of `glance()` and its buffer. |
+| `mode` | The value of `glance.entries`. |
+| `items` | The entries of the list, in list order. "type" mode has no header items. |
+| `selected` | The index in `items` of the first entry at or after the cursor line, else of the last entry. |
+| `format(item, opts)` | The columns of the row of `item`, as highlight chunks `{ { text, hl_group }, ... }`. A chunk without a highlight has only the text. In `"type"` mode, the type name is the first column, and `opts.group = false` leaves it out. |
+| `jump(item, opts)` | Moves the cursor of the source window to the line of `item`. The move is the same as a label mode move. `opts.split = "split"` or `"vsplit"` opens a split of the source window first. Returns whether the cursor moved. |
+| `quickfix(items)` | Puts one quickfix item for each line of `items` in a new quickfix list, and opens the quickfix window. Without `items`, it uses `ctx.items`. |
+| `refresh()` | Reads the marks again, and replaces `items` and `selected`. Returns the new items, which can be empty. |
+
+Each item has these fields:
+
+| Field | Meaning |
+| --- | --- |
+| `lnum` | The line number, from 1. |
+| `text` | The text of the line without its indent. Each tab is a space. |
+| `glyph`, `hl` | The glyph of the first mark and its highlight group. |
+| `type` | The mark type of the first mark. |
+| `types` | The mark types of the entry, in priority order. |
+| `marks` | The marks of the entry, in priority order. Each mark has `type`, `provider`, `text`, `priority`, `glyph`, and `hl`. |
+| `group` | Only in `"type"` mode: the mark type of the group of the entry. |
+
+- Close your picker before you call `jump()` or `quickfix()`. They do not
+  close a picker.
+- `jump()` does nothing and shows a notification when the source window is
+  closed or shows a different buffer.
+- Later versions only add fields to the context and to the items.
+
+`require("scrollbar.glance")` has the three pickers as functions:
+
+| Function | Picker |
+| --- | --- |
+| `builtin(ctx)` | The glance window. It uses the `glance.builtin` options. |
+| `snacks(ctx, opts)` | The snacks.nvim picker. `opts` merge over the defaults of glance and go to `Snacks.picker.pick()`. |
+| `telescope(ctx, opts)` | The Telescope picker. `opts` go to `pickers.new()`, for example a theme. |
+
+To change the layout of the snacks picker:
+
+```lua
+local glance = require("scrollbar.glance")
+
+require("scrollbar").setup({
+    glance = {
+        picker = function(ctx)
+            glance.snacks(ctx, { layout = { preset = "ivy" } })
+        end,
+    },
+})
+```
+
+To show the entries with `vim.ui.select`:
+
+```lua
+require("scrollbar").setup({
+    glance = {
+        picker = function(ctx)
+            vim.ui.select(ctx.items, {
+                prompt = "Marks",
+                format_item = function(item)
+                    local text = {}
+                    for _, chunk in ipairs(ctx.format(item)) do
+                        text[#text + 1] = chunk[1]
+                    end
+                    return table.concat(text)
+                end,
+            }, function(item)
+                if item ~= nil then
+                    ctx.jump(item)
+                end
+            end)
+        end,
+    },
+})
+```
+
+### Picker Recipes
+
+`require("scrollbar.recipes").glance` has recipes that make `glance.picker`
+functions. Call the recipe with its options to get the function.
+
+`recipes.glance.threshold(options)` opens the glance window for a short list,
+and a snacks.nvim or Telescope picker for a long list:
+
+```lua
+local recipes = require("scrollbar.recipes")
+
+require("scrollbar").setup({
+    glance = {
+        picker = recipes.glance.threshold({ max = 50, picker = "snacks" }),
+    },
+})
+```
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `max` | `50` | The most entries for the glance window. With more entries, the recipe opens `picker`. A positive integer. |
+| `picker` | None | The picker for more than `max` entries: `"snacks"` or `"telescope"`. You must set it. |
+| `opts` | `nil` | The options of `picker`, the same as `opts` of `require("scrollbar.glance").snacks()` or `telescope()`. |
+
+- The recipe counts the entries of the list, not the marks. With
+  `glance.entries = "line"`, it counts the lines with marks.
+- The recipe checks its options when you call it, so an invalid option gives
+  an error at setup.
+- When the plugin of `picker` does not load, a long list gives an error
+  notification and opens nothing.
+
+To use a Telescope theme for a long list:
+
+```lua
+local recipes = require("scrollbar.recipes")
+
+require("scrollbar").setup({
+    glance = {
+        picker = recipes.glance.threshold({
+            max = 200,
+            picker = "telescope",
+            opts = require("telescope.themes").get_dropdown(),
+        }),
+    },
+})
+```
+
+## Glance Window
+
+![The glance window: a list of the marks, a preview that follows the selection, an edit in the preview, and a jump](https://github.com/user-attachments/assets/65d29073-e2c5-4fb3-9f43-310737593faa)
+
+The glance window is the builtin picker, `glance.picker = "builtin"`. It is
+inspired by [glance.nvim](https://github.com/dnlhc/glance.nvim): its frame,
+its actions, and the keys of each pane follow the design of glance.nvim. The
+glance window has two panes in one frame. The list of the marks is on the
+right, and the preview pane is on the left.
+
+- `glance.builtin.frame` sets the place and the size of the frame of both
+  panes. It takes a preset or a function. See [Frame](#frame). The default
+  `"cursor"` opens the frame below the cursor line, or above it when there is
+  no space below. When neither side has space for 18 rows, the frame uses the
+  larger side. The presets make a frame of 18 rows, border included, with the
+  width of the text area.
+- The list takes `glance.builtin.list.width` of the frame on the side of
+  `glance.builtin.list.side`, 40% on the right by default. The preview pane
+  takes the rest.
+- The list gets the focus. It selects the first entry at or after the cursor
+  line.
+- In `"type"` mode, a header row starts each group. The header shows the type
+  name and the number of lines, and uses `ScrollbarGlanceHeader`. A header is
+  not a jump target. On a header, the preview shows the first entry of the
+  group, and the jump key does nothing.
 - The list buffer has the filetype `scrollbar_glance`.
 
 ### Keys
 
-`glance.keys.list` sets the keys of the list, and `glance.keys.preview` sets
-the keys of the preview pane. An action without a default key has no key
-until you set one. "No" means that the pane does not have the action.
+`glance.builtin.keys.list` sets the keys of the list, and
+`glance.builtin.keys.preview` sets the keys of the preview pane. An action
+without a default key has no key until you set one. "No" means that the pane
+does not have the action.
 
 | Action | List | Preview pane | Result |
 | --- | --- | --- | --- |
@@ -219,24 +423,26 @@ These keys are close to the keys of glance.nvim:
 ```lua
 require("scrollbar").setup({
     glance = {
-        keys = {
-            list = {
-                jump = { "<CR>", "o" },
-                jump_split = "<leader>-",
-                jump_vsplit = "<leader>\\",
-                next = { "<C-j>", "<Tab>" },
-                previous = { "<C-k>", "<S-Tab>" },
-                focus_preview = "<C-h>",
-                quickfix = "Q",
-                close = { "q", "<Esc>", "<C-q>" },
-            },
-            preview = {
-                jump_split = "<leader>-",
-                jump_vsplit = "<leader>\\",
-                next = { "<C-j>", "<Tab>" },
-                previous = { "<C-k>", "<S-Tab>" },
-                focus_list = "<C-l>",
-                close = { "Q", "<C-q>" },
+        builtin = {
+            keys = {
+                list = {
+                    jump = { "<CR>", "o" },
+                    jump_split = "<leader>-",
+                    jump_vsplit = "<leader>\\",
+                    next = { "<C-j>", "<Tab>" },
+                    previous = { "<C-k>", "<S-Tab>" },
+                    focus_preview = "<C-h>",
+                    quickfix = "Q",
+                    close = { "q", "<Esc>", "<C-q>" },
+                },
+                preview = {
+                    jump_split = "<leader>-",
+                    jump_vsplit = "<leader>\\",
+                    next = { "<C-j>", "<Tab>" },
+                    previous = { "<C-k>", "<S-Tab>" },
+                    focus_list = "<C-l>",
+                    close = { "Q", "<C-q>" },
+                },
             },
         },
     },
@@ -250,9 +456,10 @@ the buffer.
 
 - By default, the preview pane has no keys of the plugin. To go back to the
   list, use `<C-w>p` or `<C-w>w`, or set a `focus_list` key.
-- Neovim has no keys for one window, so the keys of `glance.keys.preview` are
-  buffer-local keys of the source buffer while the preview pane has the focus.
-  They hide your buffer-local keys with the same lhs. Your keys come back when
+- Neovim has no keys for one window, so the keys of
+  `glance.builtin.keys.preview` are buffer-local keys of the source buffer
+  while the preview pane has the focus. They hide your buffer-local keys with
+  the same lhs. Your keys come back when
   the preview pane loses the focus or the glance window closes.
 - From a pane, `<C-w>h`, `<C-w>j`, `<C-w>k`, and `<C-w>l` go to the source
   window, so the glance window closes. A global map to one of them, such as
@@ -321,33 +528,36 @@ require("scrollbar").setup({
         window = {},
     },
     glance = {
-        frame = "cursor", -- "scrollbar", "cursor", "center", or a function
-        list = {
-            entries = "line", -- "line", "mark", or "type"
-            width = 0.4,
-            side = "right", -- "right" or "left"
-        },
-        keys = {
+        picker = "builtin", -- "builtin", "snacks", "telescope", or a function
+        entries = "line", -- "line", "mark", or "type"
+        builtin = {
+            frame = "cursor", -- "scrollbar", "cursor", "center", or a function
             list = {
-                jump = "<CR>",
-                jump_split = false,
-                jump_vsplit = false,
-                next = false,
-                previous = false,
-                focus_preview = "<Tab>",
-                quickfix = false,
-                close = { "q", "<Esc>" },
+                width = 0.4,
+                side = "right", -- "right" or "left"
             },
-            preview = {
-                jump_split = false,
-                jump_vsplit = false,
-                next = false,
-                previous = false,
-                focus_list = false,
-                close = false,
+            keys = {
+                list = {
+                    jump = "<CR>",
+                    jump_split = false,
+                    jump_vsplit = false,
+                    next = false,
+                    previous = false,
+                    focus_preview = "<Tab>",
+                    quickfix = false,
+                    close = { "q", "<Esc>" },
+                },
+                preview = {
+                    jump_split = false,
+                    jump_vsplit = false,
+                    next = false,
+                    previous = false,
+                    focus_list = false,
+                    close = false,
+                },
             },
+            window = {},
         },
-        window = {},
     },
 })
 ```
@@ -363,22 +573,24 @@ options.
 | `scrollbar.hover` | `false` | `true` opens the peek float after 300 ms. `{ delay_ms = n }` sets the delay. |
 | `peek.frame` | `"scrollbar"` | Place and size of the peek float: a preset or a function. See [Frame](#frame). |
 | `peek.window` | `{}` | Border, title, footer, and window options of the peek float. See [Window](#window). |
-| `glance.frame` | `"cursor"` | Place and size of the frame of both panes: a preset or a function. See [Frame](#frame). |
-| `glance.list.entries` | `"line"` | Entries of the list. See [List](#list). |
-| `glance.list.width` | `0.4` | Width of the list pane, border included. A number less than `1` is a part of the frame width, and a whole number above `1` is cells. The preview pane takes the rest. |
-| `glance.list.side` | `"right"` | Side of the list pane: `"right"` or `"left"`. The preview pane takes the other side. |
-| `glance.keys.list` | See [Keys](#keys) | Keys of the actions in the list. |
-| `glance.keys.preview` | See [Keys](#keys) | Keys of the actions in the preview pane. |
-| `glance.window` | `{}` | Border, title, footer, and window options of both panes. See [Window](#window). |
+| `glance.picker` | `"builtin"` | The picker of `glance()`: `"builtin"`, `"snacks"`, `"telescope"`, or a function. See [Glance Pickers](#glance-pickers). |
+| `glance.entries` | `"line"` | Entries of the list in every picker. See [List](#list). |
+| `glance.builtin.frame` | `"cursor"` | Place and size of the frame of both panes of the glance window: a preset or a function. See [Frame](#frame). |
+| `glance.builtin.list.width` | `0.4` | Width of the list pane, border included. A number less than `1` is a part of the frame width, and a whole number above `1` is cells. The preview pane takes the rest. |
+| `glance.builtin.list.side` | `"right"` | Side of the list pane: `"right"` or `"left"`. The preview pane takes the other side. |
+| `glance.builtin.keys.list` | See [Keys](#keys) | Keys of the actions in the list. |
+| `glance.builtin.keys.preview` | See [Keys](#keys) | Keys of the actions in the preview pane. |
+| `glance.builtin.window` | `{}` | Border, title, footer, and window options of both panes. See [Window](#window). |
 
-Each value in `glance.keys.list` and `glance.keys.preview` is a key, a list of
-keys, or `false`. `false` removes the keys of the action. Setup rejects a key
-that two actions of one pane use. The list and the preview pane can use the
-same key.
+The `glance.builtin` options apply only to the glance window. Each value in
+`glance.builtin.keys.list` and `glance.builtin.keys.preview` is a key, a list
+of keys, or `false`. `false` removes the keys of the action. Setup rejects a
+key that two actions of one pane use. The list and the preview pane can use
+the same key.
 
 ### Window
 
-`peek.window` and `glance.window` configure the floats. They accept the same
+`peek.window` and `glance.builtin.window` configure the floats. They accept the same
 keys as [`scrollbar.window`](configuration.md#window), with these differences:
 
 - Without a `border` key, the floats use `'winborder'` as it is when they
@@ -391,7 +603,8 @@ keys as [`scrollbar.window`](configuration.md#window), with these differences:
   `anchor`, `row`, `col`, `width`, `height`, `focusable`, `hide`, `style`,
   `external`, `split`, `vertical`, `noautocmd`, and `fixed`. The error names
   the option to use, for example `peek.frame` for `height`.
-- The keys of `glance.window` apply to both panes.
+- The keys of `glance.builtin.window` apply to both panes of the glance
+  window.
 
 ```lua
 require("scrollbar").setup({
@@ -402,16 +615,18 @@ require("scrollbar").setup({
         },
     },
     glance = {
-        window = { border = "single" },
+        builtin = {
+            window = { border = "single" },
+        },
     },
 })
 ```
 
 ### Frame
 
-`peek.frame` and `glance.frame` set the place and the size of the frame: the
-outer box of the float, border included. For the glance window, the frame
-holds both panes. The value is a preset name or a frame function.
+`peek.frame` and `glance.builtin.frame` set the place and the size of the
+frame: the outer box of the float, border included. For the glance window,
+the frame holds both panes. The value is a preset name or a frame function.
 `require("scrollbar.recipes").frame` has recipes that make frame functions.
 Each preset is its recipe without options, so `"cursor"` is the same as
 `recipes.frame.cursor()`.
@@ -449,8 +664,10 @@ require("scrollbar").setup({
         frame = frame.cursor({ height = 15 }),
     },
     glance = {
-        frame = frame.center({ relative = "editor", width = 0.8, height = 0.7 }),
-        list = { width = 40, side = "left" },
+        builtin = {
+            frame = frame.center({ relative = "editor", width = 0.8, height = 0.7 }),
+            list = { width = 40, side = "left" },
+        },
     },
 })
 ```
@@ -524,14 +741,18 @@ window. A size change of another window does nothing.
 | Lua | Command | Result |
 | --- | --- | --- |
 | `require("scrollbar").jump(opts)` | `:ScrollbarJump [types]` | Starts label mode. The command exists only when the scrollbar is enabled. |
-| `require("scrollbar").glance(opts)` | `:ScrollbarGlance [types]` | Opens the glance window. The command always exists after `setup()`. |
+| `require("scrollbar").glance(opts)` | `:ScrollbarGlance [types]` | Opens the glance picker. The command always exists after `setup()`. |
 
 `opts.types` is a list of mark type names, for example
 `{ "Error", "Warn" }`. Without `types`, every mark type except `Cursor` is
 used. The commands take the names as arguments, and they complete the names
 of the registered mark types.
 
-- An unknown mark type name gives an error notification, and nothing opens.
+`glance()` also takes `opts.picker`, with the values of `glance.picker`. See
+[Glance Pickers](#glance-pickers).
+
+- An unknown mark type name or an invalid `opts.picker` gives an error
+  notification, and nothing opens.
 - Before `setup()`, `jump()` and `glance()` show a notification and do
   nothing.
 
@@ -540,8 +761,8 @@ of the registered mark types.
 | Group | Default link | Use |
 | --- | --- | --- |
 | `ScrollbarJumpLabel` | `Substitute` | The labels of label mode |
-| `ScrollbarGlanceHeader` | `Title` | The group headers of the glance list |
-| `ScrollbarGlanceLineNr` | `LineNr` | The line numbers of the glance list |
+| `ScrollbarGlanceHeader` | `Title` | The group headers of the glance window |
+| `ScrollbarGlanceLineNr` | `LineNr` | The line numbers of the glance list, in every picker |
 
 With `set_highlights = false`, the plugin does not create these groups. See
 [Highlights](highlights.md#navigation-groups).

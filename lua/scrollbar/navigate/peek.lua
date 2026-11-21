@@ -22,7 +22,7 @@ M.OWNED_VAR = "scrollbar_navigate_owned"
 local AUGROUP = "ScrollbarPeek"
 
 -- Window options of a float on the source buffer. `peek.window.wo` and
--- `glance.window.wo` apply after them.
+-- `glance.builtin.window.wo` apply after them.
 local WINDOW_OPTIONS = {
     number = true,
     cursorline = true,

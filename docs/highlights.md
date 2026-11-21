@@ -315,14 +315,14 @@ minimap mark types.
 
 ## Navigation Groups
 
-Label mode and the glance window use static groups. The plugin creates them as
+Label mode and the glance pickers use static groups. The plugin creates them as
 default links:
 
 | Group | Default link | Use |
 | --- | --- | --- |
 | `ScrollbarJumpLabel` | `Substitute` | The labels of label mode |
-| `ScrollbarGlanceHeader` | `Title` | The group headers of the glance list |
-| `ScrollbarGlanceLineNr` | `LineNr` | The line numbers of the glance list |
+| `ScrollbarGlanceHeader` | `Title` | The group headers of the glance window |
+| `ScrollbarGlanceLineNr` | `LineNr` | The line numbers of the glance list, in every picker |
 
 The glyphs of the glance list use the `Scrollbar<Type>` group of each mark
 type. The groups own these names, so `JumpLabel`, `GlanceHeader`, and
@@ -397,7 +397,7 @@ groups manually.
 
 The floats still map their frames to the [frame groups](#frame-groups). When
 you use a border, a title, or a footer in manual mode, define those groups too.
-To use label mode or the glance window in manual mode, define the
+To use label mode or the glance pickers in manual mode, define the
 [navigation groups](#navigation-groups).
 
 ## Related

@@ -41,7 +41,7 @@ end
 ---@param ctx? ScrollbarFrameContext
 ---@param top? integer
 local function run(result, ctx, top)
-    return frame.run("glance.frame", function()
+    return frame.run("glance.builtin.frame", function()
         return result
     end, ctx or context(), top or 0)
 end
@@ -81,20 +81,23 @@ end
 
 T["run"]["an invalid result notifies once for each message"] = function()
     local cases = {
-        { "x", "[nvim-scrollbar] glance.frame returned a string, not a table" },
-        { { col = 0, width = 1, height = 1 }, "[nvim-scrollbar] glance.frame returned no 'row'" },
+        { "x", "[nvim-scrollbar] glance.builtin.frame returned a string, not a table" },
+        { { col = 0, width = 1, height = 1 }, "[nvim-scrollbar] glance.builtin.frame returned no 'row'" },
         {
             { row = "1", col = 0, width = 1, height = 1 },
-            "[nvim-scrollbar] glance.frame returned an invalid 'row': it must be a finite number",
+            "[nvim-scrollbar] glance.builtin.frame returned an invalid 'row': it must be a finite number",
         },
         {
             { row = 0, col = 0 / 0, width = 1, height = 1 },
-            "[nvim-scrollbar] glance.frame returned an invalid 'col': it must be a finite number",
+            "[nvim-scrollbar] glance.builtin.frame returned an invalid 'col': it must be a finite number",
         },
-        { { row = 0, col = 0, width = 0.5, height = 1 }, "[nvim-scrollbar] glance.frame returned a 'width' below 1" },
+        {
+            { row = 0, col = 0, width = 0.5, height = 1 },
+            "[nvim-scrollbar] glance.builtin.frame returned a 'width' below 1",
+        },
         {
             { relative = "cursor", row = 0, col = 0, width = 1, height = 1 },
-            '[nvim-scrollbar] glance.frame returned an invalid \'relative\': it must be "win" or "editor"',
+            '[nvim-scrollbar] glance.builtin.frame returned an invalid \'relative\': it must be "win" or "editor"',
         },
     }
     local expected = {}

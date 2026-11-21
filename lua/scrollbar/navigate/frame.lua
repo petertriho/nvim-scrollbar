@@ -1,8 +1,8 @@
 --- The frame of the peek float and of the glance window: the place and the
---- size of the outer box, border included. `peek.frame` and `glance.frame`
---- take a preset name or a frame function. The recipes in
---- `require("scrollbar.recipes").frame` build frame functions with options,
---- and each preset is its recipe without options.
+--- size of the outer box, border included. `peek.frame` and
+--- `glance.builtin.frame` take a preset name or a frame function. The
+--- recipes in `require("scrollbar.recipes").frame` build frame functions with
+--- options, and each preset is its recipe without options.
 ---
 --- A frame function gets a new context on each call and returns
 --- `{ relative?, row, col, width, height }` in cells, or nil when the window
@@ -357,7 +357,7 @@ end
 ---@field height integer Outer rows, border included
 
 --- Run the frame of `value` and clamp the result into its area.
----@param path string Option that names the frame in a notification, for example `"glance.frame"`
+---@param path string Option that names the frame in a notification, for example `"glance.builtin.frame"`
 ---@param value ScrollbarFrameValue
 ---@param ctx ScrollbarFrameContext
 ---@param top integer Screen row of row 0 of the editor area

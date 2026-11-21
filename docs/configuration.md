@@ -20,7 +20,7 @@ require("scrollbar").setup({
     scrollbar = {},
     minimap = {},   -- disabled by default, see the minimap documentation
 
-    -- Floats of label mode, hover, and the glance window
+    -- Floats of label mode and hover, and the glance pickers
     peek = {},
     glance = {},
 })
@@ -171,24 +171,28 @@ require("scrollbar").setup({
         window = {},
     },
     glance = { -- see Jump and Glance
-        frame = "cursor", -- "scrollbar", "cursor", "center", or a function
-        list = {
-            entries = "line", -- "line", "mark", or "type"
-            width = 0.4,
-            side = "right", -- "right" or "left"
-        },
-        keys = { -- see Jump and Glance
+        picker = "builtin", -- "builtin", "snacks", "telescope", or a function
+        entries = "line", -- "line", "mark", or "type"
+        builtin = { -- the glance window
+            frame = "cursor", -- "scrollbar", "cursor", "center", or a function
             list = {
-                jump = "<CR>",
-                focus_preview = "<Tab>",
-                close = { "q", "<Esc>" },
-                -- jump_split, jump_vsplit, next, previous, and quickfix: false
+                width = 0.4,
+                side = "right", -- "right" or "left"
             },
-            -- jump_split, jump_vsplit, next, previous, focus_list, and close:
-            -- false
-            preview = {},
+            keys = { -- see Jump and Glance
+                list = {
+                    jump = "<CR>",
+                    focus_preview = "<Tab>",
+                    close = { "q", "<Esc>" },
+                    -- jump_split, jump_vsplit, next, previous, and quickfix:
+                    -- false
+                },
+                -- jump_split, jump_vsplit, next, previous, focus_list, and
+                -- close: false
+                preview = {},
+            },
+            window = {},
         },
-        window = {},
     },
 })
 ```
@@ -617,9 +621,10 @@ example, to show line numbers beside the marks or in the thumb. The
 
 `require("scrollbar.recipes")` has ready-made text functions. Each recipe
 makes a text function. Call it, with an optional options table. The module
-also has [predicate recipes](#predicate-recipes) and
+also has [predicate recipes](#predicate-recipes),
 [frame recipes](jump-and-glance.md#frame) for the peek float and the glance
-window.
+window, and [picker recipes](jump-and-glance.md#picker-recipes) for
+`glance.picker`.
 
 ```lua
 local recipes = require("scrollbar.recipes")
@@ -1075,8 +1080,9 @@ second profile shows no marks in the windows without focus.
 ## Peek and Glance
 
 The top-level `peek` block configures the peek float of label mode and hover.
-The top-level `glance` block configures the glance window. Both blocks are
-global, so profiles do not change them. See
+The top-level `glance` block selects the glance picker and configures the
+glance window in `glance.builtin`. Both blocks are global, so profiles do not
+change them. See
 [Jump and Glance](jump-and-glance.md#options) for each option.
 
 ```lua
@@ -1091,14 +1097,17 @@ require("scrollbar").setup({
         window = { border = "rounded" },
     },
     glance = {
-        frame = frame.center({ width = 0.8, height = 0.7 }),
-        list = { entries = "type" },
-        keys = { list = { close = "q" } },
+        entries = "type",
+        builtin = {
+            frame = frame.center({ width = 0.8, height = 0.7 }),
+            keys = { list = { close = "q" } },
+        },
     },
 })
 ```
 
-`peek.frame` and `glance.frame` take a preset name or a frame function. The
+`peek.frame` and `glance.builtin.frame` take a preset name or a frame
+function. The
 [frame recipes](jump-and-glance.md#frame) in
 `require("scrollbar.recipes").frame` make frame functions.
 
