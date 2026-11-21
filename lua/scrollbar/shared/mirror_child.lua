@@ -11,7 +11,7 @@
 --- parent text.
 ---
 --- A worker adds its own request kinds to `handlers` and can set the
---- `on_snapshot_start` and `on_snapshot_complete` hooks.
+--- `on_snapshot_start`, `on_snapshot_complete`, and `on_delta` hooks.
 
 local M = {}
 
@@ -34,6 +34,7 @@ local M = {}
 ---@field handlers table<string, fun(payload: table)>
 ---@field on_snapshot_start? fun(mirror: ScrollbarMirrorChildMirror, payload: table)
 ---@field on_snapshot_complete? fun(mirror: ScrollbarMirrorChildMirror, payload: table)
+---@field on_delta? fun(mirror: ScrollbarMirrorChildMirror, payload: table) Runs after a delta replaces lines [first, last) with `lines`
 
 ---@param session string
 ---@param options ScrollbarMirrorChildOptions
@@ -160,6 +161,9 @@ end
             end
             vim.api.nvim_buf_set_lines(mirror.child_buf, payload.first, payload.last, false, payload.lines)
             mirror.version = payload.version
+            if child.on_delta ~= nil then
+                child.on_delta(mirror, payload)
+            end
             if timing then
                 send("delta_complete", {
                     bufnr = payload.bufnr,

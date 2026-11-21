@@ -1,8 +1,10 @@
 --- Search worker: scans mirrored buffers for the search pattern in a headless
 --- child Neovim. `scrollbar.shared.mirror` owns the child process and the
 --- buffer mirrors. This module keeps one pending scan for each buffer and one
---- scan in flight. On worker failure the module emits exactly one warning, and
---- the search provider uses the synchronous scan for the rest of the session.
+--- scan in flight. After an edit, the child searches only the changed lines
+--- when the pattern cannot match across lines. On worker failure the module
+--- emits exactly one warning, and the search provider uses the synchronous
+--- scan for the rest of the session.
 
 local mirror_host = require("scrollbar.shared.mirror")
 local text_tick = require("scrollbar.shared.text_tick")
@@ -13,6 +15,47 @@ local M = {}
 -- prelude, with the child mirror table and the extension options.
 local CHILD_EXTENSION = [[
 local child, options = ...
+
+-- The last scan of each buffer. A later scan with the same signature applies
+-- the edits since then to its match lines, and searches only the changed
+-- lines. Each delta adds one edit, so the scan has every edit when its
+-- version plus the edit count equals the mirror version.
+local scans = {}
+
+-- More edits than this drop the last scan, for example while the search is
+-- hidden and the user edits for a long time.
+local MAX_EDITS = 64
+
+-- Atoms with which a match can span lines, or depend on the line number, the
+-- cursor, a mark, or the last substitute string. A pattern with one of them
+-- gets a full scan. The check is textual, so an escaped backslash before one
+-- of them also gives a full scan.
+local FULL_SCAN_ATOMS = { "\\n", "\\_", "\\%", "\\v", "\\@", "~" }
+
+local function line_local(pattern)
+    for _, atom in ipairs(FULL_SCAN_ATOMS) do
+        if pattern:find(atom, 1, true) then
+            return false
+        end
+    end
+    return true
+end
+
+child.on_snapshot_start = function(_, payload)
+    scans[payload.bufnr] = nil
+end
+
+child.on_delta = function(mirror, payload)
+    local scan = scans[payload.bufnr]
+    if scan == nil then
+        return
+    end
+    if scan.id ~= mirror.id or #scan.edits >= MAX_EDITS then
+        scans[payload.bufnr] = nil
+        return
+    end
+    scan.edits[#scan.edits + 1] = { payload.first, payload.last, #payload.lines }
+end
 
 local function encode_lines(lines)
     local encoded = {}
@@ -27,6 +70,113 @@ local function encode_lines(lines)
     return { data = table.concat(encoded), count = #lines, partial = false }
 end
 
+-- The zero-based line of each match from line `start_line` (one-based) to
+-- `stopline` (zero for the end of the buffer), in buffer order. A forward
+-- search without wrap reports the matches in order, and the skip callback
+-- runs once for each match.
+local function collect(pattern, start_line, stopline)
+    local lines = {}
+    local previous_row, previous_col = -1, -1
+    local sorted = true
+    local get_cursor = vim.api.nvim_win_get_cursor
+    vim.api.nvim_win_set_cursor(0, { start_line, 0 })
+    vim.fn.searchpos(pattern, "Wnc", stopline, 0, function()
+        local cursor = get_cursor(0)
+        local row, col = cursor[1], cursor[2]
+        if row ~= previous_row or col ~= previous_col then
+            if row < previous_row or (row == previous_row and col < previous_col) then
+                sorted = false
+            end
+            previous_row, previous_col = row, col
+            lines[#lines + 1] = row - 1
+        end
+        return true
+    end)
+    if not sorted then
+        table.sort(lines)
+    end
+    return lines
+end
+
+-- Applies the edits to the match lines of the last scan. Each edit replaces
+-- lines [first, last) with `count` lines. The result drops the matches in the
+-- replaced lines, shifts the later matches, and returns the span [low, high)
+-- that holds every changed line, or nil without edits.
+local function apply_edits(lines, edits)
+    local low, high
+    for _, edit in ipairs(edits) do
+        local first, last, count = edit[1], edit[2], edit[3]
+        local delta = count - (last - first)
+        local shifted = {}
+        for _, line in ipairs(lines) do
+            if line < first then
+                shifted[#shifted + 1] = line
+            elseif line >= last then
+                shifted[#shifted + 1] = line + delta
+            end
+        end
+        lines = shifted
+        if low == nil then
+            low, high = first, first + count
+        else
+            if low >= last then
+                low = low + delta
+            elseif low > first then
+                low = first
+            end
+            if high >= last then
+                high = high + delta
+            elseif high > first then
+                high = first + count
+            end
+            low = math.min(low, first)
+            high = math.max(high, first + count)
+        end
+    end
+    return lines, low, high
+end
+
+-- The match lines of the last scan, updated for the edits since then, or nil
+-- when a full scan is needed. The second result is the count of searched
+-- lines.
+local function changed_scan(payload, mirror, line_count)
+    local scan = scans[payload.bufnr]
+    if
+        scan == nil
+        or scan.id ~= mirror.id
+        or scan.signature ~= payload.signature
+        or scan.version + #scan.edits ~= mirror.version
+        or not line_local(payload.pattern)
+    then
+        return nil
+    end
+    local kept, low, high = apply_edits(scan.lines, scan.edits)
+    if low == nil then
+        return kept, 0
+    end
+    high = math.min(high, line_count)
+    if high - low > line_count / 2 then
+        return nil
+    end
+    local found = low < high and collect(payload.pattern, low + 1, high) or {}
+    local lines = {}
+    for _, line in ipairs(kept) do
+        if line >= low then
+            break
+        end
+        lines[#lines + 1] = line
+    end
+    for _, line in ipairs(found) do
+        lines[#lines + 1] = line
+    end
+    for _, line in ipairs(kept) do
+        if line >= high then
+            lines[#lines + 1] = line
+        end
+    end
+    return lines, math.max(0, high - low)
+end
+
 child.handlers.scan = function(payload)
     local mirror = child.current(payload)
     if mirror == nil then
@@ -38,46 +188,40 @@ child.handlers.scan = function(payload)
         vim.uv.sleep(options.scan_delay_ms)
     end
 
-    local ok, compact = pcall(function()
+    local ok, lines, scanned_lines = pcall(function()
         vim.o.ignorecase = payload.ignorecase
         vim.o.smartcase = payload.smartcase
         vim.o.magic = payload.magic
         vim.bo[mirror.child_buf].iskeyword = payload.iskeyword
         vim.api.nvim_win_set_buf(0, mirror.child_buf)
-        vim.api.nvim_win_set_cursor(0, { 1, 0 })
-
-        local matches = {}
-        local seen = {}
-        local function collect()
-            local position = { vim.fn.line("."), vim.fn.col(".") }
-            local key = string.format("%d:%d", position[1], position[2])
-            if not seen[key] then
-                seen[key] = true
-                matches[#matches + 1] = position
-            end
-            return true
+        local line_count = vim.api.nvim_buf_line_count(mirror.child_buf)
+        local changed, searched = changed_scan(payload, mirror, line_count)
+        if changed ~= nil then
+            return changed, searched
         end
-
-        vim.fn.searchpos(payload.pattern, "Wnc", 0, 0, collect)
-        vim.fn.searchpos(payload.pattern, "bWnc", 0, 0, collect)
-        table.sort(matches, function(left, right)
-            return left[1] < right[1] or (left[1] == right[1] and left[2] < right[2])
-        end)
-
-        local result = {}
-        for index, position in ipairs(matches) do
-            result[index] = position[1] - 1
-        end
-        return encode_lines(result)
+        return collect(payload.pattern, 1, 0), line_count
     end)
+
+    if ok and line_local(payload.pattern) then
+        scans[payload.bufnr] = {
+            id = mirror.id,
+            version = mirror.version,
+            signature = payload.signature,
+            lines = lines,
+            edits = {},
+        }
+    else
+        scans[payload.bufnr] = nil
+    end
 
     child.send("result", {
         bufnr = payload.bufnr,
         generation = payload.generation,
         signature = payload.signature,
         mirror = payload.mirror,
-        compact = ok and compact or vim.NIL,
+        compact = ok and encode_lines(lines) or vim.NIL,
         scan_duration_ms = scan_started and (vim.uv.hrtime() - scan_started) / 1000000 or nil,
+        scanned_lines = options.timing and ok and scanned_lines or nil,
     })
 end
 ]]

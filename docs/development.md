@@ -130,7 +130,7 @@ The cases use 10000-line buffers. Only `minimap/squash/fit_1k` uses 1000 lines.
 | `marks/`     | `benchmarks/cases/marks.lua`     | The reconcile of the marks provider over 1, 4, and 16 buffers.                                                                                       |
 | `search/`    | `benchmarks/cases/search.lua`    | One accepted search with the sync backend, from BufEnter to the publication.                                                                         |
 | `minimap/`   | `benchmarks/cases/minimap.lua`   | The squash, a sync request, and the render of the minimap float.                                                                                     |
-| `worker/`    | `benchmarks/cases/worker.lua`    | The round trips to the search and minimap children, and the startup of each child.                                                                   |
+| `worker/`    | `benchmarks/cases/worker.lua`    | The round trips to the search and minimap children, a search after an edit of one line, and the startup of each child.                               |
 
 Each line of the output has these values:
 
