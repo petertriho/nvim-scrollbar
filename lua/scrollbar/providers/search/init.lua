@@ -555,17 +555,6 @@ local function handle_worker_failure()
     end
 end
 
----@param request ScrollbarSearchRequest
----@param other ScrollbarSearchRequest
----@return boolean
-local function same_request(request, other)
-    return request.changedtick == other.changedtick
-        and request.signature == other.signature
-        and request.visible == other.visible
-        and request.mode == other.mode
-        and request.ignore_visibility == other.ignore_visibility
-end
-
 ---Whether the scan of `running` also answers `request`. An edit refresh and
 ---an accepted refresh of the same text and pattern find the same matches.
 ---@param running ScrollbarSearchRequest
@@ -631,7 +620,11 @@ local function request_refresh(context, bufnr, pattern, mode, ignore_visibility)
         end
         return false
     end
-    if state.pending ~= nil and same_request(state.pending, pending) then
+    -- `SafeState` fires after each key in Insert mode, after `TextChangedI`.
+    -- Its accepted refresh finds the same matches as the pending edit
+    -- refresh, so the edit refresh stays pending with its debounce. Otherwise
+    -- each key would scan the buffer at once.
+    if state.pending ~= nil and covers(state.pending, pending) then
         return false
     end
     -- `SafeState` fires after every event, also while the worker scans. If the

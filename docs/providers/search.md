@@ -69,8 +69,10 @@ Incremental previews have this behavior:
   result.
 
 After an edit, the provider scans the buffer again with the current accepted
-pattern. The provider does not scan a hidden buffer. It scans the buffer when
-an eligible source window shows it.
+pattern. The scan starts when 50 ms pass without another edit. Thus while you
+type quickly, the provider scans once, after you pause. The provider does not
+scan a hidden buffer. It scans the buffer when an eligible source window shows
+it.
 
 ## Visibility Requirements
 
@@ -308,9 +310,10 @@ loop of Neovim. For expensive searches, prefer the worker backend and set
 ### Marks look briefly out of date
 
 While a new scan runs, the previous accepted marks stay visible. This behavior
-prevents flicker during rapid searches and continuous edits. A new accepted
-search or `:ScrollbarRefresh` can request a refresh, but a slow scan must still
-finish before new marks show.
+prevents flicker during rapid searches and continuous edits. After an edit, the
+scan starts 50 ms after the last edit, so the marks can lag while you type. A
+new accepted search or `:ScrollbarRefresh` can request a refresh, but a slow
+scan must still finish before new marks show.
 
 ## Related Links
 
