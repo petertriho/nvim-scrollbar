@@ -13,6 +13,16 @@ local SEARCH_INTERVAL = 10
 ---@param opts bench.RenderOptions
 local function configure(unit, opts)
     local reserve = opts.reserve
+    local marks = nil
+    if opts.mark_text or opts.cursor_covered then
+        marks = {}
+        if opts.mark_text then
+            marks.Misc = { text = opts.mark_text }
+        end
+        if opts.cursor_covered then
+            marks.Cursor = { highlight_from = "covered" }
+        end
+    end
     require("scrollbar.config").set({
         set_highlights = false,
         exclude = { buftypes = {}, filetypes = {} },
@@ -22,7 +32,7 @@ local function configure(unit, opts)
             search = opts.search == true,
             marks = false,
         },
-        marks = opts.mark_text and { Misc = { text = opts.mark_text } } or nil,
+        marks = marks,
         scrollbar = {
             unit = unit,
             throttle_ms = 0,
@@ -63,6 +73,7 @@ end
 ---@field thumb_text? ScrollbarThumbTextFunction
 ---@field cursor_mark? boolean Adds one window mark of the type Cursor, which `change` can move.
 ---@field search? boolean Adds compact search matches on every 10th line.
+---@field cursor_covered? boolean Sets `highlight_from = "covered"` on the Cursor type.
 
 ---@param unit "line" | "screenline"
 ---@param name string
@@ -229,5 +240,12 @@ return {
     -- render must not rebuild the marks of the other providers.
     render_case("line", "cursor_mark", { cursor_mark = true, change = move_cursor_mark }),
     render_case("line", "cursor_mark_search", { cursor_mark = true, search = true, change = move_cursor_mark }),
+    -- The cursor mark takes the color of the marks that it covers. On most
+    -- rows, it covers a Misc mark or a search match.
+    render_case(
+        "line",
+        "cursor_mark_covered",
+        { cursor_mark = true, search = true, cursor_covered = true, change = move_cursor_mark }
+    ),
     render_case("line", "thumb_text_scroll", { thumb_text = thumb_top_line, change = scroll }),
 }

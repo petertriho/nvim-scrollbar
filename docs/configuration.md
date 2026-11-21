@@ -603,6 +603,36 @@ marks = {
 - `inactive_highlight_channel` is `"fg"` or `"bg"`. It selects the channel of
   an `inactive_highlight` group name. Without it, the mark uses the channel
   of `highlight_channel`. See [Inactive Windows](highlights.md#inactive-windows).
+- `highlight_from` is `"self"` (the default) or `"covered"`. With
+  `"covered"`, a scrollbar cell of the mark type shows in the highlight of the
+  mark that it covers in that cell. The text of the cell does not change. The
+  minimap ignores `highlight_from`, and `minimap.marks` rejects it.
+
+  ```lua
+  marks = {
+      Cursor = { highlight_from = "covered" }, -- the color of an Error on the cursor row
+  }
+  ```
+
+  The rules for `"covered"`:
+
+  - A mark covers the marks that the cell would show without it. These are
+    the marks of its lane that lose the collision to it, and the marks of
+    lower mark layers in the same cells.
+  - When the mark covers more than one mark, the cell takes the first covered
+    mark in this order: the marks of its own lane by priority, then the marks
+    of the lower layers from the top down.
+  - A covered mark that also sets `highlight_from = "covered"` does not count.
+    When no covered mark counts, the mark keeps its own highlight.
+  - A mark in another column of the same row does not count.
+  - Only the color changes. A click, the hover, the peek float, and the jump
+    labels still use the type of the mark, for example `Cursor`.
+  - With `overlap.marks = "tint"`, the cell takes the tint of the covered
+    mark, so the cell looks the same as that mark.
+  - To turn off a shared `"covered"` in a renderer override or in a profile,
+    set `highlight_from = "self"`.
+
+  See [Covered Marks](highlights.md#covered-marks) for the groups of the cell.
 
 Each renderer block has its own `marks` table with overrides for that
 renderer:

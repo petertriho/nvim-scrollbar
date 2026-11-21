@@ -92,6 +92,8 @@
 
 ---@alias ScrollbarHighlightChannel "fg"|"bg" The color of a highlight group that a mark takes
 
+---@alias ScrollbarHighlightFrom "self"|"covered" The mark type whose highlight a scrollbar mark cell shows
+
 ---@class ScrollbarUserMarkTypeConfig
 ---@field text? ScrollbarText
 ---@field priority? integer
@@ -99,6 +101,7 @@
 ---@field highlight_channel? ScrollbarHighlightChannel Defaults to "fg". A table `highlight` ignores it
 ---@field inactive_highlight? ScrollbarHighlight The mark in a source window without focus
 ---@field inactive_highlight_channel? ScrollbarHighlightChannel Defaults to `highlight_channel`. A table `inactive_highlight` ignores it
+---@field highlight_from? ScrollbarHighlightFrom Defaults to "self". "covered" shows a scrollbar mark cell in the highlight of the mark that it covers. The minimap ignores it
 
 ---@class ScrollbarSearchProviderConfig
 ---@field incsearch? boolean
@@ -458,6 +461,7 @@
 ---@field highlight_channel? ScrollbarHighlightChannel Nil means "fg"
 ---@field inactive_highlight? ScrollbarHighlight Source group or direct definition for a source window without focus
 ---@field inactive_highlight_channel? ScrollbarHighlightChannel Nil means `highlight_channel`
+---@field highlight_from? "covered" Nil means "self"
 
 ---@class ScrollbarMarkRegistry
 ---@field specs table<string, ScrollbarMarkTypeConfig> Every registered mark type
@@ -819,6 +823,8 @@
 ---@field provider string
 ---@field line integer
 ---@field lines integer[]
+---@field inherits? true The type has `highlight_from = "covered"`
+---@field covered_type? string The first mark type that this inheriting glyph drops in its lane and that does not inherit
 
 ---@class ScrollbarResolvedMarkLayer
 ---@field rows table<integer, table<integer, table<integer, ScrollbarPlacedMark>>> Placed cells by row, lane, and display column

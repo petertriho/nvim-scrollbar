@@ -199,7 +199,8 @@ The minimap shows every type in the top-level `marks` registry, except
 `Cursor`, with the `priority`, `highlight`, `highlight_channel`,
 `inactive_highlight`, and `inactive_highlight_channel` of the registry. The
 minimap
-does not use `text`. Use `minimap.marks` to override fields or to hide types.
+does not use `text` or `highlight_from`. Use `minimap.marks` to override fields
+or to hide types.
 The types that you do not specify stay visible:
 
 ```lua

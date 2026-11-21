@@ -66,6 +66,27 @@ T["compiles profile variants with presets and settled precedence"] = function()
     end
 end
 
+T["a profile turns highlight_from off and keeps it in the layout cache key"] = function()
+    local root = config().set({
+        marks = { Cursor = { highlight_from = "covered" } },
+        scrollbar = {
+            profiles = {
+                {
+                    match = { filetypes = { "markdown" } },
+                    marks = { Cursor = { highlight_from = "self" } },
+                },
+            },
+        },
+    })
+    local variants = config().get_variants()
+
+    expect.equality(root.marks.Cursor.highlight_from, "covered")
+    expect.equality(root.layout_cache.marks.Cursor.highlight_from, "covered")
+    expect.equality(variants[2].config.marks.Cursor.highlight_from, nil)
+    expect.equality(variants[2].config.layout_cache.marks.Cursor.highlight_from, nil)
+    expect.equality(vim.deep_equal(root.layout_cache, variants[2].config.layout_cache), false)
+end
+
 T["validates profile schema and the appearance boundary"] = function()
     expect_invalid({ profiles = "lua" }, "scrollbar.profiles must be a dense list")
     expect_invalid({ profiles = { [2] = { match = { when = function() end } } } }, "profiles must be a dense list")

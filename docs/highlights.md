@@ -117,6 +117,24 @@ For example, a profile that sets only `placement` uses the `ScrollbarSearch`
 definition of a colorscheme. A profile that sets `thumb.blend` generates its own
 thumb groups and overlap groups.
 
+## Covered Marks
+
+A scrollbar mark type with `highlight_from = "covered"` shows in the colors of
+the mark that it covers. See [Marks](configuration.md#marks) for the rules.
+The option adds no groups. The cell uses the groups of the covered mark type:
+
+- `Scrollbar<Type>` in a row without the thumb.
+- `Scrollbar<Type>Thumb` over the thumb, and `Scrollbar<Type>ThumbPressed`
+  over the pressed thumb.
+- `Scrollbar<Type>Tint` with `overlap.marks = "tint"`.
+- The inactive groups of the covered type in an inactive window. The
+  `inactive_highlight` of the covering mark applies only when the mark covers
+  no mark.
+
+For example, with `marks.Cursor.highlight_from = "covered"`, the cursor mark on
+a row with an Error mark uses `ScrollbarError`, or `ScrollbarErrorThumb` over
+the thumb. A cursor mark that covers no mark uses `ScrollbarCursor`.
+
 ## Inactive Windows
 
 The scrollbar and the minimap of an inactive source window can use other

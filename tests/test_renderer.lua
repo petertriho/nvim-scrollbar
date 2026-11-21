@@ -3248,6 +3248,175 @@ T["incremental line renders match full renders after mark, search, and line chan
     expect.equality(result.incremental_builds > result.steps / 3, true)
 end
 
+T["an inheriting cursor mark follows the covered mark through in-place moves"] = function()
+    local child = new_child()
+    local result = child.lua_func(
+        function(base_config)
+            local lines = {}
+            for index = 1, 400 do
+                lines[index] = "line " .. index
+            end
+            vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+            local source_win = vim.api.nvim_get_current_win()
+            local source_buf = vim.api.nvim_get_current_buf()
+            require("scrollbar.test.set_config")(base_config)
+            local store = require("scrollbar.shared.store")
+            assert(store.set("alpha", source_buf, { { line = 200, type = "Error" } }))
+            assert(store.set_window("window", source_win, { { line = 0, type = "Cursor" } }))
+
+            local layout = require("scrollbar.layout")
+            local original_mark_layer = layout.mark_layer
+            local incremental = 0
+            rawset(layout, "mark_layer", function(input)
+                if input.previous ~= nil then
+                    incremental = incremental + 1
+                end
+                return original_mark_layer(input)
+            end)
+
+            local renderer = require("scrollbar.renderer")
+            renderer.setup()
+            -- The layout has one column, so the last span of a row is the
+            -- span of its mark.
+            local function highlight_of(mark_type)
+                local output = assert(renderer.render(source_win))
+                for row, cells in ipairs(output.hitmap) do
+                    if cells[1].type == mark_type then
+                        local spans = output.highlights[row]
+                        return spans[#spans].highlight
+                    end
+                end
+                return false
+            end
+            local function move_cursor(line)
+                assert(store.set_window("window", source_win, { { line = line, type = "Cursor" } }))
+            end
+
+            local steps = {}
+            steps.apart = highlight_of("Cursor")
+            move_cursor(200)
+            steps.onto_error = highlight_of("Cursor")
+            move_cursor(100)
+            steps.off_error = highlight_of("Cursor")
+            steps.error_alone = highlight_of("Error")
+            move_cursor(300)
+            highlight_of("Cursor")
+            assert(store.set("alpha", source_buf, { { line = 300, type = "Error" } }))
+            steps.error_appears = highlight_of("Cursor")
+
+            rawset(layout, "mark_layer", original_mark_layer)
+            return { steps = steps, incremental = incremental }
+        end,
+        renderer_config({
+            layout = { columns = { { "track", "marks" } } },
+            marks = { Cursor = { highlight_from = "covered" } },
+        })
+    )
+
+    expect.equality(result.steps, {
+        apart = "ScrollbarCursor",
+        onto_error = "ScrollbarError",
+        off_error = "ScrollbarCursor",
+        error_alone = "ScrollbarError",
+        error_appears = "ScrollbarError",
+    })
+    -- Each cursor move rebuilds only the old and the new row of the cursor.
+    expect.equality(result.incremental >= 3, true)
+end
+
+T["incremental line renders match full renders with an inheriting cursor mark"] = function()
+    local child = new_child()
+    local result = child.lua_func(
+        function(base_config)
+            local line_count = 300
+            local lines = {}
+            for index = 1, line_count do
+                lines[index] = "line " .. index
+            end
+            vim.api.nvim_buf_set_lines(0, 0, -1, false, lines)
+            vim.cmd("split")
+            vim.cmd("split")
+            local incremental_win = vim.api.nvim_get_current_win()
+            local reference_win = vim.fn.win_getid(vim.fn.winnr("j"))
+            vim.api.nvim_win_set_height(incremental_win, 6)
+            vim.api.nvim_win_set_height(reference_win, 6)
+            local source_buf = vim.api.nvim_get_current_buf()
+            require("scrollbar.test.set_config")(base_config)
+            local store = require("scrollbar.shared.store")
+
+            -- A deterministic sequence, so that a failure repeats.
+            local seed = 4242
+            local function random(limit)
+                seed = (seed * 1103515245 + 12345) % 2147483648
+                return math.floor(seed / 65536) % limit
+            end
+            local types = { "Error", "Warn", "Search" }
+            local function spread(count)
+                local marks = {}
+                for index = 1, count do
+                    marks[index] = { line = random(line_count), type = types[random(#types) + 1] }
+                end
+                return marks
+            end
+            local function move_cursor(line)
+                local marks = { { line = line, type = "Cursor" } }
+                assert(store.set_window("window", incremental_win, marks))
+                assert(store.set_window("window", reference_win, marks))
+            end
+
+            assert(store.set("alpha", source_buf, spread(40)))
+            move_cursor(0)
+
+            local renderer = require("scrollbar.renderer")
+            renderer.setup()
+            renderer.render(incremental_win)
+
+            local mismatches = {}
+            local covered = 0
+            for step = 1, 200 do
+                local choice = random(100)
+                local operation
+                if choice < 70 then
+                    operation = "move"
+                    move_cursor(random(line_count))
+                elseif choice < 90 then
+                    operation = "marks"
+                    assert(store.set("alpha", source_buf, spread(40)))
+                else
+                    operation = "count"
+                    assert(store.set("alpha", source_buf, spread(30 + random(20))))
+                end
+
+                local incremental = assert(renderer.render(incremental_win))
+                renderer.dispose(reference_win)
+                local reference = assert(renderer.render(reference_win))
+                for _, field in ipairs({ "rows", "highlights", "hitmap" }) do
+                    if not vim.deep_equal(incremental[field], reference[field]) then
+                        mismatches[#mismatches + 1] = string.format("step %d (%s): %s", step, operation, field)
+                    end
+                end
+                for row, cells in ipairs(incremental.hitmap) do
+                    if cells[1].type == "Cursor" then
+                        local spans = incremental.highlights[row]
+                        if spans[#spans].highlight ~= "ScrollbarCursor" then
+                            covered = covered + 1
+                        end
+                    end
+                end
+            end
+            return { mismatches = mismatches, covered = covered }
+        end,
+        renderer_config({
+            layout = { columns = { { "track", "marks" } } },
+            marks = { Cursor = { highlight_from = "covered" } },
+        })
+    )
+
+    expect.equality(result.mismatches, {})
+    -- The sequence puts the cursor on a covered mark in some steps.
+    expect.equality(result.covered > 0, true)
+end
+
 T["configures owned state once and reapplies only changed float configuration"] = function()
     local child = new_child()
     local result = child.lua_func(function(base_config)

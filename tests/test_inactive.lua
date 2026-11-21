@@ -283,6 +283,41 @@ T["the inactive tint follows the inactive mark"] = function()
     expect.equality(vim.tbl_contains(result.groups.right, "ScrollbarWarnTint"), true)
 end
 
+T["an inheriting mark takes the inactive group of the covered mark"] = function()
+    local child = new_child()
+    setup(
+        child,
+        base_config({
+            overlap = { marks = "tint" },
+            marks = {
+                Cursor = { highlight_from = "covered", inactive_highlight = "InactiveCursorSource" },
+                Warn = { highlight = "MarkSource", inactive_highlight = "InactiveMarkSource" },
+            },
+        })
+    )
+    local result = child.lua_func(function()
+        vim.api.nvim_set_hl(0, "MarkSource", { fg = "#333333" })
+        vim.api.nvim_set_hl(0, "InactiveMarkSource", { fg = "#444444" })
+        vim.api.nvim_set_hl(0, "InactiveCursorSource", { fg = "#555555" })
+        require("scrollbar.highlights").set_highlights()
+        local test = require("scrollbar.test.inactive")
+        local providers = require("scrollbar.providers")
+        providers.register({
+            name = "inactive_test",
+            refresh_owner = { buffer = "manager" },
+            refresh = function()
+                return { { line = 0, type = "Cursor" }, { line = 0, type = "Warn" } }
+            end,
+        })
+        providers.refresh(vim.api.nvim_win_get_buf(test.left))
+        return test.both()
+    end)
+    expect.equality(vim.tbl_contains(result.left, "ScrollbarWarnTintInactive"), true)
+    expect.equality(vim.tbl_contains(result.left, "ScrollbarCursorTintInactive"), false)
+    expect.equality(vim.tbl_contains(result.right, "ScrollbarWarnTint"), true)
+    expect.equality(vim.tbl_contains(result.right, "ScrollbarCursorTint"), false)
+end
+
 T["inactive_highlight_channel defaults to highlight_channel"] = function()
     local child = new_child()
     setup(

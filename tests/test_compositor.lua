@@ -622,6 +622,239 @@ T["composes precomputed mark layers identically and caches glyph parsing"] = fun
     expect.equality(first.strchars > 0, true)
 end
 
+T["highlight_from covered"] = MiniTest.new_set()
+
+local COVERED = { highlight_from = "covered" }
+
+local function cursor_mark(line)
+    return { provider = "cursor", line = line or 5, type = "Cursor" }
+end
+
+local function diagnostic(mark_type, line)
+    return { provider = "diagnostic", line = line or 5, type = mark_type }
+end
+
+-- The group of the uppermost span of a row: the span of the visible mark
+-- when a mark layer is the top layer of its column.
+local function top_highlight(result, row)
+    local spans = result.highlights[row or 1]
+    return spans[#spans].highlight
+end
+
+T["highlight_from covered"]["takes the highlight of the mark that it drops in its lane"] = function()
+    local marks = { cursor_mark(), diagnostic("Error") }
+    local covered = compose({ config = config({ marks = { Cursor = COVERED } }), marks = marks, mark_rows = { 0, 0 } })
+    local default = compose({ config = config(), marks = marks, mark_rows = { 0, 0 } })
+
+    expect.equality(covered.rows, { "•" })
+    expect.equality(covered.highlights[1], {
+        { start_col = 0, end_col = #"•", highlight = "ScrollbarTrack", priority = 1 },
+        { start_col = 0, end_col = #"•", highlight = "ScrollbarError", priority = 3 },
+    })
+    expect.equality(covered.hitmap[1][1].type, "Cursor")
+    expect.equality(covered.hitmap[1][1].provider, "cursor")
+    expect.equality(top_highlight(default), "ScrollbarCursor")
+end
+
+T["highlight_from covered"]["takes the lowest priority number among the dropped marks"] = function()
+    local result = compose({
+        config = config({ marks = { Cursor = COVERED } }),
+        marks = { cursor_mark(), diagnostic("Warn"), diagnostic("Error") },
+        mark_rows = { 0, 0, 0 },
+    })
+
+    expect.equality(top_highlight(result), "ScrollbarError")
+end
+
+T["highlight_from covered"]["keeps the own highlight without a covered mark"] = function()
+    local result = compose({
+        config = config({ marks = { Cursor = COVERED } }),
+        marks = { cursor_mark(), diagnostic("Error", 90) },
+        mark_rows = { 0, 1 },
+        height = 2,
+        handle = { first_row = 5, last_row = 5 },
+    })
+
+    expect.equality(top_highlight(result, 1), "ScrollbarCursor")
+    expect.equality(top_highlight(result, 2), "ScrollbarError")
+end
+
+T["highlight_from covered"]["skips covered marks that also inherit"] = function()
+    local active_config = config({ marks = { Cursor = COVERED, Search = COVERED } })
+    local chain = compose({
+        config = active_config,
+        marks = { cursor_mark(), { provider = "search", line = 5, type = "Search" }, diagnostic("Error") },
+        mark_rows = { 0, 0, 0 },
+    })
+    local only_inheriting = compose({
+        config = active_config,
+        marks = { cursor_mark(), { provider = "search", line = 5, type = "Search" } },
+        mark_rows = { 0, 0 },
+    })
+
+    expect.equality(top_highlight(chain), "ScrollbarError")
+    expect.equality(top_highlight(only_inheriting), "ScrollbarCursor")
+end
+
+T["highlight_from covered"]["takes a mark of a lower layer, and a mark of its own lane first"] = function()
+    local active_config = config({
+        layout = { columns = { { "track", { types = { "Error" } }, { types = { "Cursor", "Search" } } } } },
+        marks = { Cursor = COVERED },
+    })
+    local stacked = compose({
+        config = active_config,
+        marks = { cursor_mark(), diagnostic("Error") },
+        mark_rows = { 0, 0 },
+    })
+    local lane_first = compose({
+        config = active_config,
+        marks = { cursor_mark(), diagnostic("Error"), { provider = "search", line = 5, type = "Search" } },
+        mark_rows = { 0, 0, 0 },
+    })
+
+    expect.equality(stacked.highlights[1], {
+        { start_col = 0, end_col = #"•", highlight = "ScrollbarTrack", priority = 1 },
+        { start_col = 0, end_col = #"•", highlight = "ScrollbarError", priority = 3 },
+    })
+    expect.equality(stacked.hitmap[1][1].type, "Cursor")
+    expect.equality(top_highlight(lane_first), "ScrollbarSearch")
+end
+
+T["highlight_from covered"]["ignores a lower mark that the thumb hides"] = function()
+    local marks = { cursor_mark(), diagnostic("Error") }
+    local hidden = compose({
+        config = config({
+            layout = { columns = { { { types = { "Error" } }, "thumb", { types = { "Cursor" } } } } },
+            marks = { Cursor = COVERED },
+        }),
+        marks = marks,
+        mark_rows = { 0, 0 },
+        handle = { first_row = 0, last_row = 0 },
+    })
+    local visible = compose({
+        config = config({
+            layout = { columns = { { "thumb", { types = { "Error" } }, { types = { "Cursor" } } } } },
+            marks = { Cursor = COVERED },
+        }),
+        marks = marks,
+        mark_rows = { 0, 0 },
+        handle = { first_row = 0, last_row = 0 },
+    })
+
+    expect.equality(top_highlight(hidden), "ScrollbarCursorThumb")
+    expect.equality(top_highlight(visible), "ScrollbarErrorThumb")
+end
+
+T["highlight_from covered"]["uses the thumb and tint groups of the covered type"] = function()
+    local marks = { cursor_mark(), diagnostic("Error") }
+    local thumb_row = compose({
+        config = config({ marks = { Cursor = COVERED } }),
+        marks = marks,
+        mark_rows = { 0, 0 },
+        handle = { first_row = 0, last_row = 0 },
+    })
+    local tint = compose({
+        config = config({ overlap = { marks = "tint" }, marks = { Cursor = COVERED } }),
+        marks = marks,
+        mark_rows = { 0, 0 },
+    })
+
+    expect.equality(top_highlight(thumb_row), "ScrollbarErrorThumb")
+    expect.equality(tint.rows, { " " })
+    expect.equality(top_highlight(tint), "ScrollbarErrorTint")
+end
+
+T["highlight_from covered"]["colors a wide glyph with the first mark that it covers"] = function()
+    local lane = { types = { "Cursor", "Error", "Warn" } }
+    local result = compose({
+        config = config({
+            layout = { columns = { { lane }, { lane } } },
+            marks = { Cursor = { text = "界", highlight_from = "covered" }, Warn = { text = "WW" } },
+        }),
+        marks = { cursor_mark(), diagnostic("Warn"), diagnostic("Error") },
+        mark_rows = { 0, 0, 0 },
+    })
+
+    expect.equality(result.rows, { "界" })
+    expect.equality(result.highlights[1], {
+        { start_col = 0, end_col = #"界", highlight = "ScrollbarError", priority = 1 },
+    })
+end
+
+T["highlight_from covered"]["records the covered type in full and incremental layers"] = function()
+    local active_config = config({ marks = { Cursor = COVERED } })
+    local marks = { cursor_mark(), diagnostic("Error") }
+    local function layer(mark_rows, previous)
+        return layout.mark_layer({
+            config = active_config,
+            height = 2,
+            geometry = { mark_rows = mark_rows },
+            marks = marks,
+            marks_sorted = true,
+            previous = previous,
+        })
+    end
+    local function cursor_cell(mark_layer)
+        local _, cells = next(mark_layer.rows[0])
+        return assert(cells)[1]
+    end
+
+    local full = layer({ 0, 0 })
+    expect.equality(cursor_cell(full).covered_type, "Error")
+
+    marks[2] = diagnostic("Error", 90)
+    local moved_off = layer({ 0, 1 }, { layer = full, changed = { { 2, 0 } } })
+    expect.equality(cursor_cell(moved_off).covered_type, nil)
+
+    marks[2] = diagnostic("Error")
+    local moved_on = layer({ 0, 0 }, { layer = moved_off, changed = { { 2, 1 } } })
+    expect.equality(cursor_cell(moved_on).covered_type, "Error")
+
+    local default_layer = layout.mark_layer({
+        config = config(),
+        height = 2,
+        geometry = { mark_rows = { 0, 0 } },
+        marks = marks,
+        marks_sorted = true,
+    })
+    expect.equality(cursor_cell(default_layer).covered_type, nil)
+    expect.equality(cursor_cell(default_layer).inherits, nil)
+end
+
+T["highlight_from covered"]["does not reuse a row whose covered mark moved away"] = function()
+    local active_config = config({ marks = { Cursor = COVERED } })
+    local marks = { cursor_mark(), diagnostic("Error") }
+    local function layer(mark_rows, previous)
+        return layout.mark_layer({
+            config = active_config,
+            height = 2,
+            geometry = { mark_rows = mark_rows },
+            marks = marks,
+            marks_sorted = true,
+            previous = previous,
+        })
+    end
+    local function composed(mark_layer)
+        return compose({
+            config = active_config,
+            height = 2,
+            mark_layer = mark_layer,
+            handle = { first_row = 5, last_row = 5 },
+        })
+    end
+
+    local first_layer = layer({ 0, 0 })
+    local first = composed(first_layer)
+    expect.equality(top_highlight(first, 1), "ScrollbarError")
+
+    -- The Error moves to row 1 in place. Row 0 keeps the same placed cursor
+    -- glyph, so only the covered type tells the rows apart.
+    marks[2] = diagnostic("Error", 90)
+    local second = composed(layer({ 0, 1 }, { layer = first_layer, changed = { { 2, 0 } } }))
+    expect.equality(top_highlight(second, 1), "ScrollbarCursor")
+    expect.equality(top_highlight(second, 2), "ScrollbarError")
+end
+
 T["mark text functions"] = MiniTest.new_set()
 
 local function capture_notifications()
