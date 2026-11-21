@@ -40,9 +40,11 @@ T["defaults"] = function()
     expect.equality(peek.window.sides, NO_SIDES)
 
     local glance = config.get_glance()
-    expect.equality(glance.frame, "cursor")
-    expect.equality(glance.list, { entries = "line", width = 0.4, side = "right" })
-    expect.equality(glance.keys, {
+    expect.equality({ glance.picker, glance.entries }, { "builtin", "line" })
+    local builtin = glance.builtin
+    expect.equality(builtin.frame, "cursor")
+    expect.equality(builtin.list, { width = 0.4, side = "right" })
+    expect.equality(builtin.keys, {
         list = {
             jump = { "<CR>" },
             jump_split = {},
@@ -55,7 +57,7 @@ T["defaults"] = function()
         },
         preview = { jump_split = {}, jump_vsplit = {}, next = {}, previous = {}, focus_list = {}, close = {} },
     })
-    expect.equality(glance.window.open, {})
+    expect.equality(builtin.window.open, {})
 end
 
 T["jump"] = MiniTest.new_set()
@@ -151,7 +153,7 @@ end
 
 T["peek"]["setup does not load the recipes for a preset"] = function()
     package.loaded["scrollbar.recipes"] = nil
-    set_top({ peek = { frame = "center" }, glance = { frame = "scrollbar" } })
+    set_top({ peek = { frame = "center" }, glance = { builtin = { frame = "scrollbar" } } })
     expect.equality(package.loaded["scrollbar.recipes"], nil)
 end
 
@@ -195,97 +197,120 @@ end
 
 T["glance"] = MiniTest.new_set()
 
+---@param builtin table
+---@return table
+local function builtin_top(builtin)
+    return { glance = { builtin = builtin } }
+end
+
+T["glance"]["picker takes a name or a function"] = function()
+    local config = require("scrollbar.config")
+    for _, name in ipairs({ "builtin", "snacks", "telescope" }) do
+        set_top({ glance = { picker = name } })
+        expect.equality(config.get_glance().picker, name)
+    end
+    local picker = function() end
+    set_top({ glance = { picker = picker } })
+    expect.equality(config.get_glance().picker, picker)
+
+    local message = 'glance.picker must be "builtin", "snacks", "telescope", or a function$'
+    for _, value in ipairs({ "fzf", 1, false, {} }) do
+        expect_invalid({ glance = { picker = value } }, message)
+    end
+end
+
 T["glance"]["validates its options"] = function()
     local config = require("scrollbar.config")
-    set_top({ glance = { frame = "center", list = { entries = "type" } } })
-    expect.equality(config.get_glance().frame, "center")
+    set_top({ glance = { entries = "type", builtin = { frame = "center" } } })
+    expect.equality(config.get_glance().entries, "type")
+    expect.equality(config.get_glance().builtin.frame, "center")
     -- The keys of the list merge with the defaults.
-    expect.equality(config.get_glance().list, { entries = "type", width = 0.4, side = "right" })
-    set_top({ glance = { list = { width = 40, side = "left" } } })
-    expect.equality(config.get_glance().list, { entries = "line", width = 40, side = "left" })
-    set_top({ glance = { list = { width = 0.25 } } })
-    expect.equality(config.get_glance().list.width, 0.25)
+    set_top(builtin_top({ list = { side = "left" } }))
+    expect.equality(config.get_glance().builtin.list, { width = 0.4, side = "left" })
+    set_top(builtin_top({ list = { width = 40, side = "left" } }))
+    expect.equality(config.get_glance().builtin.list, { width = 40, side = "left" })
+    set_top(builtin_top({ list = { width = 0.25 } }))
+    expect.equality(config.get_glance().builtin.list.width, 0.25)
 
-    expect_invalid({ glance = { frame = 1 } }, 'glance.frame must be "scrollbar", "cursor", "center", or a function$')
+    expect_invalid({ glance = { entries = "file" } }, "glance.entries must be one of: line, mark, type")
     expect_invalid(
-        { glance = { list = "type" } },
-        "glance.list must be a table: set the entries with glance.list.entries$"
+        builtin_top({ frame = 1 }),
+        'glance.builtin.frame must be "scrollbar", "cursor", "center", or a function$'
     )
-    expect_invalid({ glance = { list = { entries = "file" } } }, "glance.list.entries must be one of: line, mark, type")
-    expect_invalid({ glance = { list = { side = "top" } } }, "glance.list.side must be one of: left, right")
-    expect_invalid({ glance = { list = { position = "left" } } }, "unknown option 'glance.list.position'")
-    local width_message = "glance.list.width must be a number greater than 0 and less than 1,"
+    expect_invalid({ glance = { builtin = "cursor" } }, "glance.builtin must be a table$")
+    expect_invalid(builtin_top({ list = 0.4 }), "glance.builtin.list must be a table$")
+    expect_invalid(builtin_top({ list = { side = "top" } }), "glance.builtin.list.side must be one of: left, right")
+    expect_invalid(builtin_top({ list = { entries = "line" } }), "unknown option 'glance.builtin.list.entries'")
+    local width_message = "glance.builtin.list.width must be a number greater than 0 and less than 1,"
         .. " or a whole number greater than 1"
     -- A list as wide as the frame leaves no room for the preview.
     for _, width in ipairs({ 0, 1, 1.5, -2, "half" }) do
-        expect_invalid({ glance = { list = { width = width } } }, width_message)
-    end
-    for _, removed in ipairs({ "height", "width", "list_width" }) do
-        expect_invalid({ glance = { [removed] = 10 } }, "unknown option 'glance." .. removed .. "'")
+        expect_invalid(builtin_top({ list = { width = width } }), width_message)
     end
     expect_invalid(
-        { glance = { window = { col = 1 } } },
-        "glance.window.col: the glance window sets this key %(use 'glance.frame'%)$"
+        builtin_top({ window = { col = 1 } }),
+        "glance.builtin.window.col: the glance window sets this key %(use 'glance.builtin.frame'%)$"
     )
-    expect_invalid({ glance = { window = { height = 2 } } }, "use 'glance.frame'")
+    expect_invalid(builtin_top({ window = { height = 2 } }), "use 'glance.builtin.frame'")
+end
+
+T["glance"]["the options of the builtin frame are only in glance.builtin"] = function()
+    for _, moved in ipairs({ "frame", "list", "keys", "window" }) do
+        expect_invalid({ glance = { [moved] = {} } }, "unknown option 'glance." .. moved .. "'")
+    end
+    expect_invalid(builtin_top({ picker = "snacks" }), "unknown option 'glance.builtin.picker'")
 end
 
 T["glance"]["keys take a string, a list, or false"] = function()
     local config = require("scrollbar.config")
-    set_top({ glance = { keys = { list = { jump = { "<CR>", "o" }, close = "q", focus_preview = false } } } })
-    local list = config.get_glance().keys.list
+    set_top(builtin_top({ keys = { list = { jump = { "<CR>", "o" }, close = "q", focus_preview = false } } }))
+    local list = config.get_glance().builtin.keys.list
     expect.equality({ list.jump, list.close, list.focus_preview }, { { "<CR>", "o" }, { "q" }, {} })
 
-    set_top({ glance = { keys = { list = { close = false }, preview = { next = "<C-j>", close = { "Q", "<C-q>" } } } } })
-    local keys = config.get_glance().keys
+    set_top(
+        builtin_top({ keys = { list = { close = false }, preview = { next = "<C-j>", close = { "Q", "<C-q>" } } } })
+    )
+    local keys = config.get_glance().builtin.keys
     expect.equality({ keys.list.jump, keys.list.close, keys.list.focus_preview }, { { "<CR>" }, {}, { "<Tab>" } })
     expect.equality({ keys.preview.next, keys.preview.close }, { { "<C-j>" }, { "Q", "<C-q>" } })
 
     expect_invalid(
-        { glance = { keys = { list = { jump = 1 } } } },
-        "glance.keys.list.jump must be false, a string, or a dense list of strings"
+        builtin_top({ keys = { list = { jump = 1 } } }),
+        "glance.builtin.keys.list.jump must be false, a string, or a dense list of strings"
     )
     expect_invalid(
-        { glance = { keys = { preview = { next = { "" } } } } },
-        "glance.keys.preview.next%[1%] must be a non%-empty string"
+        builtin_top({ keys = { preview = { next = { "" } } } }),
+        "glance.builtin.keys.preview.next%[1%] must be a non%-empty string"
     )
-    expect_invalid({ glance = { keys = "q" } }, "glance.keys must be a table")
-    expect_invalid({ glance = { keys = { list = "q" } } }, "glance.keys.list must be a table")
-    expect_invalid({ glance = { keys = { preview = false } } }, "glance.keys.preview must be a table")
+    expect_invalid(builtin_top({ keys = "q" }), "glance.builtin.keys must be a table")
+    expect_invalid(builtin_top({ keys = { list = "q" } }), "glance.builtin.keys.list must be a table")
+    expect_invalid(builtin_top({ keys = { preview = false } }), "glance.builtin.keys.preview must be a table")
 end
 
 T["glance"]["each pane has its own actions"] = function()
-    expect_invalid({ glance = { keys = { list = { open = "o" } } } }, "unknown option 'glance.keys.list.open'")
-    expect_invalid(
-        { glance = { keys = { list = { focus_list = "x" } } } },
-        "unknown option 'glance.keys.list.focus_list'"
-    )
-    expect_invalid({ glance = { keys = { preview = { jump = "x" } } } }, "unknown option 'glance.keys.preview.jump'")
-    expect_invalid(
-        { glance = { keys = { preview = { quickfix = "x" } } } },
-        "unknown option 'glance.keys.preview.quickfix'"
-    )
-    expect_invalid(
-        { glance = { keys = { preview = { focus_preview = "x" } } } },
-        "unknown option 'glance.keys.preview.focus_preview'"
-    )
-    -- The keys are in the panes, not directly in `glance.keys`.
-    expect_invalid({ glance = { keys = { jump = "<CR>" } } }, "unknown option 'glance.keys.jump'")
+    local prefix = "unknown option 'glance.builtin.keys."
+    expect_invalid(builtin_top({ keys = { list = { open = "o" } } }), prefix .. "list.open'")
+    expect_invalid(builtin_top({ keys = { list = { focus_list = "x" } } }), prefix .. "list.focus_list'")
+    expect_invalid(builtin_top({ keys = { preview = { jump = "x" } } }), prefix .. "preview.jump'")
+    expect_invalid(builtin_top({ keys = { preview = { quickfix = "x" } } }), prefix .. "preview.quickfix'")
+    expect_invalid(builtin_top({ keys = { preview = { focus_preview = "x" } } }), prefix .. "preview.focus_preview'")
+    -- The keys are in the panes, not directly in `glance.builtin.keys`.
+    expect_invalid(builtin_top({ keys = { jump = "<CR>" } }), prefix .. "jump'")
 end
 
 T["glance"]["two actions of one pane cannot share a key, and two panes can"] = function()
     -- Also in another spelling.
     expect_invalid(
-        { glance = { keys = { list = { close = { "q", "<cr>" } } } } },
-        "glance.keys.list.close: '<cr>' is also a key of glance.keys.list.jump"
+        builtin_top({ keys = { list = { close = { "q", "<cr>" } } } }),
+        "glance.builtin.keys.list.close: '<cr>' is also a key of glance.builtin.keys.list.jump"
     )
     expect_invalid(
-        { glance = { keys = { preview = { next = "<C-j>", close = "<c-j>" } } } },
-        "glance.keys.preview.close: '<c%-j>' is also a key of glance.keys.preview.next"
+        builtin_top({ keys = { preview = { next = "<C-j>", close = "<c-j>" } } }),
+        "glance.builtin.keys.preview.close: '<c%-j>' is also a key of glance.builtin.keys.preview.next"
     )
     local config = require("scrollbar.config")
-    set_top({ glance = { keys = { list = { next = "<C-j>" }, preview = { next = "<C-j>" } } } })
-    expect.equality(config.get_glance().keys.preview.next, { "<C-j>" })
+    set_top(builtin_top({ keys = { list = { next = "<C-j>" }, preview = { next = "<C-j>" } } }))
+    expect.equality(config.get_glance().builtin.keys.preview.next, { "<C-j>" })
 end
 
 T["the new highlight groups are reserved"] = function()
@@ -301,10 +326,10 @@ end
 
 T["failed setup preserves the peek and glance options"] = function()
     local config = require("scrollbar.config")
-    set_top({ peek = { frame = "cursor" }, glance = { list = { entries = "mark" } } })
-    expect_invalid({ peek = { frame = "center" }, glance = { list = { entries = "bad" } } }, "glance.list")
+    set_top({ peek = { frame = "cursor" }, glance = { entries = "mark" } })
+    expect_invalid({ peek = { frame = "center" }, glance = { entries = "bad" } }, "glance.entries")
     expect.equality(config.get_peek().frame, "cursor")
-    expect.equality(config.get_glance().list.entries, "mark")
+    expect.equality(config.get_glance().entries, "mark")
 end
 
 return T

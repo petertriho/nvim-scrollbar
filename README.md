@@ -10,15 +10,16 @@ split window gets its own thumb. The scrollbar has typed mark lanes, optional
 screen-line positions that follow wraps and folds, and mouse navigation. An
 optional floating minimap shows a compressed view of the buffer, with a
 viewport tint, a cursor accent, provider marks, and mouse navigation. Label
-mode, a peek float, and a glance window take you to the marks and show their
+mode, a peek float, and glance pickers take you to the marks and show their
 lines.
 
 ## Jump and Glance
 
 Label mode puts a label on each mark of the scrollbar. Type a label to move to
 the mark, or type the uppercase label to see the lines of the mark in a peek
-float first. The glance window shows a list of the marks with a preview pane.
-With `scrollbar.hover`, the peek float also opens when the mouse pointer stays
+float first. Glance shows a list of the marks in the glance window, which has
+a preview pane, or in a snacks.nvim, Telescope, or custom picker. With
+`scrollbar.hover`, the peek float also opens when the mouse pointer stays
 on a mark. Label mode is inspired by
 [flash.nvim](https://github.com/folke/flash.nvim), and the glance window by
 [glance.nvim](https://github.com/dnlhc/glance.nvim).
@@ -289,7 +290,7 @@ source, use the [custom provider API](docs/providers/custom.md).
 - [Mouse](docs/mouse.md): clicks, mark navigation, thumb dragging, and focus
   behavior
 - [Jump and Glance](docs/jump-and-glance.md): label mode, the peek float, the
-  glance window, and hover
+  glance pickers, and hover
 - [Highlights](docs/highlights.md): generated groups, direct definitions,
   blending, and manual highlights
 - [Migration](docs/migration.md): changes required from earlier releases

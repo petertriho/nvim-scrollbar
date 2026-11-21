@@ -1,6 +1,7 @@
 local config = require("scrollbar.config")
 local highlights = require("scrollbar.highlights")
 local mouse = require("scrollbar.mouse")
+local navigate_config = require("scrollbar.config.navigate")
 local providers = require("scrollbar.providers")
 local renderer = require("scrollbar.renderer")
 local scheduler = require("scrollbar.scheduler")
@@ -150,6 +151,15 @@ end
 ---@class ScrollbarNavigateUserOptions
 ---@field types? string[] Names of registered mark types. Nil means every type except `Cursor`
 
+---@class ScrollbarGlanceUserOptions: ScrollbarNavigateUserOptions
+---@field picker? ScrollbarGlancePicker Picker of this call. Nil uses `glance.picker`
+
+-- The options of each method.
+local NAVIGATE_OPTIONS = {
+    jump = { types = true },
+    glance = { types = true, picker = true },
+}
+
 --- The mark type filter of `jump()` and `glance()`, or nothing when the
 --- options are not valid.
 ---@param name "jump"|"glance"
@@ -169,10 +179,14 @@ local function navigate_types(name, opts)
         return false
     end
     for key in pairs(opts) do
-        if key ~= "types" then
+        if not NAVIGATE_OPTIONS[name][key] then
             notify(string.format("%s(): unknown option '%s'", name, tostring(key)), vim.log.levels.ERROR)
             return false
         end
+    end
+    if opts.picker ~= nil and not navigate_config.is_glance_picker(opts.picker) then
+        notify(name .. "(): opts.picker " .. navigate_config.GLANCE_PICKER_MESSAGE, vim.log.levels.ERROR)
+        return false
     end
     if opts.types == nil then
         return true
@@ -207,14 +221,14 @@ M.jump = function(opts)
     require("scrollbar.navigate.jump").run({ types = types })
 end
 
---- The glance window with the marks of the current window.
----@param opts? ScrollbarNavigateUserOptions
+--- The glance picker with the marks of the current window.
+---@param opts? ScrollbarGlanceUserOptions
 M.glance = function(opts)
     local ok, types = navigate_types("glance", opts)
     if not ok then
         return
     end
-    require("scrollbar.navigate.glance").open({ types = types })
+    require("scrollbar.navigate.glance").open({ types = types, picker = opts and opts.picker or nil })
 end
 
 ---@param arg_lead string

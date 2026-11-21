@@ -35,34 +35,42 @@ local PEEK_KEYS = {
 }
 
 local GLANCE_DEFAULTS = {
-    frame = "cursor",
-    list = {
-        entries = "line",
-        width = 0.4,
-        side = "right",
-    },
-    keys = {
+    picker = "builtin",
+    entries = "line",
+    builtin = {
+        frame = "cursor",
         list = {
-            jump = "<CR>",
-            jump_split = false,
-            jump_vsplit = false,
-            next = false,
-            previous = false,
-            focus_preview = "<Tab>",
-            quickfix = false,
-            close = { "q", "<Esc>" },
+            width = 0.4,
+            side = "right",
         },
-        preview = {
-            jump_split = false,
-            jump_vsplit = false,
-            next = false,
-            previous = false,
-            focus_list = false,
-            close = false,
+        keys = {
+            list = {
+                jump = "<CR>",
+                jump_split = false,
+                jump_vsplit = false,
+                next = false,
+                previous = false,
+                focus_preview = "<Tab>",
+                quickfix = false,
+                close = { "q", "<Esc>" },
+            },
+            preview = {
+                jump_split = false,
+                jump_vsplit = false,
+                next = false,
+                previous = false,
+                focus_list = false,
+                close = false,
+            },
         },
+        window = {},
     },
-    window = {},
 }
+
+--- The names that `glance.picker` accepts besides a function.
+M.GLANCE_PICKERS = { "builtin", "snacks", "telescope" }
+
+M.GLANCE_PICKER_MESSAGE = 'must be "builtin", "snacks", "telescope", or a function'
 
 local GLANCE_PANES = { "list", "preview" }
 
@@ -84,13 +92,17 @@ local function action_spec(actions)
 end
 
 local GLANCE_KEYS = {
-    frame = true,
-    list = { entries = true, width = true, side = true },
-    keys = {
-        list = action_spec(GLANCE_ACTIONS.list),
-        preview = action_spec(GLANCE_ACTIONS.preview),
+    picker = true,
+    entries = true,
+    builtin = {
+        frame = true,
+        list = { width = true, side = true },
+        keys = {
+            list = action_spec(GLANCE_ACTIONS.list),
+            preview = action_spec(GLANCE_ACTIONS.preview),
+        },
+        window = { ["*"] = true },
     },
-    window = { ["*"] = true },
 }
 
 -- `nvim_open_win` keys that the peek float and the glance panes set.
@@ -139,7 +151,7 @@ end
 
 local PEEK_WINDOW_SPEC = window_spec("the peek float", frame_hints("peek.frame"))
 
-local GLANCE_WINDOW_SPEC = window_spec("the glance window", frame_hints("glance.frame"))
+local GLANCE_WINDOW_SPEC = window_spec("the glance window", frame_hints("glance.builtin.frame"))
 
 ---@param value any
 ---@param path string
@@ -242,30 +254,31 @@ local function key_list(value, path)
     return result
 end
 
---- The list options. The list frame must leave room for the preview, so a
---- part of the frame width is less than 1.
----@param value table Merged `glance.list`
+--- The list options of the builtin frame. The list frame must leave room for
+--- the preview, so a part of the frame width is less than 1.
+---@param value table Merged `glance.builtin.list`
 ---@return ScrollbarGlanceListConfig
 local function glance_list(value)
     local width = value.width
     if not frame.is_size(width) or width == 1 then
-        invalid("glance.list.width must be a number greater than 0 and less than 1, or a whole number greater than 1")
+        invalid(
+            "glance.builtin.list.width must be a number greater than 0 and less than 1, or a whole number greater than 1"
+        )
     end
     return {
-        entries = schema.enum(value.entries, "glance.list.entries", { "line", "mark", "type" }),
         width = width,
-        side = schema.enum(value.side, "glance.list.side", { "right", "left" }),
+        side = schema.enum(value.side, "glance.builtin.list.side", { "right", "left" }),
     }
 end
 
 --- The keys of each pane. Two actions of one pane cannot share a key. Two
 --- panes can, because only one pane has focus.
----@param value table Merged `glance.keys`
+---@param value table Merged `glance.builtin.keys`
 ---@return ScrollbarGlanceKeys
 local function glance_keys(value)
     local result = {}
     for _, pane in ipairs(GLANCE_PANES) do
-        local pane_path = "glance.keys." .. pane
+        local pane_path = "glance.builtin.keys." .. pane
         local keys = {}
         local owners = {}
         for _, action in ipairs(GLANCE_ACTIONS[pane]) do
@@ -285,28 +298,54 @@ local function glance_keys(value)
     return result
 end
 
+--- Whether `value` is a picker: a name of `GLANCE_PICKERS` or a function.
+---@param value any
+---@return boolean
+M.is_glance_picker = function(value)
+    return type(value) == "function" or vim.tbl_contains(M.GLANCE_PICKERS, value)
+end
+
+--- Check the tables of the builtin block before the merge, so that a wrong
+--- type names its path instead of failing in the merge.
+---@param value table Top-level `glance` table
+local function check_builtin_tables(value)
+    if value.builtin == nil then
+        return
+    end
+    local builtin = schema.table(value.builtin, "glance.builtin")
+    if builtin.list ~= nil then
+        schema.table(builtin.list, "glance.builtin.list")
+    end
+    if builtin.keys ~= nil then
+        schema.table(builtin.keys, "glance.builtin.keys")
+        for _, pane in ipairs(GLANCE_PANES) do
+            if builtin.keys[pane] ~= nil then
+                schema.table(builtin.keys[pane], "glance.builtin.keys." .. pane)
+            end
+        end
+    end
+end
+
 ---@param value any Top-level `glance` table
 ---@return ScrollbarGlanceConfig
 M.glance = function(value)
     value = block(value, "glance")
     schema.check_keys(value, GLANCE_KEYS, "glance")
-    if value.keys ~= nil then
-        schema.table(value.keys, "glance.keys")
-        for _, pane in ipairs(GLANCE_PANES) do
-            if value.keys[pane] ~= nil then
-                schema.table(value.keys[pane], "glance.keys." .. pane)
-            end
-        end
-    end
-    if value.list ~= nil and type(value.list) ~= "table" then
-        invalid("glance.list must be a table: set the entries with glance.list.entries")
-    end
+    check_builtin_tables(value)
     local merged = schema.merge(GLANCE_DEFAULTS, value)
+    if not M.is_glance_picker(merged.picker) then
+        invalid("glance.picker " .. M.GLANCE_PICKER_MESSAGE)
+    end
+    local builtin = merged.builtin
     return {
-        frame = frame_value(merged.frame, "glance.frame"),
-        list = glance_list(merged.list),
-        keys = glance_keys(merged.keys),
-        window = window_config.normalize(merged.window, "glance.window", GLANCE_WINDOW_SPEC),
+        picker = merged.picker,
+        entries = schema.enum(merged.entries, "glance.entries", { "line", "mark", "type" }),
+        builtin = {
+            frame = frame_value(builtin.frame, "glance.builtin.frame"),
+            list = glance_list(builtin.list),
+            keys = glance_keys(builtin.keys),
+            window = window_config.normalize(builtin.window, "glance.builtin.window", GLANCE_WINDOW_SPEC),
+        },
     }
 end
 

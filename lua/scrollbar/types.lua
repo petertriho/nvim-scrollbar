@@ -277,15 +277,19 @@
 ---@field preview? ScrollbarUserGlancePreviewKeys Keys of the preview pane. They are buffer-local on the source buffer while the pane has focus
 
 ---@class ScrollbarUserGlanceListConfig
----@field entries? ScrollbarGlanceEntries Entries of the list. Default "line"
 ---@field width? number Outer width of the list pane: a part (less than 1) of the frame width, or a whole number of cells above 1. Default 0.4
 ---@field side? "right"|"left" Side of the list. The preview takes the other side. Default "right"
 
----@class ScrollbarUserGlanceConfig
+---@class ScrollbarUserGlanceBuiltinConfig
 ---@field frame? ScrollbarFrameValue Place and size of the frame of both panes. Default "cursor"
 ---@field list? ScrollbarUserGlanceListConfig
 ---@field keys? ScrollbarUserGlanceKeys Keys of the list and of the preview pane
 ---@field window? ScrollbarUserWindowConfig Applies to both panes. Without `border`, the panes use 'winborder'
+
+---@class ScrollbarUserGlanceConfig
+---@field picker? ScrollbarGlancePicker Picker of `glance()`. Default "builtin"
+---@field entries? ScrollbarGlanceEntries Entries of the list. Default "line"
+---@field builtin? ScrollbarUserGlanceBuiltinConfig Options of the builtin frame
 
 ---@class ScrollbarUserConfig
 ---@field set_highlights? boolean
@@ -331,15 +335,58 @@
 ---@field preview ScrollbarGlancePreviewKeys
 
 ---@class ScrollbarGlanceListConfig
----@field entries ScrollbarGlanceEntries
 ---@field width number
 ---@field side "right"|"left"
 
----@class ScrollbarGlanceConfig
+---@class ScrollbarGlanceBuiltinConfig
 ---@field frame ScrollbarFrameValue
 ---@field list ScrollbarGlanceListConfig
 ---@field keys ScrollbarGlanceKeys
 ---@field window ScrollbarWindowConfig `open.border` is nil when the panes use 'winborder'
+
+---@class ScrollbarGlanceConfig
+---@field picker ScrollbarGlancePicker
+---@field entries ScrollbarGlanceEntries
+---@field builtin ScrollbarGlanceBuiltinConfig
+
+---@alias ScrollbarGlancePicker "builtin"|"snacks"|"telescope"|fun(ctx: ScrollbarGlanceContext)
+
+---@alias ScrollbarGlanceChunk { [1]: string, [2]: string? } Text and an optional highlight group
+
+---@class ScrollbarGlanceItemMark
+---@field type string
+---@field provider string
+---@field text? string Text of the provider
+---@field priority integer
+---@field glyph string
+---@field hl string Highlight group of the glyph
+
+---@class ScrollbarGlanceItem
+---@field lnum integer One-based line
+---@field text string The source line without its indent. Tabs are spaces
+---@field glyph string Glyph of the first mark
+---@field hl string Highlight group of the glyph
+---@field type string Mark type of the first mark
+---@field types string[] Mark types of the item, in priority order, each once
+---@field marks ScrollbarGlanceItemMark[] Marks of the item, in priority order
+---@field group? string Mark type of the group. Only in "type" mode
+
+---@class ScrollbarGlanceFormatOptions
+---@field group? boolean `false` leaves out the group column of "type" mode
+
+---@class ScrollbarGlanceJumpOptions
+---@field split? "split"|"vsplit" Open a split of the source window first, and move in it
+
+---@class ScrollbarGlanceContext
+---@field source_win integer Window of `glance()`
+---@field source_buf integer Buffer of the source window
+---@field mode ScrollbarGlanceEntries Value of `glance.entries`
+---@field items ScrollbarGlanceItem[] Entries of the list, in list order. Never empty when the picker starts
+---@field selected integer Index of the first item at or after the cursor line, else of the last item. 0 without items
+---@field format fun(item: ScrollbarGlanceItem, opts?: ScrollbarGlanceFormatOptions): ScrollbarGlanceChunk[] Columns of the row of `item`
+---@field jump fun(item: ScrollbarGlanceItem, opts?: ScrollbarGlanceJumpOptions): boolean Move the cursor of the source window to `item`. Returns whether it moved
+---@field quickfix fun(items?: ScrollbarGlanceItem[]) Put one quickfix item for each line of `items` (default `ctx.items`) in a new quickfix list, and open the quickfix window
+---@field refresh fun(): ScrollbarGlanceItem[] Read the marks again. Replaces `items`, `selected`, and the column widths of `format`
 
 ---@class ScrollbarPlacement
 ---@field relative ScrollbarPlacementRelative

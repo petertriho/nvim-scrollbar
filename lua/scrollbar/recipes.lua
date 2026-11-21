@@ -1,12 +1,14 @@
 --- Ready-made text functions for the marks and the thumb, predicates for the
---- `when` options, and frame functions for `peek.frame` and `glance.frame`.
+--- `when` options, frame functions for `peek.frame` and
+--- `glance.builtin.frame`, and picker functions for `glance.picker`.
 --- Each recipe is a factory: call it, with its options, to get the function.
 ---
 --- ```lua
 --- local recipes = require("scrollbar.recipes")
 --- marks = { GitAdd = { text = recipes.marks.line_number({ width = 4 }) } }
 --- profiles = { { match = { when = recipes.when.searching() }, ... } }
---- glance = { frame = recipes.frame.center({ width = 0.8, height = 0.7 }) }
+--- glance = { builtin = { frame = recipes.frame.center({ width = 0.8, height = 0.7 }) } }
+--- glance = { picker = recipes.glance.threshold({ max = 50, picker = "snacks" }) }
 --- ```
 ---
 --- A recipe reads only the context fields that its text needs. A mark text
@@ -30,13 +32,13 @@ local function positive_integer(value)
     return type(value) == "number" and value >= 1 and value < math.huge and value == math.floor(value)
 end
 
----Every context has `winid`, and no argument of a factory has it. The plugin
----calls a factory with a context when the user forgets the call, as in
----`text = recipes.marks.line_number`.
+---Every context has `winid`, a glance context has `source_win`, and no
+---argument of a factory has them. The plugin calls a factory with a context
+---when the user forgets the call, as in `text = recipes.marks.line_number`.
 ---@param name string
 ---@param value any
 local function check_call(name, value)
-    if type(value) == "table" and rawget(value, "winid") ~= nil then
+    if type(value) == "table" and (rawget(value, "winid") ~= nil or rawget(value, "source_win") ~= nil) then
         fail(name, string.format("call the recipe to get its function, for example recipes.%s()", name))
     end
 end
@@ -516,6 +518,47 @@ M.frame.center = function(options)
     local resolved = frame_options("frame.center", options, CENTER_OPTIONS)
     return function(ctx)
         return frame.place.center(ctx, resolved)
+    end
+end
+
+M.glance = {}
+
+local THRESHOLD_OPTIONS = { max = true, picker = true, opts = true }
+local THRESHOLD_MAX = 50
+
+---The glance window for at most `max` entries, and the snacks or Telescope
+---picker for more entries. `opts` go to the snacks or Telescope picker, as
+---the `opts` of `require("scrollbar.glance").snacks()`.
+---@param options { max?: integer, picker: "snacks"|"telescope", opts?: table }
+---@return fun(ctx: ScrollbarGlanceContext)
+M.glance.threshold = function(options)
+    local name = "glance.threshold"
+    if options == nil then
+        fail(name, 'needs picker: "snacks" or "telescope"')
+    end
+    check_keys(name, options, THRESHOLD_OPTIONS)
+    ---@cast options -nil
+    local max = options.max
+    if max == nil then
+        max = THRESHOLD_MAX
+    elseif not positive_integer(max) then
+        fail(name, "max must be a positive integer")
+    end
+    local picker = options.picker
+    if picker ~= "snacks" and picker ~= "telescope" then
+        fail(name, 'picker must be "snacks" or "telescope"')
+    end
+    local opts = options.opts
+    if opts ~= nil and type(opts) ~= "table" then
+        fail(name, "opts must be a table")
+    end
+    return function(ctx)
+        local glance = require("scrollbar.glance")
+        if #ctx.items <= max then
+            glance.builtin(ctx)
+        else
+            glance[picker](ctx, opts)
+        end
     end
 end
 

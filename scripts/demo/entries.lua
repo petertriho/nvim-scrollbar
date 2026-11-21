@@ -228,7 +228,7 @@ vim.g.mapleader = " "
 
 require("scrollbar").setup({
     providers = { mini_diff = true },
-    glance = { window = { border = "rounded" } },
+    glance = { builtin = { window = { border = "rounded" } } },
 })
 
 vim.keymap.set("n", "<leader>g", function()
