@@ -338,6 +338,69 @@ T["the snacks zen and zoom windows get bars"] = function()
     end
 end
 
+-- Snacks copies the cursor of the zoom window into the window under it, and
+-- lualine then writes the statusline of that window on each cursor move. The
+-- write makes the window under the zoom window current while `OptionSet` runs
+-- (issue #140).
+T["the bars of the snacks zoom window stay when the window under it changes an option"] = function()
+    local child = new_child()
+    child.lua([[
+        require("scrollbar.test.fill_lines")(100)
+        require("snacks").setup({})
+        require("scrollbar").setup({
+            set_highlights = false,
+            providers = { cursor = false, diagnostic = false, search = false },
+            scrollbar = { floats = true, throttle_ms = 0, visibility = "active" },
+            minimap = {
+                enabled = true,
+                backend = "sync",
+                floats = true,
+                throttle_ms = 0,
+                visibility = "active",
+                events = { OptionSet = true },
+            },
+        })
+        Snacks.zen.zoom()
+    ]])
+    expect.equality(wait_for(child, ZEN_READY), true)
+
+    local written = child.lua_func(function()
+        local zoom = require("snacks.zen").win.win
+        local normal = vim.tbl_filter(function(winid)
+            return vim.api.nvim_win_get_config(winid).relative == ""
+        end, vim.api.nvim_list_wins())
+        local under = normal[1]
+        local floats = {}
+        for name, module in pairs({ scrollbar = "scrollbar.renderer", minimap = "scrollbar.minimap.renderer" }) do
+            floats[name] = assert(require(module).get_state(zoom)).float_win
+        end
+        vim.api.nvim_set_option_value("statusline", "under", { win = under })
+        return {
+            floats = floats,
+            normal_count = #normal,
+            kept = {
+                scrollbar = vim.api.nvim_win_is_valid(floats.scrollbar),
+                minimap = vim.api.nvim_win_is_valid(floats.minimap),
+            },
+        }
+    end)
+    expect.equality(written.normal_count, 1)
+    expect.equality(written.kept, { scrollbar = true, minimap = true })
+
+    -- The flush runs on the main loop of the child.
+    vim.uv.sleep(100)
+    local flushed = child.lua_func(function(floats)
+        local zoom = require("snacks.zen").win.win
+        local result = {}
+        for name, module in pairs({ scrollbar = "scrollbar.renderer", minimap = "scrollbar.minimap.renderer" }) do
+            local state = require(module).get_state(zoom)
+            result[name] = state ~= nil and state.float_win == floats[name]
+        end
+        return result
+    end, written.floats)
+    expect.equality(flushed, { scrollbar = true, minimap = true })
+end
+
 local TELESCOPE_PICKER = [[(function()
     local state = require("telescope.state")
     local prompt = state.get_existing_prompt_bufnrs()[1]

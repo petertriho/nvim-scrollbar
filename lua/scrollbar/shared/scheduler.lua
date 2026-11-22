@@ -196,11 +196,11 @@ M.new = function(spec)
         return own_window(current, winid) or peer_window(current, winid)
     end
 
-    ---@param current ScrollbarSchedulerCoreRuntime
+    ---@param list fun(bufnr?: integer): integer[]
     ---@param bufnr? integer
     ---@return integer[]
-    local function source_windows(current, bufnr)
-        local ok, windows = pcall(current.renderer.source_windows, bufnr)
+    local function window_list(list, bufnr)
+        local ok, windows = pcall(list, bufnr)
         if not ok or type(windows) ~= "table" then
             return {}
         end
@@ -215,6 +215,27 @@ M.new = function(spec)
         end
         table.sort(result)
         return result
+    end
+
+    --- The source windows without side effects. An event handler can run
+    --- while Neovim has made another window current, for example in
+    --- `OptionSet` after `nvim_set_option_value()` with `win`. If the list
+    --- closed the bars of the other windows there, it would close the bar of
+    --- the window that has focus.
+    ---@param current ScrollbarSchedulerCoreRuntime
+    ---@param bufnr? integer
+    ---@return integer[]
+    local function source_windows(current, bufnr)
+        return window_list(current.renderer.source_windows, bufnr)
+    end
+
+    --- The source windows of the flush, which also closes the bars of the
+    --- windows that are no longer sources.
+    ---@param current ScrollbarSchedulerCoreRuntime
+    ---@return integer[]
+    local function reconcile_source_windows(current)
+        local renderer = current.renderer
+        return window_list(renderer.reconcile_source_windows or renderer.source_windows)
     end
 
     ---@param current ScrollbarSchedulerCoreRuntime
@@ -828,7 +849,9 @@ M.new = function(spec)
     ---Queue every source window. The flush renders the source windows of the
     ---flush time, so a window that becomes a source before the flush renders
     ---too. A picker can open its windows, and the `WinEnter` that calls this
-    ---function, before it registers the state that makes them sources.
+    ---function, before it registers the state that makes them sources. The
+    ---flush, not this function, closes the bars of the windows that are no
+    ---longer sources.
     ---@return integer count Windows that were not queued before
     instance.invalidate_all = function()
         local current = runtime
@@ -930,7 +953,7 @@ M.new = function(spec)
         current.dirty_all = false
         current.flushing = true
 
-        local sources = source_windows(current)
+        local sources = reconcile_source_windows(current)
         local eligible = {}
         for _, winid in ipairs(sources) do
             eligible[winid] = true

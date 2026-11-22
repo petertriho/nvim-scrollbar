@@ -205,6 +205,8 @@ T["maps focused renderer floats to sources and reconciles no active source"] = f
         local pure_rejection = not renderer.is_source_window(source_win)
         local state_survives_predicate = renderer.get_state(source_win) ~= nil
         local no_sources = renderer.source_windows()
+        local state_survives_list = renderer.get_state(source_win) ~= nil
+        local no_reconciled_sources = renderer.reconcile_source_windows()
 
         return {
             renderer_float_selected = renderer_float_selected,
@@ -212,6 +214,8 @@ T["maps focused renderer floats to sources and reconciles no active source"] = f
             pure_rejection = pure_rejection,
             state_survives_predicate = state_survives_predicate,
             no_sources = no_sources,
+            state_survives_list = state_survives_list,
+            no_reconciled_sources = no_reconciled_sources,
             state_closed = renderer.get_state(source_win) == nil,
             float_closed = not vim.api.nvim_win_is_valid(state.float_win),
             buffer_closed = not vim.api.nvim_buf_is_valid(state.float_buf),
@@ -223,6 +227,8 @@ T["maps focused renderer floats to sources and reconciles no active source"] = f
     expect.equality(result.pure_rejection, true)
     expect.equality(result.state_survives_predicate, true)
     expect.equality(result.no_sources, {})
+    expect.equality(result.state_survives_list, true)
+    expect.equality(result.no_reconciled_sources, {})
     expect.equality(result.state_closed, true)
     expect.equality(result.float_closed, true)
     expect.equality(result.buffer_closed, true)
@@ -243,7 +249,7 @@ T["reconciles reveal-only autohide state outside the selected source set"] = fun
 
         local revealed = renderer.reveal(second)
         vim.api.nvim_set_current_win(first)
-        renderer.source_windows()
+        renderer.reconcile_source_windows()
         vim.api.nvim_set_current_win(second)
         local stale_rendered = renderer.render(second) ~= nil
         local revealed_again = renderer.reveal(second)
@@ -264,7 +270,7 @@ T["reconciles reveal-only autohide state outside the selected source set"] = fun
     })
 end
 
-T["reconciles the full selected set before filtering by buffer"] = function()
+T["lists the sources of a buffer, and only the reconciling list closes the other bars"] = function()
     local child = new_child()
     local result = child.lua_func(function(config)
         local lines = require("scrollbar.test.fill_lines")(100)
@@ -286,11 +292,16 @@ T["reconciles the full selected set before filtering by buffer"] = function()
         vim.bo[second_buf].filetype = "renderer-test"
         require("scrollbar.test.set_config")(config, { exclude = { filetypes = { "renderer-test" } } })
         local filtered_after_exclusion = renderer.source_windows(first_buf)
+        local excluded_retained = renderer.get_state(second) ~= nil
+        local reconciled = renderer.reconcile_source_windows()
 
         return {
             filtered_control = filtered_control,
             unrelated_retained = unrelated_retained,
             filtered_after_exclusion = filtered_after_exclusion,
+            excluded_retained = excluded_retained,
+            reconciled = reconciled,
+            first = first,
             first_retained = renderer.get_state(first) ~= nil and vim.api.nvim_win_is_valid(first_state.float_win),
             second_closed = renderer.get_state(second) == nil
                 and not vim.api.nvim_win_is_valid(second_state.float_win)
@@ -301,6 +312,8 @@ T["reconciles the full selected set before filtering by buffer"] = function()
     expect.equality(#result.filtered_control, 1)
     expect.equality(result.unrelated_retained, true)
     expect.equality(#result.filtered_after_exclusion, 1)
+    expect.equality(result.excluded_retained, true)
+    expect.equality(result.reconciled, { result.first })
     expect.equality(result.first_retained, true)
     expect.equality(result.second_closed, true)
 end
@@ -615,7 +628,7 @@ T["enforces visibility and editor-relative single ownership"] = function()
         local editor_second_float = assert(renderer.get_state(second)).float_win
         vim.api.nvim_set_current_win(first)
         renderer.render(first)
-        local editor_sources = renderer.source_windows()
+        local editor_sources = renderer.reconcile_source_windows()
         local editor_first_owned = renderer.get_state(first) ~= nil
         local editor_second_owned = renderer.get_state(second) ~= nil
         local editor_second_float_valid = vim.api.nvim_win_is_valid(editor_second_float)

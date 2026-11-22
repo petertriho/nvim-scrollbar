@@ -921,4 +921,88 @@ T["exclude.when excludes the windows it accepts for each renderer, and an error 
     })
 end
 
+-- While `OptionSet` runs, Neovim makes another window current: the target
+-- window of a window option, the window that shows the buffer of a buffer
+-- option, or its hidden autocmd window when no window shows the buffer. Only
+-- the active window shows a bar in these configurations, so a handler that
+-- took that window as the active one closed the bar of the real one (issue
+-- #140).
+local option_write_cases = MiniTest.new_set({
+    parametrize = {
+        { "scrollbar", { scrollbar = { visibility = "active" } } },
+        { "scrollbar", { scrollbar = { placement = { relative = "editor" } } } },
+        { "scrollbar.minimap", { minimap = { enabled = true, visibility = "active", events = { OptionSet = true } } } },
+    },
+})
+T["an option write on another window keeps the bar of the current window"] = option_write_cases
+
+option_write_cases["before and after the flush"] = function(module, overrides)
+    local child = new_child()
+    local result = child.lua_func(function(prefix, options)
+        local function fill(bufnr)
+            local lines = {}
+            for index = 1, 200 do
+                lines[index] = "line " .. index
+            end
+            vim.api.nvim_buf_set_lines(bufnr, 0, -1, false, lines)
+        end
+        fill(0)
+        local other = vim.api.nvim_get_current_win()
+        local other_buf = vim.api.nvim_get_current_buf()
+        vim.cmd("vnew")
+        fill(0)
+        local current = vim.api.nvim_get_current_win()
+        local hidden_buf = vim.api.nvim_create_buf(true, false)
+
+        require("scrollbar").setup(vim.tbl_deep_extend("force", {
+            set_highlights = false,
+            providers = { cursor = false, diagnostic = false, search = false, marks = false },
+            exclude = { buftypes = {}, filetypes = {} },
+            scrollbar = { throttle_ms = 1000, hide_on_cursor = false, mouse = false },
+            minimap = { backend = "sync", throttle_ms = 1000, hide_on_cursor = false, mouse = false },
+        }, options))
+        local scheduler = require(prefix .. ".scheduler")
+        local renderer = require(prefix .. ".renderer")
+        scheduler.flush()
+        local float_win = assert(renderer.get_state(current)).float_win
+
+        local writes = {
+            window_option = function()
+                vim.api.nvim_set_option_value("statusline", "other", { win = other })
+            end,
+            setlocal = function()
+                vim.api.nvim_win_call(other, function()
+                    vim.cmd("setlocal statusline=setlocal")
+                end)
+            end,
+            buffer_option = function()
+                vim.bo[other_buf].tabstop = 3
+            end,
+            hidden_buffer_option = function()
+                vim.bo[hidden_buf].tabstop = 5
+            end,
+        }
+        ---@type table<string, any>
+        local kept = {}
+        kept.other_has_bar = renderer.get_state(other) ~= nil
+        for name, write in pairs(writes) do
+            write()
+            local before_flush = vim.api.nvim_win_is_valid(float_win)
+            scheduler.flush()
+            local state = renderer.get_state(current)
+            kept[name] = { before_flush = before_flush, after_flush = state ~= nil and state.float_win == float_win }
+        end
+        return kept
+    end, module, overrides)
+
+    local same = { before_flush = true, after_flush = true }
+    expect.equality(result, {
+        other_has_bar = false,
+        window_option = same,
+        setlocal = same,
+        buffer_option = same,
+        hidden_buffer_option = same,
+    })
+end
+
 return T

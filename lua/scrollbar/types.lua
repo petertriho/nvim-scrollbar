@@ -928,6 +928,7 @@
 
 ---@class ScrollbarSchedulerRenderer: ScrollbarRendererPolicy
 ---@field render fun(source_win: integer): ScrollbarWindowState?
+---@field reconcile_source_windows? fun(): integer[] The flush lists the source windows with it. Without it, the flush uses `source_windows`
 ---@field reveal? fun(source_win: integer): boolean
 ---@field conceal? fun(source_win: integer): boolean
 ---@field is_visible? fun(): boolean

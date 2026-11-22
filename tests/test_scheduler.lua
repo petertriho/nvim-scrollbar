@@ -1004,6 +1004,7 @@ T["reconciles dynamic source-policy transitions through scheduler enumeration"] 
         local editor_state = assert(renderer.get_state(second))
         vim.api.nvim_set_current_win(source_win)
         vim.api.nvim_exec_autocmds("WinEnter", { buffer = source_buf })
+        scheduler.flush()
         local editor_closed = closed(editor_state)
         vim.api.nvim_win_close(second, true)
 
@@ -1020,6 +1021,7 @@ T["reconciles dynamic source-policy transitions through scheduler enumeration"] 
             style = "minimal",
         })
         vim.api.nvim_exec_autocmds("WinEnter", { buffer = user_buf })
+        scheduler.flush()
         local user_float_closed = closed(active_state)
 
         scheduler.dispose()

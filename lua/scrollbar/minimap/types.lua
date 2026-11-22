@@ -168,6 +168,7 @@
 
 ---@class ScrollbarMinimapSchedulerRenderer
 ---@field source_windows fun(bufnr?: integer): integer[]
+---@field reconcile_source_windows? fun(): integer[] The flush lists the source windows with it. Without it, the flush uses `source_windows`
 ---@field is_source_window fun(winid: integer): boolean
 ---@field is_buffer_eligible fun(bufnr: integer): boolean
 ---@field is_owned_buffer? fun(bufnr: integer): boolean

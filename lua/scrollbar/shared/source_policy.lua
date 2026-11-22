@@ -82,6 +82,7 @@ local SOURCE_SELECTION_TTL_MS = 50
 ---@field is_source_window fun(winid: integer): boolean
 ---@field invalidate fun(source_win?: integer)
 ---@field source_windows fun(bufnr?: integer): integer[]
+---@field reconcile_source_windows fun(): integer[] Like `source_windows`, and closes the bars of the windows that are no longer sources
 ---@field windows_showing_buffer fun(bufnr: integer): integer[]
 
 ---@param winid integer
@@ -545,11 +546,9 @@ M.new = function(options)
         end
     end
 
-    ---List the selected source windows and release every retained source
-    ---window that is no longer selected.
-    ---@param bufnr? integer Only the windows that show this buffer
-    ---@return integer[]
-    local function source_windows(bufnr)
+    ---@return integer[] all_sources Sorted
+    ---@return table<integer, true> selected
+    local function select_sources()
         local root_config = config.get()
         local active_source = active_source_window()
         local selected = {}
@@ -561,13 +560,17 @@ M.new = function(options)
             end
         end
         table.sort(all_sources)
+        return all_sources, selected
+    end
 
-        local stale = {}
-        collect_stale(selected, stale)
-        for source_win in pairs(stale) do
-            close_source(source_win)
-        end
-
+    ---List the selected source windows. The list does not close the bars of
+    ---the other windows, so a caller can run while Neovim has made another
+    ---window current, for example in `OptionSet` after
+    ---`nvim_set_option_value()` with `win`.
+    ---@param bufnr? integer Only the windows that show this buffer
+    ---@return integer[]
+    local function source_windows(bufnr)
+        local all_sources = select_sources()
         if bufnr == nil then
             return all_sources
         end
@@ -579,6 +582,21 @@ M.new = function(options)
             end
         end
         return filtered
+    end
+
+    ---List the selected source windows and release every retained source
+    ---window that is no longer selected. The scheduler flush calls it from
+    ---the main loop, where the current window is the one that has focus.
+    ---Other callers use `source_windows`.
+    ---@return integer[]
+    local function reconcile_source_windows()
+        local all_sources, selected = select_sources()
+        local stale = {}
+        collect_stale(selected, stale)
+        for source_win in pairs(stale) do
+            close_source(source_win)
+        end
+        return all_sources
     end
 
     return {
@@ -595,6 +613,7 @@ M.new = function(options)
         is_source_window = is_source_window,
         invalidate = invalidate,
         source_windows = source_windows,
+        reconcile_source_windows = reconcile_source_windows,
         windows_showing_buffer = windows_showing_buffer,
     }
 end

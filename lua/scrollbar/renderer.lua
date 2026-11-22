@@ -1856,6 +1856,9 @@ M.invalidate_source_selection = policy.invalidate
 ---@type fun(bufnr?: integer): integer[]
 M.source_windows = policy.source_windows
 
+---@type fun(): integer[]
+M.reconcile_source_windows = policy.reconcile_source_windows
+
 --- The kind of an eligible source window, memoized like `is_source_window`.
 ---@type fun(winid: integer): ScrollbarSourceKind?
 M.source_kind = policy.source_kind
