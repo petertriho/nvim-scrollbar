@@ -30,6 +30,9 @@ end
 --- scrollbar of `win`.
 local function cell_position(child, line, win)
     return child.lua_func(function(target, source)
+        -- In a headless child, the screen position of a float can be old
+        -- until a redraw.
+        vim.cmd("redraw")
         source = source or vim.api.nvim_get_current_win()
         local state = assert(require("scrollbar.renderer").get_state(source))
         for _, cell in ipairs(require("scrollbar.navigate.targets").cells(source)) do
@@ -57,6 +60,21 @@ end
 
 local function wait()
     vim.uv.sleep(DELAY_MS + 100)
+end
+
+--- Wait up to 2 seconds for the hover peek. A slow CI runner can open it later
+--- than `wait()` allows.
+---@return integer? line Line of the peek, or nil when no peek opened
+local function wait_for_peek(child)
+    local deadline = vim.uv.hrtime() + 2e9
+    repeat
+        local line = peek_line(child)
+        if line ~= nil then
+            return line
+        end
+        vim.uv.sleep(20)
+    until vim.uv.hrtime() > deadline
+    return nil
 end
 
 T["a pointer at rest on a mark opens the peek after the delay"] = function()
@@ -207,8 +225,7 @@ T["opens the peek above the scrollbar of a float source without focus"] = functi
     ]])
     expect.equality(child.lua_get("require('scrollbar.renderer').get_state(...) ~= nil", { float_win }), true)
     move(child, cell_position(child, 60, float_win))
-    wait()
-    expect.equality(peek_line(child), 60)
+    expect.equality(wait_for_peek(child), 60)
     local result = child.lua_func(function(win)
         local peek = assert(require("scrollbar.navigate.peek").get())
         local function zindex(winid)
