@@ -47,12 +47,33 @@ end
 --- `full = true`, the call runs `require("scrollbar").setup()`. Otherwise it
 --- sets up only the configuration, the renderer, and the scheduler, so that no
 --- built-in provider changes the store.
+---
+--- With `float`, the call first opens a float of 60 x 20 cells on a new buffer
+--- and enters it. A `scrollbar.floats.when` matcher admits only this float, so
+--- the float is the source window, with the kind `"custom"`.
 ---@param child table
----@param options { config?: table, marks?: table[], compact?: integer[], line_count?: integer, full?: boolean, window_marks?: table[], targets?: table }
+---@param options { config?: table, marks?: table[], compact?: integer[], line_count?: integer, full?: boolean, window_marks?: table[], targets?: table, float?: { zindex?: integer } }
 ---@return { source_win: integer, source_buf: integer, float_win?: integer, float_buf?: integer }
 M.setup = function(child, options)
     return child.lua_func(function(opts)
         vim.o.mouse = "a"
+        if opts.float ~= nil then
+            local float_buf = vim.api.nvim_create_buf(true, false)
+            local float_win = vim.api.nvim_open_win(float_buf, true, {
+                relative = "editor",
+                row = 1,
+                col = 4,
+                width = 60,
+                height = 20,
+                zindex = opts.float.zindex or 50,
+            })
+            opts.config.scrollbar = opts.config.scrollbar or {}
+            opts.config.scrollbar.floats = {
+                when = function(context)
+                    return context.winid == float_win
+                end,
+            }
+        end
         local lines = {}
         for index = 1, opts.line_count do
             lines[index] = "line " .. index
@@ -103,6 +124,7 @@ M.setup = function(child, options)
         line_count = options.line_count or 200,
         full = options.full == true,
         targets = options.targets,
+        float = options.float,
     })
 end
 

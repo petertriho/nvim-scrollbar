@@ -178,7 +178,7 @@ T["does nothing during label mode, and a pointer move keeps label mode"] = funct
     expect.equality(child.api.nvim_win_get_cursor(0), { 61, 0 })
 end
 
-T["does nothing on the scrollbar of a floating source window"] = function()
+T["opens the peek above the scrollbar of a float source without focus"] = function()
     local child = navigate.new_child()
     setup(child)
     local float_win = child.lua([[
@@ -192,7 +192,14 @@ T["does nothing on the scrollbar of a floating source window"] = function()
         local buf = vim.api.nvim_get_current_buf()
         -- The setup clears the store.
         assert(require("scrollbar.shared.store").set("test", buf, { { line = 60, type = "Warn" } }))
-        local win = vim.api.nvim_open_win(buf, true, { relative = "editor", row = 2, col = 2, width = 40, height = 15 })
+        local win = vim.api.nvim_open_win(buf, false, {
+            relative = "editor",
+            row = 2,
+            col = 2,
+            width = 40,
+            height = 15,
+            zindex = 50,
+        })
         require("scrollbar.scheduler").invalidate_all()
         require("scrollbar.scheduler").flush()
         vim.cmd("redraw")
@@ -201,7 +208,23 @@ T["does nothing on the scrollbar of a floating source window"] = function()
     expect.equality(child.lua_get("require('scrollbar.renderer').get_state(...) ~= nil", { float_win }), true)
     move(child, cell_position(child, 60, float_win))
     wait()
-    expect.equality(peek_line(child), nil)
+    expect.equality(peek_line(child), 60)
+    local result = child.lua_func(function(win)
+        local peek = assert(require("scrollbar.navigate.peek").get())
+        local function zindex(winid)
+            return vim.api.nvim_win_get_config(winid).zindex
+        end
+        return {
+            source_win = peek.source_win == win,
+            focus = vim.api.nvim_get_current_win() ~= win,
+            source = zindex(win),
+            scrollbar = zindex(require("scrollbar.renderer").get_state(win).float_win),
+            peek = zindex(peek.win),
+        }
+    end, float_win)
+    -- The float of a picker preview keeps no focus, and the peek opens above
+    -- its scrollbar.
+    expect.equality(result, { source_win = true, focus = true, source = 50, scrollbar = 51, peek = 53 })
 end
 
 T["'mousemoveevent'"] = MiniTest.new_set()

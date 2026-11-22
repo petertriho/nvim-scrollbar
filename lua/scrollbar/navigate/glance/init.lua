@@ -3,12 +3,15 @@
 ---
 --- - The picker is `options.picker`, else `glance.picker`. A name loads the
 ---   module of its backend. A function gets the context.
---- - The checks run before the picker, so a picker always gets a normal
----   source window and at least one item.
+--- - The checks run before the picker, so a picker always gets a source
+---   window and at least one item. The source window is a normal window or a
+---   float source of the consumer: the scrollbar, or the minimap when the
+---   scrollbar is disabled.
 --- - A picker that raises an error shows a notification.
 
 local config = require("scrollbar.config")
 local context = require("scrollbar.navigate.glance.context")
+local targets = require("scrollbar.navigate.targets")
 
 local M = {}
 
@@ -40,8 +43,13 @@ M.open = function(options)
     M.close(true)
     local source_win = vim.api.nvim_get_current_win()
     if vim.api.nvim_win_get_config(source_win).relative ~= "" then
-        notify("glance works only in a normal window")
-        return
+        local consumer = targets.consumer()
+        if targets.source_kind(source_win, consumer) == nil then
+            notify(
+                string.format("glance: the current float is not a source of the %s. See %s.floats", consumer, consumer)
+            )
+            return
+        end
     end
     local glance_config = config.get_glance()
     local ctx = context.new(source_win, glance_config.entries, options.types)

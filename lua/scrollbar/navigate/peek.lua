@@ -125,6 +125,7 @@ local function float_config(source_win, placed, sides, window, hidden)
         result[key] = value
     end
     frame.apply_position(placed, source_win, result)
+    result.zindex = frame.zindex(source_win, window.open.zindex)
     result.width = placed.width - sides.left - sides.right
     result.height = placed.height - sides.top - sides.bottom
     result.focusable = false

@@ -248,7 +248,8 @@ require("scrollbar").setup({
 ```
 
 A bar on a float uses the z-index of that float + 1. A click or a drag on the
-bar of the snacks list selects an item. See [Floats](docs/floats.md).
+bar of the snacks list selects an item. Label mode, the peek float, the glance
+pickers, and hover also work on these floats. See [Floats](docs/floats.md).
 
 ## Providers
 

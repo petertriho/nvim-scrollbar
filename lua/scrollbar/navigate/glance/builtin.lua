@@ -203,6 +203,7 @@ local function pane_config(source_win, window, pane)
     if result.relative == "win" then
         result.win = source_win
     end
+    result.zindex = frame.zindex(source_win, window.open.zindex)
     result.focusable = true
     return result
 end

@@ -396,6 +396,86 @@ T["window"]["follows a 'winborder' change after setup"] = function()
     expect.equality(child.api.nvim_win_get_config(none).title, nil)
 end
 
+T["zindex"] = MiniTest.new_set()
+
+--- Set `peek.window.zindex` to `value`, render the current window, and return
+--- the z-index of a peek float on it. In a float, a `scrollbar.floats.when`
+--- matcher admits the current window.
+local function peek_zindex(child, value)
+    return child.lua_func(function(zindex)
+        local win = vim.api.nvim_get_current_win()
+        local config = require("tests.navigate.helpers").config({ peek = { window = { zindex = zindex } } })
+        if vim.api.nvim_win_get_config(win).relative ~= "" then
+            config.scrollbar.floats = {
+                when = function(context)
+                    return context.winid == win
+                end,
+            }
+        end
+        require("scrollbar.config").set(config)
+        local renderer = require("scrollbar.renderer")
+        renderer.invalidate_source_selection()
+        assert(renderer.render(win))
+        local peek = require("scrollbar.navigate.peek")
+        local peek_win = assert(peek.open(win, 60, { anchor_row = 5 }))
+        local result = vim.api.nvim_win_get_config(peek_win).zindex
+        peek.close()
+        return result
+    end, value)
+end
+
+T["zindex"]["over a float source, the float goes above the source, its scrollbar, and the label floats"] = function()
+    local child = navigate.new_child()
+    navigate.setup(child, { float = {} })
+    -- The source float has z-index 50, its scrollbar 51, and the label floats
+    -- of label mode 52.
+    expect.equality(peek_zindex(child), 53)
+    expect.equality(peek_zindex(child, 100), 100)
+    expect.equality(peek_zindex(child, 10), 53)
+end
+
+T["zindex"]["over a normal window, the float keeps the configured z-index"] = function()
+    local child = navigate.new_child()
+    navigate.setup(child, {})
+    expect.equality(peek_zindex(child), 50)
+    expect.equality(peek_zindex(child, 10), 10)
+end
+
+T["zindex"]["over a float source with a minimap, the float goes above both bars"] = function()
+    local child = navigate.new_child()
+    navigate.setup(child, { float = {} })
+    local result = child.lua([[
+        local win = vim.api.nvim_get_current_win()
+        local function admitted(context)
+            return context.winid == win
+        end
+        local config = require("tests.navigate.helpers").config({ minimap = { enabled = true, backend = "sync" } })
+        config.scrollbar.floats = { when = admitted }
+        config.minimap.floats = { when = admitted }
+        require("scrollbar").setup(config)
+        for _, name in ipairs({ "scrollbar", "scrollbar.minimap" }) do
+            local scheduler = require(name .. ".scheduler")
+            scheduler.invalidate_all()
+            scheduler.flush()
+        end
+        local function zindex(winid)
+            return vim.api.nvim_win_get_config(winid).zindex
+        end
+        local peek = require("scrollbar.navigate.peek")
+        local peek_win = assert(peek.open(win, 60, { anchor_row = 5 }))
+        return {
+            scrollbar = zindex(require("scrollbar.renderer").get_state(win).float_win),
+            minimap = zindex(require("scrollbar.minimap.renderer").get_state(win).float_win),
+            peek = zindex(peek_win),
+        }
+    ]])
+    -- The pair stacks on one z-index above the source, and the label floats go
+    -- 1 above the scrollbar.
+    expect.equality(result.peek > result.minimap, true)
+    expect.equality(result.peek > result.scrollbar + 1, true)
+    expect.equality(result.peek, math.max(result.minimap, result.scrollbar + 1) + 1)
+end
+
 T["window"]["never gets a scrollbar or a minimap"] = function()
     local child = navigate.new_child()
     navigate.setup(child, {})

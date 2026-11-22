@@ -235,7 +235,31 @@ T["notifies and does nothing without marks or without a scrollbar"] = function()
     expect.equality(hidden.lua_get("require('scrollbar.navigate.jump').active()"), false)
 end
 
-T["notifies and does nothing on a float"] = function()
+T["works in a float source"] = function()
+    local child = navigate.new_child()
+    local result = setup(child, { float = {} })
+    expect.equality(
+        child.lua_get("require('scrollbar.renderer').get_state(vim.api.nvim_get_current_win()).source_kind"),
+        "custom"
+    )
+    child.api.nvim_win_set_cursor(0, { 5, 0 })
+    run_with(child, "d")
+    expect.equality(child.api.nvim_get_current_win(), result.source_win)
+    expect.equality(child.api.nvim_win_get_cursor(0), { 101, 0 })
+    child.type_keys("<C-o>")
+    expect.equality(child.api.nvim_win_get_cursor(0), { 5, 0 })
+
+    -- An uppercase label peeks, and <CR> jumps to the peeked line.
+    start(child)
+    input(child, "S")
+    expect.equality(peek_line(child), 60)
+    input(child, "<CR>")
+    expect.equality(child.lua_get("_G.jump_done"), true)
+    expect.equality(cursor_line(child), 60)
+    expect.equality(child.lua_get("_G.notes"), {})
+end
+
+T["notifies and does nothing on a float that is not a source"] = function()
     local child = navigate.new_child()
     setup(child)
     child.lua([[
@@ -243,7 +267,8 @@ T["notifies and does nothing on a float"] = function()
         vim.api.nvim_open_win(buf, true, { relative = "editor", row = 1, col = 1, width = 30, height = 10 })
     ]])
     run_with(child, "a")
-    expect.equality(child.lua_get("_G.notes"), { "[nvim-scrollbar] jump works only in a normal window" })
+    expect.equality(child.lua_get("_G.notes"), { "[nvim-scrollbar] jump: the current window has no scrollbar" })
+    expect.equality(cursor_line(child), 0)
 end
 
 T["draws the labels again after a render during label mode"] = function()
@@ -406,6 +431,32 @@ local function peek_columns(child)
         local config = vim.api.nvim_win_get_config(require("scrollbar.navigate.peek").get().win)
         return { first = config.col, after = config.col + config.width }
     ]])
+end
+
+T["offset"]["over a float source, the label floats and the peek float stack above the scrollbar"] = function()
+    local child = navigate.new_child()
+    setup(child, { config = offset_config(-1), float = {} })
+    start(child)
+    input(child, "S")
+    local zindexes = child.lua([[
+        local win = vim.api.nvim_get_current_win()
+        local function zindex(winid)
+            return vim.api.nvim_win_get_config(winid).zindex
+        end
+        local labels = {}
+        for _, label_win in pairs(require("scrollbar.navigate.jump")._label_floats()) do
+            labels[zindex(label_win)] = true
+        end
+        return {
+            source = zindex(win),
+            scrollbar = zindex(require("scrollbar.renderer").get_state(win).float_win),
+            labels = vim.tbl_keys(labels),
+            peek = zindex(require("scrollbar.navigate.peek").get().win),
+        }
+    ]])
+    expect.equality(zindexes, { source = 50, scrollbar = 51, labels = { 52 }, peek = 53 })
+    expect.equality(shown_labels(cell_screen(child, -1)), { "a", "S", "d", "f", "g" })
+    input(child, "<Esc>")
 end
 
 T["offset"]["puts each label in a float beside its mark cell, so the marks stay visible"] = function()
@@ -675,13 +726,10 @@ T["peek mode"]["notifies with the peek prefix"] = function()
     expect.equality(hidden.lua_get("_G.notes"), { "[nvim-scrollbar] peek: the current window has no scrollbar" })
 
     local floating = navigate.new_child()
-    setup(floating)
-    floating.lua([[
-        local buf = vim.api.nvim_get_current_buf()
-        vim.api.nvim_open_win(buf, true, { relative = "editor", row = 1, col = 1, width = 30, height = 10 })
-    ]])
-    run_with(floating, "", nil, "peek")
-    expect.equality(floating.lua_get("_G.notes"), { "[nvim-scrollbar] peek works only in a normal window" })
+    setup(floating, { float = {} })
+    run_with(floating, "s<CR>", nil, "peek")
+    expect.equality(floating.lua_get("_G.notes"), {})
+    expect.equality(cursor_line(floating), 60)
 end
 
 return T

@@ -252,6 +252,14 @@ scrollbar = {
 - `snacks_zen` is a built-in kind, so `when` never runs for the zen window.
   To show the bars on the zen window, set `snacks.zen`.
 
+## Jump, Peek, Glance, and Hover
+
+Label mode, the peek float, the glance pickers, and hover work on float
+sources. For example, `jump()` works in the snacks.nvim zen window, and hover
+opens the peek float on the scrollbar of a picker preview. The peek float and
+the glance window go above the float source and its bars. See
+[Jump and Glance](jump-and-glance.md#floats).
+
 ## Text Changes
 
 A picker writes its results while its prompt has focus. Neovim fires no
@@ -281,3 +289,4 @@ the buffer, the renderer detaches from it at the next change.
 - [Visibility](visibility.md)
 - [Layout and geometry](layout-and-geometry.md)
 - [Mouse](mouse.md)
+- [Jump and Glance](jump-and-glance.md)

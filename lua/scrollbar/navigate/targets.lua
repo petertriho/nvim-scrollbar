@@ -130,15 +130,32 @@ local function consumer()
     return config.get().enabled and "scrollbar" or "minimap"
 end
 
+M.consumer = consumer
+
+--- The source kind of `source_win` for the renderer of `name`, or nil when
+--- the window is not a source of it. A renderer that is not loaded has no
+--- sources. A profile can match a float kind, so the selection needs the kind.
+--- Nil selects as for a normal window.
+---@param source_win integer
+---@param name "scrollbar"|"minimap"
+---@return ScrollbarSourceKind?
+local function source_kind(source_win, name)
+    local renderer = package.loaded[name == "scrollbar" and "scrollbar.renderer" or "scrollbar.minimap.renderer"]
+    return renderer ~= nil and renderer.source_kind(source_win) or nil
+end
+
+M.source_kind = source_kind
+
 --- The mark types that the renderer of `name` shows in `source_win`.
 ---@param source_win integer
 ---@param name "scrollbar"|"minimap"
 ---@return table<string, { priority: integer }>
 local function shown_marks(source_win, name)
+    local kind = source_kind(source_win, name)
     if name == "scrollbar" then
-        return config.select(source_win).config.marks
+        return config.select(source_win, kind).config.marks
     end
-    return require("scrollbar.minimap.config").select(source_win).config.marks
+    return require("scrollbar.minimap.config").select(source_win, kind).config.marks
 end
 
 --- The glyph that a single mark of `mark_type` shows in the scrollbar.

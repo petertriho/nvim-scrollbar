@@ -455,4 +455,33 @@ M.apply_position = function(frame, source_win, result)
     result.col = frame.col
 end
 
+-- The z-index of a float without a `zindex` key.
+local DEFAULT_ZINDEX = 50
+
+--- The z-index of the peek float or a glance pane over `source_win`. Over a
+--- normal window, the configured value applies as is. Over a float source, a
+--- float with the same z-index as the source can open under it, so the result
+--- is at least 1 above the source, its scrollbar and minimap floats, and the
+--- label floats, which go 1 above the scrollbar float.
+---@param source_win integer
+---@param configured? integer `zindex` of the `window` option
+---@return integer?
+M.zindex = function(source_win, configured)
+    local ok, window_config = pcall(vim.api.nvim_win_get_config, source_win)
+    if not ok or window_config.relative == "" then
+        return configured
+    end
+    -- The bars of a float source use at least this z-index.
+    local top = stack.float_zindex(source_win)
+    for _, name in ipairs({ "scrollbar.renderer", "scrollbar.minimap.renderer" }) do
+        local renderer = package.loaded[name]
+        local state = renderer ~= nil and renderer.get_state(source_win) or nil
+        local zindex = state ~= nil and state.float_config.zindex or nil
+        if type(zindex) == "number" then
+            top = math.max(top, name == "scrollbar.renderer" and zindex + 1 or zindex)
+        end
+    end
+    return math.max(configured or DEFAULT_ZINDEX, top + 1)
+end
+
 return M

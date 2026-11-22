@@ -1,9 +1,9 @@
 --- Hover peek: when the pointer rests on a mark cell of a scrollbar float for
 --- `scrollbar.hover.delay_ms`, the peek float opens at the line of the cell.
 ---
---- - Hover acts only on the scrollbar floats of normal source windows whose
----   `mouse` option is true. It does nothing during label mode, and it sets no
----   labels.
+--- - Hover acts on the scrollbar floats whose `mouse` option is true, on
+---   normal windows and on float sources. It does nothing during label mode,
+---   and it sets no labels.
 --- - The hover peek closes when the pointer leaves the cell, on any key that
 ---   is not `<MouseMove>`, and when the source window scrolls.
 --- - Neovim sends `<MouseMove>` only with 'mousemoveevent'. The setup sets the
@@ -90,7 +90,7 @@ local function spot_under_pointer()
     end
     local mouse = vim.fn.getmousepos()
     local state = renderer.get_state_by_float(mouse.winid)
-    if state == nil or not state.config.mouse or state.source_kind ~= "normal" then
+    if state == nil or not state.config.mouse then
         return nil
     end
     local row = mouse.winrow - 1 - state.sides.top

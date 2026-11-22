@@ -352,8 +352,8 @@ end
 ---@field types? table<string, true> Mark types that get labels. Nil labels every type except `Cursor`
 ---@field mode? ScrollbarJumpMode Action of a lowercase label. Default "jump"
 
---- Start label mode in the current window. The function returns when label
---- mode ends.
+--- Start label mode in the current window. The window can be a float source.
+--- The function returns when label mode ends.
 ---@param options? ScrollbarJumpOptions
 M.run = function(options)
     options = options or {}
@@ -362,10 +362,6 @@ M.run = function(options)
     end
     local mode = options.mode or "jump"
     local source_win = vim.api.nvim_get_current_win()
-    if vim.api.nvim_win_get_config(source_win).relative ~= "" then
-        notify(mode .. " works only in a normal window")
-        return
-    end
     local renderer = require("scrollbar.renderer")
     local scheduler = require("scrollbar.scheduler")
 

@@ -122,8 +122,9 @@ past the label column.
 - Label mode needs the scrollbar. With `scrollbar.enabled = false`, `jump()`
   and `peek()` show a notification, and `:ScrollbarJump` and `:ScrollbarPeek`
   do not exist.
-- Label mode works only in a normal window. In a float, such as the list of a
-  picker, it shows a notification.
+- Label mode works in the current window. The window can be a normal window
+  or a float source, such as the snacks.nvim zen window. See
+  [Floats](#floats).
 - When the window has no scrollbar or no marks, label mode shows a
   notification and does not start.
 - With [autohide](visibility.md#autohide), label mode shows the scrollbar and
@@ -194,7 +195,9 @@ end, { desc = "Glance at the marks in Telescope" })
 `glance()` does these checks before the picker opens, so a picker always gets
 at least one entry:
 
-- In a float, such as the list of a picker, `glance()` shows a notification.
+- In a float that is not a float source of the scrollbar, or of the minimap
+  when the scrollbar is disabled, `glance()` shows a notification. See
+  [Floats](#floats).
 - When the window has no marks, `glance()` shows a notification.
 
 When the picker raises an error, `glance()` shows the error in a
@@ -526,8 +529,9 @@ require("scrollbar").setup({
 })
 ```
 
-- Hover works only on scrollbars with `mouse = true` in normal windows. It
-  does not work on the minimap or on the scrollbars of floats.
+- Hover works only on scrollbars with `mouse = true`. It works on normal
+  windows and on float sources, also when the float does not have focus. It
+  does not work on the minimap. See [Floats](#floats).
 - The peek float uses `peek.frame`. With `"scrollbar"`, it is centered on the
   row of the mark.
 - Hover shows no labels, and it does nothing during label mode.
@@ -540,6 +544,38 @@ Neovim reports pointer moves only with `'mousemoveevent'`. When hover is on,
 `setup()` sets `'mousemoveevent'`. A later `setup()` without hover restores
 the option only when the plugin set it. `'mousemoveevent'` is a global
 option, so other plugins also see the pointer moves.
+
+## Floats
+
+Label mode, the peek float, the glance pickers, and hover also work on float
+sources: the floats that the [`floats`](floats.md) option selects, such as the
+snacks.nvim zen window, a picker preview, or a float that `when` selects.
+
+- Label mode and `glance()` act on the current window. A call from the input
+  of a snacks.nvim picker or from the prompt of a Telescope picker does not
+  act on the preview of that picker. Focus the preview first. A Telescope
+  preview cannot get focus, so only hover works on it.
+- In a float, `glance()` needs a float source of the scrollbar, or of the
+  minimap when the scrollbar is disabled. In another float, it shows a
+  notification.
+- A [profile](floats.md#profiles) with `match.floats` applies to the glance
+  list and to the title of the peek float, the same as to the scrollbar.
+- Over a float source, the peek float and the glance window go above the
+  source float, its scrollbar, its minimap, and the labels. Their z-index is
+  at least 1 above the highest of these floats. A higher `zindex` in
+  `peek.window` or `glance.builtin.window` stays. Over a normal window, the
+  configured `zindex` applies as is.
+- The `jump_split` and `jump_vsplit` actions, and the split actions of the
+  snacks.nvim and Telescope pickers, open a normal window at the mark. Some
+  plugins close their float when the focus goes to a normal window. For
+  example, the snacks.nvim zen window and the snacks.nvim picker close.
+- The snacks.nvim list has no marks, so label mode, `glance()`, and hover find
+  no marks on it. In the Telescope results window, a jump moves the cursor but
+  not the Telescope selection, the same as a click on its scrollbar.
+- In a small float, the peek float or the glance window can have no room.
+  Then the peek float does not open, and the glance window shows a
+  notification. A frame with `relative = "editor"` can go past the float. See
+  [Frame](#frame).
 
 ## Options
 

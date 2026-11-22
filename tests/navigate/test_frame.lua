@@ -131,4 +131,61 @@ T["run"]["passes the context to the function"] = function()
     expect.equality(seen, ctx)
 end
 
+T["zindex"] = MiniTest.new_set()
+
+T["zindex"]["keeps the configured value over a normal window and raises it over a float source"] = function()
+    local names = { "scrollbar.renderer", "scrollbar.minimap.renderer" }
+    local saved = {}
+    for _, name in ipairs(names) do
+        saved[name] = package.loaded[name]
+    end
+    local states = {}
+    package.loaded["scrollbar.renderer"] = {
+        get_state = function()
+            return states.scrollbar
+        end,
+    }
+    package.loaded["scrollbar.minimap.renderer"] = {
+        get_state = function()
+            return states.minimap
+        end,
+    }
+    local float = vim.api.nvim_open_win(
+        vim.api.nvim_create_buf(false, true),
+        false,
+        { relative = "editor", row = 0, col = 0, width = 5, height = 5, zindex = 60 }
+    )
+    local ok, result = pcall(function()
+        local normal = vim.api.nvim_list_wins()[1]
+        local values = {
+            normal = frame.zindex(normal),
+            normal_configured = frame.zindex(normal, 10),
+            -- Without a bar, the floor is 1 above the bar z-index of the source.
+            bare = frame.zindex(float),
+        }
+        -- The label floats go 1 above the scrollbar float.
+        states.scrollbar = { float_config = { zindex = 61 } }
+        values.scrollbar = frame.zindex(float)
+        states.minimap = { float_config = { zindex = 65 } }
+        values.minimap = frame.zindex(float)
+        values.high = frame.zindex(float, 100)
+        values.low = frame.zindex(float, 10)
+        return values
+    end)
+    pcall(vim.api.nvim_win_close, float, true)
+    for _, name in ipairs(names) do
+        package.loaded[name] = saved[name]
+    end
+    assert(ok, result)
+    -- Over the normal window, a nil value stays nil.
+    expect.equality(result, {
+        normal_configured = 10,
+        bare = 62,
+        scrollbar = 63,
+        minimap = 66,
+        high = 100,
+        low = 66,
+    })
+end
+
 return T

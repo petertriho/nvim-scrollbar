@@ -293,7 +293,7 @@ T["glance pickers"]["a picker error shows a notification"] = function()
     expect.equality(notes(child), { { "[nvim-scrollbar] glance: picker failed: boom", ERROR } })
 end
 
-T["glance pickers"]["the picker is not called on a float or without marks"] = function()
+T["glance pickers"]["the picker is not called on a float that is not a source or without marks"] = function()
     local child = navigate.new_child()
     setup(child, { marks = {} })
     set_recording_picker(child)
@@ -305,7 +305,7 @@ T["glance pickers"]["the picker is not called on a float or without marks"] = fu
     expect.equality(child.lua_get("_G.contexts"), {})
     expect.equality(notes(child), {
         { "[nvim-scrollbar] glance: the current window has no marks", WARN },
-        { "[nvim-scrollbar] glance works only in a normal window", WARN },
+        { "[nvim-scrollbar] glance: the current float is not a source of the scrollbar. See scrollbar.floats", WARN },
     })
 end
 

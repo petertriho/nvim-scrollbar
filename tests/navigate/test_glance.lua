@@ -752,7 +752,7 @@ T["close"]["a closed source window closes the frame"] = function()
     expect.equality(child.api.nvim_win_is_valid(current.list_win), false)
 end
 
-T["notifies and does nothing on a float or without marks"] = function()
+T["notifies and does nothing on a float that is not a source or without marks"] = function()
     local child = navigate.new_child()
     setup(child, { marks = {} })
     open(child)
@@ -766,7 +766,79 @@ T["notifies and does nothing on a float or without marks"] = function()
     ]])
     open(floating)
     expect.equality(state(floating), nil)
-    expect.equality(floating.lua_get("_G.notes"), { "[nvim-scrollbar] glance works only in a normal window" })
+    expect.equality(
+        floating.lua_get("_G.notes"),
+        { "[nvim-scrollbar] glance: the current float is not a source of the scrollbar. See scrollbar.floats" }
+    )
+end
+
+T["float"] = MiniTest.new_set()
+
+local function zindex(child, win)
+    return child.api.nvim_win_get_config(win).zindex
+end
+
+T["float"]["opens in a float source above its scrollbar, and <CR> jumps in the float"] = function()
+    local child = navigate.new_child()
+    local setup_result = setup(child, { float = {} })
+    child.api.nvim_win_set_cursor(0, { 5, 0 })
+    open(child)
+    local current = state(child)
+    expect.equality(child.api.nvim_get_current_win(), current.list_win)
+    expect.equality(#list_lines(child), 4)
+    -- The source float has z-index 50, its scrollbar 51, and the label floats
+    -- of label mode 52.
+    expect.equality(zindex(child, setup_result.float_win), 51)
+    expect.equality({ zindex(child, current.list_win), zindex(child, current.preview_win) }, { 53, 53 })
+
+    child.type_keys("jj<CR>")
+    expect.equality(state(child), nil)
+    expect.equality(child.api.nvim_get_current_win(), setup_result.source_win)
+    expect.equality(child.api.nvim_win_get_cursor(0), { 101, 0 })
+    child.type_keys("<C-o>")
+    expect.equality(child.api.nvim_win_get_cursor(0), { 5, 0 })
+    expect.equality(child.lua_get("_G.notes"), {})
+end
+
+T["float"]["over a normal window, the panes keep the configured z-index"] = function()
+    local child = navigate.new_child()
+    setup(child, { config = navigate.config({ glance = { builtin = { window = { zindex = 10 } } } }) })
+    open(child)
+    local current = state(child)
+    expect.equality({ zindex(child, current.list_win), zindex(child, current.preview_win) }, { 10, 10 })
+end
+
+T["float"]["a split from a float source opens a normal window at the mark"] = function()
+    local child = navigate.new_child()
+    local setup_result = setup(child, { float = {}, config = keys_config({ list = { jump_split = "s" } }) })
+    open(child)
+    child.type_keys("j", "s")
+    expect.equality(state(child), nil)
+    local win = child.api.nvim_get_current_win()
+    expect.no_equality(win, setup_result.source_win)
+    expect.equality(child.api.nvim_win_get_config(win).relative, "")
+    expect.equality(child.api.nvim_win_get_buf(win), setup_result.source_buf)
+    expect.equality(child.api.nvim_win_get_cursor(win), { 61, 0 })
+    -- The float of another plugin stays, with its cursor.
+    expect.equality(child.api.nvim_win_is_valid(setup_result.source_win), true)
+    expect.equality(child.api.nvim_win_get_cursor(setup_result.source_win), { 1, 0 })
+end
+
+T["float"]["the list and the peek title read the marks of a match.floats profile"] = function()
+    local child = navigate.new_child()
+    local profile = { profiles = { { match = { floats = true }, marks = { Hint = false } } } }
+    local setup_result = setup(child, { float = {}, config = navigate.config({ scrollbar = profile }) })
+    local function hint_marks(win)
+        return #child.lua_get("require('scrollbar.navigate.targets').line_marks(...)", { win, 100 })
+    end
+    -- The source buffer shows also in the normal window under the float.
+    local normal = child.lua_get("vim.api.nvim_list_wins()[1]")
+    child.api.nvim_win_set_buf(normal, setup_result.source_buf)
+    expect.equality(hint_marks(normal), 1)
+    expect.equality(hint_marks(setup_result.source_win), 0)
+
+    open(child)
+    expect.equality(#list_lines(child), 3)
 end
 
 T["builds a list of 10000 search matches"] = function()
