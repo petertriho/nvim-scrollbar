@@ -5,25 +5,20 @@
 
 ![The default scrollbar and minimap while scrolling past diagnostics, Git hunks, and search matches](https://github.com/user-attachments/assets/b3d11b3b-6112-459b-b0f8-a7d77cca3470)
 
-`nvim-scrollbar` shows one floating scrollbar for each source window. Each
-split window gets its own thumb. The scrollbar has typed mark lanes, optional
-screen-line positions that follow wraps and folds, and mouse navigation. An
-optional floating minimap shows a compressed view of the buffer, with a
-viewport tint, a cursor accent, provider marks, and mouse navigation. Label
-mode, a peek float, and glance pickers take you to the marks and show their
-lines.
+`nvim-scrollbar` adds a floating scrollbar to each window. Marks on the
+scrollbar show where the diagnostics, search matches, Git changes, and other
+items are. A click on a mark moves the cursor there. An optional minimap shows
+a compressed view of the buffer. The plugin adds less than 0.1 ms to a
+keystroke.
 
 ## Jump and Glance
 
-Label mode puts a label on each mark of the scrollbar. Type a label to move to
-the mark, or type the uppercase label to see the lines of the mark in a peek
-float first. `peek()` swaps the two cases: a label opens the peek float, and
-the uppercase label moves to the mark. Glance shows a list of the marks in the
-glance window, which has a preview pane, or in a snacks.nvim, Telescope, or
-custom picker. With `scrollbar.hover`, the peek float also opens when the
-mouse pointer stays on a mark. Label mode is inspired by
-[flash.nvim](https://github.com/folke/flash.nvim), and the glance window by
-[glance.nvim](https://github.com/dnlhc/glance.nvim).
+Label mode puts a label on each scrollbar mark. Type a label to jump to its
+mark, or type it in uppercase to peek at the lines first. Glance lists the
+marks in a builtin window, snacks.nvim, Telescope, or a custom picker. With
+`scrollbar.hover`, the peek also opens when the pointer rests on a mark. Label
+mode is inspired by [flash.nvim](https://github.com/folke/flash.nvim), and the
+glance window by [glance.nvim](https://github.com/dnlhc/glance.nvim).
 
 ![Label mode: labels on the scrollbar marks, a peek float from an uppercase label, and a jump](https://github.com/user-attachments/assets/e0980b14-b9e9-4a03-9da5-bae29f0a2f07)
 
@@ -51,8 +46,7 @@ The commands are `:ScrollbarJump [types]`, `:ScrollbarPeek [types]`, and
 ## Requirements
 
 - Neovim 0.11 or newer
-- For mouse interaction, the Neovim `mouse` option must enable the modes that
-  you want, for example `set mouse=a`. The plugin never changes `mouse`.
+- For mouse support, a `mouse` value such as `set mouse=a`
 - Optional integrations:
   [gitsigns.nvim](https://github.com/lewis6991/gitsigns.nvim),
   [mini.diff](https://github.com/nvim-mini/mini.diff),
@@ -63,39 +57,33 @@ The commands are `:ScrollbarJump [types]`, `:ScrollbarPeek [types]`, and
 
 ## Installation
 
-If you upgrade from v1, read the [migration guide](docs/migration.md) first.
-If you are not ready to migrate, pin the `v1` branch, for example
-`{ "petertriho/nvim-scrollbar", branch = "v1" }` with lazy.nvim.
+If you upgrade from v1, read the [migration guide](docs/migration.md), or pin
+`branch = "v1"`.
 
 [lazy.nvim](https://github.com/folke/lazy.nvim):
 
 ```lua
 {
     "petertriho/nvim-scrollbar",
+    lazy = false,
     opts = {},
 }
 ```
 
-With `opts = {}`, lazy.nvim calls `require("scrollbar").setup({})`. Put any
-configuration overrides inside `opts`.
+If you add `keys` to the spec, keep `lazy = false`. Otherwise no scrollbar
+shows until the first key press.
 
-[vim-plug](https://github.com/junegunn/vim-plug):
+[vim-plug](https://github.com/junegunn/vim-plug), then call `setup()` from Lua:
 
 ```vim
 Plug 'petertriho/nvim-scrollbar'
 ```
-
-With vim-plug or another manual installation, configure the plugin from Lua:
 
 ```lua
 require("scrollbar").setup()
 ```
 
 ## Quick Start
-
-By default, the cursor, diagnostic, search, and named-mark providers are
-enabled for every eligible source window. A small custom setup can look like
-this:
 
 ```lua
 require("scrollbar").setup({
@@ -110,16 +98,15 @@ require("scrollbar").setup({
 })
 ```
 
-This example enables autohide. The scrollbars start concealed. Cursor movement
-or scrolling in a source window reveals the scrollbar of that window.
+With `autohide`, a scrollbar shows when its window scrolls or its cursor
+moves, and hides after 1 second without activity.
 
-The built-in scrollbar presets are `vscode`, `zed`, `intellij`, `minimal`,
-`review`, `search`, `navigate`, `gvim`, `eclipse`, `sublime`, `emacs`, and
-`xcode`. The [showcase](https://github.com/petertriho/nvim-scrollbar/issues/120)
-has a screenshot and the setup of every scrollbar preset and minimap preset.
+Scrollbar presets: `vscode`, `zed`, `intellij`, `minimal`, `review`, `search`,
+`navigate`, `gvim`, `eclipse`, `sublime`, `emacs`, and `xcode`. The
+[showcase](https://github.com/petertriho/nvim-scrollbar/issues/120) shows each
+scrollbar and minimap preset.
 
-An ordered list of profiles can select a different appearance for each source
-window:
+Profiles change the appearance of matching windows. The first match applies:
 
 ```lua
 require("scrollbar").setup({
@@ -139,20 +126,13 @@ require("scrollbar").setup({
 })
 ```
 
-The plugin uses the first profile that matches. Profiles change only appearance
-options. Providers, exclusions, visibility, autohide, and `max_lines` are
-global.
-
 Setup rejects unknown keys and invalid values. See the
-[configuration reference](docs/configuration.md) for every default and accepted
-value.
+[configuration reference](docs/configuration.md).
 
 ## Minimap
 
-The minimap is disabled by default. It has its own configuration block,
-profiles, mouse handling, and commands. It does not show, hide, or move the
-scrollbar. Both renderers share the top-level `providers`, `marks`, and
-`exclude` tables.
+The minimap is off by default. It uses the same `providers`, `marks`, and
+`exclude` tables as the scrollbar:
 
 ```lua
 require("scrollbar").setup({
@@ -162,78 +142,16 @@ require("scrollbar").setup({
 })
 ```
 
-By default, each source window gets a 16-column minimap at its north-east
-corner, beside the scrollbar. The minimap draws the text as Braille dots, with
-one source line in each row of dots, and it scrolls with the source window.
-`scale = "fit"` shows the whole buffer instead, and `encoding = "block"` draws
-`█` cells. Treesitter colors the dots by default when the buffer has a parser.
-LSP semantic-token colors are an opt-in provider:
-
-```lua
-require("scrollbar").setup({
-    providers = {
-        lsp_semantic_tokens = true,
-    },
-    minimap = {
-        enabled = true,
-    },
-})
-```
-
-The minimap has eight presets: `vscode`, `sublime`, `zed`, `xcode`,
-`overview`, `compact`, `minimal`, and `blocks`. A minimap preset is separate
-from the scrollbar preset:
-
-```lua
-require("scrollbar").setup({
-    scrollbar = { preset = "zed" },
-    minimap = {
-        enabled = true,
-        preset = "zed",
-    },
-})
-```
-
-Provider marks, such as diagnostics, search matches, and Git hunks, tint the
-occupied cells of their row. `minimap.marks` changes the priority or the
-highlight of a mark type for the minimap. The value `false` hides a type:
-
-```lua
-require("scrollbar").setup({
-    minimap = {
-        enabled = true,
-        marks = {
-            Search = { priority = 0, highlight = "IncSearch" },
-            Hint = false,
-        },
-    },
-})
-```
-
-`minimap.blend` sets the blend of the full float. `minimap.background_blend`
-sets the blend of only the base surface. See
-[Minimap configuration](docs/minimap/configuration.md#blend). By default, the
-minimap of the active source window hides while the editing cursor is inside
-the minimap.
-
-The automatic highlight groups of the minimap have their own public names,
-such as `ScrollbarMinimapSearch`. Setup keeps your existing definitions of the
-public scrollbar and minimap groups.
-
-See the [minimap documentation](docs/minimap/README.md) for the map, placement,
-marks, and mouse behavior.
+By default, it draws the buffer as Braille dots, with Treesitter colors when
+the buffer has a parser. Its presets are `vscode`, `sublime`, `zed`, `xcode`, `overview`,
+`compact`, `minimal`, and `blocks`. See the
+[minimap documentation](docs/minimap/README.md).
 
 ## Pickers and Floats
 
-By default, the scrollbar and the minimap show only on normal windows. With
-`floats = true` in its block, the scrollbar or the minimap also shows on these
-floats:
-
-- The list and the preview of the snacks.nvim picker
-- The window of the snacks.nvim zen mode and zoom mode
-- The results and the preview of the Telescope picker
-
-A `when` function selects other floats:
+With `floats = true` in the `scrollbar` or `minimap` block, that bar also shows
+on the list and preview of the snacks.nvim and Telescope pickers, and on the
+snacks.nvim zen and zoom windows. A `when` function adds other floats:
 
 ```lua
 require("scrollbar").setup({
@@ -247,9 +165,8 @@ require("scrollbar").setup({
 })
 ```
 
-A bar on a float uses the z-index of that float + 1. A click or a drag on the
-bar of the snacks list selects an item. Label mode, the peek float, the glance
-pickers, and hover also work on these floats. See [Floats](docs/floats.md).
+Jump, peek, glance, and hover also work on these floats. See
+[Floats](docs/floats.md).
 
 ## Providers
 
@@ -270,63 +187,27 @@ pickers, and hover also work on these floats. See [Floats](docs/floats.md).
 | [`treesitter`](docs/providers/treesitter.md) | unavailable | on | Treesitter highlight captures | Installed parser |
 | [`lsp_semantic_tokens`](docs/providers/lsp_semantic_tokens.md) | unavailable | off | LSP semantic tokens | Attached LSP client |
 
-Configure the providers in the top-level `providers` table. A provider value is
-`false`, `true`, or a table of options. In a table, the `scrollbar` and
-`minimap` flags select the renderers that show the provider. Each built-in
-provider runs once, and only when an enabled renderer uses it.
-
-See the [provider overview](docs/providers/README.md) for the shared rules,
-dependencies, update behavior, and links to every provider. To add a new data
-source, use the [custom provider API](docs/providers/custom.md).
+Set each provider in `providers` to `true`, `false`, or a table of options. See
+the [provider overview](docs/providers/README.md), or add your own with the
+[custom provider API](docs/providers/custom.md).
 
 ## Documentation
 
-### Guides
-
-- [Configuration](docs/configuration.md): defaults, providers, exclusions, mark
-  types, layout lanes, text functions and recipes, profiles, precedence, and
-  validation
-- [Presets](docs/presets.md): the twelve scrollbar presets, the eight minimap
-  presets, and their precedence
-- [Visibility](docs/visibility.md): source-window visibility, autohide,
-  hide-on-cursor behavior, commands, and Lua APIs
-- [Floats](docs/floats.md): scrollbars and minimaps on the windows of the
-  snacks.nvim and Telescope pickers and on other floats
-- [Layout and geometry](docs/layout-and-geometry.md): layout lanes, placement,
-  line and screen-line units, and wide scrollbars
-- [Mouse](docs/mouse.md): clicks, mark navigation, thumb dragging, and focus
-  behavior
-- [Jump and Glance](docs/jump-and-glance.md): label mode, the peek float, the
-  glance pickers, and hover
-- [Highlights](docs/highlights.md): generated groups, direct definitions,
-  blending, and manual highlights
-- [Migration](docs/migration.md): changes required from earlier releases
-- [Development](docs/development.md): tests, quality checks, benchmarks, and CI
-
-### Provider Guides
-
-- [Provider overview](docs/providers/README.md)
-- [Cursor](docs/providers/cursor.md)
-- [Diagnostics](docs/providers/diagnostic.md)
-- [Search](docs/providers/search.md)
-- [Marks](docs/providers/marks.md)
-- [Gitsigns](docs/providers/gitsigns.md)
-- [MiniDiff](docs/providers/mini_diff.md)
-- [Signify](docs/providers/signify.md)
-- [Vgit](docs/providers/vgit.md)
-- [ALE](docs/providers/ale.md)
-- [Coc](docs/providers/coc.md)
-- [Quickfix list](docs/providers/qflist.md)
-- [Location list](docs/providers/loclist.md)
-- [Treesitter](docs/providers/treesitter.md)
-- [LSP semantic tokens](docs/providers/lsp_semantic_tokens.md)
-- [Custom providers](docs/providers/custom.md)
-
-### Minimap Guides
-
-- [Minimap overview](docs/minimap/README.md): placement, size, marks, and mouse
-  behavior
-- [Minimap configuration](docs/minimap/configuration.md)
+- [Configuration](docs/configuration.md): every option and default
+- [Presets](docs/presets.md): scrollbar and minimap presets
+- [Visibility](docs/visibility.md): autohide, hide-on-cursor, and commands
+- [Floats](docs/floats.md): pickers and other floats
+- [Layout and geometry](docs/layout-and-geometry.md): lanes, placement, and
+  units
+- [Mouse](docs/mouse.md): clicks and thumb dragging
+- [Jump and Glance](docs/jump-and-glance.md): label mode, peek, glance, and
+  hover
+- [Providers](docs/providers/README.md): built-in and custom providers
+- [Minimap](docs/minimap/README.md) and
+  [minimap configuration](docs/minimap/configuration.md)
+- [Highlights](docs/highlights.md): highlight groups and blending
+- [Migration](docs/migration.md): changes from earlier releases
+- [Development](docs/development.md): tests, benchmarks, and CI
 
 ## License
 
