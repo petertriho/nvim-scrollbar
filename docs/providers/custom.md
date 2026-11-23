@@ -153,8 +153,9 @@ values are registration errors. `refresh_minimap` and
 
 > **Avoid built-in names:** `cursor`, `diagnostic`, `search`, `marks`,
 > `gitsigns`, `mini_diff`, `signify`, `vgit`, `ale`, `coc`, `qflist`, `loclist`,
-> `treesitter`, and `lsp_semantic_tokens`. A registration with one of these
-> names before root setup shadows that built-in. After root setup, a
+> `jumplist`, `changelist`, `treesitter`, and `lsp_semantic_tokens`. A
+> registration with one of these names before root setup shadows that
+> built-in. After root setup, a
 > registration fails only when the name is currently registered. A default-on
 > built-in is normally registered. An optional or disabled built-in is not
 > necessarily registered. The built-in enable and disable options never manage

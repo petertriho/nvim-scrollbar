@@ -29,6 +29,10 @@ local DEFAULT_MARKS = {
     VGitDelete = { text = { "▁" }, priority = 7, highlight = "GitSignsDelete" },
     Qflist = { text = { "-", "=" }, priority = 6, highlight = "QuickFixLine" },
     Loclist = { text = { "-", "=" }, priority = 6, highlight = "QuickFixLine" },
+    JumpOlder = { text = { "<" }, priority = 1, highlight = "Special" },
+    JumpNewer = { text = { ">" }, priority = 1, highlight = "Special" },
+    ChangeOlder = { text = { "«" }, priority = 1, highlight = "Changed" },
+    ChangeNewer = { text = { "»" }, priority = 1, highlight = "Changed" },
 }
 
 local DEFAULT_EXCLUDE = {

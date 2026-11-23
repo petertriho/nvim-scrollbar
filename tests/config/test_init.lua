@@ -697,6 +697,26 @@ T["provider targets"]["loclist is off by default and takes the same types option
     )
 end
 
+T["provider targets"]["jumplist and changelist are off by default and take only the target flags"] = function()
+    for _, name in ipairs({ "jumplist", "changelist" }) do
+        set_top({})
+        expect.equality(plan()[name].consumers, { scrollbar = false, minimap = false })
+        expect.equality(plan()[name].options, false)
+
+        set_top({ minimap = { enabled = true }, providers = { [name] = true } })
+        expect.equality(plan()[name].consumers, { scrollbar = true, minimap = true })
+        expect.equality(plan()[name].options, true)
+
+        set_top({ minimap = { enabled = true }, providers = { [name] = { minimap = false } } })
+        expect.equality(plan()[name].consumers, { scrollbar = true, minimap = false })
+
+        expect_invalid_top(
+            { providers = { [name] = { types = {} } } },
+            "unknown option 'providers%." .. name .. "%.types'"
+        )
+    end
+end
+
 T["provider targets"]["both renderer flags false turn the provider off"] = function()
     set_top({ minimap = { enabled = true }, providers = { cursor = { scrollbar = false, minimap = false } } })
     expect.equality(plan().cursor.consumers, { scrollbar = false, minimap = false })

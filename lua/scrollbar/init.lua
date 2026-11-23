@@ -44,6 +44,8 @@ local BUILTINS = {
     { name = "coc", module = "scrollbar.providers.coc" },
     { name = "qflist", module = "scrollbar.providers.qflist" },
     { name = "loclist", module = "scrollbar.providers.loclist" },
+    { name = "jumplist", module = "scrollbar.providers.jumplist" },
+    { name = "changelist", module = "scrollbar.providers.changelist" },
     { name = "treesitter", module = "scrollbar.providers.treesitter" },
     { name = "lsp_semantic_tokens", module = "scrollbar.providers.lsp_semantic_tokens" },
 }

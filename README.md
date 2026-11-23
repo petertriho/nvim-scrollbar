@@ -184,6 +184,8 @@ Jump, peek, glance, and hover also work on these floats. See
 | [`coc`](docs/providers/coc.md) | off | off | Coc diagnostic list | coc.nvim |
 | [`qflist`](docs/providers/qflist.md) | off | off | Quickfix list | None |
 | [`loclist`](docs/providers/loclist.md) | off | off | Location list of each window | None |
+| [`jumplist`](docs/providers/jumplist.md) | off | off | `<C-o>` and `<C-i>` targets of each window | None |
+| [`changelist`](docs/providers/changelist.md) | off | off | `g;` and `g,` targets of each window | None |
 | [`treesitter`](docs/providers/treesitter.md) | unavailable | on | Treesitter highlight captures | Installed parser |
 | [`lsp_semantic_tokens`](docs/providers/lsp_semantic_tokens.md) | unavailable | off | LSP semantic tokens | Attached LSP client |
 

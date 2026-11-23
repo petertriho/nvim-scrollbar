@@ -21,6 +21,8 @@ rendering.
 | [`coc`](coc.md) | off | off | Buffer `Error`, `Warn`, `Info`, `Hint` marks | coc.nvim |
 | [`qflist`](qflist.md) | off | off | Buffer `Qflist` marks for the quickfix list | None |
 | [`loclist`](loclist.md) | off | off | Window `Loclist` marks for the location list | None |
+| [`jumplist`](jumplist.md) | off | off | Window `JumpOlder`, `JumpNewer` marks for the `<C-o>` and `<C-i>` targets | None |
+| [`changelist`](changelist.md) | off | off | Window `ChangeOlder`, `ChangeNewer` marks for the `g;` and `g,` targets | None |
 | [`treesitter`](treesitter.md) | unavailable | on | Buffer minimap byte spans | Installed parser |
 | [`lsp_semantic_tokens`](lsp_semantic_tokens.md) | unavailable | off | Buffer minimap byte spans | Attached LSP client |
 
@@ -42,6 +44,8 @@ require("scrollbar").setup({
         coc = false,
         qflist = false,
         loclist = false,
+        jumplist = false,
+        changelist = false,
         treesitter = true,
         lsp_semantic_tokens = false,
     },
@@ -117,4 +121,6 @@ typed layout lanes or priorities, or disable the duplicated sources.
 - [Layout and geometry](../layout-and-geometry.md)
 - [Treesitter](treesitter.md)
 - [LSP semantic tokens](lsp_semantic_tokens.md)
+- [Jumplist](jumplist.md)
+- [Change list](changelist.md)
 - [Custom providers](custom.md)

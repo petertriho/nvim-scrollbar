@@ -15,6 +15,8 @@ M.ORDER = {
     "coc",
     "qflist",
     "loclist",
+    "jumplist",
+    "changelist",
     "treesitter",
     "lsp_semantic_tokens",
 }
@@ -35,6 +37,8 @@ local SPECS = {
     coc = { targets = BOTH, execution = "parent", default = false },
     qflist = { targets = BOTH, execution = "parent", default = false },
     loclist = { targets = BOTH, execution = "parent", default = false },
+    jumplist = { targets = BOTH, execution = "parent", default = false },
+    changelist = { targets = BOTH, execution = "parent", default = false },
     treesitter = { targets = MINIMAP_ONLY, execution = "worker", default = true },
     lsp_semantic_tokens = { targets = MINIMAP_ONLY, execution = "parent", default = false },
 }

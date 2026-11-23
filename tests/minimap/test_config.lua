@@ -51,6 +51,10 @@ local FULL_MARKS = with_groups({
     Hint = { priority = 5, highlight = "DiagnosticVirtualTextHint" },
     Info = { priority = 4, highlight = "DiagnosticVirtualTextInfo" },
     Loclist = { priority = 6, highlight = "QuickFixLine" },
+    JumpOlder = { priority = 1, highlight = "Special" },
+    JumpNewer = { priority = 1, highlight = "Special" },
+    ChangeOlder = { priority = 1, highlight = "Changed" },
+    ChangeNewer = { priority = 1, highlight = "Changed" },
     Mark = { priority = 1, highlight = "Special" },
     MiniDiffAdd = { priority = 7, highlight = "MiniDiffSignAdd" },
     MiniDiffChange = { priority = 7, highlight = "MiniDiffSignChange" },
@@ -155,6 +159,8 @@ T["defaults core minimap providers and treesitter on and integrations and LSP se
         "coc",
         "qflist",
         "loclist",
+        "jumplist",
+        "changelist",
         "lsp_semantic_tokens",
     }) do
         expect.equality(plan[name].consumers, { scrollbar = false, minimap = false })
