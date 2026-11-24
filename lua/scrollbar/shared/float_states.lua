@@ -111,7 +111,8 @@ M.new = function(options)
 
     ---@param state ScrollbarFloatState
     ---@param retain_cache? boolean Keep the render caches, for a short hide
-    local function close_state(state, retain_cache)
+    ---@param closing? boolean Neovim closes the float itself, so only release it
+    local function close_state(state, retain_cache, closing)
         local source_win = state.source_win
         states[source_win] = nil
         states_by_float[state.float_win] = nil
@@ -123,7 +124,9 @@ M.new = function(options)
                 forget(source_win, state)
             end
         end
-        float.close(state.float_win, state.float_buf)
+        if not closing then
+            float.close(state.float_win, state.float_buf)
+        end
         if release ~= nil then
             release(source_win)
         end
@@ -213,7 +216,13 @@ M.new = function(options)
         end
         local state = states[closed_win] or states_by_float[closed_win]
         if state ~= nil then
-            close_state(state)
+            -- Before Neovim closes the last non-float window of a tab page, it
+            -- closes each float of that tab page, and `WinClosed` fires for
+            -- each. A second close of the float or a delete of its buffer here
+            -- makes that close fail, and Neovim then gives up on the outer
+            -- close without an error (issue #144). Neovim closes the float, and
+            -- `bufhidden=wipe` wipes its buffer.
+            close_state(state, nil, state.float_win == closed_win)
         else
             release_source(closed_win)
         end

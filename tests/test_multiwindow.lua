@@ -1005,4 +1005,110 @@ option_write_cases["before and after the flush"] = function(module, overrides)
     })
 end
 
+-- Before Neovim closes the last non-float window of a tab page that is not
+-- the current one, it closes each float of that tab page, and `WinClosed`
+-- fires for each. A handler that closed the float again made that close fail,
+-- and Neovim then gave up on the outer close without an error (issue #144).
+local other_tab_close_cases = MiniTest.new_set({
+    parametrize = {
+        { "scrollbar", {} },
+        { "scrollbar.minimap", { minimap = { enabled = true } } },
+    },
+})
+T["a close of the last window of another tab page closes its bar too"] = other_tab_close_cases
+
+---@param module string
+---@param overrides table
+---@param close "bwipe"|"win_close"
+---@return table
+local function close_in_other_tab(module, overrides, close)
+    local child = new_child()
+    return child.lua_func(function(prefix, options, how)
+        local target_buf = vim.api.nvim_create_buf(true, false)
+        local lines = {}
+        for index = 1, 200 do
+            lines[index] = "line " .. index
+        end
+        vim.api.nvim_buf_set_lines(target_buf, 0, -1, false, lines)
+        -- `:bwipe` without `!` refuses a modified buffer.
+        vim.bo[target_buf].modified = false
+        vim.cmd("tab sbuffer " .. target_buf)
+        local target_win = vim.api.nvim_get_current_win()
+
+        require("scrollbar").setup(vim.tbl_deep_extend("force", {
+            set_highlights = false,
+            providers = { cursor = false, diagnostic = false, search = false, marks = false },
+            exclude = { buftypes = {}, filetypes = {} },
+            scrollbar = { throttle_ms = 1000, hide_on_cursor = false, mouse = false },
+            minimap = { backend = "sync", throttle_ms = 1000, hide_on_cursor = false, mouse = false },
+        }, options))
+        -- With the minimap, the bar also shows, so both floats are in the
+        -- tab page when it closes.
+        local schedulers = { require("scrollbar.scheduler"), require(prefix .. ".scheduler") }
+        local function flush()
+            for _, scheduler in ipairs(schedulers) do
+                scheduler.flush()
+            end
+        end
+        local renderer = require(prefix .. ".renderer")
+        flush()
+        local state = assert(renderer.get_state(target_win))
+        local float_win = state.float_win
+        local float_buf = state.float_buf
+
+        vim.cmd("tab sbuffer " .. vim.api.nvim_create_buf(true, true))
+        flush()
+        local tab_count = #vim.api.nvim_list_tabpages()
+
+        local ok
+        if how == "bwipe" then
+            ok = pcall(vim.api.nvim_command, "bwipe " .. target_buf)
+        else
+            ok = pcall(vim.api.nvim_win_close, target_win, true)
+        end
+        flush()
+
+        local orphans = 0
+        for _, win in ipairs(vim.api.nvim_list_wins()) do
+            local config = vim.api.nvim_win_get_config(win)
+            if config.relative == "win" and not vim.api.nvim_win_is_valid(config.win) then
+                orphans = orphans + 1
+            end
+        end
+        return {
+            ok = ok,
+            buffer_valid = vim.api.nvim_buf_is_valid(target_buf),
+            window_valid = vim.api.nvim_win_is_valid(target_win),
+            closed_tabs = tab_count - #vim.api.nvim_list_tabpages(),
+            float_win_valid = vim.api.nvim_win_is_valid(float_win),
+            float_buf_valid = vim.api.nvim_buf_is_valid(float_buf),
+            has_state = renderer.get_state(target_win) ~= nil,
+            orphans = orphans,
+        }
+    end, module, overrides, close)
+end
+
+---@param buffer_valid boolean
+---@return table
+local function closed_in_other_tab(buffer_valid)
+    return {
+        ok = true,
+        buffer_valid = buffer_valid,
+        window_valid = false,
+        closed_tabs = 1,
+        float_win_valid = false,
+        float_buf_valid = false,
+        has_state = false,
+        orphans = 0,
+    }
+end
+
+other_tab_close_cases[":bwipe of the buffer of that window"] = function(module, overrides)
+    expect.equality(close_in_other_tab(module, overrides, "bwipe"), closed_in_other_tab(false))
+end
+
+other_tab_close_cases["nvim_win_close() of that window"] = function(module, overrides)
+    expect.equality(close_in_other_tab(module, overrides, "win_close"), closed_in_other_tab(true))
+end
+
 return T
